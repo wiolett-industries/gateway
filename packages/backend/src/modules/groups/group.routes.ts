@@ -4,26 +4,136 @@ import { openApiValidationHook } from '@/lib/openapi.js';
 import { canonicalizeScopes } from '@/lib/scopes.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
 import type { AppEnv } from '@/types.js';
-import { createGroupRoute, deleteGroupRoute, getGroupRoute, listGroupsRoute, updateGroupRoute } from './group.docs.js';
+import {
+  createGroupFolderRoute,
+  createGroupRoute,
+  deleteGroupFolderRoute,
+  deleteGroupRoute,
+  getGroupRoute,
+  listGroupFoldersRoute,
+  listGroupsRoute,
+  moveGroupFolderRoute,
+  moveGroupsToFolderRoute,
+  reorderGroupFoldersRoute,
+  reorderGroupsRoute,
+  updateGroupFolderRoute,
+  updateGroupRoute,
+} from './group.docs.js';
 import { CreateGroupSchema, UpdateGroupSchema } from './group.schemas.js';
 import { GroupService } from './group.service.js';
+import { PermissionGroupFolderService } from './permission-group-folders.service.js';
 
 export const groupRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 groupRoutes.use('*', authMiddleware);
 groupRoutes.use('*', sessionOnly);
-groupRoutes.use('*', requireScope('admin:groups'));
+
+function requireAnyGroupScope(...requiredScopes: string[]) {
+  return async (c: any, next: () => Promise<void>) => {
+    const scopes = c.get('effectiveScopes') || [];
+    if (!requiredScopes.some((scope) => scopes.includes(scope))) {
+      return c.json({ code: 'FORBIDDEN', message: `Missing required scope: ${requiredScopes.join(' or ')}` }, 403);
+    }
+    await next();
+  };
+}
 
 // List all groups
-groupRoutes.openapi(listGroupsRoute, async (c) => {
+groupRoutes.openapi({ ...listGroupsRoute, middleware: requireScope('admin:groups') }, async (c) => {
   const groupService = container.resolve(GroupService);
   const groups = await groupService.listGroups();
   return c.json(groups);
 });
 
+groupRoutes.openapi(
+  { ...listGroupFoldersRoute, middleware: requireAnyGroupScope('admin:groups', 'admin:groups:folders:manage') },
+  async (c) => {
+    const service = container.resolve(PermissionGroupFolderService);
+    const scopes = c.get('effectiveScopes') || [];
+    const data = await service.getFolderTree({ includeAllFolders: scopes.includes('admin:groups:folders:manage') });
+    return c.json({ data });
+  }
+);
+
+groupRoutes.openapi(
+  { ...createGroupFolderRoute, middleware: requireScope('admin:groups:folders:manage') },
+  async (c) => {
+    const service = container.resolve(PermissionGroupFolderService);
+    const user = c.get('user')!;
+    const input = CreateResourceFolderSchema.parse(await c.req.json());
+    const data = await service.createFolder(input, user.id);
+    return c.json({ data }, 201);
+  }
+);
+
+groupRoutes.openapi(
+  { ...reorderGroupFoldersRoute, middleware: requireScope('admin:groups:folders:manage') },
+  async (c) => {
+    const service = container.resolve(PermissionGroupFolderService);
+    const input = ReorderResourceFoldersSchema.parse(await c.req.json());
+    await service.reorderFolders(input);
+    return c.json({ success: true });
+  }
+);
+
+groupRoutes.openapi(
+  { ...moveGroupsToFolderRoute, middleware: requireScope('admin:groups:folders:manage') },
+  async (c) => {
+    const service = container.resolve(PermissionGroupFolderService);
+    const user = c.get('user')!;
+    const input = MoveResourcesToFolderSchema.parse(await c.req.json());
+    await service.moveResourcesToFolder(input, user.id);
+    return c.json({ success: true });
+  }
+);
+
+groupRoutes.openapi({ ...reorderGroupsRoute, middleware: requireScope('admin:groups:folders:manage') }, async (c) => {
+  const service = container.resolve(PermissionGroupFolderService);
+  const input = ReorderResourcesSchema.parse(await c.req.json());
+  await service.reorderResources(input);
+  return c.json({ success: true });
+});
+
+groupRoutes.openapi(
+  { ...updateGroupFolderRoute, middleware: requireScope('admin:groups:folders:manage') },
+  async (c) => {
+    const service = container.resolve(PermissionGroupFolderService);
+    const user = c.get('user')!;
+    const input = UpdateResourceFolderSchema.parse(await c.req.json());
+    const data = await service.updateFolder(c.req.param('id')!, input, user.id);
+    return c.json({ data });
+  }
+);
+
+groupRoutes.openapi({ ...moveGroupFolderRoute, middleware: requireScope('admin:groups:folders:manage') }, async (c) => {
+  const service = container.resolve(PermissionGroupFolderService);
+  const user = c.get('user')!;
+  const input = MoveResourceFolderSchema.parse(await c.req.json());
+  const data = await service.moveFolder(c.req.param('id')!, input, user.id);
+  return c.json({ data });
+});
+
+groupRoutes.openapi(
+  { ...deleteGroupFolderRoute, middleware: requireScope('admin:groups:folders:manage') },
+  async (c) => {
+    const service = container.resolve(PermissionGroupFolderService);
+    const user = c.get('user')!;
+    await service.deleteFolder(c.req.param('id')!, user.id);
+    return c.json({ success: true });
+  }
+);
+
 // Get single group
-groupRoutes.openapi(getGroupRoute, async (c) => {
+groupRoutes.openapi({ ...getGroupRoute, middleware: requireScope('admin:groups') }, async (c) => {
   const groupService = container.resolve(GroupService);
   const id = c.req.param('id')!;
   const group = await groupService.getGroup(id);
@@ -31,7 +141,7 @@ groupRoutes.openapi(getGroupRoute, async (c) => {
 });
 
 // Create custom group
-groupRoutes.openapi(createGroupRoute, async (c) => {
+groupRoutes.openapi({ ...createGroupRoute, middleware: requireScope('admin:groups') }, async (c) => {
   const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;
@@ -57,7 +167,7 @@ groupRoutes.openapi(createGroupRoute, async (c) => {
 });
 
 // Update custom group
-groupRoutes.openapi(updateGroupRoute, async (c) => {
+groupRoutes.openapi({ ...updateGroupRoute, middleware: requireScope('admin:groups') }, async (c) => {
   const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;
@@ -87,7 +197,7 @@ groupRoutes.openapi(updateGroupRoute, async (c) => {
 });
 
 // Delete custom group
-groupRoutes.openapi(deleteGroupRoute, async (c) => {
+groupRoutes.openapi({ ...deleteGroupRoute, middleware: requireScope('admin:groups') }, async (c) => {
   const groupService = container.resolve(GroupService);
   const auditService = container.resolve(AuditService);
   const user = c.get('user')!;

@@ -1,4 +1,16 @@
-import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
+import {
+  type AnyPgColumn,
+  boolean,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core';
+import { adminUserFolders } from './admin-user-folders.js';
 import { permissionGroups } from './permission-groups.js';
 
 export const users = pgTable(
@@ -11,8 +23,10 @@ export const users = pgTable(
     avatarUrl: text('avatar_url'),
     groupId: uuid('group_id')
       .notNull()
-      .references(() => permissionGroups.id),
+      .references((): AnyPgColumn => permissionGroups.id),
     isBlocked: boolean('is_blocked').notNull().default(false),
+    folderId: uuid('folder_id').references((): AnyPgColumn => adminUserFolders.id, { onDelete: 'set null' }),
+    sortOrder: integer('sort_order').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -20,5 +34,6 @@ export const users = pgTable(
     oidcSubjectIdx: uniqueIndex('users_oidc_subject_idx').on(table.oidcSubject),
     emailIdx: uniqueIndex('users_email_idx').on(table.email),
     groupIdx: index('users_group_id_idx').on(table.groupId),
+    folderIdx: index('users_folder_idx').on(table.folderId),
   })
 );

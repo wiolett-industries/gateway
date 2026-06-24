@@ -28,12 +28,30 @@ export interface BadgeProps
     VariantProps<typeof badgeVariants> {}
 
 function renderBadgeChildren(children: React.ReactNode) {
-  return Children.map(children, (child) => {
+  const output: React.ReactNode[] = [];
+  let text = "";
+
+  const flushText = () => {
+    if (!text) return;
+    output.push(
+      <span key={`text-${output.length}`} className="block min-w-0 max-w-full truncate">
+        {text}
+      </span>
+    );
+    text = "";
+  };
+
+  Children.forEach(children, (child) => {
     if (typeof child === "string" || typeof child === "number") {
-      return <span className="block min-w-0 max-w-full truncate">{child}</span>;
+      text += String(child);
+      return;
     }
-    return child;
+    flushText();
+    output.push(child);
   });
+  flushText();
+
+  return output;
 }
 
 function Badge({ className, variant, children, ...props }: BadgeProps) {

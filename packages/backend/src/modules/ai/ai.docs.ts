@@ -2,6 +2,22 @@ import { hasScopeBase } from '@/lib/permissions.js';
 import { PERMISSIONS_DOC } from './ai.docs.permissions.js';
 
 export const INTERNAL_DOCS: Record<string, string> = {
+  discovery: `# Resource Discovery
+
+Use find_resource whenever the user gives a name, domain, hostname, image, container name, certificate name, logging environment/schema name, database name, or other visible identifier and you need the actual ID or nodeId.
+
+## Rule
+- Prefer find_resource before broad list sweeps.
+- Do not list every node and then inspect every node for Docker resources unless find_resource failed, the user explicitly asked for per-node enumeration, or you need a complete inventory.
+- If the result includes nodeId, pass that nodeId to Docker tools.
+- If multiple results match, use ask_question to disambiguate.
+
+## Examples
+- Find a container named api: find_resource({ query: "api", types: ["docker_container"] })
+- Find a proxy host by domain: find_resource({ query: "example.com", types: ["proxy_host"] })
+- Find a logging schema: find_resource({ query: "nginx", types: ["logging_schema"] })
+- Search all readable resources: find_resource({ query: "production" })`,
+
   pki: `# PKI (Public Key Infrastructure)
 
 ## Certificate Authorities (CAs)
@@ -471,7 +487,7 @@ Long-running operations (stop, restart, kill, recreate, update) create tasks vis
 - File browser: navigate filesystem, view/edit files inside containers
 
 ## Key Notes
-- All Docker tools require a nodeId parameter — use list_nodes with type="docker" to find Docker nodes
+- Most Docker tools require a nodeId parameter. If the user names a container/image/volume/network, use find_resource first; it returns nodeId with the match. Use list_nodes with type="docker" only when you specifically need to choose or inspect Docker nodes.
 - Container IDs change after recreate/update — the frontend handles navigation to new IDs
 - Transition states (stopping, restarting, recreating, deploying, switching, etc.) block concurrent operations on the same container or deployment`,
 
@@ -533,6 +549,89 @@ Gateway can store and operate external Postgres and Redis connections directly f
 ## Monitoring
 - Health is based on connectivity and latency.
 - Metrics include \`latency_ms\`, \`used_memory_bytes\`, \`maxmemory_bytes\`, \`memory_pct\`, \`connected_clients\`, and \`instantaneous_ops_per_sec\`.`,
+
+  logging: `# External Logging
+
+Gateway can ingest structured logs from external services into ClickHouse-backed logging environments.
+
+## Resource Types
+Use manage_logging with singular resource names:
+- Environments: { resource: "environment", operation: "list"|"get"|"create"|"update"|"delete" }
+- Schemas: { resource: "schema", operation: "list"|"get"|"create"|"update"|"delete" }
+- Ingest tokens: { resource: "token", operation: "list"|"create"|"delete", environmentId }
+- Logs: { resource: "logs", operation: "search", environmentId, payload }
+- Facets: { resource: "facets", operation: "facets", environmentId, payload }
+- Metadata: { resource: "metadata", operation: "metadata", environmentId }
+
+## Important Tool Argument Rules
+- Canonical tool resources are singular: "environment", "schema", "token". Do not copy plural REST nouns like "schemas" unless you have to; use the singular canonical form.
+- Create/update/search bodies go in payload, not at the top level.
+- Use find_resource({ query, types: ["logging_environment"] }) or find_resource({ query, types: ["logging_schema"] }) when the user names an environment/schema and you need its ID.
+
+## Schema Payload
+\`\`\`json
+{
+  "resource": "schema",
+  "operation": "create",
+  "payload": {
+    "name": "Application Logs",
+    "slug": "application-logs",
+    "description": "Structured application events",
+    "schemaMode": "loose",
+    "fieldSchema": [
+      { "key": "service", "location": "label", "type": "string", "required": true },
+      { "key": "durationMs", "location": "field", "type": "number", "required": false }
+    ]
+  }
+}
+\`\`\`
+
+schemaMode:
+- loose: accept unknown labels/fields
+- strip: drop unknown labels/fields
+- reject: reject events with unknown labels/fields
+
+fieldSchema entries:
+- key: safe key matching letters/numbers/underscore/dot/dash rules
+- location: "label" or "field"
+- type: labels must be "string"; fields can be "string", "number", "boolean", "datetime", or "json"
+- required: whether every event must include the key
+
+## Environment Payload
+\`\`\`json
+{
+  "resource": "environment",
+  "operation": "create",
+  "payload": {
+    "name": "Production",
+    "slug": "production",
+    "enabled": true,
+    "schemaId": null,
+    "schemaMode": "reject",
+    "retentionDays": 30,
+    "fieldSchema": []
+  }
+}
+\`\`\`
+
+## Searching Logs
+\`\`\`json
+{
+  "resource": "logs",
+  "operation": "search",
+  "environmentId": "<logging environment UUID>",
+  "payload": {
+    "query": "error",
+    "limit": 100,
+    "services": ["gateway-backend"],
+    "sources": ["codex-smoke"]
+  }
+}
+\`\`\`
+
+## Ingest Tokens
+- Create tokens with { resource: "token", operation: "create", environmentId, payload: { name, expiresAt? } }.
+- The raw token is shown only once. Do not expose it unless the user explicitly needs to configure an ingest client.`,
 
   api: `# Gateway REST API
 
@@ -742,7 +841,8 @@ Available in all templates:
 };
 
 /** Map doc topics to the scope required to read them */
-export const DOC_TOPIC_SCOPES: Record<string, string> = {
+export const DOC_TOPIC_SCOPES: Record<string, string | string[]> = {
+  discovery: 'feat:ai:use',
   pki: 'pki:ca:view:root',
   ssl: 'ssl:cert:view',
   proxy: 'proxy:view',
@@ -758,6 +858,7 @@ export const DOC_TOPIC_SCOPES: Record<string, string> = {
   databases: 'databases:view',
   postgres: 'databases:view',
   redis: 'databases:view',
+  logging: ['logs:environments:view', 'logs:schemas:view', 'logs:read', 'logs:manage'],
   housekeeping: 'housekeeping:view',
   permissions: 'feat:ai:use',
   api: 'feat:ai:use',
@@ -768,17 +869,21 @@ export function getInternalDocumentation(topic: string, userScopes: string[]): {
   const content = INTERNAL_DOCS[topic];
   if (!content) {
     // Only list topics the user has access to
-    const available = Object.keys(INTERNAL_DOCS).filter(
-      (t) => !DOC_TOPIC_SCOPES[t] || hasScopeBase(userScopes, DOC_TOPIC_SCOPES[t])
-    );
+    const available = Object.keys(INTERNAL_DOCS).filter((t) => hasDocTopicAccess(userScopes, DOC_TOPIC_SCOPES[t]));
     return {
       topic,
       content: `Unknown topic "${topic}". Available topics: ${available.join(', ')}.`,
     };
   }
   const requiredScope = DOC_TOPIC_SCOPES[topic];
-  if (requiredScope && !hasScopeBase(userScopes, requiredScope)) {
+  if (!hasDocTopicAccess(userScopes, requiredScope)) {
     return { topic, content: `You do not have permission to access documentation for "${topic}".` };
   }
   return { topic, content };
+}
+
+function hasDocTopicAccess(userScopes: string[], requiredScope: string | string[] | undefined) {
+  if (!requiredScope) return true;
+  const scopes = Array.isArray(requiredScope) ? requiredScope : [requiredScope];
+  return scopes.some((scope) => hasScopeBase(userScopes, scope));
 }

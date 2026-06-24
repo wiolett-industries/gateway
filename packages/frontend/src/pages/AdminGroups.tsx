@@ -1,5 +1,6 @@
 import {
-  CornerDownRight,
+  EllipsisVertical,
+  FolderPlus,
   Loader2,
   Pencil,
   Plus,
@@ -13,8 +14,11 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { FolderedResourceList } from "@/components/common/FolderedResourceList";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import type { ResourceListColumn } from "@/components/common/ResourceListLayout";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { ScopeList } from "@/components/common/ScopeList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +29,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -88,12 +99,14 @@ function findMissingRequiredResourceSelection(
 export function AdminGroups({
   embedded = false,
   createRequest = 0,
+  onCreateFolderRef,
 }: {
   embedded?: boolean;
   createRequest?: number;
+  onCreateFolderRef?: (fn: () => void) => void;
 }) {
   const navigate = useNavigate();
-  const { user, hasScope } = useAuthStore();
+  const { user, hasAnyScope, hasScope } = useAuthStore();
   const { cas, fetchCAs } = useCAStore();
   const [nodesList, setNodesList] = useState<Node[]>(
     () => api.getCached<Node[]>("admin:scope-nodes") ?? []
@@ -122,7 +135,10 @@ export function AdminGroups({
   const [formResources, setFormResources] = useState<Record<string, string[]>>({});
   const [initialResourceLimitedScopes, setInitialResourceLimitedScopes] = useState<string[]>([]);
   const [scopeSearch, setScopeSearch] = useState("");
+  const [listSearch, setListSearch] = useState("");
+  const [groupDialogMode, setGroupDialogMode] = useState<"edit" | "readonly">("edit");
   const [saving, setSaving] = useState(false);
+  const [createFolderAction, setCreateFolderAction] = useState<(() => void) | null>(null);
   const lastCreateRequest = useRef(createRequest);
   const userScopes = useMemo(() => user?.scopes ?? [], [user?.scopes]);
   const allowedResourceIdsByScope = useMemo(
@@ -252,6 +268,7 @@ export function AdminGroups({
 
   const openCreateDialog = useCallback(() => {
     setEditingGroup(null);
+    setGroupDialogMode("edit");
     setFormName("");
     setFormDescription("");
     setFormParentId(null);
@@ -270,6 +287,7 @@ export function AdminGroups({
 
   const openEditDialog = (group: PermissionGroup) => {
     setEditingGroup(group);
+    setGroupDialogMode(group.isBuiltin ? "readonly" : "edit");
     setFormName(group.name);
     setFormDescription(group.description ?? "");
     setFormParentId(group.parentId);
@@ -374,6 +392,7 @@ export function AdminGroups({
   };
 
   const ownCount = buildFinalScopes(formBaseScopes, formResources).length;
+  const groupDialogReadOnly = groupDialogMode === "readonly";
   const inheritedScopes = formParentId
     ? [
         ...new Set([
@@ -387,6 +406,143 @@ export function AdminGroups({
     ...buildFinalScopes(formBaseScopes, formResources),
     ...inheritedScopes,
   ]).size;
+  const visibleAssignableScopes = useMemo(() => {
+    if (!groupDialogReadOnly) return assignableScopes;
+    const selectedBases = new Set([...formBaseScopes, ...inheritedScopes]);
+    const assignableValues = new Set(assignableScopes.map((scope) => scope.value));
+    const selectedScopes = GROUP_ASSIGNABLE_SCOPES.filter(
+      (scope) => selectedBases.has(scope.value) && !assignableValues.has(scope.value)
+    );
+    return [...assignableScopes, ...selectedScopes];
+  }, [assignableScopes, formBaseScopes, groupDialogReadOnly, inheritedScopes]);
+  const canManageFolders = hasAnyScope("admin:groups:folders:manage", "admin:system");
+  const hasActiveFilters = listSearch.trim() !== "";
+  const filteredGroups = useMemo(() => {
+    const query = listSearch.trim().toLowerCase();
+    if (!query) return groups;
+    return groups.filter((group) =>
+      [group.name, group.description, groups.find((parent) => parent.id === group.parentId)?.name]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query))
+    );
+  }, [groups, listSearch]);
+  const filteredBuiltinGroups = useMemo(
+    () => filteredGroups.filter((group) => group.isBuiltin),
+    [filteredGroups]
+  );
+  const filteredCustomGroups = useMemo(
+    () => filteredGroups.filter((group) => !group.isBuiltin),
+    [filteredGroups]
+  );
+  const groupColumns: ResourceListColumn<PermissionGroup>[] = [
+    {
+      id: "group",
+      label: "Group",
+      width: "minmax(16rem, 1fr)",
+      renderCell: (group) => {
+        const parent = group.parentId
+          ? groups.find((candidate) => candidate.id === group.parentId)
+          : null;
+        return (
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-muted">
+              {group.isBuiltin ? (
+                <ShieldCheck className="h-4 w-4 text-primary" />
+              ) : (
+                <Shield className="h-4 w-4 text-muted-foreground" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate text-sm font-medium">{group.name}</p>
+                {group.isBuiltin && <Badge variant="secondary">Built-in</Badge>}
+                {parent && <Badge variant="outline">Inherits {parent.name}</Badge>}
+              </div>
+              {group.description && (
+                <p className="truncate text-xs text-muted-foreground">{group.description}</p>
+              )}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      id: "members",
+      label: "Members",
+      width: "8rem",
+      renderCell: (group) => (
+        <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <Users className="h-3.5 w-3.5" />
+          {group.memberCount ?? 0}
+        </span>
+      ),
+    },
+    {
+      id: "scopes",
+      label: "Scopes",
+      width: "10rem",
+      renderCell: (group) => (
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant="outline">
+            {(() => {
+              const inheritedCount = group.inheritedScopes?.length ?? 0;
+              const total = group.scopes.length + inheritedCount;
+              const prefix =
+                inheritedCount > 0 ? `${group.scopes.length}+${inheritedCount}` : total;
+              return `${prefix} scope${total !== 1 ? "s" : ""}`;
+            })()}
+          </Badge>
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      label: "Actions",
+      width: "5.75rem",
+      align: "right",
+      renderCell: (group) => {
+        const canManage = !group.isBuiltin && canManageGroup(group);
+        if (group.isBuiltin) return null;
+        return (
+          <div
+            className="flex justify-end"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!canManage}>
+                  <EllipsisVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openEditDialog(group);
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleDelete(group);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
+    },
+  ];
 
   if (isLoading) {
     return <LoadingSpinner />;
@@ -404,41 +560,89 @@ export function AdminGroups({
                 control
               </p>
             </div>
-            <Button onClick={openCreateDialog}>
-              <Plus className="h-4 w-4" />
-              Create Group
-            </Button>
+            <ResponsiveHeaderActions
+              actions={[
+                ...(canManageFolders && createFolderAction
+                  ? [
+                      {
+                        label: "Add Folder",
+                        icon: <FolderPlus className="h-4 w-4" />,
+                        onClick: createFolderAction,
+                      },
+                    ]
+                  : []),
+                {
+                  label: "Create Group",
+                  icon: <Plus className="h-4 w-4" />,
+                  onClick: openCreateDialog,
+                },
+              ]}
+            >
+              {canManageFolders && (
+                <Button variant="outline" onClick={() => createFolderAction?.()}>
+                  <FolderPlus className="h-4 w-4" />
+                  Add Folder
+                </Button>
+              )}
+              <Button onClick={openCreateDialog}>
+                <Plus className="h-4 w-4" />
+                Create Group
+              </Button>
+            </ResponsiveHeaderActions>
           </div>
         )}
 
-        {groups.length > 0 ? (
-          <div className="border border-border bg-card">
-            <div className="divide-y divide-border">
-              {groups
-                .filter((g) => !g.parentId)
-                .map((group) => (
-                  <GroupRow
-                    key={group.id}
-                    group={group}
-                    allGroups={groups}
-                    depth={0}
-                    canManageGroup={canManageGroup}
-                    onEdit={openEditDialog}
-                    onDelete={handleDelete}
-                  />
-                ))}
-            </div>
-          </div>
-        ) : (
-          <EmptyState message="No permission groups found. Create one to get started." />
-        )}
+        <FolderedResourceList<PermissionGroup>
+          resourceType="admin-group"
+          realtimeChannel="group.changed"
+          resources={filteredCustomGroups}
+          systemFolders={[
+            {
+              id: "admin-groups-builtin",
+              name: "Builtin",
+              items: filteredBuiltinGroups,
+            },
+          ]}
+          columns={groupColumns}
+          search={{
+            search: listSearch,
+            onSearchChange: setListSearch,
+            placeholder: "Search groups...",
+            hasActiveFilters,
+            onReset: () => setListSearch(""),
+          }}
+          loading={false}
+          loadingLabel="Loading permission groups..."
+          emptyState={
+            <EmptyState
+              message="No permission groups found. Create one to get started."
+              hasActiveFilters={hasActiveFilters}
+              onReset={() => setListSearch("")}
+            />
+          }
+          minWidth={760}
+          canManageFolders={canManageFolders}
+          canViewItem={(group) => group.isBuiltin || canManageGroup(group)}
+          canReorganizeItem={(group) => canManageFolders && !group.isBuiltin}
+          getResourceLabel={(group) => group.name}
+          onItemClick={(group) => {
+            if (group.isBuiltin || canManageGroup(group)) openEditDialog(group);
+          }}
+          onRefresh={fetchGroups}
+          onCreateFolderRef={(fn) => {
+            setCreateFolderAction(() => fn);
+            onCreateFolderRef?.(fn);
+          }}
+        />
       </div>
 
       {/* Create / Edit Group Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingGroup ? "Edit Group" : "Create Group"}</DialogTitle>
+            <DialogTitle>
+              {editingGroup ? (groupDialogReadOnly ? "View Group" : "Edit Group") : "Create Group"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -448,6 +652,7 @@ export function AdminGroups({
                 onChange={(e) => setFormName(formatGroupNameInput(e.target.value))}
                 placeholder="e.g. cert-operator"
                 className="mt-1"
+                disabled={groupDialogReadOnly}
               />
             </div>
             <div>
@@ -457,6 +662,7 @@ export function AdminGroups({
                 onChange={(e) => setFormDescription(e.target.value)}
                 placeholder="Optional description"
                 className="mt-1"
+                disabled={groupDialogReadOnly}
               />
             </div>
             <div>
@@ -473,6 +679,7 @@ export function AdminGroups({
                   <Select
                     value={formParentId ?? "__none__"}
                     onValueChange={(v) => setFormParentId(v === "__none__" ? null : v)}
+                    disabled={groupDialogReadOnly}
                   >
                     <SelectTrigger className="mt-1">
                       <SelectValue placeholder="None" />
@@ -502,7 +709,7 @@ export function AdminGroups({
                 className="border-0 border-b border-border rounded-none h-9 text-sm focus-visible:ring-0"
               />
               <ScopeList
-                scopes={assignableScopes}
+                scopes={visibleAssignableScopes}
                 search={scopeSearch}
                 selected={formBaseScopes}
                 onToggle={toggleScope}
@@ -517,6 +724,8 @@ export function AdminGroups({
                 allowedResourceIds={allowedResourceIdsByScope}
                 inheritedScopes={inheritedScopes}
                 inheritedFromName={groups.find((g) => g.id === formParentId)?.name}
+                readOnly={groupDialogReadOnly}
+                viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
               />
               <div className="border-t border-border px-3 py-2">
                 <p className="text-xs text-muted-foreground">
@@ -528,12 +737,14 @@ export function AdminGroups({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
+              {groupDialogReadOnly ? "Close" : "Cancel"}
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {editingGroup ? "Save Changes" : "Create Group"}
-            </Button>
+            {!groupDialogReadOnly && (
+              <Button onClick={handleSave} disabled={saving}>
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {editingGroup ? "Save Changes" : "Create Group"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -541,99 +752,4 @@ export function AdminGroups({
   );
 
   return embedded ? content : <PageTransition>{content}</PageTransition>;
-}
-
-function GroupRow({
-  group,
-  allGroups,
-  depth,
-  canManageGroup,
-  onEdit,
-  onDelete,
-}: {
-  group: PermissionGroup;
-  allGroups: PermissionGroup[];
-  depth: number;
-  canManageGroup: (g: PermissionGroup) => boolean;
-  onEdit: (g: PermissionGroup) => void;
-  onDelete: (g: PermissionGroup) => void;
-}) {
-  const children = allGroups.filter((g) => g.parentId === group.id);
-  const canManage = canManageGroup(group);
-
-  return (
-    <>
-      <div className="flex items-center gap-4 p-4">
-        <div className="flex items-center gap-1.5">
-          {depth > 0 && <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-          {group.isBuiltin ? (
-            <ShieldCheck className="h-5 w-5 text-primary shrink-0" />
-          ) : (
-            <Shield className="h-5 w-5 text-muted-foreground shrink-0" />
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm">{group.name}</span>
-            {group.isBuiltin && <Badge variant="secondary">Built-in</Badge>}
-            {group.parentId && <Badge variant="outline">Inherits</Badge>}
-          </div>
-          {group.description && (
-            <p className="text-sm text-muted-foreground truncate">{group.description}</p>
-          )}
-          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Users className="h-3 w-3" />
-              {group.memberCount ?? 0} member{(group.memberCount ?? 0) !== 1 ? "s" : ""}
-            </span>
-            <span>
-              {group.scopes.length} scope{group.scopes.length !== 1 ? "s" : ""}
-              {(group.inheritedScopes?.length ?? 0) > 0 && (
-                <> + {group.inheritedScopes!.length} inherited</>
-              )}
-            </span>
-          </div>
-        </div>
-        {!group.isBuiltin && (
-          <div className="flex items-center gap-1 shrink-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={!canManage}
-              title={
-                !canManage ? "Cannot edit groups with permissions you do not possess" : undefined
-              }
-              onClick={() => canManage && onEdit(group)}
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={!canManage}
-              title={
-                !canManage ? "Cannot delete groups with permissions you do not possess" : undefined
-              }
-              onClick={() => canManage && onDelete(group)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
-      </div>
-      {children.map((child) => (
-        <GroupRow
-          key={child.id}
-          group={child}
-          allGroups={allGroups}
-          depth={depth + 1}
-          canManageGroup={canManageGroup}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
-      ))}
-    </>
-  );
 }

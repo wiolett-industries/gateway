@@ -9,6 +9,8 @@ export interface User {
   groupName: string;
   scopes: string[];
   isBlocked: boolean;
+  folderId?: string | null;
+  sortOrder?: number;
 }
 
 // Permission Group
@@ -18,6 +20,8 @@ export interface PermissionGroup {
   description: string | null;
   isBuiltin: boolean;
   parentId: string | null;
+  folderId?: string | null;
+  sortOrder?: number;
   scopes: string[];
   inheritedScopes?: string[];
   memberCount?: number;

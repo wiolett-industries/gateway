@@ -614,6 +614,22 @@ describe('MCP resources and prompts', () => {
     expect(data.content).toContain('# Nodes');
   });
 
+  it('exposes logging documentation through any logging read scope', async () => {
+    registerToken(['logs:schemas:view']);
+
+    const list = await mcpRequest('resources/list');
+    const uris = list.body.result.resources.map((resource: { uri: string }) => resource.uri);
+    expect(uris).toContain('gateway://docs/logging');
+
+    const { body } = await mcpRequest('resources/read', {
+      uri: 'gateway://docs/logging',
+    });
+
+    const data = JSON.parse(body.result.contents[0].text);
+    expect(data.topic).toBe('logging');
+    expect(data.content).toContain('manage_logging');
+  });
+
   it('allows MCP callers to read MCP-safe docs that were AI-gated internally', async () => {
     registerToken(['nodes:details']);
 

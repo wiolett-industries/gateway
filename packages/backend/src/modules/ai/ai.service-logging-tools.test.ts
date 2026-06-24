@@ -92,6 +92,46 @@ describe('AIService logging tool routing', () => {
     expect(loggingSchemaService.list).toHaveBeenCalledWith({ search: 'errors' });
   });
 
+  it('accepts plural and dotted logging schema operation aliases', async () => {
+    const loggingSchemaService = {
+      create: vi.fn().mockResolvedValueOnce({ id: 'schema-1' }).mockResolvedValueOnce({ id: 'schema-2' }),
+    };
+    mockContainerResolve({ LoggingSchemaService: loggingSchemaService });
+    const service = createService();
+
+    await expect(
+      service.executeTool({ ...BASE_USER, scopes: ['logs:schemas:create'] }, 'manage_logging', {
+        resource: 'schemas',
+        operation: 'create',
+        payload: { name: 'App Logs', slug: 'app-logs', schemaMode: 'loose', fieldSchema: [] },
+      })
+    ).resolves.toMatchObject({
+      result: { id: 'schema-1' },
+      invalidateStores: [],
+    });
+
+    await expect(
+      service.executeTool({ ...BASE_USER, scopes: ['logs:schemas:create'] }, 'manage_logging', {
+        operation: 'schemas.create',
+        payload: { name: 'Audit Logs', slug: 'audit-logs', schemaMode: 'reject', fieldSchema: [] },
+      })
+    ).resolves.toMatchObject({
+      result: { id: 'schema-2' },
+      invalidateStores: [],
+    });
+
+    expect(loggingSchemaService.create).toHaveBeenNthCalledWith(
+      1,
+      { name: 'App Logs', slug: 'app-logs', schemaMode: 'loose', fieldSchema: [] },
+      'user-1'
+    );
+    expect(loggingSchemaService.create).toHaveBeenNthCalledWith(
+      2,
+      { name: 'Audit Logs', slug: 'audit-logs', schemaMode: 'reject', fieldSchema: [] },
+      'user-1'
+    );
+  });
+
   it('creates logging tokens with parsed payloads and environment-scoped permissions', async () => {
     const loggingTokenService = {
       create: vi.fn().mockResolvedValue({ id: 'token-1' }),

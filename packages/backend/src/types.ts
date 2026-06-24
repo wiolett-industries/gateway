@@ -10,6 +10,8 @@ export interface User {
   groupName: string;
   scopes: string[];
   isBlocked: boolean;
+  folderId?: string | null;
+  sortOrder?: number;
 }
 
 export interface SessionData {

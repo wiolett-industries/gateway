@@ -292,9 +292,15 @@ export function CreateProxyHostDialog({
       healthCheckEnabled,
       healthCheckUrl,
       healthCheckInterval,
-      healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
+      healthCheckExpectedStatus: isEditing
+        ? healthCheckExpectedStatus
+        : (healthCheckExpectedStatus ?? undefined),
       healthCheckExpectedBody:
-        healthCheckExpectedBody.trim() === "" ? undefined : healthCheckExpectedBody,
+        healthCheckExpectedBody.trim() === ""
+          ? isEditing
+            ? null
+            : undefined
+          : healthCheckExpectedBody,
       healthCheckBodyMatchMode:
         healthCheckExpectedBody.trim() === "" ? undefined : healthCheckBodyMatchMode,
       nodeId: nodeId || undefined,

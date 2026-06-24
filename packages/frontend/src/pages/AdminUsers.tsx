@@ -1,11 +1,14 @@
-import { Ban, Lock, Plus, Trash2, Unlock } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Ban, FolderPlus, Lock, Plus, Trash2, Unlock } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { FolderedResourceList } from "@/components/common/FolderedResourceList";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import type { ResourceListColumn } from "@/components/common/ResourceListLayout";
+import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,12 +48,14 @@ function getInitials(name: string | null, email: string): string {
 export function AdminUsers({
   embedded = false,
   createRequest = 0,
+  onCreateFolderRef,
 }: {
   embedded?: boolean;
   createRequest?: number;
+  onCreateFolderRef?: (fn: () => void) => void;
 }) {
   const navigate = useNavigate();
-  const { user: currentUser, hasScope } = useAuthStore();
+  const { user: currentUser, hasAnyScope, hasScope } = useAuthStore();
   const cachedUsers = api.getCached<User[]>("admin:users");
   const cachedGroups = api.getCached<PermissionGroup[]>("admin:groups");
   const [users, setUsers] = useState<User[]>(cachedUsers ?? []);
@@ -61,6 +66,9 @@ export function AdminUsers({
   const [createEmail, setCreateEmail] = useState("");
   const [createName, setCreateName] = useState("");
   const [createGroupId, setCreateGroupId] = useState("");
+  const [createFolderAction, setCreateFolderAction] = useState<(() => void) | null>(null);
+  const [search, setSearch] = useState("");
+  const lastCreateRequest = useRef(createRequest);
 
   useEffect(() => {
     if (!hasScope("admin:users")) {
@@ -197,9 +205,131 @@ export function AdminUsers({
   };
 
   useEffect(() => {
-    if (!embedded || createRequest === 0) return;
+    if (!embedded || createRequest === 0 || createRequest === lastCreateRequest.current) return;
+    lastCreateRequest.current = createRequest;
     setCreateOpen(true);
   }, [createRequest, embedded]);
+
+  const canManageFolders = hasAnyScope("admin:users:folders:manage", "admin:system");
+  const hasActiveFilters = search.trim() !== "";
+  const filteredUsers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return users;
+    return users.filter((user) =>
+      [user.name, user.email, user.groupName].some((value) => value?.toLowerCase().includes(query))
+    );
+  }, [search, users]);
+  const userColumns: ResourceListColumn<User>[] = [
+    {
+      id: "user",
+      label: "User",
+      width: "minmax(16rem, 1fr)",
+      renderCell: (user) => {
+        const isSelf = currentUser?.id === user.id;
+        const isSystemUser = user.oidcSubject?.startsWith("system:");
+        return (
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar className="h-9 w-9 shrink-0">
+              <AvatarImage src={user.avatarUrl ?? undefined} />
+              <AvatarFallback className="text-xs">
+                {getInitials(user.name, user.email)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate text-sm font-medium">{user.name || user.email}</p>
+                {isSelf && (
+                  <Badge variant="secondary" className="shrink-0">
+                    You
+                  </Badge>
+                )}
+                {isSystemUser && (
+                  <Badge variant="outline" className="shrink-0">
+                    System
+                  </Badge>
+                )}
+                {user.isBlocked && (
+                  <Badge variant="destructive" className="shrink-0">
+                    <Ban className="mr-0.5 h-2.5 w-2.5" />
+                    Blocked
+                  </Badge>
+                )}
+              </div>
+              <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      id: "group",
+      label: "Group",
+      width: "14rem",
+      renderCell: (user) => {
+        const isSelf = currentUser?.id === user.id;
+        const isSystemUser = user.oidcSubject?.startsWith("system:");
+        const isReadOnly = isSelf || isSystemUser;
+        if (isReadOnly) return <Badge variant="secondary">{user.groupName}</Badge>;
+        return (
+          <div
+            className="w-full"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <Select value={user.groupId} onValueChange={(v) => handleGroupChange(user.id, v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((group) => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        );
+      },
+    },
+    {
+      id: "actions",
+      label: "Actions",
+      width: "6rem",
+      align: "right",
+      renderCell: (user) => {
+        const isSelf = currentUser?.id === user.id;
+        const isSystemUser = user.oidcSubject?.startsWith("system:");
+        const isReadOnly = isSelf || isSystemUser;
+        if (isReadOnly) return null;
+        return (
+          <div
+            className="flex items-center justify-end gap-1"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 shrink-0 text-muted-foreground ${user.isBlocked ? "hover:text-green-600" : "hover:text-orange-600"}`}
+              onClick={() => handleBlockToggle(user)}
+              title={user.isBlocked ? "Unblock user" : "Block user"}
+            >
+              {user.isBlocked ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={() => handleDelete(user)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        );
+      },
+    },
+  ];
 
   if (isLoading) {
     return <LoadingSpinner />;
@@ -231,114 +361,69 @@ export function AdminUsers({
               {summaryParts.length > 0 && <> &middot; {summaryParts.join(", ")}</>}
             </p>
           </div>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Create User
-          </Button>
+          <ResponsiveHeaderActions
+            actions={[
+              ...(canManageFolders && createFolderAction
+                ? [
+                    {
+                      label: "Add Folder",
+                      icon: <FolderPlus className="h-4 w-4" />,
+                      onClick: createFolderAction,
+                    },
+                  ]
+                : []),
+              {
+                label: "Create User",
+                icon: <Plus className="h-4 w-4" />,
+                onClick: () => setCreateOpen(true),
+              },
+            ]}
+          >
+            {canManageFolders && (
+              <Button variant="outline" onClick={() => createFolderAction?.()}>
+                <FolderPlus className="h-4 w-4" />
+                Add Folder
+              </Button>
+            )}
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Create User
+            </Button>
+          </ResponsiveHeaderActions>
         </div>
       )}
 
-      {users.length > 0 ? (
-        <div className="border border-border bg-card">
-          <div className="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border">
-            {users.map((user) => {
-              const isSelf = currentUser?.id === user.id;
-              const isSystemUser = user.oidcSubject?.startsWith("system:");
-              const isReadOnly = isSelf || isSystemUser;
-              return (
-                <div
-                  key={user.id}
-                  className={`flex items-center gap-4 p-4 ${isSelf ? "bg-primary/5" : user.isBlocked ? "opacity-60" : ""}`}
-                >
-                  <Avatar className="h-9 w-9 shrink-0">
-                    <AvatarImage src={user.avatarUrl ?? undefined} />
-                    <AvatarFallback className="text-xs">
-                      {getInitials(user.name, user.email)}
-                    </AvatarFallback>
-                  </Avatar>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">{user.name || user.email}</p>
-                      {isSelf ? (
-                        <Badge variant="secondary" className="shrink-0">
-                          You
-                        </Badge>
-                      ) : isSystemUser ? (
-                        <Badge variant="outline" className="shrink-0">
-                          System
-                        </Badge>
-                      ) : user.isBlocked ? (
-                        <Badge variant="destructive" className="shrink-0">
-                          <Ban className="h-2.5 w-2.5 mr-0.5" />
-                          Blocked
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="shrink-0 invisible">
-                          You
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-                  </div>
-
-                  <div className="shrink-0">
-                    {isReadOnly ? (
-                      <Badge variant="secondary">{user.groupName}</Badge>
-                    ) : (
-                      <div className="w-44">
-                        <Select
-                          value={user.groupId}
-                          onValueChange={(v) => handleGroupChange(user.id, v)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {groups.map((group) => (
-                              <SelectItem key={group.id} value={group.id}>
-                                {group.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                  </div>
-
-                  {!isReadOnly && (
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`h-8 w-8 shrink-0 text-muted-foreground ${user.isBlocked ? "hover:text-green-600" : "hover:text-orange-600"}`}
-                        onClick={() => handleBlockToggle(user)}
-                        title={user.isBlocked ? "Unblock user" : "Block user"}
-                      >
-                        {user.isBlocked ? (
-                          <Unlock className="h-4 w-4" />
-                        ) : (
-                          <Lock className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => handleDelete(user)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        <EmptyState message="No users." />
-      )}
+      <FolderedResourceList<User>
+        resourceType="admin-user"
+        realtimeChannel="user.changed"
+        resources={filteredUsers}
+        columns={userColumns}
+        search={{
+          search,
+          onSearchChange: setSearch,
+          placeholder: "Search users...",
+          hasActiveFilters,
+          onReset: () => setSearch(""),
+        }}
+        loading={false}
+        loadingLabel="Loading users..."
+        emptyState={
+          <EmptyState
+            message="No users."
+            hasActiveFilters={hasActiveFilters}
+            onReset={() => setSearch("")}
+          />
+        }
+        minWidth={720}
+        canManageFolders={canManageFolders}
+        canReorganizeItem={() => canManageFolders}
+        getResourceLabel={(user) => user.name || user.email}
+        onRefresh={reloadUsers}
+        onCreateFolderRef={(fn) => {
+          setCreateFolderAction(() => fn);
+          onCreateFolderRef?.(fn);
+        }}
+      />
 
       <Dialog open={createOpen} onOpenChange={(open) => (!creating ? setCreateOpen(open) : null)}>
         <DialogContent>

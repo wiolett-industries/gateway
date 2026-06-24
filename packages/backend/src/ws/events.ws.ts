@@ -60,6 +60,7 @@ function requiredScopeFor(channel: string): string | null {
   if (channel === 'domain.changed') return 'domains:view';
   if (channel === 'logging.logs.ingested') return 'logs:read';
   if (channel === 'logging.environment.changed') return 'logs:environments:view';
+  if (channel === 'logging.schema.changed') return 'logs:schemas:view';
   if (channel === 'system.update.changed') return 'admin:update';
   if (channel === 'status-page.changed') return 'status-page:view';
   if (channel === 'pki.template.changed') return 'pki:templates:view';
@@ -131,12 +132,15 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
     return hasScopeBase(scopes, 'docker:networks:view');
   }
   if (channel === 'database.folder.changed') {
-    return hasScope(scopes, 'databases:view') || hasScope(scopes, 'databases:folders:manage');
+    return hasScopeBase(scopes, 'databases:view') || hasScope(scopes, 'databases:folders:manage');
   }
   if (channel.startsWith('database.')) {
     return scopes.some((scope) =>
       DATABASE_CHANNEL_SCOPE_BASES.some((base) => scope === base || scope.startsWith(`${base}:`))
     );
+  }
+  if (channel === 'domain.changed') {
+    return hasScopeBase(scopes, 'domains:view') || hasScope(scopes, 'domains:folders:manage');
   }
   if (channel.startsWith('proxy.host')) {
     return hasScopeBase(scopes, 'proxy:view') || hasScope(scopes, 'proxy:folders:manage');
@@ -151,7 +155,16 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
     return hasScopeBase(scopes, 'logs:read');
   }
   if (channel === 'logging.environment.changed') {
-    return hasScopeBase(scopes, 'logs:environments:view');
+    return hasScopeBase(scopes, 'logs:environments:view') || hasScope(scopes, 'logs:environments:folders:manage');
+  }
+  if (channel === 'logging.schema.changed') {
+    return hasScopeBase(scopes, 'logs:schemas:view') || hasScope(scopes, 'logs:schemas:folders:manage');
+  }
+  if (channel === 'user.changed') {
+    return hasScopeBase(scopes, 'admin:users') || hasScope(scopes, 'admin:users:folders:manage');
+  }
+  if (channel === 'group.changed') {
+    return hasScopeBase(scopes, 'admin:groups') || hasScope(scopes, 'admin:groups:folders:manage');
   }
   if (channel === 'ca.changed') {
     return hasScope(scopes, 'pki:ca:view:root') || hasScope(scopes, 'pki:ca:view:intermediate');
@@ -250,6 +263,9 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
     const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;
     return hasScope(scopes, 'docker:networks:view') || !!(nodeId && hasScope(scopes, `docker:networks:view:${nodeId}`));
   }
+  if (channel === 'database.folder.changed') {
+    return hasScopeBase(scopes, 'databases:view') || hasScope(scopes, 'databases:folders:manage');
+  }
   if (channel.startsWith('database.')) {
     const databaseId = (payload as { id?: string } | undefined)?.id;
     return (
@@ -265,7 +281,16 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
     const environmentId = (payload as { id?: string } | undefined)?.id;
     return (
       hasScope(scopes, 'logs:environments:view') ||
-      !!(environmentId && hasScope(scopes, `logs:environments:view:${environmentId}`))
+      !!(environmentId && hasScope(scopes, `logs:environments:view:${environmentId}`)) ||
+      (!environmentId && hasScope(scopes, 'logs:environments:folders:manage'))
+    );
+  }
+  if (channel === 'logging.schema.changed') {
+    const schemaId = (payload as { id?: string } | undefined)?.id;
+    return (
+      hasScope(scopes, 'logs:schemas:view') ||
+      !!(schemaId && hasScope(scopes, `logs:schemas:view:${schemaId}`)) ||
+      (!schemaId && hasScope(scopes, 'logs:schemas:folders:manage'))
     );
   }
   if (channel.startsWith('proxy.host')) {
@@ -301,6 +326,22 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
   }
   if (channel === 'node.folder.changed') {
     return hasScope(scopes, 'nodes:details') || hasScope(scopes, 'nodes:folders:manage');
+  }
+  if (channel === 'user.changed') {
+    const userId = (payload as { id?: string } | undefined)?.id;
+    return (
+      hasScope(scopes, 'admin:users') ||
+      !!(userId && hasScope(scopes, `admin:users:${userId}`)) ||
+      (!userId && hasScope(scopes, 'admin:users:folders:manage'))
+    );
+  }
+  if (channel === 'group.changed') {
+    const groupId = (payload as { id?: string } | undefined)?.id;
+    return (
+      hasScope(scopes, 'admin:groups') ||
+      !!(groupId && hasScope(scopes, `admin:groups:${groupId}`)) ||
+      (!groupId && hasScope(scopes, 'admin:groups:folders:manage'))
+    );
   }
   if (channel === 'nginx.template.changed') {
     const templateId = (payload as { id?: string } | undefined)?.id;

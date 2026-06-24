@@ -210,7 +210,7 @@ export function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
   if (isLoading && deliveries.length === 0) return <LoadingSpinner />;
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-3">
       <SearchFilterBar
         placeholder="Search by webhook, event, severity, or HTTP status..."
         search={searchInput}

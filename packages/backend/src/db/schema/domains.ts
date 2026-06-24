@@ -1,4 +1,17 @@
-import { boolean, index, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import {
+  type AnyPgColumn,
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core';
+import { domainFolders } from './domain-folders.js';
 import { users } from './users.js';
 
 export const dnsStatusEnum = pgEnum('dns_status', ['valid', 'invalid', 'pending', 'unknown']);
@@ -23,6 +36,8 @@ export const domains = pgTable(
     dnsRecords: jsonb('dns_records').$type<DnsRecords>(),
     // System flag — locked domains cannot be deleted (e.g. management domain)
     isSystem: boolean('is_system').notNull().default(false),
+    folderId: uuid('folder_id').references((): AnyPgColumn => domainFolders.id, { onDelete: 'set null' }),
+    sortOrder: integer('sort_order').notNull().default(0),
 
     createdById: uuid('created_by_id')
       .notNull()
@@ -34,5 +49,6 @@ export const domains = pgTable(
     index('domain_domain_idx').on(table.domain),
     index('domain_dns_status_idx').on(table.dnsStatus),
     index('domain_created_by_idx').on(table.createdById),
+    index('domain_folder_idx').on(table.folderId),
   ]
 );

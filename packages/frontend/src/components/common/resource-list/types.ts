@@ -37,7 +37,7 @@ export interface ResourceListFolderConfig<TFolder, TItem> {
   canReorderFolder?: (folder: TFolder) => boolean;
   canCreateSubfolder?: (folder: TFolder) => boolean;
   renderFolderBadges?: (folder: TFolder) => React.ReactNode;
-  onToggleFolder: (id: string) => void;
+  onToggleFolder: (id: string, folder: TFolder) => void;
   onRenameFolder?: (id: string, name: string) => void;
   onDeleteFolder?: (id: string) => void;
   onRequestCreateSubfolder?: (id: string) => void;

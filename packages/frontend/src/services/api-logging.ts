@@ -7,6 +7,8 @@ import type {
   LoggingSchema,
   LoggingSearchRequest,
   LoggingSearchResult,
+  ResourceFolder,
+  ResourceFolderTreeNode,
 } from "@/types";
 import type { ApiClientBaseConstructor } from "./api-mixins";
 
@@ -52,6 +54,63 @@ export function withLoggingApi<TBase extends ApiClientBaseConstructor>(Base: TBa
       await this.request<void>(`/logging/environments/${id}`, { method: "DELETE" });
     }
 
+    async listLoggingEnvironmentFolders(): Promise<ResourceFolderTreeNode[]> {
+      return this.unwrapData(
+        this.request<{ data: ResourceFolderTreeNode[] }>("/logging/environment-folders")
+      );
+    }
+
+    async createLoggingEnvironmentFolder(data: {
+      name: string;
+      parentId?: string;
+    }): Promise<ResourceFolder> {
+      return this.unwrapData(
+        this.request<{ data: ResourceFolder }>("/logging/environment-folders", {
+          method: "POST",
+          body: JSON.stringify(data),
+        })
+      );
+    }
+
+    async updateLoggingEnvironmentFolder(
+      id: string,
+      data: { name: string }
+    ): Promise<ResourceFolder> {
+      return this.unwrapData(
+        this.request<{ data: ResourceFolder }>(`/logging/environment-folders/${id}`, {
+          method: "PUT",
+          body: JSON.stringify(data),
+        })
+      );
+    }
+
+    async deleteLoggingEnvironmentFolder(id: string): Promise<void> {
+      await this.request(`/logging/environment-folders/${id}`, { method: "DELETE" });
+    }
+
+    async reorderLoggingEnvironmentFolders(
+      items: { id: string; sortOrder: number }[]
+    ): Promise<void> {
+      await this.request("/logging/environment-folders/reorder", {
+        method: "PUT",
+        body: JSON.stringify({ items }),
+      });
+    }
+
+    async moveLoggingEnvironmentsToFolder(ids: string[], folderId: string | null): Promise<void> {
+      await this.request("/logging/environment-folders/move-environments", {
+        method: "POST",
+        body: JSON.stringify({ ids, folderId }),
+      });
+    }
+
+    async reorderLoggingEnvironments(items: { id: string; sortOrder: number }[]): Promise<void> {
+      await this.request("/logging/environment-folders/reorder-environments", {
+        method: "PUT",
+        body: JSON.stringify({ items }),
+      });
+    }
+
     async listLoggingSchemas(params?: { search?: string }): Promise<LoggingSchema[]> {
       const query = new URLSearchParams();
       if (params?.search) query.set("search", params.search);
@@ -85,6 +144,58 @@ export function withLoggingApi<TBase extends ApiClientBaseConstructor>(Base: TBa
 
     async deleteLoggingSchema(id: string): Promise<void> {
       await this.request<void>(`/logging/schemas/${id}`, { method: "DELETE" });
+    }
+
+    async listLoggingSchemaFolders(): Promise<ResourceFolderTreeNode[]> {
+      return this.unwrapData(
+        this.request<{ data: ResourceFolderTreeNode[] }>("/logging/schema-folders")
+      );
+    }
+
+    async createLoggingSchemaFolder(data: {
+      name: string;
+      parentId?: string;
+    }): Promise<ResourceFolder> {
+      return this.unwrapData(
+        this.request<{ data: ResourceFolder }>("/logging/schema-folders", {
+          method: "POST",
+          body: JSON.stringify(data),
+        })
+      );
+    }
+
+    async updateLoggingSchemaFolder(id: string, data: { name: string }): Promise<ResourceFolder> {
+      return this.unwrapData(
+        this.request<{ data: ResourceFolder }>(`/logging/schema-folders/${id}`, {
+          method: "PUT",
+          body: JSON.stringify(data),
+        })
+      );
+    }
+
+    async deleteLoggingSchemaFolder(id: string): Promise<void> {
+      await this.request(`/logging/schema-folders/${id}`, { method: "DELETE" });
+    }
+
+    async reorderLoggingSchemaFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+      await this.request("/logging/schema-folders/reorder", {
+        method: "PUT",
+        body: JSON.stringify({ items }),
+      });
+    }
+
+    async moveLoggingSchemasToFolder(ids: string[], folderId: string | null): Promise<void> {
+      await this.request("/logging/schema-folders/move-schemas", {
+        method: "POST",
+        body: JSON.stringify({ ids, folderId }),
+      });
+    }
+
+    async reorderLoggingSchemas(items: { id: string; sortOrder: number }[]): Promise<void> {
+      await this.request("/logging/schema-folders/reorder-schemas", {
+        method: "PUT",
+        body: JSON.stringify({ items }),
+      });
     }
 
     async listLoggingTokens(environmentId: string): Promise<LoggingIngestToken[]> {

@@ -34,7 +34,15 @@ interface ResourceFolderState {
   toggleFolder: (type: ResourceFolderType, id: string) => void;
 }
 
-const RESOURCE_TYPES: ResourceFolderType[] = ["node", "database"];
+const RESOURCE_TYPES: ResourceFolderType[] = [
+  "node",
+  "domain",
+  "database",
+  "logging-environment",
+  "logging-schema",
+  "admin-user",
+  "admin-group",
+];
 const EXPANDED_STORAGE_KEY = "resource-folder-expanded";
 
 function resourceMap<T>(value: (type: ResourceFolderType) => T): FolderResourceMap<T> {
@@ -111,8 +119,7 @@ export const useResourceFolderStore = create<ResourceFolderState>()((set, get) =
         errorByType: { ...state.errorByType, [type]: null },
       }));
       try {
-        const folders =
-          type === "node" ? await api.listNodeFolders() : await api.listDatabaseFolders();
+        const folders = await listFolders(type);
         if (requestId !== fetchRequestIds[type]) return;
         set((state) => ({
           foldersByType: { ...state.foldersByType, [type]: folders },
@@ -135,10 +142,7 @@ export const useResourceFolderStore = create<ResourceFolderState>()((set, get) =
     },
 
     createFolder: async (type, name, parentId) => {
-      const folder =
-        type === "node"
-          ? await api.createNodeFolder({ name, parentId })
-          : await api.createDatabaseFolder({ name, parentId });
+      const folder = await createFolderByType(type, { name, parentId });
       if (parentId) {
         set((state) => {
           const next = new Set(state.savedExpandedFolderIdsByType[type]);
@@ -155,14 +159,12 @@ export const useResourceFolderStore = create<ResourceFolderState>()((set, get) =
     },
 
     renameFolder: async (type, id, name) => {
-      if (type === "node") await api.updateNodeFolder(id, { name });
-      else await api.updateDatabaseFolder(id, { name });
+      await updateFolderByType(type, id, { name });
       await get().fetchFolders(type);
     },
 
     deleteFolder: async (type, id) => {
-      if (type === "node") await api.deleteNodeFolder(id);
-      else await api.deleteDatabaseFolder(id);
+      await deleteFolderByType(type, id);
       set((state) => {
         const next = new Set(state.savedExpandedFolderIdsByType[type]);
         next.delete(id);
@@ -181,8 +183,7 @@ export const useResourceFolderStore = create<ResourceFolderState>()((set, get) =
         foldersByType: { ...state.foldersByType, [type]: applyFolderOrder(previous, items) },
       }));
       try {
-        if (type === "node") await api.reorderNodeFolders(items);
-        else await api.reorderDatabaseFolders(items);
+        await reorderFoldersByType(type, items);
         await get().fetchFolders(type);
       } catch (err) {
         set((state) => ({ foldersByType: { ...state.foldersByType, [type]: previous } }));
@@ -191,14 +192,12 @@ export const useResourceFolderStore = create<ResourceFolderState>()((set, get) =
     },
 
     moveResourcesToFolder: async (type, ids, folderId) => {
-      if (type === "node") await api.moveNodesToFolder(ids, folderId);
-      else await api.moveDatabasesToFolder(ids, folderId);
+      await moveResourcesToFolderByType(type, ids, folderId);
       await get().fetchFolders(type);
     },
 
     reorderResources: async (type, items) => {
-      if (type === "node") await api.reorderNodes(items);
-      else await api.reorderDatabases(items);
+      await reorderResourcesByType(type, items);
     },
 
     toggleFolder: (type, id) => {
@@ -215,3 +214,153 @@ export const useResourceFolderStore = create<ResourceFolderState>()((set, get) =
     },
   };
 });
+
+function listFolders(type: ResourceFolderType): Promise<ResourceFolderTreeNode[]> {
+  switch (type) {
+    case "node":
+      return api.listNodeFolders();
+    case "domain":
+      return api.listDomainFolders();
+    case "database":
+      return api.listDatabaseFolders();
+    case "logging-environment":
+      return api.listLoggingEnvironmentFolders();
+    case "logging-schema":
+      return api.listLoggingSchemaFolders();
+    case "admin-user":
+      return api.listAdminUserFolders();
+    case "admin-group":
+      return api.listAdminGroupFolders();
+  }
+}
+
+function createFolderByType(
+  type: ResourceFolderType,
+  data: { name: string; parentId?: string }
+): Promise<ResourceFolder> {
+  switch (type) {
+    case "node":
+      return api.createNodeFolder(data);
+    case "domain":
+      return api.createDomainFolder(data);
+    case "database":
+      return api.createDatabaseFolder(data);
+    case "logging-environment":
+      return api.createLoggingEnvironmentFolder(data);
+    case "logging-schema":
+      return api.createLoggingSchemaFolder(data);
+    case "admin-user":
+      return api.createAdminUserFolder(data);
+    case "admin-group":
+      return api.createAdminGroupFolder(data);
+  }
+}
+
+function updateFolderByType(
+  type: ResourceFolderType,
+  id: string,
+  data: { name: string }
+): Promise<ResourceFolder> {
+  switch (type) {
+    case "node":
+      return api.updateNodeFolder(id, data);
+    case "domain":
+      return api.updateDomainFolder(id, data);
+    case "database":
+      return api.updateDatabaseFolder(id, data);
+    case "logging-environment":
+      return api.updateLoggingEnvironmentFolder(id, data);
+    case "logging-schema":
+      return api.updateLoggingSchemaFolder(id, data);
+    case "admin-user":
+      return api.updateAdminUserFolder(id, data);
+    case "admin-group":
+      return api.updateAdminGroupFolder(id, data);
+  }
+}
+
+function deleteFolderByType(type: ResourceFolderType, id: string): Promise<void> {
+  switch (type) {
+    case "node":
+      return api.deleteNodeFolder(id);
+    case "domain":
+      return api.deleteDomainFolder(id);
+    case "database":
+      return api.deleteDatabaseFolder(id);
+    case "logging-environment":
+      return api.deleteLoggingEnvironmentFolder(id);
+    case "logging-schema":
+      return api.deleteLoggingSchemaFolder(id);
+    case "admin-user":
+      return api.deleteAdminUserFolder(id);
+    case "admin-group":
+      return api.deleteAdminGroupFolder(id);
+  }
+}
+
+function reorderFoldersByType(
+  type: ResourceFolderType,
+  items: { id: string; sortOrder: number }[]
+): Promise<void> {
+  switch (type) {
+    case "node":
+      return api.reorderNodeFolders(items);
+    case "domain":
+      return api.reorderDomainFolders(items);
+    case "database":
+      return api.reorderDatabaseFolders(items);
+    case "logging-environment":
+      return api.reorderLoggingEnvironmentFolders(items);
+    case "logging-schema":
+      return api.reorderLoggingSchemaFolders(items);
+    case "admin-user":
+      return api.reorderAdminUserFolders(items);
+    case "admin-group":
+      return api.reorderAdminGroupFolders(items);
+  }
+}
+
+function moveResourcesToFolderByType(
+  type: ResourceFolderType,
+  ids: string[],
+  folderId: string | null
+): Promise<void> {
+  switch (type) {
+    case "node":
+      return api.moveNodesToFolder(ids, folderId);
+    case "domain":
+      return api.moveDomainsToFolder(ids, folderId);
+    case "database":
+      return api.moveDatabasesToFolder(ids, folderId);
+    case "logging-environment":
+      return api.moveLoggingEnvironmentsToFolder(ids, folderId);
+    case "logging-schema":
+      return api.moveLoggingSchemasToFolder(ids, folderId);
+    case "admin-user":
+      return api.moveAdminUsersToFolder(ids, folderId);
+    case "admin-group":
+      return api.moveAdminGroupsToFolder(ids, folderId);
+  }
+}
+
+function reorderResourcesByType(
+  type: ResourceFolderType,
+  items: { id: string; sortOrder: number }[]
+): Promise<void> {
+  switch (type) {
+    case "node":
+      return api.reorderNodes(items);
+    case "domain":
+      return api.reorderDomains(items);
+    case "database":
+      return api.reorderDatabases(items);
+    case "logging-environment":
+      return api.reorderLoggingEnvironments(items);
+    case "logging-schema":
+      return api.reorderLoggingSchemas(items);
+    case "admin-user":
+      return api.reorderAdminUsers(items);
+    case "admin-group":
+      return api.reorderAdminGroups(items);
+  }
+}

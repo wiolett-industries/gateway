@@ -260,6 +260,20 @@
       "when": 1782133200000,
       "tag": "0036_node_appearance_color",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1782223200000,
+      "tag": "0037_logging_admin_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1782309600000,
+      "tag": "0038_domain_folders",
+      "breakpoints": true
     }
   ]
 }

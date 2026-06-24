@@ -158,12 +158,17 @@ describe('AI tool scope filtering', () => {
   });
 
   it('keeps logging and status-page tool registry contracts stable', () => {
+    const manageLogging = AI_TOOLS.find((tool) => tool.name === 'manage_logging');
     expect(AI_TOOLS.filter((tool) => tool.category === 'Logging').map((tool) => tool.name)).toEqual(['manage_logging']);
     expect(AI_TOOLS.filter((tool) => tool.category === 'Status Page').map((tool) => tool.name)).toEqual([
       'manage_status_page',
     ]);
 
+    expect(manageLogging?.description).toContain('resource: "schema"');
+    expect(manageLogging?.description).toContain('operation: "create"');
     expect(toolNames(['logs:environments:view'])).toContain('manage_logging');
+    expect(toolNames(['logs:environments:view'])).toContain('find_resource');
+    expect(toolNames(['logs:schemas:view'])).toContain('find_resource');
     expect(toolNames(['status-page:view'])).toContain('manage_status_page');
     expect(toolNames(['logs:read'])).toContain('manage_logging');
     expect(isDestructiveTool('manage_logging')).toBe(true);

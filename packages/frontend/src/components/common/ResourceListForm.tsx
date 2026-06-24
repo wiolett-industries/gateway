@@ -23,6 +23,7 @@ export function ResourceListForm<TFolder, TItem>({
 }: ResourceListFormProps<TFolder, TItem>) {
   const topLevelFolders = folders.folders;
   const ungroupedItems = folders.ungroupedItems;
+  const showLoading = loading && !hasContent;
   const frame = (
     <ResourceListFrame minWidth={minWidth}>
       <ResourceListHeaderTable columns={columns} />
@@ -56,10 +57,10 @@ export function ResourceListForm<TFolder, TItem>({
   );
 
   return (
-    <>
+    <div className="space-y-3">
       <SearchFilterBar {...search} />
       {afterSearch}
-      {loading ? (
+      {showLoading ? (
         <div className="flex items-center justify-center py-16">
           <div className="flex flex-col items-center gap-3">
             <LoadingSpinner className="" />
@@ -86,6 +87,6 @@ export function ResourceListForm<TFolder, TItem>({
       ) : (
         emptyState
       )}
-    </>
+    </div>
   );
 }

@@ -1,5 +1,84 @@
 import { appRoute, createdJson, IdParamSchema, jsonBody, okJson, UnknownDataResponseSchema } from '@/lib/openapi.js';
+import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
 import { CreateDomainSchema, DomainListQuerySchema, UpdateDomainSchema } from './domain.schemas.js';
+
+export const listDomainFoldersRoute = appRoute({
+  method: 'get',
+  path: '/folders',
+  tags: ['Domains'],
+  summary: 'List domain folders',
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const createDomainFolderRoute = appRoute({
+  method: 'post',
+  path: '/folders',
+  tags: ['Domains'],
+  summary: 'Create a domain folder',
+  request: jsonBody(CreateResourceFolderSchema),
+  responses: createdJson(UnknownDataResponseSchema),
+});
+
+export const reorderDomainFoldersRoute = appRoute({
+  method: 'put',
+  path: '/folders/reorder',
+  tags: ['Domains'],
+  summary: 'Reorder domain folders',
+  request: jsonBody(ReorderResourceFoldersSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const moveDomainsToFolderRoute = appRoute({
+  method: 'post',
+  path: '/folders/move-domains',
+  tags: ['Domains'],
+  summary: 'Move domains to a folder',
+  request: jsonBody(MoveResourcesToFolderSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const reorderDomainsRoute = appRoute({
+  method: 'put',
+  path: '/folders/reorder-domains',
+  tags: ['Domains'],
+  summary: 'Reorder domains within a folder',
+  request: jsonBody(ReorderResourcesSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const updateDomainFolderRoute = appRoute({
+  method: 'put',
+  path: '/folders/{id}',
+  tags: ['Domains'],
+  summary: 'Rename a domain folder',
+  request: { params: IdParamSchema, ...jsonBody(UpdateResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const moveDomainFolderRoute = appRoute({
+  method: 'put',
+  path: '/folders/{id}/move',
+  tags: ['Domains'],
+  summary: 'Move a domain folder',
+  request: { params: IdParamSchema, ...jsonBody(MoveResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const deleteDomainFolderRoute = appRoute({
+  method: 'delete',
+  path: '/folders/{id}',
+  tags: ['Domains'],
+  summary: 'Delete a domain folder',
+  request: { params: IdParamSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
 
 export const listDomainsRoute = appRoute({
   method: 'get',

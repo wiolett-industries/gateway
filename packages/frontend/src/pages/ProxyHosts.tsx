@@ -622,7 +622,7 @@ export function ProxyHosts() {
             canManageFolder: () => canManageFolders,
             canReorderFolder: () => canReorderFolders,
             canCreateSubfolder: (folder) => folder.depth < 2,
-            onToggleFolder: toggleFolder,
+            onToggleFolder: (id) => toggleFolder(id),
             onRenameFolder: handleRenameFolder,
             onDeleteFolder: handleDeleteFolder,
             onRequestCreateSubfolder: (parentId) => {

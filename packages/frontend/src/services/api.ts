@@ -246,6 +246,61 @@ class ApiClient extends withLoggingApi(
     await this.request(`/admin/users/${userId}`, { method: "DELETE" });
   }
 
+  async listAdminUserFolders(): Promise<import("@/types").ResourceFolderTreeNode[]> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolderTreeNode[] }>("/admin/user-folders")
+    );
+  }
+
+  async createAdminUserFolder(data: {
+    name: string;
+    parentId?: string;
+  }): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>("/admin/user-folders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateAdminUserFolder(
+    id: string,
+    data: { name: string }
+  ): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>(`/admin/user-folders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteAdminUserFolder(id: string): Promise<void> {
+    await this.request(`/admin/user-folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderAdminUserFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/admin/user-folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async moveAdminUsersToFolder(ids: string[], folderId: string | null): Promise<void> {
+    await this.request("/admin/user-folders/move-users", {
+      method: "POST",
+      body: JSON.stringify({ ids, folderId }),
+    });
+  }
+
+  async reorderAdminUsers(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/admin/user-folders/reorder-users", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
   async getAuthProvisioningSettings(): Promise<AuthProvisioningSettings> {
     return this.request<AuthProvisioningSettings>("/admin/auth-settings");
   }
@@ -305,6 +360,61 @@ class ApiClient extends withLoggingApi(
 
   async deleteGroup(id: string): Promise<void> {
     await this.request(`/admin/groups/${id}`, { method: "DELETE" });
+  }
+
+  async listAdminGroupFolders(): Promise<import("@/types").ResourceFolderTreeNode[]> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolderTreeNode[] }>("/admin/groups/folders")
+    );
+  }
+
+  async createAdminGroupFolder(data: {
+    name: string;
+    parentId?: string;
+  }): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>("/admin/groups/folders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateAdminGroupFolder(
+    id: string,
+    data: { name: string }
+  ): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>(`/admin/groups/folders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteAdminGroupFolder(id: string): Promise<void> {
+    await this.request(`/admin/groups/folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderAdminGroupFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/admin/groups/folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async moveAdminGroupsToFolder(ids: string[], folderId: string | null): Promise<void> {
+    await this.request("/admin/groups/folders/move-groups", {
+      method: "POST",
+      body: JSON.stringify({ ids, folderId }),
+    });
+  }
+
+  async reorderAdminGroups(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/admin/groups/folders/reorder-groups", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
   }
 
   // ── Nodes ──
@@ -1127,6 +1237,61 @@ class ApiClient extends withLoggingApi(
     return this.unwrapData(
       this.request<{ data: SSLCertificate }>(`/domains/${id}/issue-cert`, { method: "POST" })
     );
+  }
+
+  async listDomainFolders(): Promise<import("@/types").ResourceFolderTreeNode[]> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolderTreeNode[] }>("/domains/folders")
+    );
+  }
+
+  async createDomainFolder(data: {
+    name: string;
+    parentId?: string;
+  }): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>("/domains/folders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateDomainFolder(
+    id: string,
+    data: { name: string }
+  ): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>(`/domains/folders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteDomainFolder(id: string): Promise<void> {
+    await this.request(`/domains/folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderDomainFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/domains/folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async moveDomainsToFolder(ids: string[], folderId: string | null): Promise<void> {
+    await this.request("/domains/folders/move-domains", {
+      method: "POST",
+      body: JSON.stringify({ ids, folderId }),
+    });
+  }
+
+  async reorderDomains(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/domains/folders/reorder-domains", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
   }
 
   async searchDomains(q: string): Promise<DomainSearchResult[]> {

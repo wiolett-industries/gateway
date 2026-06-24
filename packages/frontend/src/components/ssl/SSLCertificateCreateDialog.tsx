@@ -1,5 +1,6 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { Minus, Plus, Upload } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DomainAutocompleteInput } from "@/components/domains/DomainAutocompleteInput";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export function SSLCertificateCreateDialog({
   onOpenChange,
   onCreated,
 }: SSLCertificateCreateDialogProps) {
+  const resetTimerRef = useRef<number | null>(null);
   // ACME tab state
   const [acmeDomains, setAcmeDomains] = useState<string[]>([""]);
   const [challengeType, setChallengeType] = useState<ACMEChallengeType>("http-01");
@@ -58,6 +60,10 @@ export function SSLCertificateCreateDialog({
   const [isLinking, setIsLinking] = useState(false);
 
   useEffect(() => {
+    if (open && resetTimerRef.current !== null) {
+      window.clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
     if (!open) return;
     const loadPkiCerts = async () => {
       try {
@@ -74,6 +80,13 @@ export function SSLCertificateCreateDialog({
     loadPkiCerts();
   }, [open]);
 
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+    },
+    []
+  );
+
   const resetForm = () => {
     setAcmeDomains([""]);
     setChallengeType("http-01");
@@ -88,8 +101,16 @@ export function SSLCertificateCreateDialog({
     setInternalName("");
   };
 
+  const scheduleResetForm = () => {
+    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = window.setTimeout(() => {
+      resetForm();
+      resetTimerRef.current = null;
+    }, 250);
+  };
+
   const handleClose = (value: boolean) => {
-    if (!value) resetForm();
+    if (!value) scheduleResetForm();
     onOpenChange(value);
   };
 
@@ -115,7 +136,7 @@ export function SSLCertificateCreateDialog({
         toast.success("Certificate requested successfully");
         onOpenChange(false);
         onCreated();
-        setTimeout(() => resetForm(), 200);
+        scheduleResetForm();
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to request certificate");
@@ -135,7 +156,7 @@ export function SSLCertificateCreateDialog({
       toast.success("DNS verification complete. Certificate issued.");
       onOpenChange(false);
       onCreated();
-      setTimeout(() => resetForm(), 200);
+      scheduleResetForm();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "DNS verification failed");
     } finally {
@@ -167,7 +188,7 @@ export function SSLCertificateCreateDialog({
       toast.success("Certificate uploaded successfully");
       onOpenChange(false);
       onCreated();
-      setTimeout(() => resetForm(), 200);
+      scheduleResetForm();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to upload certificate");
     } finally {
@@ -189,7 +210,7 @@ export function SSLCertificateCreateDialog({
       toast.success("Internal certificate linked");
       onOpenChange(false);
       onCreated();
-      setTimeout(() => resetForm(), 200);
+      scheduleResetForm();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to link certificate");
     } finally {
@@ -226,36 +247,53 @@ export function SSLCertificateCreateDialog({
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Domains</label>
                     <div className="space-y-2">
-                      {acmeDomains.map((domain, i) => (
-                        <div key={i} className="flex gap-2">
-                          <DomainAutocompleteInput
-                            value={domain}
-                            onChange={(v) => {
-                              const next = [...acmeDomains];
-                              next[i] = v;
-                              setAcmeDomains(next);
+                      <AnimatePresence initial={false}>
+                        {acmeDomains.map((domain, i) => (
+                          <motion.div
+                            key={`acme-domain-${i}`}
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 4 }}
+                            transition={{
+                              opacity: { duration: 0.12 },
+                              y: { duration: 0.12, ease: [0.25, 0.1, 0.25, 1] },
                             }}
-                            placeholder="example.com"
-                          />
-                          {acmeDomains.length > 1 && (
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={() => setAcmeDomains(acmeDomains.filter((_, j) => j !== i))}
-                            >
-                              <Minus className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setAcmeDomains([...acmeDomains, ""])}
-                      >
-                        <Plus className="h-4 w-4" />
-                        Add Domain
-                      </Button>
+                            className="flex gap-2"
+                          >
+                            <DomainAutocompleteInput
+                              value={domain}
+                              onChange={(v) => {
+                                const next = [...acmeDomains];
+                                next[i] = v;
+                                setAcmeDomains(next);
+                              }}
+                              placeholder="example.com"
+                            />
+                            {acmeDomains.length > 1 && (
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-9 w-9 shrink-0"
+                                onClick={() =>
+                                  setAcmeDomains(acmeDomains.filter((_, j) => j !== i))
+                                }
+                              >
+                                <Minus className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {i === acmeDomains.length - 1 && (
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-9 w-9 shrink-0"
+                                onClick={() => setAcmeDomains([...acmeDomains, ""])}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
                     </div>
                   </div>
 

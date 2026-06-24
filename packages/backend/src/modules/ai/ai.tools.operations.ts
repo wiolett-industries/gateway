@@ -4,7 +4,7 @@ export const OPERATION_AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'manage_logging',
     description:
-      'Manage external logging environments, schemas, ingest tokens, metadata, facets, and search. Operation-specific logs:* scopes are enforced.',
+      'Manage external logging environments, schemas, ingest tokens, metadata, facets, and search. Use canonical args like { resource: "schema", operation: "create", payload: { name, slug, schemaMode, fieldSchema } } or { resource: "environment", operation: "list", search }. Operation-specific logs:* scopes are enforced.',
     parameters: {
       type: 'object',
       properties: {
@@ -17,7 +17,11 @@ export const OPERATION_AI_TOOLS: AIToolDefinition[] = [
         schemaId: { type: 'string' },
         tokenId: { type: 'string' },
         search: { type: 'string' },
-        payload: { type: 'object', description: 'Create/update/search/facets body matching the logging API schema' },
+        payload: {
+          type: 'object',
+          description:
+            'Create/update/search/facets body matching the logging API schema. Schema payload fields: name, slug, description?, schemaMode ("loose"|"strip"|"reject"), fieldSchema[]. Environment payload fields: name, slug, description?, enabled?, schemaId?, schemaMode, retentionDays, fieldSchema[]. Search payload fields: from?, to?, query?, limit?, cursor?, services?, sources?, expression?.',
+        },
       },
       required: ['resource', 'operation'],
     },

@@ -521,11 +521,11 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
     </>
   );
 
-  if (embedded) return <div className="flex flex-col flex-1 min-h-0 space-y-4">{content}</div>;
+  if (embedded) return <div className="flex flex-col flex-1 min-h-0 space-y-3">{content}</div>;
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">{content}</div>
+      <div className="h-full overflow-y-auto p-6 space-y-3">{content}</div>
     </PageTransition>
   );
 }

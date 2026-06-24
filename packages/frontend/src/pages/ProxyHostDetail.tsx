@@ -618,7 +618,7 @@ export function ProxyHostDetail() {
       api
         .updateProxyHost(id, {
           healthCheckUrl,
-          healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
+          healthCheckExpectedStatus,
           healthCheckExpectedBody:
             healthCheckExpectedBody.trim() === "" ? null : healthCheckExpectedBody,
           healthCheckBodyMatchMode:

@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import type { CA, DatabaseConnection, LoggingSchema, Node, ProxyHost } from "@/types";
 
 interface ScopeItem {
@@ -38,6 +39,7 @@ interface ScopeListProps {
   inheritedFromName?: string;
   /** When true, all scopes are shown as non-interactive (view only) */
   readOnly?: boolean;
+  viewportClassName?: string;
 }
 
 function matchesQuery(scope: ScopeItem, q: string): boolean {
@@ -152,6 +154,7 @@ export function ScopeList({
   inheritedScopes,
   inheritedFromName,
   readOnly,
+  viewportClassName,
 }: ScopeListProps) {
   const q = search.toLowerCase().trim();
   const inheritedParsed = parseScopedSelections(inheritedScopes ?? [], restrictableScopes ?? []);
@@ -164,7 +167,7 @@ export function ScopeList({
     const rest = scopes.filter((s) => !matchesQuery(s, q));
 
     return (
-      <div className="max-sm:max-h-[40vh] max-sm:overflow-y-auto">
+      <div className={cn("max-sm:max-h-[40vh] max-sm:overflow-y-auto", viewportClassName)}>
         {matches.map((scope) => (
           <ScopeRow
             key={scope.value}
@@ -216,7 +219,7 @@ export function ScopeList({
 
   // No search: render grouped by category
   return (
-    <div className="max-sm:max-h-[40vh] max-sm:overflow-y-auto">
+    <div className={cn("max-sm:max-h-[40vh] max-sm:overflow-y-auto", viewportClassName)}>
       {categories.map((cat) => {
         const catScopes = scopes.filter((s) => s.group === cat);
         if (catScopes.length === 0) return null;
@@ -324,9 +327,13 @@ function ScopeRow({
   const rowDisabled = disabled || baseLocked;
 
   return (
-    <div className={muted ? "opacity-40" : undefined}>
+    <div className={cn(muted && "opacity-40")}>
       <label
-        className={`flex items-center gap-3 px-3 py-2 ${rowDisabled ? "cursor-default" : "hover:bg-accent transition-colors cursor-pointer"}`}
+        className={cn(
+          "flex items-center gap-3 px-3 py-2",
+          rowDisabled ? "cursor-default" : "cursor-pointer transition-colors hover:bg-accent",
+          disabled && "opacity-60"
+        )}
       >
         <input
           type="checkbox"
@@ -354,7 +361,10 @@ function ScopeRow({
           {resourceOptions.map((opt) => (
             <label
               key={opt.id}
-              className={`flex items-center gap-2 py-0.5 text-xs ${disabled ? "cursor-default" : "cursor-pointer"}`}
+              className={cn(
+                "flex items-center gap-2 py-0.5 text-xs",
+                disabled ? "cursor-default opacity-60" : "cursor-pointer"
+              )}
             >
               <input
                 type="checkbox"

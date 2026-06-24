@@ -425,6 +425,7 @@ export function OAuthApplicationsSection({
                   loggingSchemas={loggingSchemasList}
                   restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
                   allowedResourceIds={allowedResourceIdsByScope}
+                  viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
                 />
                 {unknownScopes.length > 0 && (
                   <div className="border-t border-border p-3">

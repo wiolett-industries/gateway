@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,12 +81,8 @@ export function LoggingTokenPanel({
   };
 
   return (
-    <div className="border border-border bg-card">
-      <div className="border-b border-border p-4">
-        <h3 className="font-semibold">Ingest Tokens</h3>
-        <p className="text-xs text-muted-foreground">Write-only tokens for external services</p>
-      </div>
-      <div>
+    <>
+      <PanelShell title="Ingest Tokens" description="Write-only tokens for external services">
         {tokens.length > 0 ? (
           <div className="divide-y divide-border">
             {tokens.map((token) => (
@@ -120,7 +117,7 @@ export function LoggingTokenPanel({
         ) : (
           <EmptyState message="No ingest tokens created yet" embedded />
         )}
-      </div>
+      </PanelShell>
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-xl">
           <DialogHeader>
@@ -167,6 +164,6 @@ export function LoggingTokenPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

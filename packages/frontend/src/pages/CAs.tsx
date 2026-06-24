@@ -152,7 +152,7 @@ export function CAs() {
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
+      <div className="h-full overflow-y-auto p-6 space-y-3">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>

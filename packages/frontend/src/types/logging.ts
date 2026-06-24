@@ -23,6 +23,8 @@ export interface LoggingEnvironment {
   rateLimitRequestsPerWindow: number | null;
   rateLimitEventsPerWindow: number | null;
   fieldSchema: LoggingFieldDefinition[];
+  folderId?: string | null;
+  sortOrder?: number;
   createdById: string | null;
   createdAt: string;
   updatedAt: string;
@@ -35,6 +37,8 @@ export interface LoggingSchema {
   description: string | null;
   schemaMode: LoggingSchemaMode;
   fieldSchema: LoggingFieldDefinition[];
+  folderId?: string | null;
+  sortOrder?: number;
   createdById: string | null;
   createdAt: string;
   updatedAt: string;

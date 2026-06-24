@@ -18,14 +18,22 @@ export interface FolderedResourceListItem {
 }
 
 interface FolderTreeNodeWithItems<TItem> extends ResourceFolderTreeNode {
+  isSystem?: boolean;
   items: TItem[];
   children: FolderTreeNodeWithItems<TItem>[];
+}
+
+interface FolderedResourceListSystemFolder<TItem> {
+  id: string;
+  name: string;
+  items: TItem[];
 }
 
 interface FolderedResourceListProps<TItem extends FolderedResourceListItem> {
   resourceType: ResourceFolderType;
   realtimeChannel: string;
   resources: TItem[];
+  systemFolders?: FolderedResourceListSystemFolder<TItem>[];
   columns: ResourceListColumn<TItem>[];
   search: {
     search: string;
@@ -83,6 +91,26 @@ function attachResourcesToFolders<TItem extends FolderedResourceListItem>(
   return folders.map(mapNode);
 }
 
+function buildSystemFolderTree<TItem extends FolderedResourceListItem>(
+  folders: FolderedResourceListSystemFolder<TItem>[],
+  getResourceLabel: (item: TItem) => string
+): FolderTreeNodeWithItems<TItem>[] {
+  return folders
+    .filter((folder) => folder.items.length > 0)
+    .map((folder, index) => ({
+      id: folder.id,
+      name: folder.name,
+      parentId: null,
+      sortOrder: index,
+      depth: 0,
+      createdAt: "",
+      updatedAt: "",
+      isSystem: true,
+      items: sortResources(folder.items, getResourceLabel),
+      children: [],
+    }));
+}
+
 function pruneEmptyFolders<TItem>(
   folders: FolderTreeNodeWithItems<TItem>[]
 ): FolderTreeNodeWithItems<TItem>[] {
@@ -107,6 +135,7 @@ export function FolderedResourceList<TItem extends FolderedResourceListItem>({
   resourceType,
   realtimeChannel,
   resources,
+  systemFolders = [],
   columns,
   search,
   loading,
@@ -142,6 +171,9 @@ export function FolderedResourceList<TItem extends FolderedResourceListItem>({
   const [createFolderParentId, setCreateFolderParentId] = useState<string | null>(null);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [optimisticResources, setOptimisticResources] = useState<TItem[] | null>(null);
+  const [collapsedSystemFolderIds, setCollapsedSystemFolderIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const openCreateFolder = useCallback(() => {
@@ -172,13 +204,20 @@ export function FolderedResourceList<TItem extends FolderedResourceListItem>({
 
   const visibleResources = optimisticResources ?? resources;
   const folderIds = useMemo(() => new Set(folders.map((folder) => folder.id)), [folders]);
+  const systemFolderTree = useMemo(
+    () => buildSystemFolderTree(systemFolders, getResourceLabel),
+    [getResourceLabel, systemFolders]
+  );
   const rawFolderTree = useMemo(
     () => attachResourcesToFolders(folders, visibleResources, getResourceLabel),
     [folders, getResourceLabel, visibleResources]
   );
   const folderTree = useMemo(
-    () => (search.search.trim() ? pruneEmptyFolders(rawFolderTree) : rawFolderTree),
-    [rawFolderTree, search.search]
+    () => [
+      ...systemFolderTree,
+      ...(search.search.trim() ? pruneEmptyFolders(rawFolderTree) : rawFolderTree),
+    ],
+    [rawFolderTree, search.search, systemFolderTree]
   );
   const ungroupedResources = useMemo(
     () =>
@@ -278,6 +317,22 @@ export function FolderedResourceList<TItem extends FolderedResourceListItem>({
     [applyOptimisticMove, moveResourcesToFolder, onRefresh, resourceType]
   );
 
+  const handleToggleFolder = useCallback(
+    (folder: FolderTreeNodeWithItems<TItem>) => {
+      if (folder.isSystem) {
+        setCollapsedSystemFolderIds((current) => {
+          const next = new Set(current);
+          if (next.has(folder.id)) next.delete(folder.id);
+          else next.add(folder.id);
+          return next;
+        });
+        return;
+      }
+      toggleFolder(resourceType, folder.id);
+    },
+    [resourceType, toggleFolder]
+  );
+
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveDrag(null);
     if (!canManageFolders || isSearchFiltering) return;
@@ -324,10 +379,11 @@ export function FolderedResourceList<TItem extends FolderedResourceListItem>({
     }
 
     const source = activeData?.resource as TItem | undefined;
-    if (!source) return;
+    if (!source || !(canReorganizeItem?.(source) ?? true)) return;
 
     if (dropData?.type === "folder") {
       const targetFolderId = dropData.folderId as string | null;
+      if (dropData.isSystem) return;
       if (source.folderId === targetFolderId) return;
       await moveResource(source, targetFolderId);
       return;
@@ -335,6 +391,7 @@ export function FolderedResourceList<TItem extends FolderedResourceListItem>({
 
     const overResource = dropData?.resource as TItem | undefined;
     if (!overResource || active.id === over.id) return;
+    if (!(canReorganizeItem?.(overResource) ?? true)) return;
 
     if (source.folderId !== overResource.folderId) {
       await moveResource(source, overResource.folderId ?? null);
@@ -391,12 +448,22 @@ export function FolderedResourceList<TItem extends FolderedResourceListItem>({
           getFolderChildren: (folder) => folder.children,
           getFolderItems: (folder) => folder.items,
           getFolderSortableId: (folder) => `${resourceType}-folder-${folder.id}`,
-          getFolderSortableData: (folder) => ({ type: "folder", folderId: folder.id, folder }),
-          isFolderExpanded: (folder) => expandedFolderIds.has(folder.id),
-          canManageFolder: () => canManageFolders,
-          canReorderFolder: () => canDragFolders,
-          canCreateSubfolder: (folder) => folder.depth < 2,
-          onToggleFolder: (id) => toggleFolder(resourceType, id),
+          getFolderSortableData: (folder) => ({
+            type: "folder",
+            folderId: folder.id,
+            isSystem: folder.isSystem,
+            folder,
+          }),
+          isFolderExpanded: (folder) =>
+            folder.isSystem
+              ? !collapsedSystemFolderIds.has(folder.id)
+              : expandedFolderIds.has(folder.id),
+          isFolderSystem: (folder) => !!folder.isSystem,
+          isFolderCollapsible: () => true,
+          canManageFolder: (folder) => canManageFolders && !folder.isSystem,
+          canReorderFolder: (folder) => canDragFolders && !folder.isSystem,
+          canCreateSubfolder: (folder) => !folder.isSystem && folder.depth < 2,
+          onToggleFolder: (_, folder) => handleToggleFolder(folder),
           onRenameFolder: handleRenameFolder,
           onDeleteFolder: handleDeleteFolder,
           onRequestCreateSubfolder: (parentId) => {

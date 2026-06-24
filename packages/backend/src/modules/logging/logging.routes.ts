@@ -4,18 +4,32 @@ import { openApiValidationHook } from '@/lib/openapi.js';
 import { extractBaseScope } from '@/lib/scopes.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware } from '@/modules/auth/auth.middleware.js';
+import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv } from '@/types.js';
 import {
+  createLoggingEnvironmentFolderRoute,
   createLoggingEnvironmentRoute,
+  createLoggingSchemaFolderRoute,
   createLoggingSchemaRoute,
   createLoggingTokenRoute,
+  deleteLoggingEnvironmentFolderRoute,
   deleteLoggingEnvironmentRoute,
+  deleteLoggingSchemaFolderRoute,
   deleteLoggingSchemaRoute,
   deleteLoggingTokenRoute,
   getLoggingEnvironmentRoute,
   getLoggingSchemaRoute,
+  listLoggingEnvironmentFoldersRoute,
   listLoggingEnvironmentsRoute,
+  listLoggingSchemaFoldersRoute,
   listLoggingSchemasRoute,
   listLoggingTokensRoute,
   loggingBatchIngestRoute,
@@ -23,8 +37,18 @@ import {
   loggingIngestRoute,
   loggingMetadataRoute,
   loggingStatusRoute,
+  moveLoggingEnvironmentFolderRoute,
+  moveLoggingEnvironmentsToFolderRoute,
+  moveLoggingSchemaFolderRoute,
+  moveLoggingSchemasToFolderRoute,
+  reorderLoggingEnvironmentFoldersRoute,
+  reorderLoggingEnvironmentsRoute,
+  reorderLoggingSchemaFoldersRoute,
+  reorderLoggingSchemasRoute,
   searchLogsRoute,
+  updateLoggingEnvironmentFolderRoute,
   updateLoggingEnvironmentRoute,
+  updateLoggingSchemaFolderRoute,
   updateLoggingSchemaRoute,
 } from './logging.docs.js';
 import {
@@ -38,12 +62,14 @@ import {
   UpdateLoggingSchemaSchema,
 } from './logging.schemas.js';
 import { LoggingEnvironmentService } from './logging-environment.service.js';
+import { LoggingEnvironmentFolderService } from './logging-environment-folders.service.js';
 import { LoggingFeatureService } from './logging-feature.service.js';
 import { LoggingIngestService } from './logging-ingest.service.js';
 import { loggingIngestAuthMiddleware } from './logging-ingest-auth.middleware.js';
 import { LoggingMetadataService } from './logging-metadata.service.js';
 import { LoggingRateLimitService } from './logging-rate-limit.service.js';
 import { LoggingSchemaService } from './logging-schema.service.js';
+import { LoggingSchemaFolderService } from './logging-schema-folders.service.js';
 import { LoggingSearchService } from './logging-search.service.js';
 import { LoggingTokenService } from './logging-token.service.js';
 
@@ -127,6 +153,98 @@ loggingRoutes.openapi(
   }
 );
 
+loggingRoutes.openapi(
+  { ...listLoggingEnvironmentFoldersRoute, middleware: requireLoggingEnvironmentFolderListScope() },
+  async (c) => {
+    const service = container.resolve(LoggingEnvironmentFolderService);
+    const scopes = c.get('effectiveScopes') ?? [];
+    const canManageFolders =
+      TokensService.hasScope(scopes, 'logs:environments:folders:manage') ||
+      TokensService.hasScope(scopes, 'logs:manage');
+    const hasGlobalView =
+      TokensService.hasScope(scopes, 'logs:environments:view') || TokensService.hasScope(scopes, 'logs:manage');
+    const allowedIds = [...resourceScopedIds(scopes, 'logs:environments:view')];
+    const data = await service.getFolderTree(
+      canManageFolders || hasGlobalView ? { includeAllFolders: canManageFolders } : { allowedResourceIds: allowedIds }
+    );
+    return c.json({ data });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...createLoggingEnvironmentFolderRoute, middleware: requireLoggingScope('logs:environments:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingEnvironmentFolderService);
+    const user = c.get('user')!;
+    const input = CreateResourceFolderSchema.parse(await c.req.json());
+    const data = await service.createFolder(input, user.id);
+    return c.json({ data }, 201);
+  }
+);
+
+loggingRoutes.openapi(
+  { ...reorderLoggingEnvironmentFoldersRoute, middleware: requireLoggingScope('logs:environments:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingEnvironmentFolderService);
+    const input = ReorderResourceFoldersSchema.parse(await c.req.json());
+    await service.reorderFolders(input);
+    return c.json({ success: true });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...moveLoggingEnvironmentsToFolderRoute, middleware: requireLoggingScope('logs:environments:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingEnvironmentFolderService);
+    const user = c.get('user')!;
+    const input = MoveResourcesToFolderSchema.parse(await c.req.json());
+    await service.moveResourcesToFolder(input, user.id);
+    return c.json({ success: true });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...reorderLoggingEnvironmentsRoute, middleware: requireLoggingScope('logs:environments:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingEnvironmentFolderService);
+    const input = ReorderResourcesSchema.parse(await c.req.json());
+    await service.reorderResources(input);
+    return c.json({ success: true });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...updateLoggingEnvironmentFolderRoute, middleware: requireLoggingScope('logs:environments:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingEnvironmentFolderService);
+    const user = c.get('user')!;
+    const input = UpdateResourceFolderSchema.parse(await c.req.json());
+    const data = await service.updateFolder(c.req.param('id')!, input, user.id);
+    return c.json({ data });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...moveLoggingEnvironmentFolderRoute, middleware: requireLoggingScope('logs:environments:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingEnvironmentFolderService);
+    const user = c.get('user')!;
+    const input = MoveResourceFolderSchema.parse(await c.req.json());
+    const data = await service.moveFolder(c.req.param('id')!, input, user.id);
+    return c.json({ data });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...deleteLoggingEnvironmentFolderRoute, middleware: requireLoggingScope('logs:environments:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingEnvironmentFolderService);
+    const user = c.get('user')!;
+    await service.deleteFolder(c.req.param('id')!, user.id);
+    return c.json({ success: true });
+  }
+);
+
 loggingRoutes.openapi({ ...listLoggingSchemasRoute, middleware: requireLoggingSchemaListScope() }, async (c) => {
   const service = container.resolve(LoggingSchemaService);
   const scopes = c.get('effectiveScopes') ?? [];
@@ -137,6 +255,97 @@ loggingRoutes.openapi({ ...listLoggingSchemasRoute, middleware: requireLoggingSc
   const visibleIds = resourceScopedIds(scopes, 'logs:schemas:view');
   return c.json({ data: data.filter((schema) => visibleIds.has(schema.id)) });
 });
+
+loggingRoutes.openapi(
+  { ...listLoggingSchemaFoldersRoute, middleware: requireLoggingSchemaFolderListScope() },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaFolderService);
+    const scopes = c.get('effectiveScopes') ?? [];
+    const canManageFolders =
+      TokensService.hasScope(scopes, 'logs:schemas:folders:manage') || TokensService.hasScope(scopes, 'logs:manage');
+    const hasGlobalView =
+      TokensService.hasScope(scopes, 'logs:schemas:view') || TokensService.hasScope(scopes, 'logs:manage');
+    const allowedIds = [...resourceScopedIds(scopes, 'logs:schemas:view')];
+    const data = await service.getFolderTree(
+      canManageFolders || hasGlobalView ? { includeAllFolders: canManageFolders } : { allowedResourceIds: allowedIds }
+    );
+    return c.json({ data });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...createLoggingSchemaFolderRoute, middleware: requireLoggingScope('logs:schemas:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaFolderService);
+    const user = c.get('user')!;
+    const input = CreateResourceFolderSchema.parse(await c.req.json());
+    const data = await service.createFolder(input, user.id);
+    return c.json({ data }, 201);
+  }
+);
+
+loggingRoutes.openapi(
+  { ...reorderLoggingSchemaFoldersRoute, middleware: requireLoggingScope('logs:schemas:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaFolderService);
+    const input = ReorderResourceFoldersSchema.parse(await c.req.json());
+    await service.reorderFolders(input);
+    return c.json({ success: true });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...moveLoggingSchemasToFolderRoute, middleware: requireLoggingScope('logs:schemas:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaFolderService);
+    const user = c.get('user')!;
+    const input = MoveResourcesToFolderSchema.parse(await c.req.json());
+    await service.moveResourcesToFolder(input, user.id);
+    return c.json({ success: true });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...reorderLoggingSchemasRoute, middleware: requireLoggingScope('logs:schemas:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaFolderService);
+    const input = ReorderResourcesSchema.parse(await c.req.json());
+    await service.reorderResources(input);
+    return c.json({ success: true });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...updateLoggingSchemaFolderRoute, middleware: requireLoggingScope('logs:schemas:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaFolderService);
+    const user = c.get('user')!;
+    const input = UpdateResourceFolderSchema.parse(await c.req.json());
+    const data = await service.updateFolder(c.req.param('id')!, input, user.id);
+    return c.json({ data });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...moveLoggingSchemaFolderRoute, middleware: requireLoggingScope('logs:schemas:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaFolderService);
+    const user = c.get('user')!;
+    const input = MoveResourceFolderSchema.parse(await c.req.json());
+    const data = await service.moveFolder(c.req.param('id')!, input, user.id);
+    return c.json({ data });
+  }
+);
+
+loggingRoutes.openapi(
+  { ...deleteLoggingSchemaFolderRoute, middleware: requireLoggingScope('logs:schemas:folders:manage') },
+  async (c) => {
+    const service = container.resolve(LoggingSchemaFolderService);
+    const user = c.get('user')!;
+    await service.deleteFolder(c.req.param('id')!, user.id);
+    return c.json({ success: true });
+  }
+);
 
 loggingRoutes.openapi(
   { ...createLoggingSchemaRoute, middleware: requireLoggingScope('logs:schemas:create') },
@@ -300,6 +509,40 @@ function requireLoggingEnvironmentListScope() {
       resourceScopedIds(scopes, 'logs:environments:view').size === 0
     ) {
       throw new AppError(403, 'FORBIDDEN', 'Missing required scope: logs:environments:view');
+    }
+    await next();
+  };
+}
+
+function requireLoggingEnvironmentFolderListScope() {
+  return async (c: any, next: () => Promise<void>) => {
+    const scopes = c.get('effectiveScopes') ?? [];
+    if (
+      !TokensService.hasScope(scopes, 'logs:environments:folders:manage') &&
+      !TokensService.hasScope(scopes, 'logs:environments:view') &&
+      !TokensService.hasScope(scopes, 'logs:manage') &&
+      resourceScopedIds(scopes, 'logs:environments:view').size === 0
+    ) {
+      throw new AppError(
+        403,
+        'FORBIDDEN',
+        'Missing required scope: logs:environments:view or logs:environments:folders:manage'
+      );
+    }
+    await next();
+  };
+}
+
+function requireLoggingSchemaFolderListScope() {
+  return async (c: any, next: () => Promise<void>) => {
+    const scopes = c.get('effectiveScopes') ?? [];
+    if (
+      !TokensService.hasScope(scopes, 'logs:schemas:folders:manage') &&
+      !TokensService.hasScope(scopes, 'logs:schemas:view') &&
+      !TokensService.hasScope(scopes, 'logs:manage') &&
+      resourceScopedIds(scopes, 'logs:schemas:view').size === 0
+    ) {
+      throw new AppError(403, 'FORBIDDEN', 'Missing required scope: logs:schemas:view or logs:schemas:folders:manage');
     }
     await next();
   };

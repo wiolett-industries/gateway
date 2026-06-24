@@ -1,4 +1,11 @@
-export type ResourceFolderType = "node" | "database";
+export type ResourceFolderType =
+  | "node"
+  | "domain"
+  | "database"
+  | "logging-environment"
+  | "logging-schema"
+  | "admin-user"
+  | "admin-group";
 
 export interface ResourceFolder {
   id: string;

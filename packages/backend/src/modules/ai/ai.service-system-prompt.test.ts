@@ -88,6 +88,23 @@ describe('AIService system prompt', () => {
     expect(prompt).toContain('The user is currently viewing: /proxy/hosts/host-1tabsettings');
     expect(prompt).toContain('Focused resource: proxyhost with ID host-1');
     expect(prompt).toContain('## Organization Instructions\nAlways prefer concise runbooks.');
+    expect(prompt).toContain('Use find_resource FIRST');
+  });
+
+  it('advertises logging documentation to logging-scoped users', async () => {
+    const monitoringService = {
+      getDashboardStats: vi.fn().mockRejectedValue(new Error('stats unavailable')),
+    };
+    const service = createService({ monitoringService });
+
+    const prompt = await service.buildSystemPrompt({
+      ...BASE_USER,
+      scopes: ['logs:schemas:view'],
+    });
+
+    expect(prompt).toContain('Available topics:');
+    expect(prompt).toContain('logging');
+    expect(prompt).toContain('Use find_resource FIRST');
   });
 
   it('continues without inventory or CA sections when optional context fetches are unavailable', async () => {

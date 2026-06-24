@@ -963,7 +963,7 @@ export function DockerContainers({
             folder.isSystem && folder.composeProject ? (
               <Badge variant="outline">COMPOSE</Badge>
             ) : null,
-          onToggleFolder: fixedNodeId ? () => {} : toggleFolder,
+          onToggleFolder: fixedNodeId ? () => {} : (id) => toggleFolder(id),
           onRenameFolder: handleRenameFolder,
           onDeleteFolder: handleDeleteFolder,
           onRequestCreateSubfolder: (parentId) => {

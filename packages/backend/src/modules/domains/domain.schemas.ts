@@ -13,7 +13,7 @@ export const UpdateDomainSchema = z.object({
 
 export const DomainListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(1000).default(20),
   dnsStatus: z.enum(['valid', 'invalid', 'pending', 'unknown']).optional(),
   search: z.string().max(255).optional(),
 });

@@ -34,7 +34,7 @@ export class LoggingEnvironmentService {
       .from(loggingEnvironments)
       .leftJoin(loggingSchemas, eq(loggingEnvironments.schemaId, loggingSchemas.id))
       .where(and(allowedFilter, searchFilter))
-      .orderBy(asc(loggingEnvironments.name));
+      .orderBy(asc(loggingEnvironments.sortOrder), asc(loggingEnvironments.name));
     return rows.map((row) => toView(row.environment, row.schema));
   }
 
@@ -173,6 +173,8 @@ function toView(
     rateLimitRequestsPerWindow: row.rateLimitRequestsPerWindow,
     rateLimitEventsPerWindow: row.rateLimitEventsPerWindow,
     fieldSchema: (schema?.fieldSchema ?? []) as LoggingFieldDefinition[],
+    folderId: row.folderId,
+    sortOrder: row.sortOrder,
     createdById: row.createdById,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

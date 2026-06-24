@@ -73,7 +73,7 @@ export function ResourceFolderGroup<TFolder, TItem>({
           collapsible && "cursor-pointer hover:bg-accent"
         )}
         style={{ paddingLeft: `${depth * 24 + 12}px` }}
-        onClick={collapsible ? () => folderConfig.onToggleFolder(folderId) : undefined}
+        onClick={collapsible ? () => folderConfig.onToggleFolder(folderId, folder) : undefined}
         {...(canReorder ? attributes : {})}
         {...(canReorder ? listeners : {})}
       >

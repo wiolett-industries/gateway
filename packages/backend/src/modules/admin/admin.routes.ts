@@ -9,21 +9,38 @@ import {
   UpdateBlockSchema,
   UpdateUserGroupSchema,
 } from '@/modules/admin/admin.schemas.js';
+import { AdminUserFolderService } from '@/modules/admin/admin-user-folders.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
+import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
 import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
 import type { AppEnv } from '@/types.js';
 import {
+  createAdminUserFolderRoute,
   createAdminUserRoute,
+  deleteAdminUserFolderRoute,
   deleteAdminUserRoute,
   getAuthSettingsRoute,
+  listAdminUserFoldersRoute,
   listAdminUsersRoute,
+  moveAdminUserFolderRoute,
+  moveAdminUsersToFolderRoute,
+  reorderAdminUserFoldersRoute,
+  reorderAdminUsersRoute,
+  updateAdminUserFolderRoute,
   updateAuthSettingsRoute,
   updateUserBlockRoute,
   updateUserGroupRoute,
@@ -33,6 +50,16 @@ export const adminRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidat
 
 adminRoutes.use('*', authMiddleware);
 adminRoutes.use('*', sessionOnly);
+
+function requireAnyAdminScope(...requiredScopes: string[]) {
+  return async (c: any, next: () => Promise<void>) => {
+    const scopes = c.get('effectiveScopes') || [];
+    if (!requiredScopes.some((scope) => scopes.includes(scope))) {
+      return c.json({ code: 'FORBIDDEN', message: `Missing required scope: ${requiredScopes.join(' or ')}` }, 403);
+    }
+    await next();
+  };
+}
 
 function getEffectiveGroupScopes(group: { scopes: string[]; inheritedScopes?: string[] }) {
   return [...new Set([...(group.scopes ?? []), ...(group.inheritedScopes ?? [])])];
@@ -44,6 +71,90 @@ adminRoutes.openapi({ ...listAdminUsersRoute, middleware: requireScope('admin:us
   const userList = await authService.listUsers();
   return c.json(userList);
 });
+
+adminRoutes.openapi(
+  { ...listAdminUserFoldersRoute, middleware: requireAnyAdminScope('admin:users', 'admin:users:folders:manage') },
+  async (c) => {
+    const service = container.resolve(AdminUserFolderService);
+    const scopes = c.get('effectiveScopes') || [];
+    const data = await service.getFolderTree({ includeAllFolders: scopes.includes('admin:users:folders:manage') });
+    return c.json({ data });
+  }
+);
+
+adminRoutes.openapi(
+  { ...createAdminUserFolderRoute, middleware: requireScope('admin:users:folders:manage') },
+  async (c) => {
+    const service = container.resolve(AdminUserFolderService);
+    const user = c.get('user')!;
+    const input = CreateResourceFolderSchema.parse(await c.req.json());
+    const data = await service.createFolder(input, user.id);
+    return c.json({ data }, 201);
+  }
+);
+
+adminRoutes.openapi(
+  { ...reorderAdminUserFoldersRoute, middleware: requireScope('admin:users:folders:manage') },
+  async (c) => {
+    const service = container.resolve(AdminUserFolderService);
+    const input = ReorderResourceFoldersSchema.parse(await c.req.json());
+    await service.reorderFolders(input);
+    return c.json({ success: true });
+  }
+);
+
+adminRoutes.openapi(
+  { ...moveAdminUsersToFolderRoute, middleware: requireScope('admin:users:folders:manage') },
+  async (c) => {
+    const service = container.resolve(AdminUserFolderService);
+    const user = c.get('user')!;
+    const input = MoveResourcesToFolderSchema.parse(await c.req.json());
+    await service.moveResourcesToFolder(input, user.id);
+    return c.json({ success: true });
+  }
+);
+
+adminRoutes.openapi(
+  { ...reorderAdminUsersRoute, middleware: requireScope('admin:users:folders:manage') },
+  async (c) => {
+    const service = container.resolve(AdminUserFolderService);
+    const input = ReorderResourcesSchema.parse(await c.req.json());
+    await service.reorderResources(input);
+    return c.json({ success: true });
+  }
+);
+
+adminRoutes.openapi(
+  { ...updateAdminUserFolderRoute, middleware: requireScope('admin:users:folders:manage') },
+  async (c) => {
+    const service = container.resolve(AdminUserFolderService);
+    const user = c.get('user')!;
+    const input = UpdateResourceFolderSchema.parse(await c.req.json());
+    const data = await service.updateFolder(c.req.param('id')!, input, user.id);
+    return c.json({ data });
+  }
+);
+
+adminRoutes.openapi(
+  { ...moveAdminUserFolderRoute, middleware: requireScope('admin:users:folders:manage') },
+  async (c) => {
+    const service = container.resolve(AdminUserFolderService);
+    const user = c.get('user')!;
+    const input = MoveResourceFolderSchema.parse(await c.req.json());
+    const data = await service.moveFolder(c.req.param('id')!, input, user.id);
+    return c.json({ data });
+  }
+);
+
+adminRoutes.openapi(
+  { ...deleteAdminUserFolderRoute, middleware: requireScope('admin:users:folders:manage') },
+  async (c) => {
+    const service = container.resolve(AdminUserFolderService);
+    const user = c.get('user')!;
+    await service.deleteFolder(c.req.param('id')!, user.id);
+    return c.json({ success: true });
+  }
+);
 
 adminRoutes.openapi({ ...getAuthSettingsRoute, middleware: requireScope('settings:gateway:view') }, async (c) => {
   const authSettingsService = container.resolve(AuthSettingsService);

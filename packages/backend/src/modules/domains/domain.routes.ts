@@ -5,16 +5,33 @@ import { hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { requireGatewayFeature } from '@/middleware/feature-flags.js';
 import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import { DomainFolderService } from '@/modules/domains/domain-folders.service.js';
+import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
 import { SSLService } from '@/modules/ssl/ssl.service.js';
 import type { AppEnv } from '@/types.js';
 import {
   checkDomainDnsRoute,
+  createDomainFolderRoute,
   createDomainRoute,
+  deleteDomainFolderRoute,
   deleteDomainRoute,
   getDomainRoute,
   issueDomainCertificateRoute,
+  listDomainFoldersRoute,
   listDomainsRoute,
+  moveDomainFolderRoute,
+  moveDomainsToFolderRoute,
+  reorderDomainFoldersRoute,
+  reorderDomainsRoute,
   searchDomainsRoute,
+  updateDomainFolderRoute,
   updateDomainRoute,
 } from './domain.docs.js';
 import { CreateDomainSchema, DomainListQuerySchema, UpdateDomainSchema } from './domain.schemas.js';
@@ -24,6 +41,70 @@ export const domainRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValida
 
 domainRoutes.use('*', authMiddleware);
 domainRoutes.use('*', requireGatewayFeature('domainsEnabled', 'Domains'));
+
+domainRoutes.openapi({ ...listDomainFoldersRoute, middleware: requireScope('domains:view') }, async (c) => {
+  const service = container.resolve(DomainFolderService);
+  const data = await service.getFolderTree({
+    includeAllFolders: hasScope(c.get('effectiveScopes') || [], 'domains:folders:manage'),
+  });
+  return c.json({ data });
+});
+
+domainRoutes.openapi({ ...createDomainFolderRoute, middleware: requireScope('domains:folders:manage') }, async (c) => {
+  const service = container.resolve(DomainFolderService);
+  const user = c.get('user')!;
+  const input = CreateResourceFolderSchema.parse(await c.req.json());
+  const data = await service.createFolder(input, user.id);
+  return c.json({ data }, 201);
+});
+
+domainRoutes.openapi(
+  { ...reorderDomainFoldersRoute, middleware: requireScope('domains:folders:manage') },
+  async (c) => {
+    const service = container.resolve(DomainFolderService);
+    const input = ReorderResourceFoldersSchema.parse(await c.req.json());
+    await service.reorderFolders(input);
+    return c.json({ success: true });
+  }
+);
+
+domainRoutes.openapi({ ...moveDomainsToFolderRoute, middleware: requireScope('domains:folders:manage') }, async (c) => {
+  const service = container.resolve(DomainFolderService);
+  const user = c.get('user')!;
+  const input = MoveResourcesToFolderSchema.parse(await c.req.json());
+  await service.moveResourcesToFolder(input, user.id);
+  return c.json({ success: true });
+});
+
+domainRoutes.openapi({ ...reorderDomainsRoute, middleware: requireScope('domains:folders:manage') }, async (c) => {
+  const service = container.resolve(DomainFolderService);
+  const input = ReorderResourcesSchema.parse(await c.req.json());
+  await service.reorderResources(input);
+  return c.json({ success: true });
+});
+
+domainRoutes.openapi({ ...updateDomainFolderRoute, middleware: requireScope('domains:folders:manage') }, async (c) => {
+  const service = container.resolve(DomainFolderService);
+  const user = c.get('user')!;
+  const input = UpdateResourceFolderSchema.parse(await c.req.json());
+  const data = await service.updateFolder(c.req.param('id')!, input, user.id);
+  return c.json({ data });
+});
+
+domainRoutes.openapi({ ...moveDomainFolderRoute, middleware: requireScope('domains:folders:manage') }, async (c) => {
+  const service = container.resolve(DomainFolderService);
+  const user = c.get('user')!;
+  const input = MoveResourceFolderSchema.parse(await c.req.json());
+  const data = await service.moveFolder(c.req.param('id')!, input, user.id);
+  return c.json({ data });
+});
+
+domainRoutes.openapi({ ...deleteDomainFolderRoute, middleware: requireScope('domains:folders:manage') }, async (c) => {
+  const service = container.resolve(DomainFolderService);
+  const user = c.get('user')!;
+  await service.deleteFolder(c.req.param('id')!, user.id);
+  return c.json({ success: true });
+});
 
 // List domains (paginated)
 domainRoutes.openapi({ ...listDomainsRoute, middleware: requireScope('domains:view') }, async (c) => {

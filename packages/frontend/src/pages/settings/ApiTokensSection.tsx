@@ -5,7 +5,6 @@ import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PanelShell } from "@/components/common/PanelShell";
 import { ScopeList } from "@/components/common/ScopeList";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -232,16 +231,13 @@ export function ApiTokensSection({
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium">{token.name}</p>
-                        <Badge variant="secondary">
-                          {(token.scopes || []).length}{" "}
-                          {(token.scopes || []).length === 1 ? "SCOPE" : "SCOPES"}
-                        </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {token.tokenPrefix}... &middot; Created {formatDate(token.createdAt)}
                         {token.lastUsedAt
                           ? ` · Last used ${formatRelativeDate(token.lastUsedAt)}`
                           : " · Never used"}
+                        {` · Scopes: ${(token.scopes || []).length}`}
                       </p>
                     </div>
                   </div>
@@ -364,6 +360,7 @@ export function ApiTokensSection({
                     loggingSchemas={loggingSchemasList}
                     restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
                     allowedResourceIds={allowedResourceIdsByScope}
+                    viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
                   />
                   <div className="border-t border-border px-3 py-2">
                     <p className="text-xs text-muted-foreground">

@@ -141,13 +141,19 @@ export class GroupService {
         description: permissionGroups.description,
         isBuiltin: permissionGroups.isBuiltin,
         parentId: permissionGroups.parentId,
+        folderId: permissionGroups.folderId,
+        sortOrder: permissionGroups.sortOrder,
         scopes: permissionGroups.scopes,
         createdAt: permissionGroups.createdAt,
         updatedAt: permissionGroups.updatedAt,
         memberCount: sql<number>`(SELECT count(*) FROM users WHERE users.group_id = "permission_groups"."id")::int`,
       })
       .from(permissionGroups)
-      .orderBy(sql`${permissionGroups.isBuiltin} DESC`, sql`jsonb_array_length(${permissionGroups.scopes}) DESC`);
+      .orderBy(
+        sql`${permissionGroups.isBuiltin} DESC`,
+        sql`${permissionGroups.sortOrder} ASC`,
+        sql`jsonb_array_length(${permissionGroups.scopes}) DESC`
+      );
 
     // Build a map for inherited scope computation
     const groupMap = new Map(groups.map((g) => [g.id, g]));

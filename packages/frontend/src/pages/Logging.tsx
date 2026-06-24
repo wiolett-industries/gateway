@@ -1,4 +1,4 @@
-import { Database, FileJson, Plus, Settings } from "lucide-react";
+import { Database, FileJson, FolderPlus, Plus, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -98,6 +98,12 @@ export function Logging() {
   );
   const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false);
   const [schemaDialogOpen, setSchemaDialogOpen] = useState(false);
+  const [createEnvironmentFolderAction, setCreateEnvironmentFolderAction] = useState<
+    (() => void) | null
+  >(null);
+  const [createSchemaFolderAction, setCreateSchemaFolderAction] = useState<(() => void) | null>(
+    null
+  );
 
   const visibleTopTabs = useMemo(
     () =>
@@ -128,7 +134,12 @@ export function Logging() {
   const selectedSchema = visibleSchemas.find((schema) => schema.id === id) ?? null;
 
   const canCreateEnvironment = hasAnyScope("logs:environments:create", "logs:manage");
+  const canManageEnvironmentFolders = hasAnyScope(
+    "logs:environments:folders:manage",
+    "logs:manage"
+  );
   const canCreateSchema = hasAnyScope("logs:schemas:create", "logs:manage");
+  const canManageSchemaFolders = hasAnyScope("logs:schemas:folders:manage", "logs:manage");
   const canEditEnvironment =
     !!selectedEnvironment &&
     hasAnyScope(
@@ -368,6 +379,15 @@ export function Logging() {
                     },
                   ]
                 : []),
+              ...(topTab === "environments" && canManageEnvironmentFolders
+                ? [
+                    {
+                      label: "Add Folder",
+                      icon: <FolderPlus className="h-4 w-4" />,
+                      onClick: () => createEnvironmentFolderAction?.(),
+                    },
+                  ]
+                : []),
               ...(topTab === "schemas" && canCreateSchema
                 ? [
                     {
@@ -377,13 +397,34 @@ export function Logging() {
                     },
                   ]
                 : []),
+              ...(topTab === "schemas" && canManageSchemaFolders
+                ? [
+                    {
+                      label: "Add Folder",
+                      icon: <FolderPlus className="h-4 w-4" />,
+                      onClick: () => createSchemaFolderAction?.(),
+                    },
+                  ]
+                : []),
             ]}
           >
             <RefreshButton onClick={load} disabled={activeTabLoading} />
+            {topTab === "environments" && canManageEnvironmentFolders && (
+              <Button variant="outline" onClick={() => createEnvironmentFolderAction?.()}>
+                <FolderPlus className="h-4 w-4" />
+                Add Folder
+              </Button>
+            )}
             {topTab === "environments" && canCreateEnvironment && (
               <Button onClick={() => setEnvironmentDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-1" />
                 Create Environment
+              </Button>
+            )}
+            {topTab === "schemas" && canManageSchemaFolders && (
+              <Button variant="outline" onClick={() => createSchemaFolderAction?.()}>
+                <FolderPlus className="h-4 w-4" />
+                Add Folder
               </Button>
             )}
             {topTab === "schemas" && canCreateSchema && (
@@ -415,9 +456,12 @@ export function Logging() {
               search={environmentSearch}
               loading={environmentsLoading}
               canCreate={canCreateEnvironment}
+              canManageFolders={canManageEnvironmentFolders}
               onSearchChange={setEnvironmentSearch}
               onCreate={() => setEnvironmentDialogOpen(true)}
               onOpen={(environment) => navigate(`/logging/environments/${environment.id}/logs`)}
+              onRefresh={load}
+              onCreateFolderRef={(fn) => setCreateEnvironmentFolderAction(() => fn)}
             />
           </TabsContent>
 
@@ -427,6 +471,7 @@ export function Logging() {
               search={schemaSearch}
               loading={schemasLoading}
               canCreate={canCreateSchema}
+              canManageFolders={canManageSchemaFolders}
               canEdit={(schema) =>
                 hasAnyScope("logs:schemas:edit", `logs:schemas:edit:${schema.id}`, "logs:manage")
               }
@@ -446,6 +491,8 @@ export function Logging() {
               }}
               onOpen={(schema) => navigate(`/logging/schemas/${schema.id}`)}
               onDelete={deleteSchema}
+              onRefresh={load}
+              onCreateFolderRef={(fn) => setCreateSchemaFolderAction(() => fn)}
             />
           </TabsContent>
 

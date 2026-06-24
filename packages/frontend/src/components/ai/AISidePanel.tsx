@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Send, Sparkles, Square, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ResizeHandle } from "@/components/ui/resize-handle";
@@ -33,6 +33,7 @@ const PANEL_WIDTH_KEY = "gateway-ai-panel-width";
 const DEFAULT_WIDTH = 360;
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 560;
+const BOTTOM_SCROLL_THRESHOLD = 48;
 
 function readPanelWidth(): number {
   try {
@@ -90,18 +91,46 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   const [input, setInput] = useState("");
   const [slashResults, setSlashResults] = useState<typeof SLASH_COMMANDS>([]);
   const [slashIndex, setSlashIndex] = useState(0);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const context = usePageContext();
 
   // WS lifecycle managed by store subscription to aiPanelOpen — no connect/disconnect here
 
-  // Auto-scroll to bottom on new messages or streaming updates
-  const scrollKey = `${messages[messages.length - 1]?.id ?? ""}:${isStreaming ? "streaming" : "idle"}`;
-  useEffect(() => {
-    if (!scrollKey) return;
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [scrollKey]);
+  const updateStickToBottom = useCallback(() => {
+    const node = scrollViewportRef.current;
+    if (!node) {
+      shouldStickToBottomRef.current = true;
+      return;
+    }
+    shouldStickToBottomRef.current =
+      node.scrollHeight - node.scrollTop - node.clientHeight < BOTTOM_SCROLL_THRESHOLD;
+  }, []);
+
+  const scrollSignature = messages
+    .map((message) =>
+      [
+        message.id,
+        message.content.length,
+        message.isStreaming ? "streaming" : "idle",
+        (message.toolCalls ?? [])
+          .map((toolCall) => `${toolCall.id}:${toolCall.status}:${toolCall.error ?? ""}`)
+          .join(","),
+      ].join(":")
+    )
+    .join("|");
+
+  useLayoutEffect(() => {
+    if (!scrollSignature) return;
+    const node = scrollViewportRef.current;
+    if (!node || !shouldStickToBottomRef.current) return;
+    node.scrollTop = node.scrollHeight;
+    const frame = window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [scrollSignature]);
 
   useEffect(() => {
     const timer = setTimeout(() => textareaRef.current?.focus(), 150);
@@ -230,7 +259,13 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           <QuickActionChips onSelect={handleQuickAction} />
         </div>
       ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto dashboard-scrollbar px-3 pt-3">
+        <div
+          ref={scrollViewportRef}
+          role="log"
+          aria-label="AI messages"
+          className="flex-1 min-h-0 overflow-y-auto dashboard-scrollbar px-3 pt-3"
+          onScroll={updateStickToBottom}
+        >
           <div className="space-y-3">
             {messages.map((msg) => (
               <AIMessage
@@ -241,7 +276,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
                 onAnswer={answerQuestion}
               />
             ))}
-            <div ref={messagesEndRef} className="pb-4" />
+            <div className="pb-4" />
           </div>
         </div>
       )}

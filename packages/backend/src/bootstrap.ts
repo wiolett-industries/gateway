@@ -12,6 +12,7 @@ import { NotificationRetryJob } from '@/jobs/notification-retry.job.js';
 import { UpdateCheckJob } from '@/jobs/update-check.job.js';
 import { logger } from '@/lib/logger.js';
 import { AccessListService } from '@/modules/access-lists/access-list.service.js';
+import { AdminUserFolderService } from '@/modules/admin/admin-user-folders.service.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
 import { AlertService } from '@/modules/audit/alert.service.js';
@@ -34,16 +35,20 @@ import { DockerTaskService } from '@/modules/docker/docker-task.service.js';
 import { DockerWebhookService } from '@/modules/docker/docker-webhook.service.js';
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
 import { DomainsService } from '@/modules/domains/domain.service.js';
+import { DomainFolderService } from '@/modules/domains/domain-folders.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
+import { PermissionGroupFolderService } from '@/modules/groups/permission-group-folders.service.js';
 import { LicenseService } from '@/modules/license/license.service.js';
 import { LICENSE_HEARTBEAT_INTERVAL_MS } from '@/modules/license/license.types.js';
 import { LoggingClickHouseService } from '@/modules/logging/logging-clickhouse.service.js';
 import { LoggingEnvironmentService } from '@/modules/logging/logging-environment.service.js';
+import { LoggingEnvironmentFolderService } from '@/modules/logging/logging-environment-folders.service.js';
 import { LoggingFeatureService } from '@/modules/logging/logging-feature.service.js';
 import { LoggingIngestService } from '@/modules/logging/logging-ingest.service.js';
 import { LoggingMetadataService } from '@/modules/logging/logging-metadata.service.js';
 import { LoggingRateLimitService } from '@/modules/logging/logging-rate-limit.service.js';
 import { LoggingSchemaService } from '@/modules/logging/logging-schema.service.js';
+import { LoggingSchemaFolderService } from '@/modules/logging/logging-schema-folders.service.js';
 import { LoggingSearchService } from '@/modules/logging/logging-search.service.js';
 import { LoggingTokenService } from '@/modules/logging/logging-token.service.js';
 import { LoggingValidationService } from '@/modules/logging/logging-validation.service.js';
@@ -147,6 +152,9 @@ export async function initializeContainer(): Promise<void> {
 
   const authService = new AuthService(db, sessionService, cacheService, authSettingsService, auditService);
   container.registerInstance(AuthService, authService);
+  const adminUserFolderService = new AdminUserFolderService(db, auditService);
+  adminUserFolderService.setEventBus(eventBus);
+  container.registerInstance(AdminUserFolderService, adminUserFolderService);
 
   const oauthService = new OAuthService(db, cacheService, auditService, authSettingsService);
   container.registerInstance(OAuthService, oauthService);
@@ -441,6 +449,9 @@ export async function initializeContainer(): Promise<void> {
   const domainsService = new DomainsService(db, auditService);
   domainsService.setEventBus(eventBus);
   container.registerInstance(DomainsService, domainsService);
+  const domainFolderService = new DomainFolderService(db, auditService);
+  domainFolderService.setEventBus(eventBus);
+  container.registerInstance(DomainFolderService, domainFolderService);
 
   // Setup service (bootstrap management SSL)
   const setupTokenPolicyService = new SetupTokenPolicyService(db, env.SETUP_BOOTSTRAP);
@@ -492,10 +503,17 @@ export async function initializeContainer(): Promise<void> {
   );
   loggingEnvironmentService.setEventBus(eventBus);
   container.registerInstance(LoggingEnvironmentService, loggingEnvironmentService);
+  const loggingEnvironmentFolderService = new LoggingEnvironmentFolderService(db, auditService);
+  loggingEnvironmentFolderService.setEventBus(eventBus);
+  container.registerInstance(LoggingEnvironmentFolderService, loggingEnvironmentFolderService);
   const loggingTokenService = new LoggingTokenService(db, auditService);
   container.registerInstance(LoggingTokenService, loggingTokenService);
   const loggingSchemaService = new LoggingSchemaService(db, auditService);
+  loggingSchemaService.setEventBus(eventBus);
   container.registerInstance(LoggingSchemaService, loggingSchemaService);
+  const loggingSchemaFolderService = new LoggingSchemaFolderService(db, auditService);
+  loggingSchemaFolderService.setEventBus(eventBus);
+  container.registerInstance(LoggingSchemaFolderService, loggingSchemaFolderService);
   const loggingValidationService = new LoggingValidationService(env);
   container.registerInstance(LoggingValidationService, loggingValidationService);
   const loggingRateLimitService = new LoggingRateLimitService(redis, env);
@@ -525,6 +543,9 @@ export async function initializeContainer(): Promise<void> {
   // Group service (injectable — resolve from container)
   const groupService = container.resolve(GroupService);
   groupService.setEventBus(eventBus);
+  const permissionGroupFolderService = new PermissionGroupFolderService(db, auditService);
+  permissionGroupFolderService.setEventBus(eventBus);
+  container.registerInstance(PermissionGroupFolderService, permissionGroupFolderService);
 
   // ── Notification services (before AI — AI uses them) ──────────────
   const notifRuleService = new NotificationAlertRuleService(db, auditService);

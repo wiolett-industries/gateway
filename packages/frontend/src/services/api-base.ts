@@ -36,13 +36,46 @@ export class ApiRequestError extends Error {
 
 function extractApiErrorMessage(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") return fallback;
-  const candidate = payload as { message?: unknown; error?: unknown };
+  const candidate = payload as {
+    code?: unknown;
+    message?: unknown;
+    error?: unknown;
+    details?: unknown;
+  };
+  const firstDetailMessage = Array.isArray(candidate.details)
+    ? candidate.details.find(
+        (detail): detail is { message: string } =>
+          !!detail &&
+          typeof detail === "object" &&
+          typeof (detail as { message?: unknown }).message === "string" &&
+          Boolean((detail as { message: string }).message.trim())
+      )?.message
+    : undefined;
+
+  if (
+    candidate.code === "VALIDATION_ERROR" &&
+    typeof firstDetailMessage === "string" &&
+    firstDetailMessage.trim()
+  ) {
+    return firstDetailMessage;
+  }
   if (typeof candidate.message === "string" && candidate.message.trim()) {
     return candidate.message;
   }
   if (typeof candidate.error === "string" && candidate.error.trim()) {
     return candidate.error;
   }
+  if (candidate.error && typeof candidate.error === "object") {
+    const nested = candidate.error as { message?: unknown; error?: unknown };
+    if (typeof nested.message === "string" && nested.message.trim()) {
+      return nested.message;
+    }
+    if (typeof nested.error === "string" && nested.error.trim()) {
+      return nested.error;
+    }
+  }
+  if (typeof firstDetailMessage === "string" && firstDetailMessage.trim())
+    return firstDetailMessage;
   return fallback;
 }
 

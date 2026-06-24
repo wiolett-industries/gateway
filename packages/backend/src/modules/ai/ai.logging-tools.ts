@@ -12,8 +12,7 @@ import {
 import type { User } from '@/types.js';
 
 export async function manageLoggingTool(user: User, args: Record<string, unknown>) {
-  const resource = String(args.resource);
-  const operation = String(args.operation);
+  const { resource, operation } = normalizeLoggingOperationArgs(args);
   const payload = (args.payload && typeof args.payload === 'object' ? args.payload : {}) as Record<string, unknown>;
   if (resource === 'environment') {
     const { LoggingEnvironmentService } = await import('@/modules/logging/logging-environment.service.js');
@@ -117,6 +116,68 @@ export async function manageLoggingTool(user: User, args: Record<string, unknown
     return container.resolve(LoggingMetadataService).get(String(args.environmentId));
   }
   throw new Error(`Unsupported logging operation: ${resource}.${operation}`);
+}
+
+function normalizeLoggingOperationArgs(args: Record<string, unknown>) {
+  let resource = String(args.resource ?? '').trim();
+  let operation = String(args.operation ?? '').trim();
+
+  if (operation.includes('.')) {
+    const [operationResource, operationName] = operation.split('.', 2);
+    resource ||= operationResource;
+    operation = operationName;
+  }
+
+  return {
+    resource: normalizeLoggingResource(resource),
+    operation: normalizeLoggingOperation(operation),
+  };
+}
+
+function normalizeLoggingResource(resource: string): string {
+  const normalized = resource.trim().toLowerCase().replace(/-/g, '_');
+  const aliases: Record<string, string> = {
+    env: 'environment',
+    envs: 'environment',
+    environment: 'environment',
+    environments: 'environment',
+    logging_environment: 'environment',
+    logging_environments: 'environment',
+    schema: 'schema',
+    schemas: 'schema',
+    logging_schema: 'schema',
+    logging_schemas: 'schema',
+    token: 'token',
+    tokens: 'token',
+    ingest_token: 'token',
+    ingest_tokens: 'token',
+    log: 'logs',
+    logs: 'logs',
+    metadata: 'metadata',
+    facet: 'facets',
+    facets: 'facets',
+  };
+  return aliases[normalized] ?? normalized;
+}
+
+function normalizeLoggingOperation(operation: string): string {
+  const normalized = operation.trim().toLowerCase().replace(/-/g, '_');
+  const aliases: Record<string, string> = {
+    read: 'get',
+    show: 'get',
+    create: 'create',
+    add: 'create',
+    edit: 'update',
+    patch: 'update',
+    remove: 'delete',
+    destroy: 'delete',
+    query: 'search',
+    search: 'search',
+    facet: 'facets',
+    facets: 'facets',
+    metadata: 'metadata',
+  };
+  return aliases[normalized] ?? normalized;
 }
 
 function ensureLoggingScope(user: User, baseScope: string, resourceId?: string) {

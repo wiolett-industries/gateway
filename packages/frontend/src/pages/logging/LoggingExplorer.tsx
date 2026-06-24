@@ -386,7 +386,7 @@ export function LoggingExplorer({
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-9 w-9"
               onClick={() => setCheatsheetOpen(true)}
             >
               <Info className="h-4 w-4" />

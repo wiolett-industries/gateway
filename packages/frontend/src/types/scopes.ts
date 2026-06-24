@@ -187,6 +187,12 @@ const RAW_TOKEN_SCOPES = [
     desc: "Delete managed domains",
     group: "Domains",
   },
+  {
+    value: "domains:folders:manage",
+    label: "Manage Domain Folders",
+    desc: "Organize managed domains into folders",
+    group: "Domains",
+  },
   // Proxy Hosts
   {
     value: "proxy:view",
@@ -396,9 +402,21 @@ const RAW_TOKEN_SCOPES = [
     group: "Administration",
   },
   {
+    value: "admin:users:folders:manage",
+    label: "Manage User Folders",
+    desc: "Create, reorder, and remove user folders",
+    group: "Administration",
+  },
+  {
     value: "admin:groups",
     label: "Manage Groups",
     desc: "Create, edit, and delete permission groups",
+    group: "Administration",
+  },
+  {
+    value: "admin:groups:folders:manage",
+    label: "Manage Group Folders",
+    desc: "Create, reorder, and remove permission group folders",
     group: "Administration",
   },
   {
@@ -865,6 +883,12 @@ const RAW_TOKEN_SCOPES = [
     group: "Logging",
   },
   {
+    value: "logs:environments:folders:manage",
+    label: "Manage Logging Environment Folders",
+    desc: "Create, reorder, and remove logging environment folders",
+    group: "Logging",
+  },
+  {
     value: "logs:tokens:view",
     label: "View Logging Tokens",
     desc: "View logging ingest tokens",
@@ -907,6 +931,12 @@ const RAW_TOKEN_SCOPES = [
     group: "Logging",
   },
   {
+    value: "logs:schemas:folders:manage",
+    label: "Manage Logging Schema Folders",
+    desc: "Create, reorder, and remove logging schema folders",
+    group: "Logging",
+  },
+  {
     value: "logs:read",
     label: "Read Logs",
     desc: "Search and inspect external logs",
@@ -928,7 +958,9 @@ const PROGRAMMATIC_DENIED_SCOPE_VALUES = new Set<string>([
   "mcp:use",
   "admin:system",
   "admin:users",
+  "admin:users:folders:manage",
   "admin:groups",
+  "admin:groups:folders:manage",
   "settings:gateway:view",
   "settings:gateway:edit",
   "proxy:raw:read",

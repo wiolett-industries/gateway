@@ -19,6 +19,8 @@ export interface Domain {
   lastDnsCheckAt: string | null;
   dnsRecords: DnsRecords | null;
   isSystem?: boolean;
+  folderId?: string | null;
+  sortOrder?: number;
   sslCertCount?: number;
   proxyHostCount?: number;
   createdById: string;

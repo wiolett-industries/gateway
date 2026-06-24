@@ -82,12 +82,21 @@ CORRECT (multiple small questions):
 You have an **internal_documentation** tool. Use it BEFORE attempting complex tasks to get detailed info about how things work in this system. Available topics: ${Object.keys(
     INTERNAL_DOCS
   )
-    .filter((t) => !DOC_TOPIC_SCOPES[t] || hasScopeBase(user.scopes, DOC_TOPIC_SCOPES[t]))
+    .filter((t) => {
+      const requiredScope = DOC_TOPIC_SCOPES[t];
+      if (!requiredScope) return true;
+      const scopes = Array.isArray(requiredScope) ? requiredScope : [requiredScope];
+      return scopes.some((scope) => hasScopeBase(user.scopes, scope));
+    })
     .join(
       ', '
     )}. When unsure about field values, workflows, or constraints — look it up first. It's free, fast, and prevents errors.
 
 ## Key Facts (use internal_documentation for details)`);
+
+  parts.push(
+    `- Use find_resource FIRST when the user names a resource and you need an ID, nodeId, or exact type. It searches globally across readable resources. Do not manually list all nodes and then scan each node for Docker resources unless find_resource failed or the user explicitly asked for per-node enumeration.`
+  );
 
   if (hasScopeBase(user.scopes, 'pki:cert:view') || hasScopeBase(user.scopes, 'ssl:cert:view')) {
     parts.push(

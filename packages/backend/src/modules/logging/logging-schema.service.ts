@@ -3,14 +3,21 @@ import type { DrizzleClient } from '@/db/client.js';
 import { type LoggingFieldDefinition, loggingSchemas } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { EventBusService } from '@/services/event-bus.service.js';
 import type { CreateLoggingSchemaInput, UpdateLoggingSchemaInput } from './logging.schemas.js';
 import type { LoggingSchemaView } from './logging-storage.types.js';
 
 export class LoggingSchemaService {
+  private eventBus?: EventBusService;
+
   constructor(
     private readonly db: DrizzleClient,
     private readonly auditService: AuditService
   ) {}
+
+  setEventBus(eventBus: EventBusService): void {
+    this.eventBus = eventBus;
+  }
 
   async list(query?: { search?: string }): Promise<LoggingSchemaView[]> {
     const search = query?.search?.trim();
@@ -20,7 +27,7 @@ export class LoggingSchemaService {
       .where(
         search ? or(ilike(loggingSchemas.name, `%${search}%`), ilike(loggingSchemas.slug, `%${search}%`)) : undefined
       )
-      .orderBy(asc(loggingSchemas.name));
+      .orderBy(asc(loggingSchemas.sortOrder), asc(loggingSchemas.name));
     return rows.map(toView);
   }
 
@@ -46,6 +53,7 @@ export class LoggingSchemaService {
       resourceId: row.id,
       details: { name: row.name, slug: row.slug },
     });
+    this.eventBus?.publish('logging.schema.changed', { action: 'create', id: row.id });
     return toView(row);
   }
 
@@ -68,6 +76,7 @@ export class LoggingSchemaService {
       resourceId: id,
       details: { name: row.name, slug: row.slug },
     });
+    this.eventBus?.publish('logging.schema.changed', { action: 'update', id });
     return toView(row);
   }
 
@@ -82,6 +91,7 @@ export class LoggingSchemaService {
       resourceId: id,
       details: { name: existing.name, slug: existing.slug },
     });
+    this.eventBus?.publish('logging.schema.changed', { action: 'delete', id });
   }
 
   private async findRaw(id: string) {
@@ -98,6 +108,8 @@ function toView(row: typeof loggingSchemas.$inferSelect): LoggingSchemaView {
     description: row.description,
     schemaMode: row.schemaMode,
     fieldSchema: (row.fieldSchema ?? []) as LoggingFieldDefinition[],
+    folderId: row.folderId,
+    sortOrder: row.sortOrder,
     createdById: row.createdById,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

@@ -1,8 +1,7 @@
 import { Moon, ServerCog, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { confirm } from "@/components/common/ConfirmDialog";
-import { EmptyState } from "@/components/common/EmptyState";
 import { PageTransition } from "@/components/common/PageTransition";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -70,6 +69,16 @@ export function Settings() {
   const canManageLicense = hasScope("license:manage");
   const canViewStatusPage = hasScope("status-page:view");
   const userScopes = user?.scopes;
+  const canAccessGatewayTab =
+    canViewGatewaySettings || canManageRegistries || canUpdate || canViewLicense;
+  const canAccessFeaturesTab = canConfigAI || canViewStatusPage || canViewHousekeeping;
+  const availableTabs = useMemo<SettingsTab[]>(() => {
+    const tabs: SettingsTab[] = ["preferences"];
+    if (canAccessGatewayTab) tabs.push("gateway");
+    if (canAccessFeaturesTab) tabs.push("features");
+    return tabs;
+  }, [canAccessFeaturesTab, canAccessGatewayTab]);
+  const currentTab = availableTabs.includes(activeTab) ? activeTab : availableTabs[0];
 
   useEffect(() => {
     api
@@ -169,6 +178,14 @@ export function Settings() {
     }
   }, [navigate, tabParam]);
 
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      navigate(availableTabs[0] === "preferences" ? "/settings" : `/settings/${availableTabs[0]}`, {
+        replace: true,
+      });
+    }
+  }, [activeTab, availableTabs, navigate]);
+
   const handleToggleSystemCertificates = (checked: boolean) => {
     setShowSystemCertificates(checked);
     api.invalidateCache("req:/api/cas");
@@ -193,20 +210,24 @@ export function Settings() {
           <p className="text-sm text-muted-foreground">Account and application settings</p>
         </div>
 
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col">
+        <Tabs value={currentTab} onValueChange={handleTabChange} className="flex flex-col">
           <TabsList className="shrink-0">
             <TabsTrigger value="preferences" className="gap-1.5">
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Preferences
             </TabsTrigger>
-            <TabsTrigger value="gateway" className="gap-1.5">
-              <ServerCog className="h-3.5 w-3.5" />
-              Gateway settings
-            </TabsTrigger>
-            <TabsTrigger value="features" className="gap-1.5">
-              <Sparkles className="h-3.5 w-3.5" />
-              Features
-            </TabsTrigger>
+            {canAccessGatewayTab && (
+              <TabsTrigger value="gateway" className="gap-1.5">
+                <ServerCog className="h-3.5 w-3.5" />
+                Gateway settings
+              </TabsTrigger>
+            )}
+            {canAccessFeaturesTab && (
+              <TabsTrigger value="features" className="gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" />
+                Features
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="preferences" className="pb-0">
@@ -327,45 +348,43 @@ export function Settings() {
             </div>
           </TabsContent>
 
-          <TabsContent value="gateway" className="pb-0">
-            <div className="space-y-4">
-              {canViewGatewaySettings && (
-                <AuthProvisioningSection canEdit={canEditGatewaySettings} />
-              )}
+          {canAccessGatewayTab && (
+            <TabsContent value="gateway" className="pb-0">
+              <div className="space-y-4">
+                {canViewGatewaySettings && (
+                  <AuthProvisioningSection canEdit={canEditGatewaySettings} />
+                )}
 
-              {canManageRegistries && <DockerRegistriesSection nodesList={nodesList} />}
+                {canManageRegistries && <DockerRegistriesSection nodesList={nodesList} />}
 
-              {canViewLicense ? (
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  <UpdateSection canUpdate={canUpdate} />
-                  <LicenseSection canManage={canManageLicense} />
-                </div>
-              ) : (
-                <UpdateSection canUpdate={canUpdate} />
-              )}
-            </div>
-          </TabsContent>
+                {canViewLicense ? (
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    {canUpdate && <UpdateSection canUpdate={canUpdate} />}
+                    <LicenseSection canManage={canManageLicense} />
+                  </div>
+                ) : (
+                  canUpdate && <UpdateSection canUpdate={canUpdate} />
+                )}
+              </div>
+            </TabsContent>
+          )}
 
-          <TabsContent value="features" className="pb-0">
-            <div className="space-y-4">
-              {canConfigAI && <AIConfigSection />}
+          {canAccessFeaturesTab && (
+            <TabsContent value="features" className="pb-0">
+              <div className="space-y-4">
+                {canConfigAI && <AIConfigSection />}
 
-              {canViewStatusPage && <StatusPageSection nodesList={nodesList} />}
+                {canViewStatusPage && <StatusPageSection nodesList={nodesList} />}
 
-              {canViewHousekeeping && (
-                <HousekeepingSection
-                  canRun={canRunHousekeeping}
-                  canConfigure={canConfigureHousekeeping}
-                />
-              )}
-
-              {!canConfigAI && !canViewStatusPage && !canViewHousekeeping && (
-                <PanelShell>
-                  <EmptyState message="No feature settings available for your account." embedded />
-                </PanelShell>
-              )}
-            </div>
-          </TabsContent>
+                {canViewHousekeeping && (
+                  <HousekeepingSection
+                    canRun={canRunHousekeeping}
+                    canConfigure={canConfigureHousekeeping}
+                  />
+                )}
+              </div>
+            </TabsContent>
+          )}
         </Tabs>
 
         <p className="text-center text-xs text-muted-foreground">

@@ -142,6 +142,7 @@ class EventStream {
         } else if (msg.channel === "domain.changed") {
           api.invalidateCache("req:/api/domains");
           api.invalidateCache("domains:list");
+          api.invalidateCache("domains:list:folder-view");
         } else if (msg.channel === "ca.changed") {
           api.invalidateCache("req:/api/cas");
           api.invalidateCache("cas:list:");

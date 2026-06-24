@@ -433,7 +433,7 @@ export class AuthService {
 
   async listUsers(): Promise<User[]> {
     const allUsers = await this.db.query.users.findMany({
-      orderBy: (users, { asc }) => [asc(users.createdAt)],
+      orderBy: (users, { asc }) => [asc(users.sortOrder), asc(users.createdAt)],
     });
 
     const groupMap = await fetchGroupScopeMap(this.db);
@@ -450,6 +450,8 @@ export class AuthService {
         groupName: effective.groupName,
         scopes: effective.scopes,
         isBlocked: u.isBlocked,
+        folderId: u.folderId,
+        sortOrder: u.sortOrder,
       };
     });
   }

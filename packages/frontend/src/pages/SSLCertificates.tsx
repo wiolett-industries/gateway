@@ -1,12 +1,12 @@
 import { ChevronLeft, ChevronRight, MoreVertical, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
 import { DNSChallengeVerification } from "@/components/ssl/DNSChallengeVerification";
 import { SSLCertificateCreateDialog } from "@/components/ssl/SSLCertificateCreateDialog";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +36,7 @@ import { cn, daysUntil, formatDate, hoursUntil } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { useSSLStore } from "@/stores/ssl";
 import { useUIStore } from "@/stores/ui";
-import type { DNSChallenge, SSLCertStatus, SSLCertType } from "@/types";
+import type { DNSChallenge, SSLCertificate, SSLCertStatus, SSLCertType } from "@/types";
 
 const typeOptions: { value: SSLCertType | "all"; label: string }[] = [
   { value: "all", label: "All types" },
@@ -119,7 +119,10 @@ export function SSLCertificates() {
     operation: "issue" | "renewal";
     challenges: DNSChallenge[];
   } | null>(null);
+  const [previewCert, setPreviewCert] = useState<SSLCertificate | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [isVerifyingRenewal, setIsVerifyingRenewal] = useState(false);
+  const previewCleanupTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     void showSystemCertificates;
@@ -129,6 +132,15 @@ export function SSLCertificates() {
   useRealtime("ssl.cert.changed", () => {
     fetchCertificates();
   });
+
+  useEffect(
+    () => () => {
+      if (previewCleanupTimerRef.current !== null) {
+        window.clearTimeout(previewCleanupTimerRef.current);
+      }
+    },
+    []
+  );
 
   const handleSearch = () => {
     setFilters({ search: searchInput });
@@ -216,9 +228,156 @@ export function SSLCertificates() {
     }
   };
 
+  const openCertificatePreview = (cert: SSLCertificate) => {
+    if (previewCleanupTimerRef.current !== null) {
+      window.clearTimeout(previewCleanupTimerRef.current);
+      previewCleanupTimerRef.current = null;
+    }
+    setPreviewCert(cert);
+    setPreviewOpen(true);
+  };
+
+  const handlePreviewOpenChange = (open: boolean) => {
+    setPreviewOpen(open);
+    if (open) return;
+    previewCleanupTimerRef.current = window.setTimeout(() => {
+      setPreviewCert(null);
+      previewCleanupTimerRef.current = null;
+    }, 250);
+  };
+
+  const certificateColumns: SimpleTableColumn<SSLCertificate>[] = [
+    {
+      id: "name",
+      header: "Name",
+      render: (cert) => (
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="truncate text-sm font-medium">{cert.name}</p>
+          {cert.isSystem && <Badge variant="outline">System</Badge>}
+        </div>
+      ),
+    },
+    {
+      id: "domains",
+      header: "Domains",
+      render: (cert) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm text-muted-foreground">
+            {cert.domainNames.slice(0, 2).join(", ") || "-"}
+          </p>
+          {cert.domainNames.length > 2 && (
+            <p className="text-xs text-muted-foreground">+{cert.domainNames.length - 2} more</p>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      render: (cert) => <SSLTypeBadge type={cert.type} />,
+    },
+    {
+      id: "status",
+      header: "Status",
+      render: (cert) => <SSLStatusBadge status={cert.status} />,
+    },
+    {
+      id: "expires",
+      header: "Expires",
+      render: (cert) => {
+        const expDays = cert.notAfter ? daysUntil(cert.notAfter) : null;
+        return cert.notAfter ? (
+          <span
+            className={cn(
+              "text-sm",
+              expDays !== null && expDays <= 7
+                ? "font-medium text-red-600 dark:text-red-400"
+                : expDays !== null && expDays <= 30
+                  ? "text-yellow-600 dark:text-yellow-400"
+                  : "text-muted-foreground"
+            )}
+          >
+            {formatDate(cert.notAfter)}
+            {expDays !== null && expDays > 0 && <span className="ml-1 text-xs">({expDays}d)</span>}
+            {expDays !== null && expDays === 0 && hoursUntil(cert.notAfter) > 0 && (
+              <span className="ml-1 text-xs">({hoursUntil(cert.notAfter)}h)</span>
+            )}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">-</span>
+        );
+      },
+    },
+    {
+      id: "autoRenew",
+      header: "Auto-Renew",
+      render: (cert) =>
+        cert.type === "acme" && cert.acmeChallengeType !== "dns-01" && cert.autoRenew ? (
+          <Badge variant="success">Yes</Badge>
+        ) : (
+          <Badge variant="secondary">No</Badge>
+        ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      className: "w-10",
+      render: (cert) => {
+        const hasPendingDNSVerification =
+          (cert.acmePendingOperation === "issue" || cert.acmePendingOperation === "renewal") &&
+          (cert.acmePendingChallenges?.length ?? 0) > 0;
+        const canContinueDNSVerification = hasScope("ssl:cert:issue") && hasPendingDNSVerification;
+        const canRenewCert =
+          hasScope("ssl:cert:issue") &&
+          cert.type === "acme" &&
+          Boolean(cert.notAfter) &&
+          (cert.status === "active" || cert.status === "error") &&
+          !hasPendingDNSVerification;
+        const canDeleteCert = !cert.isSystem && hasScope("ssl:cert:delete");
+        const hasActions = canContinueDNSVerification || canRenewCert || canDeleteCert;
+        if (!hasActions) return null;
+        return (
+          <div onClick={(event) => event.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canContinueDNSVerification && (
+                  <DropdownMenuItem onClick={() => handleContinueDNSRenewal(cert)}>
+                    <RefreshCw className="h-4 w-4" />
+                    Continue Verification
+                  </DropdownMenuItem>
+                )}
+                {canRenewCert && (
+                  <DropdownMenuItem onClick={() => handleRenew(cert.id)}>
+                    <RefreshCw className="h-4 w-4" />
+                    Renew
+                  </DropdownMenuItem>
+                )}
+                {canDeleteCert && (
+                  <DropdownMenuItem
+                    onClick={() => handleDelete(cert.id, cert.name)}
+                    className="text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
+      <div className="h-full overflow-y-auto p-6 space-y-3">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -298,150 +457,17 @@ export function SSLCertificates() {
           }
         />
 
-        {/* Table */}
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="flex flex-col items-center gap-3">
-              <LoadingSpinner className="" />
-              <p className="text-sm text-muted-foreground">Loading certificates...</p>
-            </div>
-          </div>
-        ) : (certificates || []).length > 0 ? (
+        {(certificates || []).length > 0 || isLoading ? (
           <div className="border border-border bg-card">
-            <div className="overflow-x-auto -mb-px">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Name</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Domains</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Expires</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Auto-Renew</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {certificates.map((cert) => {
-                    const expDays = cert.notAfter ? daysUntil(cert.notAfter) : null;
-                    const supportsAutoRenew =
-                      cert.type === "acme" && cert.acmeChallengeType !== "dns-01" && cert.autoRenew;
-                    const hasPendingDNSVerification =
-                      (cert.acmePendingOperation === "issue" ||
-                        cert.acmePendingOperation === "renewal") &&
-                      (cert.acmePendingChallenges?.length ?? 0) > 0;
-                    const canContinueDNSVerification =
-                      hasScope("ssl:cert:issue") && hasPendingDNSVerification;
-                    const canRenewCert =
-                      hasScope("ssl:cert:issue") &&
-                      cert.type === "acme" &&
-                      Boolean(cert.notAfter) &&
-                      (cert.status === "active" || cert.status === "error") &&
-                      !hasPendingDNSVerification;
-                    const canDeleteCert = !cert.isSystem && hasScope("ssl:cert:delete");
-                    const hasActions = canContinueDNSVerification || canRenewCert || canDeleteCert;
-                    return (
-                      <tr key={cert.id} className="hover:bg-accent transition-colors">
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium">{cert.name}</p>
-                            {cert.isSystem && <Badge variant="outline">System</Badge>}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <div>
-                            <p className="text-sm text-muted-foreground">
-                              {cert.domainNames.slice(0, 2).join(", ")}
-                            </p>
-                            {cert.domainNames.length > 2 && (
-                              <p className="text-xs text-muted-foreground">
-                                +{cert.domainNames.length - 2} more
-                              </p>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <SSLTypeBadge type={cert.type} />
-                        </td>
-                        <td className="p-3">
-                          <SSLStatusBadge status={cert.status} />
-                        </td>
-                        <td className="p-3">
-                          {cert.notAfter ? (
-                            <span
-                              className={cn(
-                                "text-sm",
-                                expDays !== null && expDays <= 7
-                                  ? "text-red-600 dark:text-red-400 font-medium"
-                                  : expDays !== null && expDays <= 30
-                                    ? "text-yellow-600 dark:text-yellow-400"
-                                    : "text-muted-foreground"
-                              )}
-                            >
-                              {formatDate(cert.notAfter)}
-                              {expDays !== null && expDays > 0 && (
-                                <span className="text-xs ml-1">({expDays}d)</span>
-                              )}
-                              {expDays !== null &&
-                                expDays === 0 &&
-                                cert.notAfter &&
-                                hoursUntil(cert.notAfter) > 0 && (
-                                  <span className="text-xs ml-1">
-                                    ({hoursUntil(cert.notAfter)}h)
-                                  </span>
-                                )}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          {supportsAutoRenew ? (
-                            <Badge variant="success">Yes</Badge>
-                          ) : (
-                            <Badge variant="secondary">No</Badge>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          {hasActions && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                {canContinueDNSVerification && (
-                                  <DropdownMenuItem onClick={() => handleContinueDNSRenewal(cert)}>
-                                    <RefreshCw className="h-4 w-4" />
-                                    Continue Verification
-                                  </DropdownMenuItem>
-                                )}
-                                {canRenewCert && (
-                                  <DropdownMenuItem onClick={() => handleRenew(cert.id)}>
-                                    <RefreshCw className="h-4 w-4" />
-                                    Renew
-                                  </DropdownMenuItem>
-                                )}
-                                {canDeleteCert && (
-                                  <DropdownMenuItem
-                                    onClick={() => handleDelete(cert.id, cert.name)}
-                                    className="text-destructive"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <SimpleTable
+              columns={certificateColumns}
+              rows={certificates || []}
+              getRowKey={(cert) => cert.id}
+              loading={isLoading}
+              loadingMessage="Loading certificates..."
+              emptyMessage="No SSL certificates."
+              onRowClick={openCertificatePreview}
+            />
 
             {/* Pagination */}
             {totalPages > 1 && (
@@ -492,6 +518,49 @@ export function SSLCertificates() {
         onOpenChange={setCreateDialogOpen}
         onCreated={fetchCertificates}
       />
+      <Dialog open={previewOpen} onOpenChange={handlePreviewOpenChange}>
+        <DialogContent className="max-w-full sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>SSL Certificate Details</DialogTitle>
+            <DialogDescription>
+              <span className="font-mono text-xs break-all">{previewCert?.name ?? ""}</span>
+            </DialogDescription>
+          </DialogHeader>
+          {previewCert && (
+            <div className="min-w-0 divide-y divide-border overflow-hidden border border-border bg-card">
+              {[
+                ["Name", previewCert.name],
+                ["Domains", previewCert.domainNames.join(", ") || "-"],
+                ["Type", previewCert.type],
+                ["Status", previewCert.status],
+                ["Provider", previewCert.acmeProvider ?? "-"],
+                ["Challenge", previewCert.acmeChallengeType ?? "-"],
+                ["Valid From", previewCert.notBefore ? formatDate(previewCert.notBefore) : "-"],
+                ["Valid Until", previewCert.notAfter ? formatDate(previewCert.notAfter) : "-"],
+                ["Auto-Renew", previewCert.autoRenew ? "Yes" : "No"],
+                [
+                  "Last Renewed",
+                  previewCert.lastRenewedAt ? formatDate(previewCert.lastRenewedAt) : "-",
+                ],
+                ["System", previewCert.isSystem ? "Yes" : "No"],
+                ["Created", formatDate(previewCert.createdAt)],
+                ["Updated", formatDate(previewCert.updatedAt)],
+                ["Error", previewCert.renewalError ?? "-"],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="grid min-w-0 grid-cols-[minmax(96px,max-content)_minmax(0,1fr)] items-center gap-4 px-4 py-3"
+                >
+                  <span className="text-sm text-muted-foreground">{label}</span>
+                  <span className="min-w-0 truncate text-right font-mono text-sm" title={value}>
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!pendingRenewal} onOpenChange={(open) => !open && setPendingRenewal(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>

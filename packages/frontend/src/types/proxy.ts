@@ -130,10 +130,10 @@ export interface CreateProxyHostRequest {
   healthCheckEnabled?: boolean;
   healthCheckUrl?: string;
   healthCheckInterval?: number;
-  healthCheckExpectedStatus?: number;
+  healthCheckExpectedStatus?: number | null;
   healthCheckExpectedBody?: string | null;
   healthCheckBodyMatchMode?: "includes" | "exact" | "starts_with" | "ends_with" | null;
-  healthCheckSlowThreshold?: number;
+  healthCheckSlowThreshold?: number | null;
 }
 
 // Proxy Host Folder Types

@@ -11,7 +11,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'find_resource',
     description:
-      'Search Gateway resources by name, hostname, domain, ID, image, or other visible identifiers across the resources this token can read. Returns compact, permission-filtered matches with resource type, id, name, nodeId when applicable, and safe summary fields.',
+      'Global resource search. Use this FIRST when the user names a resource but you need its ID, nodeId, or exact type. It searches across readable nodes, Docker containers/images/volumes/networks, proxy hosts, certificates, domains, logging resources, databases, notifications, and more. Do not manually list every node and then scan each node when find_resource can search the resource type directly.',
     parameters: {
       type: 'object',
       properties: {
@@ -819,13 +819,14 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'internal_documentation',
     description:
-      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, docker, databases, postgres, redis, housekeeping, permissions, api.',
+      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: discovery, pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, housekeeping, permissions, docker, databases, postgres, redis, logging, api, notifications.',
     parameters: {
       type: 'object',
       properties: {
         topic: {
           type: 'string',
           enum: [
+            'discovery',
             'pki',
             'ssl',
             'proxy',
@@ -837,13 +838,15 @@ export const AI_TOOLS: AIToolDefinition[] = [
             'audit',
             'nginx',
             'nodes',
+            'housekeeping',
+            'permissions',
             'docker',
             'databases',
             'postgres',
             'redis',
-            'housekeeping',
-            'permissions',
+            'logging',
             'api',
+            'notifications',
           ],
           description: 'The topic to get documentation about',
         },
