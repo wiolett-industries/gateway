@@ -15,6 +15,7 @@ import { AccessListService } from '@/modules/access-lists/access-list.service.js
 import { AdminUserFolderService } from '@/modules/admin/admin-user-folders.service.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
+import { AIConversationService } from '@/modules/ai/ai-conversation.service.js';
 import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
@@ -444,6 +445,8 @@ export async function initializeContainer(): Promise<void> {
   // AI Settings
   const aiSettingsService = new AISettingsService(db, cryptoService);
   container.registerInstance(AISettingsService, aiSettingsService);
+  const aiConversationService = new AIConversationService(db);
+  container.registerInstance(AIConversationService, aiConversationService);
 
   // Domain management
   const domainsService = new DomainsService(db, auditService);

@@ -37,6 +37,7 @@ import type {
   UploadCertRequest,
   User,
 } from "@/types";
+import type { AIMessage, PageContext } from "@/types/ai";
 import type { FileEntry } from "@/types/docker";
 import { withAuthApi } from "./api-auth";
 import { API_BASE, ApiClientBase } from "./api-base";
@@ -749,6 +750,75 @@ class ApiClient extends withLoggingApi(
       >;
     }>("/ai/tools");
     return res.data;
+  }
+
+  async listAIConversations(): Promise<
+    Array<{ id: string; title: string; createdAt: string; updatedAt: string; messageCount: number }>
+  > {
+    const res = await this.request<{
+      data: Array<{
+        id: string;
+        title: string;
+        createdAt: string;
+        updatedAt: string;
+        messageCount: number;
+      }>;
+    }>("/ai/conversations");
+    return res.data;
+  }
+
+  async getAIConversation(id: string): Promise<{
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    messageCount: number;
+    messages: AIMessage[];
+    lastContext: PageContext | null;
+    discoveredToolsets: string[];
+    checkpoint: Record<string, unknown> | null;
+  }> {
+    const res = await this.request<{
+      data: {
+        id: string;
+        title: string;
+        createdAt: string;
+        updatedAt: string;
+        messageCount: number;
+        messages: AIMessage[];
+        lastContext: PageContext | null;
+        discoveredToolsets: string[];
+        checkpoint: Record<string, unknown> | null;
+      };
+    }>(`/ai/conversations/${id}`);
+    return res.data;
+  }
+
+  async saveAIConversation(title: string, messages: AIMessage[], lastContext?: PageContext | null) {
+    const res = await this.request<{
+      data: {
+        id: string;
+        title: string;
+        updatedAt: string;
+        messages: AIMessage[];
+      };
+    }>("/ai/conversations", {
+      method: "POST",
+      body: JSON.stringify({ title, messages, lastContext }),
+    });
+    return res.data;
+  }
+
+  async deleteAIConversation(id: string): Promise<void> {
+    await this.request(`/ai/conversations/${id}`, { method: "DELETE" });
+  }
+
+  async deleteAIConversationByTitle(title: string): Promise<boolean> {
+    const res = await this.request<{ data: { deleted: boolean } }>(
+      `/ai/conversations/by-title/${encodeURIComponent(title)}`,
+      { method: "DELETE" }
+    );
+    return res.data.deleted;
   }
 
   // ── Status Page ─────────────────────────────────────────────────

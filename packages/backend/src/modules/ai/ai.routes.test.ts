@@ -8,6 +8,7 @@ import { SessionService } from '@/services/session.service.js';
 import type { AppEnv, SessionData, User } from '@/types.js';
 import { aiRoutes } from './ai.routes.js';
 import { AISettingsService } from './ai.settings.service.js';
+import { AIConversationService } from './ai-conversation.service.js';
 
 const USER: User = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -72,6 +73,7 @@ function createApp() {
 function registerServices() {
   container.registerInstance(SessionService, {
     getSession: vi.fn().mockResolvedValue(SESSION),
+    validateCsrfToken: vi.fn().mockResolvedValue(true),
     updateSession: vi.fn().mockResolvedValue(undefined),
     refreshSession: vi.fn().mockResolvedValue(false),
   } as unknown as SessionService);
@@ -111,5 +113,59 @@ describe('AI routes session-only authentication', () => {
     expect(await response.json()).toEqual({
       message: 'This endpoint requires browser session authentication.',
     });
+  });
+
+  it('stores and restores conversations for the authenticated user', async () => {
+    registerServices();
+    const saveConversation = vi.fn().mockResolvedValue({
+      id: 'conversation-1',
+      title: 'debug session',
+      createdAt: new Date('2026-06-24T09:00:00Z'),
+      updatedAt: new Date('2026-06-24T09:01:00Z'),
+      messageCount: 1,
+      messages: [{ id: 'message-1', role: 'user', content: 'hello' }],
+      lastContext: null,
+      discoveredToolsets: [],
+      checkpoint: null,
+    });
+    container.registerInstance(AIConversationService, {
+      saveConversation,
+    } as unknown as AIConversationService);
+
+    const response = await createApp().request('/api/ai/conversations', {
+      method: 'POST',
+      headers: { Cookie: 'session_id=session-1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: 'debug session',
+        messages: [{ id: 'message-1', role: 'user', content: 'hello' }],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(saveConversation).toHaveBeenCalledWith(USER.id, {
+      title: 'debug session',
+      messages: [{ id: 'message-1', role: 'user', content: 'hello' }],
+    });
+    expect(await response.json()).toMatchObject({
+      data: {
+        id: 'conversation-1',
+        title: 'debug session',
+        messageCount: 1,
+      },
+    });
+  });
+
+  it('returns 404 when restoring another user conversation', async () => {
+    registerServices();
+    container.registerInstance(AIConversationService, {
+      getConversation: vi.fn().mockResolvedValue(null),
+    } as unknown as AIConversationService);
+
+    const response = await createApp().request('/api/ai/conversations/conversation-2', {
+      headers: { Cookie: 'session_id=session-1' },
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ code: 'NOT_FOUND', message: 'Conversation not found' });
   });
 });
