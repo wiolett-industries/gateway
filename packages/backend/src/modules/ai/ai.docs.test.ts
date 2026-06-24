@@ -55,6 +55,8 @@ describe('AI internal docs registry', () => {
     expect(INTERNAL_DOCS.permissions).toContain('Resource-Scoped Permissions');
     expect(INTERNAL_DOCS.permissions).toContain('docker:containers:view');
 
+    expect(getInternalDocumentation('discovery', ['feat:ai:use']).content).toContain('discover_tools');
+    expect(getInternalDocumentation('discovery', ['feat:ai:use']).content).toContain('get_current_context');
     expect(getInternalDocumentation('discovery', ['feat:ai:use']).content).toContain('find_resource');
     expect(getInternalDocumentation('logging', ['logs:schemas:view']).content).toContain('manage_logging');
     expect(getInternalDocumentation('logging', ['logs:read:env-1']).content).toContain('External Logging');

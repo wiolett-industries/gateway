@@ -4,9 +4,27 @@ import { PERMISSIONS_DOC } from './ai.docs.permissions.js';
 export const INTERNAL_DOCS: Record<string, string> = {
   discovery: `# Resource Discovery
 
+Gateway AI starts conversations with a small base tool surface. Domain-specific tools are discovered by category and then remembered on the backend conversation.
+
+## Base Tools
+- discover_tools: inspect callable tool categories and category-specific tools.
+- get_current_context: read the current UI route/resource when the user says "this page" or "current item".
+- find_resource: globally search readable resources by name, ID, domain, image, etc.
+- internal_documentation: read workflow and argument docs before complex operations.
+- ask_question: ask concise clarifying questions.
+- web_search: available only when enabled by settings.
+
+## Tool Discovery
+- If the needed operation is not available, call discover_tools first.
+- Use discover_tools({ category: "Logging" }) before managing logging environments/schemas/logs.
+- Use discover_tools({ category: "Docker" }) before managing Docker containers/images/volumes/networks.
+- Use discover_tools({ query: "certificate" }) when you know the task but not the category.
+- After discovery, use internal_documentation for workflow details and argument shapes.
+
 Use find_resource whenever the user gives a name, domain, hostname, image, container name, certificate name, logging environment/schema name, database name, or other visible identifier and you need the actual ID or nodeId.
 
 ## Rule
+- Use get_current_context when the user refers to the page or resource they are currently viewing.
 - Prefer find_resource before broad list sweeps.
 - Do not list every node and then inspect every node for Docker resources unless find_resource failed, the user explicitly asked for per-node enumeration, or you need a complete inventory.
 - If the result includes nodeId, pass that nodeId to Docker tools.
