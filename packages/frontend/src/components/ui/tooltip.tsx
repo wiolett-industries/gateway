@@ -22,7 +22,7 @@ const TooltipContent = React.forwardRef<
     >
       {props.children}
       <TooltipPrimitive.Arrow
-        className="fill-popover stroke-border"
+        className="fill-border stroke-border"
         width={12}
         height={6}
         strokeWidth={1}

@@ -67,10 +67,11 @@ export function ResizeHandle({
   return (
     <div
       className={cn(
-        "absolute top-0 bottom-0 w-1 cursor-col-resize z-10 group",
-        "hover:bg-primary/30 transition-colors",
-        isDragging && "bg-primary/40",
-        side === "left" ? "right-0" : "left-0"
+        "absolute top-0 bottom-0 z-20 w-3 cursor-col-resize group",
+        "after:absolute after:top-0 after:bottom-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:transition-colors",
+        "hover:after:bg-primary/30",
+        isDragging && "after:bg-primary/40",
+        side === "left" ? "-right-1.5" : "-left-1.5"
       )}
       onMouseDown={handleMouseDown}
     />

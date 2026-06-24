@@ -12,6 +12,48 @@ import { AIConversationService } from './ai-conversation.service.js';
 
 export const aiRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
+function humanizeToolName(name: string): string {
+  const acronyms = new Set(['ai', 'api', 'ca', 'crl', 'dns', 'http', 'https', 'id', 'ip', 'pki', 'ssl', 'url']);
+  return name
+    .split('_')
+    .map((part) => (acronyms.has(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join(' ');
+}
+
+function toolSubject(name: string): string {
+  return humanizeToolName(
+    name.replace(
+      /^(list|get|create|update|delete|remove|manage|query|run|scan|reveal|test|pull|start|stop|restart|inspect)_/,
+      ''
+    )
+  ).toLowerCase();
+}
+
+function userFacingToolDescription(name: string, category: string, destructive: boolean): string {
+  if (name === 'discover_tools') return 'Find available Gateway tool groups and capabilities.';
+  if (name === 'get_current_context') return 'Read the page and resource currently open in the UI.';
+  if (name === 'find_resource') return 'Search Gateway resources by name, type, or identifier.';
+  if (name === 'internal_documentation') return 'Search the assistant documentation for Gateway operations.';
+  if (name === 'wait') return 'Pause briefly before checking an operation again.';
+  if (name === 'web_search') return 'Search the web when current external information is needed.';
+
+  const subject = toolSubject(name);
+  if (name.startsWith('list_')) return `View ${subject} records.`;
+  if (name.startsWith('get_') || name.startsWith('inspect_')) return `View details for ${subject}.`;
+  if (name.startsWith('create_')) return `Create ${subject}.`;
+  if (name.startsWith('update_') || name.startsWith('manage_')) return `Change ${subject}.`;
+  if (name.startsWith('delete_') || name.startsWith('remove_')) return `Delete ${subject}.`;
+  if (name.startsWith('query_') || name.startsWith('run_') || name.startsWith('scan_')) return `Run ${subject}.`;
+  if (name.startsWith('pull_')) return `Pull ${subject}.`;
+  if (name.startsWith('start_')) return `Start ${subject}.`;
+  if (name.startsWith('stop_')) return `Stop ${subject}.`;
+  if (name.startsWith('restart_')) return `Restart ${subject}.`;
+  if (name.startsWith('reveal_')) return `Reveal ${subject}.`;
+  if (name.startsWith('test_')) return `Test ${subject}.`;
+
+  return `${destructive ? 'Change' : 'Use'} ${category.toLowerCase()} capabilities.`;
+}
+
 aiRoutes.use('*', authMiddleware);
 aiRoutes.use('*', sessionOnly);
 
@@ -102,14 +144,21 @@ aiRoutes.openapi({ ...updateAiConfigRoute, middleware: requireScope('feat:ai:con
 aiRoutes.openapi({ ...listAiToolsRoute, middleware: requireScope('feat:ai:configure') }, async (c) => {
   const grouped: Record<
     string,
-    Array<{ name: string; description: string; destructive: boolean; requiredScope: string }>
+    Array<{
+      name: string;
+      displayName: string;
+      displayDescription: string;
+      destructive: boolean;
+      requiredScope: string;
+    }>
   > = {};
 
   for (const tool of AI_TOOLS) {
     if (!grouped[tool.category]) grouped[tool.category] = [];
     grouped[tool.category].push({
       name: tool.name,
-      description: tool.description,
+      displayName: humanizeToolName(tool.name),
+      displayDescription: userFacingToolDescription(tool.name, tool.category, tool.destructive),
       destructive: tool.destructive,
       requiredScope: tool.requiredScope,
     });

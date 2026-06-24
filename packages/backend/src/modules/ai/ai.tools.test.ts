@@ -25,9 +25,10 @@ function dockerToolNamesForScopes(scopes: string[]): string[] {
 describe('AI tool scope filtering', () => {
   it('keeps core registry ordering, uniqueness, and invalidation contracts stable', () => {
     expect(new Set(AI_TOOLS.map((tool) => tool.name)).size).toBe(AI_TOOLS.length);
-    expect(AI_TOOLS.slice(0, 55).map((tool) => tool.name)).toEqual([
+    expect(AI_TOOLS.slice(0, 56).map((tool) => tool.name)).toEqual([
       'discover_tools',
       'get_current_context',
+      'wait',
       'find_resource',
       'list_cas',
       'get_ca',
@@ -113,6 +114,7 @@ describe('AI tool scope filtering', () => {
       expect.arrayContaining([
         'discover_tools',
         'get_current_context',
+        'wait',
         'find_resource',
         'get_dashboard_stats',
         'ask_question',
@@ -173,6 +175,7 @@ describe('AI tool scope filtering', () => {
       expect.arrayContaining([
         'discover_tools',
         'get_current_context',
+        'wait',
         'find_resource',
         'ask_question',
         'internal_documentation',

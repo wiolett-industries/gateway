@@ -20,12 +20,51 @@ import { useSSLStore } from "@/stores/ssl";
 import { useUIStore } from "@/stores/ui";
 import type {
   AIMessage,
+  AIConfig,
   AIToolCall,
   ChatMessage,
   PageContext,
   ToolActionType,
   WSServerMessage,
 } from "@/types/ai";
+
+const DEFAULT_CONTEXT_TOKEN_LIMIT = 56000;
+const DEFAULT_REASONING_EFFORT: AIConfig["reasoningEffort"] = "none";
+
+async function resolveContextSettings(): Promise<{
+  limit: number;
+  source: "settings" | "fallback";
+  reasoningEffort: AIConfig["reasoningEffort"];
+}> {
+  const cached = api.getCached<AIConfig>("settings:ai-config");
+  if (cached?.maxContextTokens) {
+    return {
+      limit: cached.maxContextTokens,
+      source: "settings",
+      reasoningEffort: cached.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
+    };
+  }
+
+  try {
+    const config = (await api.getAIConfig()) as unknown as AIConfig;
+    api.setCache("settings:ai-config", config);
+    if (config.maxContextTokens) {
+      return {
+        limit: config.maxContextTokens,
+        source: "settings",
+        reasoningEffort: config.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
+      };
+    }
+  } catch {
+    // Fall through to the legacy estimate when settings are unavailable.
+  }
+
+  return {
+    limit: DEFAULT_CONTEXT_TOKEN_LIMIT,
+    source: "fallback",
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+  };
+}
 
 const CREATE_OPERATIONS = new Set([
   "create",
@@ -36,6 +75,32 @@ const CREATE_OPERATIONS = new Set([
   "add_column",
   "create_secret",
   "create_update",
+]);
+const READ_OPERATIONS = new Set([
+  "list",
+  "get",
+  "search",
+  "facets",
+  "metadata",
+  "preview",
+  "health_history",
+  "list_schemas",
+  "list_tables",
+  "table_metadata",
+  "browse_rows",
+  "scan_keys",
+  "get_key",
+  "get_env",
+  "list_files",
+  "read_file",
+  "list_secrets",
+  "get_webhook",
+  "get_health_check",
+  "chain",
+  "export",
+  "reveal_credentials",
+  "test",
+  "test_direct",
 ]);
 const EDIT_OPERATIONS = new Set([
   "update",
@@ -69,6 +134,7 @@ const DELETE_OPERATIONS = new Set([
 ]);
 
 function getOperationActionType(operation: string): ToolActionType {
+  if (READ_OPERATIONS.has(operation)) return "read";
   if (CREATE_OPERATIONS.has(operation)) return "create";
   if (EDIT_OPERATIONS.has(operation)) return "edit";
   if (DELETE_OPERATIONS.has(operation)) return "delete";
@@ -80,6 +146,39 @@ function getToolActionType(toolName: string, args?: Record<string, unknown>): To
   if (toolName.startsWith("manage_") && operation) {
     return getOperationActionType(operation);
   }
+  if (
+    toolName.startsWith("list_") ||
+    toolName.startsWith("get_") ||
+    toolName.startsWith("query_") ||
+    toolName.startsWith("browse_") ||
+    toolName === "discover_tools" ||
+    toolName === "get_current_context" ||
+    toolName === "wait" ||
+    toolName === "find_resource" ||
+    toolName === "internal_documentation" ||
+    toolName === "web_search"
+  ) {
+    return "read";
+  }
+  if (toolName === "pull_docker_image") return "create";
+  if (toolName === "prune_docker_images") return "delete";
+  if (
+    toolName === "execute_postgres_sql" ||
+    toolName === "set_redis_key" ||
+    toolName === "execute_redis_command" ||
+    toolName === "kill_docker_deployment" ||
+    toolName === "deploy_docker_deployment" ||
+    toolName === "switch_docker_deployment_slot" ||
+    toolName === "rollback_docker_deployment" ||
+    toolName === "rename_docker_container" ||
+    toolName === "test_webhook" ||
+    toolName === "rename_node" ||
+    toolName === "toggle_proxy_raw_mode" ||
+    toolName === "move_hosts_to_folder"
+  ) {
+    return "edit";
+  }
+  if (toolName === "duplicate_docker_container") return "create";
   if (
     toolName.startsWith("create_") ||
     toolName.startsWith("issue_") ||
@@ -102,6 +201,7 @@ function getToolActionType(toolName: string, args?: Record<string, unknown>): To
 function shouldAutoApprove(toolName: string, args?: Record<string, unknown>): boolean {
   const ui = useUIStore.getState();
   const action = getToolActionType(toolName, args);
+  if (action === "read") return true;
   if (action === "create" && ui.aiBypassCreateApprovals) return true;
   if (action === "edit" && ui.aiBypassEditApprovals) return true;
   if (action === "delete" && ui.aiBypassDeleteApprovals) return true;
@@ -316,6 +416,28 @@ async function ensureActiveConversation(
   }
 }
 
+async function persistActiveConversationSnapshot(): Promise<void> {
+  const state = useAIStore.getState();
+  const conversationId = state.activeConversationId;
+  if (!conversationId) return;
+
+  const messages = state.messages.filter((message) => !message.localOnly);
+  if (messages.length === 0) return;
+
+  try {
+    const saved = await compactConversation(conversationId, messages, state.lastContext);
+    if (useAIStore.getState().activeConversationId === conversationId) {
+      useAIStore.setState({
+        savedName: saved.title,
+        lastContext: saved.lastContext,
+      });
+    }
+    void useAIStore.getState().fetchRecentConversations();
+  } catch {
+    // Keep the live chat intact; a later message or explicit compact can retry persistence.
+  }
+}
+
 function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
   const result: ChatMessage[] = [];
   for (const msg of messages) {
@@ -359,6 +481,37 @@ function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
     }
   }
   return result;
+}
+
+export interface AIContextUsage {
+  messageCount: number;
+  estimatedTokens: number;
+  limit: number;
+  percent: number;
+  chatTokens: number;
+  overheadTokens: number;
+  source: "settings" | "fallback";
+  reasoningEffort: AIConfig["reasoningEffort"];
+}
+
+export async function getAIContextUsage(messages: AIMessage[]): Promise<AIContextUsage> {
+  const chatMessages = buildChatMessages(messages);
+  const charCount = chatMessages.reduce((sum, message) => sum + (message.content?.length || 0), 0);
+  const chatTokens = Math.ceil(charCount / 4);
+  const overheadTokens = 3000;
+  const estimatedTokens = chatTokens + overheadTokens;
+  const { limit, source, reasoningEffort } = await resolveContextSettings();
+
+  return {
+    messageCount: chatMessages.length,
+    estimatedTokens,
+    limit,
+    percent: Math.round((estimatedTokens / limit) * 100),
+    chatTokens,
+    overheadTokens,
+    source,
+    reasoningEffort,
+  };
 }
 
 export const useAIStore = create<AIState>()((set, get) => ({
@@ -655,17 +808,14 @@ export const useAIStore = create<AIState>()((set, get) => ({
 
     if (cmd === "/context") {
       const { messages } = get();
-      const chatMessages = buildChatMessages(messages);
-      const charCount = chatMessages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
-      const tokenEstimate = Math.ceil(charCount / 4);
-      const overhead = 3000;
-      const total = tokenEstimate + overhead;
-      const limit = 56000;
+      const usage = await getAIContextUsage(messages);
+      const sourceNote =
+        usage.source === "fallback" ? "\n- Limit source: fallback (AI settings unavailable)" : "";
 
       const localMsg: AIMessage = {
         id: generateId(),
         role: "assistant",
-        content: `**Context Usage**\n- Messages: ${chatMessages.length}\n- Estimated tokens: ${total.toLocaleString()} / ${limit.toLocaleString()} (${Math.round((total / limit) * 100)}%)\n- Chat: ~${tokenEstimate.toLocaleString()} tokens\n- System overhead: ~${overhead.toLocaleString()} tokens`,
+        content: `**Context Usage**\n- Messages: ${usage.messageCount}\n- Estimated tokens: ${usage.estimatedTokens.toLocaleString()} / ${usage.limit.toLocaleString()} (${usage.percent}%)\n- Chat: ~${usage.chatTokens.toLocaleString()} tokens\n- System overhead: ~${usage.overheadTokens.toLocaleString()} tokens\n- Reasoning: ${usage.reasoningEffort}${sourceNote}`,
         localOnly: true,
       };
       set((state) => ({ messages: [...state.messages, localMsg] }));
@@ -840,6 +990,7 @@ function handleWSMessage(
         isStreaming: false,
         messages: state.messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)),
       }));
+      void persistActiveConversationSnapshot();
       currentRequestId = null;
       break;
     }
@@ -871,14 +1022,14 @@ function handleWSMessage(
   }
 }
 
-// Auto-manage WS lifecycle based on AI panel open state.
+// Auto-manage WS lifecycle based on visible AI surfaces.
 // This runs outside React — no component mount/unmount issues.
-let prevAIPanelOpen = false;
+let prevAIActive = false;
 useUIStore.subscribe((state) => {
-  const open = state.aiPanelOpen;
-  if (open !== prevAIPanelOpen) {
-    prevAIPanelOpen = open;
-    if (open) {
+  const active = state.aiPanelOpen || state.aiLiteMode;
+  if (active !== prevAIActive) {
+    prevAIActive = active;
+    if (active) {
       useAIStore.getState().connect();
     } else {
       useAIStore.getState().disconnect();
@@ -894,7 +1045,8 @@ useAuthStore.subscribe((state) => {
   prevAuthUserId = nextUserId;
   prevAuthLoading = state.isLoading;
 
-  if (!authChanged || !useUIStore.getState().aiPanelOpen) return;
+  const aiActive = useUIStore.getState().aiPanelOpen || useUIStore.getState().aiLiteMode;
+  if (!authChanged || !aiActive) return;
   if (state.user) {
     void useAIStore.getState().connect();
   } else if (!state.isLoading) {

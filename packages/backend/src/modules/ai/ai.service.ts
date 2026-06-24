@@ -382,6 +382,17 @@ export class AIService {
           hasCurrentPage: !!runtimeContext.pageContext?.route,
         };
 
+      case 'wait': {
+        const rawSeconds = Number(a.seconds ?? 5);
+        const seconds = Math.min(30, Math.max(1, Number.isFinite(rawSeconds) ? rawSeconds : 5));
+        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+        return {
+          waitedSeconds: seconds,
+          reason: stringArg(a.reason) ?? null,
+          nextStep: 'Call the relevant read/status tool again to verify whether the pending operation completed.',
+        };
+      }
+
       case 'find_resource':
         return findResource(
           {

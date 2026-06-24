@@ -1,32 +1,21 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Check,
+  Expand,
   MessageSquare,
-  Send,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
   Sparkles,
-  Square,
   Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
 import { useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
 import type { PageContext } from "@/types/ai";
+import { AIComposer, type AIApprovalMode } from "./AIComposer";
 import { AIMessage } from "./AIMessage";
 import { QuestionBlock } from "./AIToolCallBlock";
 import { QuickActionChips } from "./QuickActionChips";
@@ -123,9 +112,17 @@ async function confirmBypassEverythingMode(): Promise<boolean> {
   });
 }
 
-type AIApprovalMode = "normal" | "bypass-write" | "bypass-everything";
+interface AIChatSurfaceProps {
+  active?: boolean;
+  onClose?: () => void;
+  onEnterLiteMode?: () => void;
+}
 
-function PanelContent({ onClose }: { onClose: () => void }) {
+export function AIChatSurface({
+  active = true,
+  onClose,
+  onEnterLiteMode,
+}: AIChatSurfaceProps) {
   const {
     messages,
     isStreaming,
@@ -144,6 +141,7 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     fetchRecentConversations,
     loadConversation,
     deleteConversation,
+    connect,
   } = useAIStore();
 
   const [input, setInput] = useState("");
@@ -196,7 +194,10 @@ function PanelContent({ onClose }: { onClose: () => void }) {
     ]
   );
 
-  // WS lifecycle managed by store subscription to aiPanelOpen — no connect/disconnect here
+  useEffect(() => {
+    if (!active) return;
+    void connect();
+  }, [active, connect]);
 
   const updateStickToBottom = useCallback(() => {
     const node = scrollViewportRef.current;
@@ -343,11 +344,27 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+      <div className="flex h-[49px] shrink-0 items-center justify-between border-b border-border px-3">
         <span className="text-sm font-semibold">AI Assistant</span>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          {onEnterLiteMode && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={onEnterLiteMode}
+              title="Full screen"
+              aria-label="Full screen"
+            >
+              <Expand className="h-4 w-4" />
+            </Button>
+          )}
+          {onClose && (
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
@@ -450,93 +467,28 @@ function PanelContent({ onClose }: { onClose: () => void }) {
         </div>
       ) : (
         <div className="shrink-0 border-t border-border relative">
-          {/* Slash command popup */}
-          <AnimatePresence>
-            {slashResults.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }}
-                transition={{ duration: 0.12 }}
-                className="absolute left-0 right-0 border-t border-border bg-background shadow-md z-10"
-                style={{ bottom: "calc(100% + 1px)" }}
-              >
-                {slashResults.map((cmd, i) => (
-                  <button
-                    key={cmd.name}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${i === slashIndex ? "bg-muted" : "hover:bg-muted/50"}`}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      if (isStreaming) return;
-                      handleSlashCommand(`/${cmd.name}`);
-                      setInput("");
-                      setSlashResults([]);
-                    }}
-                  >
-                    <span className="font-mono text-muted-foreground">/{cmd.name}</span>
-                    <span className="text-muted-foreground/60 ml-auto shrink-0">
-                      {cmd.description}
-                    </span>
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <div className="relative flex">
-            <Textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={isStreaming ? "AI is responding..." : "Ask anything... (/ commands)"}
-              disabled={!isConnected || !!retryAfter}
-              rows={1}
-              className="block min-h-0 resize-none border-0 px-3 py-2.5 pr-[4.75rem] leading-5 focus-visible:ring-0"
-            />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="absolute right-9 p-1.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
-                  style={{ bottom: "calc(50% - 14px)" }}
-                  title={approvalModeLabel}
-                  aria-label={approvalModeLabel}
-                >
-                  {approvalMode === "bypass-everything" ? (
-                    <ShieldAlert className="h-4 w-4" />
-                  ) : approvalMode === "bypass-write" ? (
-                    <ShieldCheck className="h-4 w-4" />
-                  ) : (
-                    <Shield className="h-4 w-4" />
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="top" className="w-64">
-                <DropdownMenuItem onClick={() => void setApprovalMode("normal")}>
-                  <Shield className="h-4 w-4" />
-                  <span>Normal</span>
-                  {approvalMode === "normal" && <Check className="ml-auto h-4 w-4" />}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => void setApprovalMode("bypass-write")}>
-                  <ShieldCheck className="h-4 w-4" />
-                  <span>Bypass edit and creation</span>
-                  {approvalMode === "bypass-write" && <Check className="ml-auto h-4 w-4" />}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => void setApprovalMode("bypass-everything")}>
-                  <ShieldAlert className="h-4 w-4" />
-                  <span>Bypass everything</span>
-                  {approvalMode === "bypass-everything" && <Check className="ml-auto h-4 w-4" />}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <button
-              className="absolute right-1.5 p-1.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
-              style={{ bottom: "calc(50% - 14px)" }}
-              onClick={isStreaming ? stopStreaming : handleSend}
-              disabled={!isStreaming && (!input.trim() || !isConnected || !!retryAfter)}
-            >
-              {isStreaming ? <Square className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-            </button>
-          </div>
+          <AIComposer
+            textareaRef={textareaRef}
+            input={input}
+            onInputChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            onSend={() => void handleSend()}
+            onStop={stopStreaming}
+            onSlashCommandSelect={(command) => {
+              void handleSlashCommand(`/${command.name}`);
+              setInput("");
+              setSlashResults([]);
+            }}
+            slashResults={slashResults}
+            slashIndex={slashIndex}
+            messages={messages}
+            isStreaming={isStreaming}
+            isConnected={isConnected}
+            retryAfter={retryAfter}
+            approvalMode={approvalMode}
+            approvalModeLabel={approvalModeLabel}
+            setApprovalMode={setApprovalMode}
+          />
         </div>
       )}
     </div>
@@ -548,11 +500,17 @@ interface AISidePanelProps {
 }
 
 export function AISidePanel({ isMobile = false }: AISidePanelProps) {
-  const { aiPanelOpen, setAIPanelOpen } = useUIStore();
+  const { aiPanelOpen, setAIPanelOpen, setAILiteMode } = useUIStore();
+  const navigate = useNavigate();
   const [panelWidth, setPanelWidth] = useState(readPanelWidth);
   const [isResizing, setIsResizing] = useState(false);
 
   const handleClose = () => setAIPanelOpen(false);
+  const handleEnterLiteMode = () => {
+    setAILiteMode(true);
+    setAIPanelOpen(false);
+    navigate("/");
+  };
 
   const handleResizeEnd = useCallback(() => {
     setIsResizing(false);
@@ -573,7 +531,7 @@ export function AISidePanel({ isMobile = false }: AISidePanelProps) {
           <SheetHeader className="sr-only">
             <SheetTitle>AI Assistant</SheetTitle>
           </SheetHeader>
-          <PanelContent onClose={handleClose} />
+          <AIChatSurface active={aiPanelOpen} onClose={handleClose} />
         </SheetContent>
       </Sheet>
     );
@@ -588,19 +546,21 @@ export function AISidePanel({ isMobile = false }: AISidePanelProps) {
           animate={{ width: panelWidth }}
           exit={{ width: 0 }}
           transition={isResizing ? { duration: 0 } : { duration: 0.15, ease: "easeOut" }}
-          className="relative h-full shrink-0 overflow-hidden border-l border-border"
+          className="relative h-full shrink-0 overflow-visible"
         >
-          {/* Inner content pinned to panelWidth so it never reflows */}
-          <div style={{ width: panelWidth }} className="h-full flex flex-col bg-background">
-            <ResizeHandle
-              side="right"
-              onResize={setPanelWidth}
-              onResizeStart={() => setIsResizing(true)}
-              onResizeEnd={handleResizeEnd}
-              minWidth={MIN_WIDTH}
-              maxWidth={MAX_WIDTH}
-            />
-            <PanelContent onClose={handleClose} />
+          <ResizeHandle
+            side="right"
+            onResize={setPanelWidth}
+            onResizeStart={() => setIsResizing(true)}
+            onResizeEnd={handleResizeEnd}
+            minWidth={MIN_WIDTH}
+            maxWidth={MAX_WIDTH}
+          />
+          <div className="h-full overflow-hidden border-l border-border">
+            {/* Inner content pinned to panelWidth so it never reflows */}
+            <div style={{ width: panelWidth }} className="h-full flex flex-col bg-background">
+              <AIChatSurface onClose={handleClose} onEnterLiteMode={handleEnterLiteMode} />
+            </div>
           </div>
         </motion.div>
       )}

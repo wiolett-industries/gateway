@@ -1,17 +1,62 @@
+import { ChevronDown, ChevronRight, TerminalSquare } from "lucide-react";
+import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { AIMessage as AIMessageType } from "@/types/ai";
+import type { AIMessage as AIMessageType, AIToolCall } from "@/types/ai";
 import { AIToolCallBlock } from "./AIToolCallBlock";
 
 interface AIMessageProps {
   message: AIMessageType;
+  assistantMaxWidthClass?: string;
   onApprove?: (toolCallId: string) => void;
   onReject?: (toolCallId: string) => void;
   onAnswer?: (toolCallId: string, answer: string) => void;
 }
 
-export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageProps) {
+type ToolCallRenderItem =
+  | { type: "single"; toolCall: AIToolCall }
+  | { type: "finished-group"; toolCalls: AIToolCall[] };
+
+function isGroupableFinishedToolCall(toolCall: AIToolCall): boolean {
+  return toolCall.status === "completed" || toolCall.status === "failed";
+}
+
+function buildToolCallRenderItems(toolCalls: AIToolCall[]): ToolCallRenderItem[] {
+  const items: ToolCallRenderItem[] = [];
+  let finishedRun: AIToolCall[] = [];
+
+  const flushFinishedRun = () => {
+    if (finishedRun.length === 1) {
+      items.push({ type: "single", toolCall: finishedRun[0] });
+    } else if (finishedRun.length > 1) {
+      items.push({ type: "finished-group", toolCalls: finishedRun });
+    }
+    finishedRun = [];
+  };
+
+  for (const toolCall of toolCalls) {
+    if (isGroupableFinishedToolCall(toolCall)) {
+      finishedRun.push(toolCall);
+      continue;
+    }
+
+    flushFinishedRun();
+    items.push({ type: "single", toolCall });
+  }
+
+  flushFinishedRun();
+  return items;
+}
+
+export function AIMessage({
+  message,
+  assistantMaxWidthClass = "max-w-[95%]",
+  onApprove,
+  onReject,
+  onAnswer,
+}: AIMessageProps) {
   const content = typeof message.content === "string" ? message.content : "";
+  const toolCallItems = message.toolCalls ? buildToolCallRenderItems(message.toolCalls) : [];
 
   if (message.role === "user") {
     // Strip hidden system instructions (e.g. from command palette "Ask AI")
@@ -65,26 +110,33 @@ export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageP
   const isRetrying = message.isStreaming && hasError;
 
   return (
-    <div className="max-w-[95%]">
+    <div className={assistantMaxWidthClass}>
       <div className="text-sm">
         {/* Tool calls rendered first */}
         {hasToolCalls && (
-          <div className="space-y-1">
-            {message.toolCalls!.map((tc) => (
-              <AIToolCallBlock
-                key={tc.id}
-                toolCall={tc}
-                onApprove={onApprove}
-                onReject={onReject}
-                onAnswer={onAnswer}
-              />
-            ))}
+          <div className="space-y-0.5">
+            {toolCallItems.map((item) =>
+              item.type === "single" ? (
+                <AIToolCallBlock
+                  key={item.toolCall.id}
+                  toolCall={item.toolCall}
+                  onApprove={onApprove}
+                  onReject={onReject}
+                  onAnswer={onAnswer}
+                />
+              ) : (
+                <FinishedToolCallsGroup
+                  key={item.toolCalls.map((tc) => tc.id).join(":")}
+                  toolCalls={item.toolCalls}
+                />
+              )
+            )}
           </div>
         )}
 
         {/* Text content */}
         {hasContent && (
-          <div className="prose prose-sm dark:prose-invert !max-w-none break-words prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-pre:my-0 prose-table:my-0 prose-code:text-xs prose-pre:text-xs prose-pre:rounded-none prose-code:rounded-none prose-code:before:content-none prose-code:after:content-none [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0">
+          <div className="prose prose-sm dark:prose-invert !max-w-none break-words prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-ol:my-2 prose-pre:my-2 prose-table:my-0 prose-code:text-xs prose-pre:text-xs prose-pre:rounded-none prose-code:rounded-none prose-code:before:content-none prose-code:after:content-none [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0">
             <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
               {content}
             </Markdown>
@@ -105,9 +157,48 @@ export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageP
   );
 }
 
+function FinishedToolCallsGroup({ toolCalls }: { toolCalls: AIToolCall[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const failedCount = toolCalls.filter((toolCall) => toolCall.status === "failed").length;
+  const groupLabel =
+    failedCount > 0
+      ? `Called ${toolCalls.length} tools, ${failedCount} failed`
+      : `Called ${toolCalls.length} tools`;
+
+  return (
+    <div className="my-0.5 text-sm">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="group flex cursor-pointer items-center gap-2 py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
+      >
+        <TerminalSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
+        <span className="truncate">{groupLabel}</span>
+        {expanded ? (
+          <ChevronDown className="-ml-1 h-3 w-3 shrink-0 opacity-70 transition-opacity" />
+        ) : (
+          <ChevronRight className="-ml-1 h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-70 group-focus-visible:opacity-70" />
+        )}
+      </button>
+      <div
+        className="grid transition-[grid-template-rows] duration-150 ease-out"
+        style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
+      >
+        <div className="overflow-hidden">
+          <div className="py-1">
+            {toolCalls.map((toolCall) => (
+              <AIToolCallBlock key={toolCall.id} toolCall={toolCall} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ThinkingIndicator({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-1.5 py-1 text-xs text-muted-foreground">
+    <div className="flex items-center gap-1.5 py-1 text-sm text-muted-foreground">
       <span className="thinking-shimmer">{label}</span>
       <style>{`
         .thinking-shimmer {

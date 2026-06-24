@@ -740,13 +740,25 @@ class ApiClient extends withLoggingApi(
   async getAITools(): Promise<
     Record<
       string,
-      Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>
+      Array<{
+        name: string;
+        displayName: string;
+        displayDescription: string;
+        destructive: boolean;
+        requiredScope: string;
+      }>
     >
   > {
     const res = await this.request<{
       data: Record<
         string,
-        Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>
+        Array<{
+          name: string;
+          displayName: string;
+          displayDescription: string;
+          destructive: boolean;
+          requiredScope: string;
+        }>
       >;
     }>("/ai/tools");
     return res.data;

@@ -1,6 +1,6 @@
 // ── AI Tool Call ──
 
-export type ToolActionType = "create" | "edit" | "delete" | "other";
+export type ToolActionType = "read" | "create" | "edit" | "delete" | "other";
 
 export interface AIToolCall {
   id: string;

@@ -2,9 +2,12 @@ import { Loader2, Menu } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AIButton } from "@/components/ai/AIButton";
+import { AILitePanel } from "@/components/ai/AILitePanel";
+import { AILiteSidebar } from "@/components/ai/AILiteSidebar";
 import { AISidePanel } from "@/components/ai/AISidePanel";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { PageTransition } from "@/components/common/PageTransition";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
@@ -51,7 +54,9 @@ export function DashboardLayout() {
     setMobileMenuOpen,
     commandPaletteOpen,
     setCommandPaletteOpen,
+    aiLiteMode,
   } = useUIStore();
+  const aiEnabled = useAIStore((state) => state.isEnabled);
 
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const [isResizing, setIsResizing] = useState(false);
@@ -347,7 +352,12 @@ export function DashboardLayout() {
         const { hasScope: checkScope } = useAuthStore.getState();
         const aiEnabled = useAIStore.getState().isEnabled;
         if (checkScope(AI_SCOPE) && aiEnabled !== false) {
-          useUIStore.getState().toggleAIPanel();
+          const ui = useUIStore.getState();
+          if (ui.aiLiteMode) {
+            ui.setAILiteMode(false);
+          } else {
+            ui.toggleAIPanel();
+          }
         }
       }
       if (mod && e.key === ",") {
@@ -458,6 +468,39 @@ export function DashboardLayout() {
 
           <AISidePanel isMobile />
           <Toaster position="bottom-center" />
+          <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+          <ConfirmDialog />
+        </div>
+      </TooltipProvider>
+    );
+  }
+
+  const canUseAI = !!currentUser?.scopes?.includes(AI_SCOPE) && aiEnabled !== false;
+  const useLiteMode = aiLiteMode && canUseAI;
+
+  if (useLiteMode) {
+    const isAIHome = location.pathname === "/";
+
+    return (
+      <TooltipProvider>
+        <div className="flex h-screen bg-background dashboard-scrollbar">
+          <AILiteSidebar
+            sidebarWidth={sidebarWidth}
+            onSidebarWidthChange={handleSidebarResize}
+            isResizing={isResizing}
+            onResizeStart={handleResizeStart}
+            onResizeEnd={handleResizeEnd}
+          />
+          <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+            {isAIHome ? (
+              <PageTransition>
+                <AILitePanel />
+              </PageTransition>
+            ) : (
+              <Outlet />
+            )}
+          </main>
+          <Toaster position="bottom-right" />
           <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
           <ConfirmDialog />
         </div>

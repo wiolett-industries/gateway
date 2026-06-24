@@ -24,7 +24,7 @@ const AI_SETTINGS_DEFAULTS: Record<string, unknown> = {
   'ai:custom_system_prompt': '',
   'ai:rate_limit_max': 10,
   'ai:rate_limit_window_seconds': 60,
-  'ai:max_tool_rounds': 10,
+  'ai:max_tool_rounds': 20,
   'ai:max_context_tokens': 56000,
   'ai:disabled_tools': [],
   'ai:web_search_api_key_encrypted': null,

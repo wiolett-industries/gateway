@@ -48,8 +48,13 @@ interface UIState {
 
   // AI Panel
   aiPanelOpen: boolean;
+  aiLiteMode: boolean;
+  pinnedAIConversationIds: string[];
   setAIPanelOpen: (open: boolean) => void;
+  setAILiteMode: (enabled: boolean) => void;
+  togglePinnedAIConversation: (conversationId: string) => void;
   toggleAIPanel: () => void;
+  toggleAILiteMode: () => void;
 
   // Recent pages
   recentPages: Array<{ path: string; label: string; icon?: string }>;
@@ -107,8 +112,18 @@ export const useUIStore = create<UIState>()(
 
       // AI Panel
       aiPanelOpen: false,
+      aiLiteMode: false,
+      pinnedAIConversationIds: [],
       setAIPanelOpen: (aiPanelOpen) => set({ aiPanelOpen }),
+      setAILiteMode: (aiLiteMode) => set({ aiLiteMode }),
+      togglePinnedAIConversation: (conversationId) =>
+        set((state) => ({
+          pinnedAIConversationIds: state.pinnedAIConversationIds.includes(conversationId)
+            ? state.pinnedAIConversationIds.filter((id) => id !== conversationId)
+            : [conversationId, ...state.pinnedAIConversationIds],
+        })),
       toggleAIPanel: () => set((state) => ({ aiPanelOpen: !state.aiPanelOpen })),
+      toggleAILiteMode: () => set((state) => ({ aiLiteMode: !state.aiLiteMode })),
 
       // Recent pages
       recentPages: [],
@@ -132,6 +147,8 @@ export const useUIStore = create<UIState>()(
         showUpdateNotifications: state.showUpdateNotifications,
         showSystemCertificates: state.showSystemCertificates,
         aiPanelOpen: state.aiPanelOpen,
+        aiLiteMode: state.aiLiteMode,
+        pinnedAIConversationIds: state.pinnedAIConversationIds,
         aiBypassCreateApprovals: state.aiBypassCreateApprovals,
         aiBypassEditApprovals: state.aiBypassEditApprovals,
         aiBypassDeleteApprovals: state.aiBypassDeleteApprovals,

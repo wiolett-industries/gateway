@@ -9,6 +9,7 @@ Gateway AI starts conversations with a small base tool surface. Domain-specific 
 ## Base Tools
 - discover_tools: inspect callable tool categories and category-specific tools.
 - get_current_context: read the current UI route/resource when the user says "this page" or "current item".
+- wait: pause briefly when an operation is pending, then continue by re-checking status.
 - find_resource: globally search readable resources by name, ID, domain, image, etc.
 - internal_documentation: read workflow and argument docs before complex operations.
 - ask_question: ask concise clarifying questions.
@@ -26,10 +27,12 @@ Use find_resource with an empty query and a concrete type when the user asks to 
 
 ## Rule
 - Use get_current_context when the user refers to the page or resource they are currently viewing.
+- Use wait for short pending states such as container startup, image pull completion, DNS/SSL validation, deployments, daemon reloads, or log ingestion. After wait, call the relevant read/status tool again; do not finish the conversation just because the operation is not complete yet.
 - Prefer find_resource before broad list sweeps.
 - Do not list every node and then inspect every node for Docker resources unless find_resource failed, the user explicitly asked for per-node enumeration, or you need a complete inventory.
 - If the result includes nodeId, pass that nodeId to Docker tools.
-- If multiple results match, use ask_question to disambiguate.
+- If exactly one result is valid/applicable for the operation, use it without asking. For Docker image/container operations, ignore non-Docker nodes as choices.
+- If multiple applicable results match, use ask_question to disambiguate.
 
 ## Examples
 - Find a container named api: find_resource({ query: "api", types: ["docker_container"] })

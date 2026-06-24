@@ -1,9 +1,9 @@
 import {
   BookOpen,
   Box,
-  Check,
   ChevronDown,
   ChevronRight,
+  Clock,
   FileText,
   Globe,
   HelpCircle,
@@ -65,6 +65,7 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   web_search: Search,
   internal_documentation: BookOpen,
   ask_question: HelpCircle,
+  wait: Clock,
 };
 
 interface AIToolCallBlockProps {
@@ -85,17 +86,18 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
     !Array.isArray(safeToolCall.arguments)
       ? safeToolCall.arguments
       : {};
-  const Icon = CATEGORY_ICONS[toolName] || ShieldCheck;
   const toolStatus = safeToolCall.status ?? "failed";
+  const Icon =
+    toolStatus === "running" ? Loader2 : toolStatus === "failed" ? X : CATEGORY_ICONS[toolName] || ShieldCheck;
 
   const statusIcon = () => {
     switch (toolStatus) {
       case "running":
-        return <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />;
+        return null;
       case "completed":
-        return <Check className="h-3.5 w-3.5 text-green-500" />;
+        return null;
       case "failed":
-        return <X className="h-3.5 w-3.5 text-destructive" />;
+        return null;
       case "awaiting_approval":
         return <div className="h-3.5 w-3.5 bg-yellow-500 animate-pulse" />;
       case "rejected":
@@ -115,31 +117,43 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
   const hasResult = safeToolCall.result !== undefined && !isSkipped;
   const hasError = !!safeToolCall.error;
   const hasContent = hasArgs || hasResult || hasError || toolStatus === "rejected";
+  const isExpandedChevronVisible = expanded || toolStatus === "running" || toolStatus === "failed";
 
   return (
-    <div className="border border-border bg-muted/30 text-xs my-1.5">
+    <div className="my-0.5 text-sm">
       <button
         onClick={hasContent ? () => setExpanded(!expanded) : undefined}
-        className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${hasContent ? "hover:bg-muted/50 cursor-pointer" : "cursor-default"}`}
+        className={`group flex items-center gap-2 py-0.5 text-left text-muted-foreground transition-colors ${hasContent ? "cursor-pointer hover:text-foreground focus-visible:text-foreground focus-visible:outline-none" : "cursor-default"}`}
       >
-        {hasContent ? (
-          expanded ? (
-            <ChevronDown className="h-3 w-3 shrink-0" />
-          ) : (
-            <ChevronRight className="h-3 w-3 shrink-0" />
-          )
-        ) : (
-          <span className="w-3 shrink-0" />
-        )}
-        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className={`flex-1 truncate font-medium ${isSkipped ? "text-muted-foreground" : ""}`}>
+        <Icon
+          className={`h-3.5 w-3.5 shrink-0 ${
+            toolStatus === "running"
+              ? "animate-spin text-primary"
+              : toolStatus === "failed"
+                ? "text-destructive"
+                : "opacity-70"
+          }`}
+        />
+        <span className={`truncate ${isSkipped ? "text-muted-foreground" : ""}`}>
           {toolLabel}
         </span>
+        {hasContent &&
+          (expanded ? (
+            <ChevronDown className="-ml-1 h-3 w-3 shrink-0 opacity-70 transition-opacity" />
+          ) : (
+            <ChevronRight
+              className={`-ml-1 h-3 w-3 shrink-0 transition-opacity ${
+                isExpandedChevronVisible
+                  ? "opacity-70"
+                  : "opacity-0 group-hover:opacity-70 group-focus-visible:opacity-70"
+              }`}
+            />
+          ))}
         {!isSkipped && statusIcon()}
       </button>
 
       {toolStatus === "awaiting_approval" && toolName !== "ask_question" && (
-        <div className="flex items-center gap-2 px-2.5 py-2 border-t border-border bg-yellow-500/5">
+        <div className="flex items-center gap-2 border border-border bg-yellow-500/5 px-2.5 py-2">
           <span className="flex-1 text-yellow-600 dark:text-yellow-400 text-xs">
             This action requires your approval
           </span>
@@ -174,24 +188,24 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
       >
         <div className="overflow-hidden">
           {hasArgs && (
-            <pre className="text-[11px] bg-muted px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap border-t border-border">
+            <pre className="overflow-x-auto whitespace-pre-wrap border border-border bg-muted px-2.5 py-1.5 text-[11px]">
               {JSON.stringify(toolArguments, null, 2)}
             </pre>
           )}
           {hasResult && (
-            <pre className="text-[11px] bg-muted/50 px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap max-h-48 border-t border-border">
+            <pre className="max-h-48 overflow-x-auto whitespace-pre-wrap border border-t-0 border-border bg-muted/50 px-2.5 py-1.5 text-[11px]">
               {typeof safeToolCall.result === "string"
                 ? safeToolCall.result
                 : JSON.stringify(safeToolCall.result, null, 2)}
             </pre>
           )}
           {hasError && (
-            <p className="text-destructive px-2.5 py-1.5 border-t border-border">
+            <p className="border border-border px-2.5 py-1.5 text-destructive">
               {safeToolCall.error}
             </p>
           )}
           {toolStatus === "rejected" && (
-            <p className="text-muted-foreground italic px-2.5 py-1.5 border-t border-border">
+            <p className="border border-border px-2.5 py-1.5 italic text-muted-foreground">
               Rejected by user
             </p>
           )}

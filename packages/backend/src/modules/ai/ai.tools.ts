@@ -50,6 +50,28 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: [],
   },
   {
+    name: 'wait',
+    description:
+      'Wait briefly before continuing. Use this when an operation is still pending or needs time to complete, then call the relevant status/read tool again instead of ending the conversation.',
+    parameters: {
+      type: 'object',
+      properties: {
+        seconds: {
+          type: 'number',
+          description: 'Seconds to wait before continuing. Clamped to 1-30 seconds. Default: 5.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Short reason for waiting, for example container startup, image pull, DNS propagation, or log ingestion.',
+        },
+      },
+    },
+    destructive: false,
+    category: 'Discovery',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
     name: 'find_resource',
     description:
       'Global resource search and type-scoped listing. Use this FIRST when the user names a resource but you need its ID, nodeId, or exact type. When the user asks to list resources of a type, pass an empty query with that type, for example { query: "", types: ["docker_container"] }. It searches across readable nodes, Docker containers/images/volumes/networks, proxy hosts, certificates, domains, logging resources, databases, notifications, and more. Do not manually list every node and then scan each node when find_resource can search the resource type directly.',
@@ -825,7 +847,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'ask_question',
     description:
-      'Ask the user a clarifying question before proceeding. Use this whenever requirements are unclear, ambiguous, or missing critical details. You can provide options for the user to pick from, allow free text input, or both. Always ask rather than guess.',
+      'Ask the user a clarifying question before proceeding. Use this only when requirements are unclear, ambiguous, or missing critical details that cannot be inferred from context or tool results. You can provide options for the user to pick from, allow free text input, or both. Do not ask when there is exactly one valid applicable option.',
     parameters: {
       type: 'object',
       properties: {
@@ -919,6 +941,7 @@ const destructiveSet = new Set(AI_TOOLS.filter((t) => t.destructive).map((t) => 
 const BASE_AI_TOOL_NAMES = new Set([
   'discover_tools',
   'get_current_context',
+  'wait',
   'find_resource',
   'ask_question',
   'internal_documentation',

@@ -1,9 +1,13 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { useAuthStore } from "@/stores/auth";
 import { useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
 import { renderWithRouter } from "@/test/render";
 import type { AIMessage } from "@/types/ai";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { AILiteSidebar } from "./AILiteSidebar";
 import { AISidePanel } from "./AISidePanel";
 
 function setScrollMetrics(node: HTMLElement, scrollHeight: number, clientHeight: number) {
@@ -36,7 +40,8 @@ describe("AISidePanel autoscroll", () => {
         isStreaming: false,
         retryAfter: null,
       });
-      useUIStore.setState({ aiPanelOpen: false });
+      useUIStore.setState({ aiPanelOpen: false, aiLiteMode: false, sidebarOpen: true });
+      useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false });
     });
   });
 
@@ -112,5 +117,113 @@ describe("AISidePanel autoscroll", () => {
     });
 
     await waitFor(() => expect(log.scrollTop).toBe(300));
+  });
+
+  it("switches the side panel into persisted lite mode from the header action", () => {
+    act(() => {
+      useAIStore.setState({
+        messages: [],
+        isConnected: true,
+        isStreaming: false,
+        retryAfter: null,
+        connect: vi.fn().mockResolvedValue(true),
+      });
+      useUIStore.setState({ aiPanelOpen: true, aiLiteMode: false });
+    });
+
+    renderWithRouter(<AISidePanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+
+    expect(useUIStore.getState().aiLiteMode).toBe(true);
+    expect(useUIStore.getState().aiPanelOpen).toBe(false);
+  });
+
+  it("renders lite sidebar conversations and wires load and delete actions", async () => {
+    const user = userEvent.setup();
+    const fetchRecentConversations = vi.fn();
+    const loadConversation = vi.fn().mockResolvedValue(undefined);
+    const deleteConversation = vi.fn().mockResolvedValue(undefined);
+
+    act(() => {
+      useAuthStore.setState({
+        user: {
+          id: "user-1",
+          email: "user@example.com",
+          name: "User One",
+          groupName: "admin",
+          scopes: ["feat:ai:use", "admin:groups"],
+          isBlocked: false,
+        } as any,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      useAIStore.setState({
+        activeConversationId: "conversation-1",
+        recentConversations: [
+          {
+            id: "conversation-1",
+            title: "Recent chat",
+            updatedAt: new Date().toISOString(),
+            messageCount: 3,
+          },
+        ],
+        isLoadingRecentConversations: false,
+        fetchRecentConversations,
+        loadConversation,
+        deleteConversation,
+      });
+      useUIStore.setState({ sidebarOpen: true });
+    });
+
+    renderWithRouter(
+      <TooltipProvider>
+        <AILiteSidebar />
+      </TooltipProvider>,
+      { route: "/settings" }
+    );
+
+    expect(fetchRecentConversations).toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Recent chat"));
+    expect(loadConversation).toHaveBeenCalledWith("conversation-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Recent chat" }));
+    expect(deleteConversation).toHaveBeenCalledWith("conversation-1");
+
+    await user.click(screen.getByRole("button", { name: /User One/i }));
+    expect(await screen.findByText("Administration")).toBeInTheDocument();
+  });
+
+  it("hides lite sidebar administration link without admin access", async () => {
+    const user = userEvent.setup();
+    act(() => {
+      useAuthStore.setState({
+        user: {
+          id: "user-1",
+          email: "user@example.com",
+          name: "User One",
+          groupName: "viewer",
+          scopes: ["feat:ai:use"],
+          isBlocked: false,
+        } as any,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      useAIStore.setState({
+        recentConversations: [],
+        isLoadingRecentConversations: false,
+        fetchRecentConversations: vi.fn(),
+      });
+      useUIStore.setState({ sidebarOpen: true });
+    });
+
+    renderWithRouter(
+      <TooltipProvider>
+        <AILiteSidebar />
+      </TooltipProvider>
+    );
+
+    await user.click(screen.getByRole("button", { name: /User One/i }));
+    expect(screen.queryByText("Administration")).not.toBeInTheDocument();
   });
 });
