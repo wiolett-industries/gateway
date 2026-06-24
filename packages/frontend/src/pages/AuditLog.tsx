@@ -2,6 +2,7 @@ import { Download, EllipsisVertical, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { PanelShell } from "@/components/common/PanelShell";
@@ -714,12 +715,15 @@ export function AuditLog({
       >
         {!embedded && (
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-bold">Audit Log</h1>
-              <p className="text-sm text-muted-foreground">
-                {total} entries
-                {hiddenFilterCount ? ` · ${hiddenFilterCount} hidden by local view` : ""}
-              </p>
+            <div className="flex items-center gap-3">
+              <LiteModeBackButton />
+              <div>
+                <h1 className="text-2xl font-bold">Audit Log</h1>
+                <p className="text-sm text-muted-foreground">
+                  {total} entries
+                  {hiddenFilterCount ? ` · ${hiddenFilterCount} hidden by local view` : ""}
+                </p>
+              </div>
             </div>
             {auditActions}
           </div>

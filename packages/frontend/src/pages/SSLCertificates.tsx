@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
@@ -380,9 +381,12 @@ export function SSLCertificates() {
       <div className="h-full overflow-y-auto p-6 space-y-3">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">SSL Certificates</h1>
-            <p className="text-sm text-muted-foreground">{total} certificates total</p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">SSL Certificates</h1>
+              <p className="text-sm text-muted-foreground">{total} certificates total</p>
+            </div>
           </div>
           <ResponsiveHeaderActions
             actions={

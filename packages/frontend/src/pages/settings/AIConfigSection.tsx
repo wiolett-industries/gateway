@@ -1,8 +1,10 @@
+import type { ReactNode } from "react";
 import { Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AIToolAccessModal } from "@/components/ai/AIToolAccessModal";
 import { PanelShell } from "@/components/common/PanelShell";
+import { SectionHeader } from "@/components/common/SectionHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +40,28 @@ interface AIConfigState {
   hasWebSearchKey: boolean;
   webSearchProvider: string;
   webSearchBaseUrl: string;
+}
+
+function SettingsControlRow({
+  title,
+  description,
+  children,
+  controlsClassName = "",
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+  controlsClassName?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-border px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{title}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+      </div>
+      <div className={`w-full shrink-0 sm:max-w-[20rem] ${controlsClassName}`}>{children}</div>
+    </div>
+  );
 }
 
 export function AIConfigSection() {
@@ -197,27 +220,26 @@ export function AIConfigSection() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2">
             {/* Provider */}
-            <div className="border-t border-r border-border p-4 space-y-3 max-sm:border-r-0">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Provider
-              </p>
-              <div className="grid grid-cols-[minmax(0,1fr)_180px] gap-2">
-                <div>
-                  <label className="text-xs text-muted-foreground">Base URL</label>
+            <div className="border-t border-border sm:col-span-2">
+              <SectionHeader title="Provider" />
+              <div>
+                <SettingsControlRow
+                  title="Base URL and endpoint"
+                  description="OpenAI-compatible API base URL and endpoint family."
+                  controlsClassName="grid grid-cols-1 gap-2 sm:w-auto sm:max-w-none sm:grid-cols-[18rem_9rem]"
+                >
                   <Input
-                    className="mt-1 text-sm"
+                    aria-label="Base URL"
+                    className="text-sm"
                     placeholder="https://api.openai.com/v1"
                     value={aiConfig.providerUrl}
                     onChange={(e) => setAiConfig({ ...aiConfig, providerUrl: e.target.value })}
                   />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Endpoint</label>
                   <Select
                     value={aiConfig.endpointMode || "auto"}
                     onValueChange={(endpointMode) => setAiConfig({ ...aiConfig, endpointMode })}
                   >
-                    <SelectTrigger className="mt-1 text-sm">
+                    <SelectTrigger aria-label="Endpoint" className="text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -226,50 +248,56 @@ export function AIConfigSection() {
                       <SelectItem value="chat_completions">Chat Completions</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Model</label>
-                <Input
-                  className="mt-1 text-sm"
-                  placeholder="gpt-4o"
-                  value={aiConfig.model}
-                  onChange={(e) => setAiConfig({ ...aiConfig, model: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">API Key</label>
-                <Input
-                  className="mt-1 text-sm"
-                  type="password"
-                  placeholder={aiConfig.hasApiKey ? `****${aiConfig.apiKeyLast4}` : "sk-..."}
-                  value={aiApiKey}
-                  onChange={(e) => setAiApiKey(e.target.value)}
-                />
+                </SettingsControlRow>
+                <SettingsControlRow
+                  title="Model"
+                  description="Model name used for assistant responses."
+                >
+                  <Input
+                    aria-label="Model"
+                    className="text-sm"
+                    placeholder="gpt-4o"
+                    value={aiConfig.model}
+                    onChange={(e) => setAiConfig({ ...aiConfig, model: e.target.value })}
+                  />
+                </SettingsControlRow>
+                <SettingsControlRow
+                  title="API key"
+                  description="Secret used to authenticate provider requests."
+                >
+                  <Input
+                    aria-label="API key"
+                    className="text-sm"
+                    type="password"
+                    placeholder={aiConfig.hasApiKey ? `****${aiConfig.apiKeyLast4}` : "sk-..."}
+                    value={aiApiKey}
+                    onChange={(e) => setAiApiKey(e.target.value)}
+                  />
+                </SettingsControlRow>
               </div>
             </div>
 
             {/* Limits */}
-            <div className="border-t border-border p-4 space-y-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Limits
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs text-muted-foreground">Requests</label>
+            <div className="border-t border-border sm:col-span-2">
+              <SectionHeader title="Limits" />
+              <div>
+                <SettingsControlRow
+                  title="Requests and window"
+                  description="Maximum assistant requests allowed per time window."
+                  controlsClassName="grid grid-cols-2 gap-2 sm:w-auto sm:max-w-none sm:grid-cols-[8rem_8rem]"
+                >
                   <Input
-                    className="mt-1 text-sm"
+                    aria-label="Requests"
+                    className="text-sm"
                     type="number"
                     value={aiConfig.rateLimitMax}
                     onChange={(e) =>
                       setAiConfig({ ...aiConfig, rateLimitMax: Number(e.target.value) })
                     }
                   />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Window (sec)</label>
                   <Input
-                    className="mt-1 text-sm"
+                    aria-label="Window seconds"
+                    className="text-sm"
                     type="number"
                     value={aiConfig.rateLimitWindowSeconds}
                     onChange={(e) =>
@@ -279,51 +307,50 @@ export function AIConfigSection() {
                       })
                     }
                   />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs text-muted-foreground">Max tool rounds</label>
+                </SettingsControlRow>
+                <SettingsControlRow
+                  title="Tool rounds and context size"
+                  description="Maximum sequential tool calls and context budget."
+                  controlsClassName="grid grid-cols-2 gap-2 sm:w-auto sm:max-w-none sm:grid-cols-[8rem_8rem]"
+                >
                   <Input
-                    className="mt-1 text-sm"
+                    aria-label="Max tool rounds"
+                    className="text-sm"
                     type="number"
                     value={aiConfig.maxToolRounds}
                     onChange={(e) =>
                       setAiConfig({ ...aiConfig, maxToolRounds: Number(e.target.value) })
                     }
                   />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Context tokens</label>
                   <Input
-                    className="mt-1 text-sm"
+                    aria-label="Context size"
+                    className="text-sm"
                     type="number"
                     value={aiConfig.maxContextTokens}
                     onChange={(e) =>
                       setAiConfig({ ...aiConfig, maxContextTokens: Number(e.target.value) })
                     }
                   />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs text-muted-foreground">Max tokens</label>
+                </SettingsControlRow>
+                <SettingsControlRow
+                  title="Response tokens and token field"
+                  description="Maximum generated tokens and provider request field."
+                  controlsClassName="grid grid-cols-2 gap-2 sm:w-auto sm:max-w-none sm:grid-cols-[8rem_13rem]"
+                >
                   <Input
-                    className="mt-1 text-sm"
+                    aria-label="Max response tokens"
+                    className="text-sm"
                     type="number"
                     value={aiConfig.maxCompletionTokens}
                     onChange={(e) =>
                       setAiConfig({ ...aiConfig, maxCompletionTokens: Number(e.target.value) })
                     }
                   />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Token field</label>
                   <Select
                     value={aiConfig.maxTokensField || "max_completion_tokens"}
                     onValueChange={(v) => setAiConfig({ ...aiConfig, maxTokensField: v })}
                   >
-                    <SelectTrigger className="mt-1 text-sm">
+                    <SelectTrigger aria-label="Token field" className="text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -331,17 +358,15 @@ export function AIConfigSection() {
                       <SelectItem value="max_tokens">max_tokens</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
+                </SettingsControlRow>
               </div>
             </div>
 
             {/* System Prompt */}
-            <div className="border-t border-r border-border p-4 flex flex-col gap-3 max-sm:border-r-0">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                System Prompt
-              </p>
+            <div className="flex flex-col border-t border-r border-border max-sm:border-r-0">
+              <SectionHeader title="System Prompt" />
               <Textarea
-                className="min-h-[120px] flex-1 resize-none"
+                className="min-h-[120px] flex-1 resize-none border-0"
                 placeholder="Add custom instructions for the AI assistant.&#10;&#10;Examples:&#10;- Company PKI policies and naming conventions&#10;- Preferred certificate settings&#10;- Security guidelines"
                 value={aiConfig.customSystemPrompt}
                 onChange={(e) => setAiConfig({ ...aiConfig, customSystemPrompt: e.target.value })}
@@ -349,86 +374,84 @@ export function AIConfigSection() {
             </div>
 
             {/* Tools & Web Search */}
-            <div className="border-t border-border p-4 space-y-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Tools
-              </p>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">Tool Access</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {aiConfig.disabledTools.length > 0
-                      ? `${aiConfig.disabledTools.length} tool${aiConfig.disabledTools.length !== 1 ? "s" : ""} disabled`
-                      : "All tools enabled"}
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 w-fit shrink-0 text-xs"
-                  onClick={() => setAiToolsModalOpen(true)}
-                >
-                  Manage
-                </Button>
-              </div>
-              <Separator />
+            <div className="border-t border-border">
+              <SectionHeader title="Tools" />
               <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium">Web Search</p>
-                  {aiConfig.disabledTools.includes("web_search") && (
-                    <Badge variant="secondary">Disabled</Badge>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                  Allow the AI to search the web for information
-                </p>
-                <div className="space-y-2">
-                  <div>
-                    <label className="text-xs text-muted-foreground">Provider</label>
-                    <Select
-                      value={aiConfig.webSearchProvider || "tavily"}
-                      onValueChange={(v) => setAiConfig({ ...aiConfig, webSearchProvider: v })}
-                    >
-                      <SelectTrigger className="mt-1 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="tavily">Tavily — AI-optimized search</SelectItem>
-                        <SelectItem value="brave">Brave Search — privacy-first</SelectItem>
-                        <SelectItem value="serper">Serper — Google results</SelectItem>
-                        <SelectItem value="exa">Exa — semantic search</SelectItem>
-                        <SelectItem value="searxng">SearXNG — self-hosted</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <SettingsControlRow
+                  title="Tool Access"
+                  description={
+                    aiConfig.disabledTools.length > 0
+                      ? `${aiConfig.disabledTools.length} tool${aiConfig.disabledTools.length !== 1 ? "s" : ""} disabled`
+                      : "All tools enabled"
+                  }
+                  controlsClassName="sm:w-auto sm:max-w-none"
+                >
+                  <Button
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    onClick={() => setAiToolsModalOpen(true)}
+                  >
+                    Manage
+                  </Button>
+                </SettingsControlRow>
+                <div className="p-4">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">Web Search</p>
+                    {aiConfig.disabledTools.includes("web_search") && (
+                      <Badge variant="secondary">Disabled</Badge>
+                    )}
                   </div>
-                  {aiConfig.webSearchProvider === "searxng" ? (
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                    Allow the AI to search the web for information
+                  </p>
+                  <div className="space-y-2">
                     <div>
-                      <label className="text-xs text-muted-foreground">Instance URL</label>
-                      <Input
-                        className="mt-1 text-sm"
-                        placeholder="https://searxng.example.com"
-                        value={aiConfig.webSearchBaseUrl}
-                        onChange={(e) =>
-                          setAiConfig({ ...aiConfig, webSearchBaseUrl: e.target.value })
-                        }
-                      />
+                      <label className="text-xs text-muted-foreground">Provider</label>
+                      <Select
+                        value={aiConfig.webSearchProvider || "tavily"}
+                        onValueChange={(v) => setAiConfig({ ...aiConfig, webSearchProvider: v })}
+                      >
+                        <SelectTrigger className="mt-1 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="tavily">Tavily — AI-optimized search</SelectItem>
+                          <SelectItem value="brave">Brave Search — privacy-first</SelectItem>
+                          <SelectItem value="serper">Serper — Google results</SelectItem>
+                          <SelectItem value="exa">Exa — semantic search</SelectItem>
+                          <SelectItem value="searxng">SearXNG — self-hosted</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                  ) : (
-                    <div>
-                      <label className="text-xs text-muted-foreground">API Key</label>
-                      <Input
-                        className="mt-1 text-sm"
-                        type="password"
-                        placeholder={
-                          aiConfig.hasWebSearchKey
-                            ? "Configured — enter new to replace"
-                            : "Enter API key"
-                        }
-                        value={aiWebSearchKey}
-                        onChange={(e) => setAiWebSearchKey(e.target.value)}
-                      />
-                    </div>
-                  )}
+                    {aiConfig.webSearchProvider === "searxng" ? (
+                      <div>
+                        <label className="text-xs text-muted-foreground">Instance URL</label>
+                        <Input
+                          className="mt-1 text-sm"
+                          placeholder="https://searxng.example.com"
+                          value={aiConfig.webSearchBaseUrl}
+                          onChange={(e) =>
+                            setAiConfig({ ...aiConfig, webSearchBaseUrl: e.target.value })
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="text-xs text-muted-foreground">API Key</label>
+                        <Input
+                          className="mt-1 text-sm"
+                          type="password"
+                          placeholder={
+                            aiConfig.hasWebSearchKey
+                              ? "Configured — enter new to replace"
+                              : "Enter API key"
+                          }
+                          value={aiWebSearchKey}
+                          onChange={(e) => setAiWebSearchKey(e.target.value)}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

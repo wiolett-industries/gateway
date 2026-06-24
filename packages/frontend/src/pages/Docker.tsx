@@ -2,6 +2,7 @@ import { Box, FolderPlus, HardDrive, Layers, ListTodo, Network, Plus } from "luc
 import { useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Button } from "@/components/ui/button";
@@ -331,11 +332,14 @@ export function Docker() {
       >
         {/* Header */}
         <div className="flex shrink-0 items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-bold">Docker</h1>
-            <p className="text-sm text-muted-foreground">
-              Manage containers, images, volumes, and networks
-            </p>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <LiteModeBackButton />
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold">Docker</h1>
+              <p className="text-sm text-muted-foreground">
+                Manage containers, images, volumes, and networks
+              </p>
+            </div>
           </div>
           <ResponsiveHeaderActions actions={headerActions}>
             <RefreshButton onClick={handleRefresh} disabled={activeTabLoading} />

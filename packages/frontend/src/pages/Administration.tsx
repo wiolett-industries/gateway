@@ -1,7 +1,7 @@
 import { FolderPlus, Plus, ScrollText, Shield, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
-import { PageBackButton } from "@/components/common/PageBackButton";
+import { Navigate } from "react-router-dom";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import { useUIStore } from "@/stores/ui";
 import { AdminGroups } from "./AdminGroups";
 import { AdminUsers } from "./AdminUsers";
 import { AuditLog } from "./AuditLog";
@@ -17,9 +16,7 @@ import { AuditLog } from "./AuditLog";
 type AdministrationTab = "users" | "groups" | "audit";
 
 export function Administration() {
-  const navigate = useNavigate();
   const { hasScope } = useAuthStore();
-  const { aiLiteMode } = useUIStore();
   const [usersCreateRequest, setUsersCreateRequest] = useState(0);
   const [groupsCreateRequest, setGroupsCreateRequest] = useState(0);
   const [createUserFolderAction, setCreateUserFolderAction] = useState<(() => void) | null>(null);
@@ -132,8 +129,8 @@ export function Administration() {
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <div className="flex items-start gap-3">
-              {aiLiteMode && <PageBackButton className="mt-0.5" onClick={() => navigate("/")} />}
+            <div className="flex items-center gap-3">
+              <LiteModeBackButton />
               <div className="min-w-0">
                 <h1 className="text-2xl font-bold">{currentMeta.title}</h1>
                 <p className="text-sm text-muted-foreground">{currentMeta.subtitle}</p>

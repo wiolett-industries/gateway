@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { FolderedResourceList } from "@/components/common/FolderedResourceList";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import type { ResourceListColumn } from "@/components/common/ResourceListLayout";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
@@ -303,11 +304,14 @@ export function AdminNodes() {
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">Nodes</h1>
-            <p className="text-sm text-muted-foreground">
-              {total} node{total !== 1 ? "s" : ""} registered
-            </p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">Nodes</h1>
+              <p className="text-sm text-muted-foreground">
+                {total} node{total !== 1 ? "s" : ""} registered
+              </p>
+            </div>
           </div>
           <ResponsiveHeaderActions
             actions={[

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { FolderedResourceList } from "@/components/common/FolderedResourceList";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import type { ResourceListColumn } from "@/components/common/ResourceListLayout";
@@ -354,12 +355,15 @@ export function AdminUsers({
     <div className={embedded ? "space-y-4" : "h-full overflow-y-auto p-6 space-y-4"}>
       {!embedded && (
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">Users</h1>
-            <p className="text-sm text-muted-foreground">
-              {users.length} user{users.length !== 1 ? "s" : ""}
-              {summaryParts.length > 0 && <> &middot; {summaryParts.join(", ")}</>}
-            </p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">Users</h1>
+              <p className="text-sm text-muted-foreground">
+                {users.length} user{users.length !== 1 ? "s" : ""}
+                {summaryParts.length > 0 && <> &middot; {summaryParts.join(", ")}</>}
+              </p>
+            </div>
           </div>
           <ResponsiveHeaderActions
             actions={[

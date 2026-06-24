@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
@@ -155,12 +156,15 @@ export function CAs() {
       <div className="h-full overflow-y-auto p-6 space-y-3">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">Certificate Authorities</h1>
-            <p className="text-sm text-muted-foreground">
-              {activeCAs.length} active &middot; {totalCerts} certificate
-              {totalCerts !== 1 ? "s" : ""} issued
-            </p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">Certificate Authorities</h1>
+              <p className="text-sm text-muted-foreground">
+                {activeCAs.length} active &middot; {totalCerts} certificate
+                {totalCerts !== 1 ? "s" : ""} issued
+              </p>
+            </div>
           </div>
           <ResponsiveHeaderActions
             actions={[

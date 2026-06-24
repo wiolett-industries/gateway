@@ -1,6 +1,7 @@
 import { AlertTriangle, Plus, Send, Webhook } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -164,11 +165,14 @@ export function Notifications() {
       }
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold">Notifications</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage alert rules, webhooks, and delivery activity
-          </p>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <LiteModeBackButton />
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold">Notifications</h1>
+            <p className="text-sm text-muted-foreground">
+              Manage alert rules, webhooks, and delivery activity
+            </p>
+          </div>
         </div>
         <ResponsiveHeaderActions actions={headerActions}>{headerAction}</ResponsiveHeaderActions>
       </div>

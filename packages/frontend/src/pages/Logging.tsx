@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Button } from "@/components/ui/button";
@@ -361,11 +362,14 @@ export function Logging() {
     <PageTransition>
       <div className={cn("h-full overflow-y-auto p-6 space-y-4", topTab === "schemas" && "pb-3")}>
         <div className="flex shrink-0 items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-bold">Logging</h1>
-            <p className="text-sm text-muted-foreground">
-              Manage external log environments and reusable schemas
-            </p>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <LiteModeBackButton />
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold">Logging</h1>
+              <p className="text-sm text-muted-foreground">
+                Manage external log environments and reusable schemas
+              </p>
+            </div>
           </div>
           <ResponsiveHeaderActions
             actions={[

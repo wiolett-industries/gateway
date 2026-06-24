@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { FolderCreateDialog } from "@/components/common/FolderCreateDialog";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResourceListForm } from "@/components/common/ResourceListForm";
 import type { ResourceListColumn } from "@/components/common/ResourceListLayout";
@@ -480,9 +481,12 @@ export function ProxyHosts() {
       <div className="h-full overflow-y-auto px-6 pt-6 pb-3 space-y-4">
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold">Proxy Hosts</h1>
-            <p className="text-sm text-muted-foreground">{totalHosts} proxy hosts total</p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">Proxy Hosts</h1>
+              <p className="text-sm text-muted-foreground">{totalHosts} proxy hosts total</p>
+            </div>
           </div>
           <ResponsiveHeaderActions
             actions={[

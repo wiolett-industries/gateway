@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
@@ -473,16 +474,19 @@ export function StatusPage() {
     <PageTransition>
       <div className="h-full space-y-4 overflow-y-auto p-6">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">Status Page</h1>
-              <Badge variant={config.enabled ? "success" : "secondary"}>
-                {config.enabled ? "Enabled" : "Disabled"}
-              </Badge>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <LiteModeBackButton />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold">Status Page</h1>
+                <Badge variant={config.enabled ? "success" : "secondary"}>
+                  {config.enabled ? "Enabled" : "Disabled"}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Manage public services and incident communication
+              </p>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Manage public services and incident communication
-            </p>
           </div>
           <ResponsiveHeaderActions actions={headerActions}>{headerAction}</ResponsiveHeaderActions>
         </div>

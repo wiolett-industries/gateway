@@ -2,7 +2,7 @@ import { Moon, ServerCog, SlidersHorizontal, Sparkles, Sun } from "lucide-react"
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { confirm } from "@/components/common/ConfirmDialog";
-import { PageBackButton } from "@/components/common/PageBackButton";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -49,7 +49,6 @@ export function Settings() {
     setAIBypassEditApprovals,
     aiBypassDeleteApprovals,
     setAIBypassDeleteApprovals,
-    aiLiteMode,
   } = useUIStore();
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
@@ -207,8 +206,8 @@ export function Settings() {
   return (
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
-        <div className="flex items-start gap-3">
-          {aiLiteMode && <PageBackButton className="mt-0.5" onClick={() => navigate("/")} />}
+        <div className="flex items-center gap-3">
+          <LiteModeBackButton />
           <div className="min-w-0">
             <h1 className="text-2xl font-bold">Settings</h1>
             <p className="text-sm text-muted-foreground">Account and application settings</p>
