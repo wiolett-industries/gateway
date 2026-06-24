@@ -116,6 +116,7 @@ export interface ToolExecutionResult {
 
 export interface ToolExecutionOptions {
   source?: 'ai' | 'mcp';
+  pageContext?: PageContext;
   scopes?: string[];
   tokenId?: string;
   tokenPrefix?: string;

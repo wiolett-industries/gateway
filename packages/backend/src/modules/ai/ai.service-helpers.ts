@@ -15,6 +15,7 @@ const PROXY_HOST_UPDATE_FIELDS = [
 ] as const;
 const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
   find_resource: [
+    'feat:ai:use',
     'nodes:details',
     'proxy:view',
     'proxy:templates:view',

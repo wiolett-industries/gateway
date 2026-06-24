@@ -71,6 +71,10 @@ type QueuedApproval = {
   arguments: Record<string, unknown>;
 };
 
+type ToolRuntimeContext = {
+  pageContext?: PageContext;
+};
+
 function compactToolResultForModel(toolName: string, value: unknown): unknown {
   if (value == null) return value;
   if (toolName === 'get_docker_container_logs') return compactLogLikeResult(value, 'Docker container logs');
@@ -114,6 +118,14 @@ function compactLogText(value: string, label: string): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringArg(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function boolArg(value: unknown): boolean {
+  return value === true;
 }
 
 export class AIService {
@@ -183,7 +195,9 @@ export class AIService {
     };
 
     try {
-      const result = await this.executeToolInternal(executionUser, toolName, args);
+      const result = await this.executeToolInternal(executionUser, toolName, args, {
+        pageContext: options.pageContext,
+      });
       const invalidateStores = TOOL_STORE_INVALIDATION_MAP[toolName] || [];
 
       // Audit log for mutating tools
@@ -235,7 +249,12 @@ export class AIService {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async executeToolInternal(user: User, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+  private async executeToolInternal(
+    user: User,
+    toolName: string,
+    args: Record<string, unknown>,
+    runtimeContext: ToolRuntimeContext = {}
+  ): Promise<unknown> {
     // Tool args come from LLM JSON — use explicit casts to match service input types.
     // The services themselves validate the data, so loose typing here is acceptable.
     const a = args as any; // shorthand for repeated casts
@@ -340,11 +359,20 @@ export class AIService {
 
     switch (toolName) {
       // ── Discovery ──
+      case 'discover_tools':
+        return this.discoverTools(user, args);
+
+      case 'get_current_context':
+        return {
+          currentPage: runtimeContext.pageContext ?? null,
+          hasCurrentPage: !!runtimeContext.pageContext?.route,
+        };
+
       case 'find_resource':
         return findResource(
           {
             executeToolInternal: (executionUser, delegatedToolName, delegatedArgs) =>
-              this.executeToolInternal(executionUser, delegatedToolName, delegatedArgs),
+              this.executeToolInternal(executionUser, delegatedToolName, delegatedArgs, runtimeContext),
             nodesService: this.nodesService,
           },
           user,
@@ -522,6 +550,59 @@ export class AIService {
     }
   }
 
+  private async discoverTools(user: User, args: Record<string, unknown>) {
+    const config = await this.settingsService.getConfig();
+    const callableNames = new Set(
+      getOpenAITools(config.disabledTools, user.scopes, config.webSearchEnabled).map((tool) => tool.function.name)
+    );
+    const categoryFilter = stringArg(args.category)?.toLowerCase();
+    const query = stringArg(args.query)?.toLowerCase();
+    const includeTools = boolArg(args.includeTools) || !!categoryFilter || !!query;
+
+    const callableTools = AI_TOOLS.filter((tool) => callableNames.has(tool.name));
+    const categoryMap = new Map<string, { toolCount: number; destructiveCount: number }>();
+
+    for (const tool of callableTools) {
+      const current = categoryMap.get(tool.category) ?? { toolCount: 0, destructiveCount: 0 };
+      current.toolCount += 1;
+      if (tool.destructive) current.destructiveCount += 1;
+      categoryMap.set(tool.category, current);
+    }
+
+    const categories = [...categoryMap.entries()]
+      .map(([name, summary]) => ({ name, ...summary }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const tools = includeTools
+      ? callableTools
+          .filter((tool) => {
+            if (categoryFilter && tool.category.toLowerCase() !== categoryFilter) return false;
+            if (!query) return true;
+            return [tool.name, tool.category, tool.description, tool.requiredScope]
+              .join(' ')
+              .toLowerCase()
+              .includes(query);
+          })
+          .map((tool) => ({
+            name: tool.name,
+            category: tool.category,
+            description: tool.description,
+            destructive: tool.destructive,
+            requiredScope: tool.requiredScope,
+            invalidateStores: tool.invalidateStores,
+          }))
+      : undefined;
+
+    return {
+      categories,
+      tools,
+      totalCallableTools: callableTools.length,
+      note: includeTools
+        ? 'Call the selected tool with its documented parameters. Use internal_documentation for workflow details when needed.'
+        : 'Pass category, query, or includeTools:true to inspect callable tool details.',
+    };
+  }
+
   private ensureToolScope(user: User, scope: string) {
     if (!hasScope(user.scopes, scope)) {
       throw new Error(`PERMISSION_DENIED: Missing required scope ${scope}`);
@@ -650,7 +731,7 @@ export class AIService {
 
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
 
-        const result = await this.executeTool(user, tc.name, tc.parsedArgs);
+        const result = await this.executeTool(user, tc.name, tc.parsedArgs, { pageContext });
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
@@ -726,7 +807,7 @@ export class AIService {
     toolArgs: Record<string, unknown>,
     approved: boolean,
     pendingMessages: Record<string, unknown>[],
-    _pageContext: PageContext | undefined,
+    pageContext: PageContext | undefined,
     signal: AbortSignal,
     requestId: string,
     answer?: string,
@@ -762,7 +843,7 @@ export class AIService {
         error: 'Rejected by user',
       };
     } else {
-      const result = await this.executeTool(user, toolName, toolArgs);
+      const result = await this.executeTool(user, toolName, toolArgs, { pageContext });
       pendingMessages.push({
         role: 'tool',
         tool_call_id: toolCallId,
@@ -883,7 +964,7 @@ export class AIService {
         }
 
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
-        const result = await this.executeTool(user, tc.name, tc.parsedArgs);
+        const result = await this.executeTool(user, tc.name, tc.parsedArgs, { pageContext });
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,

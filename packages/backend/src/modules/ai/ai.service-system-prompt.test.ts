@@ -88,6 +88,8 @@ describe('AIService system prompt', () => {
     expect(prompt).toContain('The user is currently viewing: /proxy/hosts/host-1tabsettings');
     expect(prompt).toContain('Focused resource: proxyhost with ID host-1');
     expect(prompt).toContain('## Organization Instructions\nAlways prefer concise runbooks.');
+    expect(prompt).toContain('Use get_current_context');
+    expect(prompt).toContain('Use discover_tools');
     expect(prompt).toContain('Use find_resource FIRST');
   });
 

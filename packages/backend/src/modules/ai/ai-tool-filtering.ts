@@ -14,6 +14,7 @@ const DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS = new Set([
 ]);
 const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
   find_resource: [
+    'feat:ai:use',
     'nodes:details',
     'proxy:view',
     'proxy:templates:view',

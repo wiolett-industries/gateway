@@ -9,6 +9,47 @@ import { canUseAiTool } from './ai-tool-filtering.js';
 export const AI_TOOLS: AIToolDefinition[] = [
   // ── Discovery ──
   {
+    name: 'discover_tools',
+    description:
+      'Discover Gateway tool groups and callable tools before choosing an operation. Use this when you are not sure which tool supports a task, or when a category-specific tool is not visible in your current context.',
+    parameters: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          description:
+            'Optional Gateway tool category to inspect, for example Docker, Logging, SSL Certificates, Administration, or Reverse Proxy.',
+        },
+        query: {
+          type: 'string',
+          description: 'Optional text to filter tool names, descriptions, categories, or required scopes.',
+        },
+        includeTools: {
+          type: 'boolean',
+          description:
+            'Set true to return matching tool details. When omitted without category/query, only category summaries are returned.',
+        },
+      },
+    },
+    destructive: false,
+    category: 'Discovery',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'get_current_context',
+    description:
+      'Return the current Gateway page context supplied by the UI: route, focused resource type, and focused resource ID. Use this when the user says "this page", "current resource", or refers to what they are viewing.',
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    destructive: false,
+    category: 'Discovery',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
     name: 'find_resource',
     description:
       'Global resource search. Use this FIRST when the user names a resource but you need its ID, nodeId, or exact type. It searches across readable nodes, Docker containers/images/volumes/networks, proxy hosts, certificates, domains, logging resources, databases, notifications, and more. Do not manually list every node and then scan each node when find_resource can search the resource type directly.',
@@ -60,7 +101,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Discovery',
-    requiredScope: 'nodes:details',
+    requiredScope: 'feat:ai:use',
     invalidateStores: [],
   },
 

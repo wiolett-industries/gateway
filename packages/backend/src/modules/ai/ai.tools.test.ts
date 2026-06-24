@@ -26,6 +26,8 @@ describe('AI tool scope filtering', () => {
   it('keeps core registry ordering, uniqueness, and invalidation contracts stable', () => {
     expect(new Set(AI_TOOLS.map((tool) => tool.name)).size).toBe(AI_TOOLS.length);
     expect(AI_TOOLS.slice(0, 55).map((tool) => tool.name)).toEqual([
+      'discover_tools',
+      'get_current_context',
       'find_resource',
       'list_cas',
       'get_ca',
@@ -79,8 +81,6 @@ describe('AI tool scope filtering', () => {
       'create_group',
       'update_group',
       'delete_group',
-      'ask_question',
-      'internal_documentation',
     ]);
     expect(TOOL_STORE_INVALIDATION_MAP.create_root_ca).toEqual(['ca']);
     expect(TOOL_STORE_INVALIDATION_MAP.manage_certificate).toEqual(['certificates', 'ca']);
@@ -110,7 +110,14 @@ describe('AI tool scope filtering', () => {
       expect.arrayContaining(['list_groups', 'create_group', 'update_group', 'delete_group'])
     );
     expect(toolNames(['feat:ai:use'])).toEqual(
-      expect.arrayContaining(['get_dashboard_stats', 'ask_question', 'internal_documentation'])
+      expect.arrayContaining([
+        'discover_tools',
+        'get_current_context',
+        'find_resource',
+        'get_dashboard_stats',
+        'ask_question',
+        'internal_documentation',
+      ])
     );
     expect(toolNames(['proxy:raw:read:proxy-1'])).toContain('get_proxy_rendered_config');
     expect(toolNames(['proxy:raw:read:proxy-1'])).not.toContain('update_proxy_raw_config');
