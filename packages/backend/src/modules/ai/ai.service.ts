@@ -62,6 +62,7 @@ import type {
   WSServerMessage,
 } from './ai.types.js';
 import { executeWebSearch } from './ai.web-search.js';
+import { AIConversationService } from './ai-conversation.service.js';
 
 const logger = createChildLogger('AIService');
 
@@ -199,6 +200,7 @@ export class AIService {
         pageContext: options.pageContext,
       });
       const invalidateStores = TOOL_STORE_INVALIDATION_MAP[toolName] || [];
+      await this.persistToolRuntimeState(user, options, toolName, result);
 
       // Audit log for mutating tools
       if (shouldAudit) {
@@ -596,11 +598,42 @@ export class AIService {
     return {
       categories,
       tools,
+      discoveredToolsets: includeTools
+        ? [...new Set((tools ?? []).map((tool) => tool.category))].sort((a, b) => a.localeCompare(b))
+        : [],
       totalCallableTools: callableTools.length,
       note: includeTools
         ? 'Call the selected tool with its documented parameters. Use internal_documentation for workflow details when needed.'
         : 'Pass category, query, or includeTools:true to inspect callable tool details.',
     };
+  }
+
+  private async persistToolRuntimeState(
+    user: User,
+    options: ToolExecutionOptions,
+    toolName: string,
+    result: unknown
+  ): Promise<void> {
+    if (!options.conversationId) return;
+    const discoveredToolsets =
+      toolName === 'discover_tools' && isRecord(result) && Array.isArray(result.discoveredToolsets)
+        ? result.discoveredToolsets.filter((toolset): toolset is string => typeof toolset === 'string')
+        : undefined;
+
+    if (!options.pageContext && (!discoveredToolsets || discoveredToolsets.length === 0)) return;
+
+    try {
+      await container.resolve(AIConversationService).updateRuntimeState(user.id, options.conversationId, {
+        lastContext: options.pageContext,
+        discoveredToolsets,
+      });
+    } catch (error) {
+      logger.warn('Failed to persist AI conversation runtime state', {
+        conversationId: options.conversationId,
+        toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private ensureToolScope(user: User, scope: string) {
@@ -624,7 +657,8 @@ export class AIService {
     clientMessages: ChatMessage[],
     pageContext: PageContext | undefined,
     signal: AbortSignal,
-    requestId: string
+    requestId: string,
+    conversationId?: string
   ): AsyncGenerator<WSServerMessage> {
     const config = await this.settingsService.getConfig();
     const apiKey = await this.settingsService.getDecryptedApiKey();
@@ -731,7 +765,7 @@ export class AIService {
 
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
 
-        const result = await this.executeTool(user, tc.name, tc.parsedArgs, { pageContext });
+        const result = await this.executeTool(user, tc.name, tc.parsedArgs, { pageContext, conversationId });
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
@@ -812,7 +846,8 @@ export class AIService {
     requestId: string,
     answer?: string,
     answers?: Record<string, string>,
-    queuedApprovals: QueuedApproval[] = []
+    queuedApprovals: QueuedApproval[] = [],
+    conversationId?: string
   ): AsyncGenerator<WSServerMessage> {
     if (toolName === 'ask_question') {
       // Batch answers: { toolCallId: answer, ... }
@@ -843,7 +878,7 @@ export class AIService {
         error: 'Rejected by user',
       };
     } else {
-      const result = await this.executeTool(user, toolName, toolArgs, { pageContext });
+      const result = await this.executeTool(user, toolName, toolArgs, { pageContext, conversationId });
       pendingMessages.push({
         role: 'tool',
         tool_call_id: toolCallId,
@@ -964,7 +999,7 @@ export class AIService {
         }
 
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
-        const result = await this.executeTool(user, tc.name, tc.parsedArgs, { pageContext });
+        const result = await this.executeTool(user, tc.name, tc.parsedArgs, { pageContext, conversationId });
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,

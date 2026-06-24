@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { container } from '@/container.js';
 import { AIService } from './ai.service.js';
+import { AIConversationService } from './ai-conversation.service.js';
 
 const BASE_USER = {
   id: 'user-1',
@@ -35,6 +37,10 @@ function createService(config: Record<string, unknown> = {}) {
 }
 
 describe('AIService discovery tools', () => {
+  afterEach(() => {
+    container.reset();
+  });
+
   it('returns the current page context supplied for this tool execution', async () => {
     const service = createService();
 
@@ -91,5 +97,28 @@ describe('AIService discovery tools', () => {
     expect(
       (result.result as { tools: Array<{ name: string }> }).tools.some((tool) => tool.name === 'get_current_context')
     ).toBe(false);
+  });
+
+  it('persists discovered toolsets and page context when a conversation is attached', async () => {
+    const updateRuntimeState = vi.fn().mockResolvedValue(null);
+    container.registerInstance(AIConversationService, {
+      updateRuntimeState,
+    } as unknown as AIConversationService);
+    const service = createService();
+
+    await service.executeTool(
+      { ...BASE_USER, scopes: ['feat:ai:use', 'logs:schemas:view'] },
+      'discover_tools',
+      { category: 'Logging' },
+      {
+        conversationId: 'conversation-1',
+        pageContext: { route: '/logging', resourceType: 'logging', resourceId: 'env-1' },
+      }
+    );
+
+    expect(updateRuntimeState).toHaveBeenCalledWith('user-1', 'conversation-1', {
+      lastContext: { route: '/logging', resourceType: 'logging', resourceId: 'env-1' },
+      discoveredToolsets: ['Logging'],
+    });
   });
 });

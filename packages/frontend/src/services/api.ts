@@ -801,6 +801,7 @@ class ApiClient extends withLoggingApi(
         title: string;
         updatedAt: string;
         messages: AIMessage[];
+        lastContext: PageContext | null;
       };
     }>("/ai/conversations", {
       method: "POST",

@@ -193,6 +193,8 @@ interface AIState {
   isEnabled: boolean | null;
   retryAfter: number | null;
   savedName: string | null;
+  activeConversationId: string | null;
+  lastContext: PageContext | null;
   pendingApprovalToolCallId: string | null;
 
   // Actions
@@ -212,6 +214,37 @@ interface AIState {
 let wsClient: AIWebSocketClient | null = null;
 let currentRequestId: string | null = null;
 let retryTimer: ReturnType<typeof setInterval> | null = null;
+
+function titleFromContent(content: string): string {
+  const title = content.trim().replace(/\s+/g, " ").slice(0, 48);
+  return title || "New conversation";
+}
+
+async function ensureActiveConversation(
+  content: string,
+  messages: AIMessage[],
+  context?: PageContext
+): Promise<string | null> {
+  const state = useAIStore.getState();
+  if (state.activeConversationId) return state.activeConversationId;
+
+  const title = state.savedName ?? titleFromContent(content);
+  try {
+    const saved = await saveConversation(
+      title,
+      messages.filter((message) => !message.localOnly),
+      context ?? state.lastContext
+    );
+    useAIStore.setState({
+      activeConversationId: saved.id,
+      savedName: saved.title,
+      lastContext: saved.lastContext ?? context ?? state.lastContext,
+    });
+    return saved.id;
+  } catch {
+    return null;
+  }
+}
 
 function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
   const result: ChatMessage[] = [];
@@ -265,6 +298,8 @@ export const useAIStore = create<AIState>()((set, get) => ({
   isEnabled: null,
   retryAfter: null,
   savedName: null,
+  activeConversationId: null,
+  lastContext: null,
   pendingApprovalToolCallId: null,
 
   connect: async () => {
@@ -313,19 +348,28 @@ export const useAIStore = create<AIState>()((set, get) => ({
       isStreaming: true,
     };
 
-    set({ messages: [...messages, userMsg, assistantMsg], isStreaming: true });
+    set({
+      messages: [...messages, userMsg, assistantMsg],
+      isStreaming: true,
+      lastContext: context ?? null,
+    });
 
     const requestId = generateId();
     currentRequestId = requestId;
 
     const chatMessages = buildChatMessages([...messages, userMsg]);
 
-    wsClient?.send({
-      type: "chat",
-      requestId,
-      messages: chatMessages,
-      context,
-    });
+    void ensureActiveConversation(content, [...messages, userMsg], context).then(
+      (conversationId) => {
+        wsClient?.send({
+          type: "chat",
+          requestId,
+          messages: chatMessages,
+          context,
+          conversationId: conversationId ?? undefined,
+        });
+      }
+    );
   },
 
   approveTool: (toolCallId: string) => {
@@ -436,7 +480,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
   },
 
   clearMessages: () => {
-    set({ messages: [], savedName: null });
+    set({ messages: [], savedName: null, activeConversationId: null, lastContext: null });
   },
 
   setEnabled: (enabled: boolean) => {
@@ -488,15 +532,20 @@ export const useAIStore = create<AIState>()((set, get) => ({
         return true;
       }
       try {
-        await saveConversation(
+        const saved = await saveConversation(
           arg,
-          get().messages.filter((m) => !m.localOnly)
+          get().messages.filter((m) => !m.localOnly),
+          get().lastContext
         );
-        set({ savedName: arg });
+        set({
+          savedName: saved.title,
+          activeConversationId: saved.id,
+          lastContext: saved.lastContext,
+        });
         const localMsg: AIMessage = {
           id: generateId(),
           role: "assistant",
-          content: `Conversation saved as **${arg}** — will auto-save on new messages`,
+          content: `Conversation saved as **${saved.title}** — will auto-save on new messages`,
           localOnly: true,
         };
         set((state) => ({ messages: [...state.messages, localMsg] }));
@@ -531,13 +580,18 @@ export const useAIStore = create<AIState>()((set, get) => ({
         return true;
       }
       try {
-        const messages = await restoreConversation(arg);
-        if (messages) {
-          set({ messages, savedName: arg });
+        const conversation = await restoreConversation(arg);
+        if (conversation) {
+          set({
+            messages: conversation.messages,
+            savedName: conversation.title,
+            activeConversationId: conversation.id,
+            lastContext: conversation.lastContext,
+          });
           const localMsg: AIMessage = {
             id: generateId(),
             role: "assistant",
-            content: `Restored **${arg}** (${messages.length} messages)`,
+            content: `Restored **${conversation.title}** (${conversation.messages.length} messages)`,
             localOnly: true,
           };
           set((state) => ({ messages: [...state.messages, localMsg] }));
@@ -575,6 +629,11 @@ export const useAIStore = create<AIState>()((set, get) => ({
       }
       try {
         await dropConversation(arg);
+        set((state) =>
+          state.savedName === arg
+            ? { savedName: null, activeConversationId: null, lastContext: null }
+            : {}
+        );
         const localMsg: AIMessage = {
           id: generateId(),
           role: "assistant",
@@ -612,6 +671,8 @@ export function resetAIStateForAuthChange() {
     isConnected: false,
     retryAfter: null,
     savedName: null,
+    activeConversationId: null,
+    lastContext: null,
     pendingApprovalToolCallId: null,
   });
 }
@@ -709,12 +770,21 @@ function handleWSMessage(
       }));
       currentRequestId = null;
       // Auto-save if conversation was previously saved
-      const { savedName, messages: msgs } = get();
+      const { savedName, messages: msgs, lastContext } = get();
       if (savedName) {
         saveConversation(
           savedName,
-          msgs.filter((m) => !m.localOnly)
-        ).catch(() => {});
+          msgs.filter((m) => !m.localOnly),
+          lastContext
+        )
+          .then((saved) => {
+            useAIStore.setState({
+              activeConversationId: saved.id,
+              savedName: saved.title,
+              lastContext: saved.lastContext ?? lastContext,
+            });
+          })
+          .catch(() => {});
       }
       break;
     }

@@ -1,16 +1,41 @@
-import type { AIMessage } from "@/types/ai";
+import type { AIMessage, PageContext } from "@/types/ai";
 import { api } from "./api";
 
-export async function saveConversation(name: string, messages: AIMessage[]): Promise<void> {
-  await api.saveAIConversation(name, messages);
+export interface SavedAIConversation {
+  id: string;
+  title: string;
+  messages: AIMessage[];
+  lastContext: PageContext | null;
+  updatedAt: string;
 }
 
-export async function restoreConversation(name: string): Promise<AIMessage[] | null> {
+export async function saveConversation(
+  name: string,
+  messages: AIMessage[],
+  lastContext?: PageContext | null
+): Promise<SavedAIConversation> {
+  const saved = await api.saveAIConversation(name, messages, lastContext);
+  return {
+    id: saved.id,
+    title: saved.title,
+    messages: saved.messages,
+    lastContext: saved.lastContext ?? null,
+    updatedAt: saved.updatedAt,
+  };
+}
+
+export async function restoreConversation(name: string): Promise<SavedAIConversation | null> {
   const conversations = await api.listAIConversations();
   const match = conversations.find((conversation) => conversation.title === name);
   if (!match) return null;
   const conversation = await api.getAIConversation(match.id);
-  return conversation.messages;
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    messages: conversation.messages,
+    lastContext: conversation.lastContext,
+    updatedAt: conversation.updatedAt,
+  };
 }
 
 export async function listConversations(): Promise<Array<{ name: string; savedAt: string }>> {

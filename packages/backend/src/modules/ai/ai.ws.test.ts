@@ -8,6 +8,7 @@ import type { User } from '@/types.js';
 import { AIService } from './ai.service.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { authenticateWSConnection, createWSHandlers } from './ai.ws.js';
+import { AIConversationService } from './ai-conversation.service.js';
 
 const USER: User = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -303,7 +304,56 @@ describe('AI websocket authentication', () => {
       'request-4',
       undefined,
       undefined,
-      [{ id: 'tool-2', name: 'start_docker_container', arguments: { containerId: 'container-1' } }]
+      [{ id: 'tool-2', name: 'start_docker_container', arguments: { containerId: 'container-1' } }],
+      undefined
+    );
+  });
+
+  it('persists chat page context and passes conversation id into streaming', async () => {
+    registerAiWsDependencies(USER);
+    container.registerInstance(TOKENS.RedisClient, allowingRedis() as any);
+
+    const updateRuntimeState = vi.fn().mockResolvedValue(null);
+    container.registerInstance(AIConversationService, {
+      updateRuntimeState,
+    } as unknown as AIConversationService);
+
+    const streamChat = vi.fn(async function* () {
+      yield { type: 'done', requestId: 'request-5' } as const;
+    });
+    container.registerInstance(AIService, { streamChat } as unknown as AIService);
+
+    const ws = createWs();
+    const handlers = createWSHandlers();
+
+    handlers.onOpen(new Event('open'), ws as any);
+    const authenticated = await authenticateWSConnection(ws as any, 'session-1');
+    expect(authenticated).toBe(true);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'chat',
+          requestId: 'request-5',
+          conversationId: 'conversation-1',
+          context: { route: '/proxy-hosts/host-1/settings', resourceType: 'proxy_host', resourceId: 'host-1' },
+          messages: [{ role: 'user', content: 'what is this page?' }],
+        }),
+      }),
+      ws as any
+    );
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(updateRuntimeState).toHaveBeenCalledWith(USER.id, 'conversation-1', {
+      lastContext: { route: '/proxy-hosts/host-1/settings', resourceType: 'proxy_host', resourceId: 'host-1' },
+    });
+    expect(streamChat).toHaveBeenCalledWith(
+      USER,
+      [{ role: 'user', content: 'what is this page?' }],
+      { route: '/proxy-hosts/host-1/settings', resourceType: 'proxy_host', resourceId: 'host-1' },
+      expect.any(AbortSignal),
+      'request-5',
+      'conversation-1'
     );
   });
 });

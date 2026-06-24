@@ -24,6 +24,12 @@ export interface SaveAIConversationInput {
   lastContext?: PageContext | Record<string, unknown> | null;
 }
 
+export interface AIConversationRuntimeStateInput {
+  lastContext?: PageContext | Record<string, unknown> | null;
+  discoveredToolsets?: string[];
+  checkpoint?: Record<string, unknown> | null;
+}
+
 export class AIConversationService {
   constructor(private readonly db: DrizzleClient) {}
 
@@ -107,7 +113,7 @@ export class AIConversationService {
   async updateConversation(
     userId: string,
     conversationId: string,
-    input: Partial<SaveAIConversationInput>
+    input: Partial<SaveAIConversationInput> & AIConversationRuntimeStateInput
   ): Promise<AIConversationDetail | null> {
     const existing = await this.getOwnedConversation(userId, conversationId);
     if (!existing) return null;
@@ -120,6 +126,11 @@ export class AIConversationService {
         .set({
           title: input.title ? normalizeTitle(input.title) : existing.title,
           lastContext: input.lastContext !== undefined ? lastContext : existing.lastContext,
+          discoveredToolsets:
+            input.discoveredToolsets !== undefined
+              ? normalizeToolsets(input.discoveredToolsets)
+              : existing.discoveredToolsets,
+          checkpoint: input.checkpoint !== undefined ? input.checkpoint : existing.checkpoint,
           updatedAt: now,
         })
         .where(eq(aiConversations.id, existing.id));
@@ -133,6 +144,32 @@ export class AIConversationService {
         }
       }
     });
+
+    return this.getConversation(userId, conversationId);
+  }
+
+  async updateRuntimeState(
+    userId: string,
+    conversationId: string,
+    input: AIConversationRuntimeStateInput
+  ): Promise<AIConversationDetail | null> {
+    const existing = await this.getOwnedConversation(userId, conversationId);
+    if (!existing) return null;
+
+    const discoveredToolsets =
+      input.discoveredToolsets === undefined
+        ? existing.discoveredToolsets
+        : normalizeToolsets([...existing.discoveredToolsets, ...input.discoveredToolsets]);
+
+    await this.db
+      .update(aiConversations)
+      .set({
+        lastContext: input.lastContext !== undefined ? normalizeContext(input.lastContext) : existing.lastContext,
+        discoveredToolsets,
+        checkpoint: input.checkpoint !== undefined ? input.checkpoint : existing.checkpoint,
+        updatedAt: new Date(),
+      })
+      .where(eq(aiConversations.id, existing.id));
 
     return this.getConversation(userId, conversationId);
   }
@@ -186,6 +223,10 @@ function normalizeTitle(title: string): string {
 function normalizeContext(context: SaveAIConversationInput['lastContext']): Record<string, unknown> | null {
   if (!context) return null;
   return { ...context };
+}
+
+function normalizeToolsets(toolsets: string[]): string[] {
+  return [...new Set(toolsets.map((toolset) => toolset.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 
 function toConversationMessage(conversationId: string, message: unknown, index: number) {

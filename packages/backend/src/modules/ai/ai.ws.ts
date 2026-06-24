@@ -9,6 +9,7 @@ import type { User } from '@/types.js';
 import { AIService } from './ai.service.js';
 import { AISettingsService } from './ai.settings.service.js';
 import type { PageContext, WSClientMessage, WSServerMessage } from './ai.types.js';
+import { AIConversationService } from './ai-conversation.service.js';
 
 const logger = createChildLogger('AI-WebSocket');
 const RATE_LIMIT_PIPELINE_RESULT_COUNT = 4;
@@ -21,6 +22,7 @@ interface PendingApproval {
   toolArgs: Record<string, unknown>;
   messages: Record<string, unknown>[];
   pageContext?: PageContext;
+  conversationId?: string;
   allQuestions?: Array<{ id: string; args: Record<string, unknown> }>;
   queuedApprovals?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
 }
@@ -40,6 +42,23 @@ function send(ws: WSContext, msg: WSServerMessage): void {
     ws.send(JSON.stringify(msg));
   } catch {
     // Connection may be closed
+  }
+}
+
+async function persistConversationContext(
+  userId: string,
+  conversationId: string,
+  pageContext: PageContext
+): Promise<void> {
+  try {
+    await container.resolve(AIConversationService).updateRuntimeState(userId, conversationId, {
+      lastContext: pageContext,
+    });
+  } catch (error) {
+    logger.warn('Failed to persist AI conversation page context', {
+      conversationId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -223,7 +242,8 @@ export function createWSHandlers() {
             msg.requestId,
             (msg as any).answer,
             (msg as any).answers,
-            pending.queuedApprovals
+            pending.queuedApprovals,
+            pending.conversationId
           );
 
           for await (const evt of generator) {
@@ -235,6 +255,7 @@ export function createWSHandlers() {
                 toolArgs: approvalEvt.arguments,
                 messages: approvalEvt._pendingMessages || pending.messages,
                 pageContext: pending.pageContext,
+                conversationId: pending.conversationId,
                 allQuestions: approvalEvt._allQuestions,
                 queuedApprovals: approvalEvt._queuedApprovals,
               };
@@ -280,6 +301,9 @@ export function createWSHandlers() {
         const abortController = new AbortController();
         state.currentAbortController = abortController;
         state.currentRequestId = msg.requestId;
+        if (msg.conversationId && msg.context) {
+          await persistConversationContext(user.id, msg.conversationId, msg.context);
+        }
 
         try {
           const generator = aiService.streamChat(
@@ -287,7 +311,8 @@ export function createWSHandlers() {
             msg.messages,
             msg.context,
             abortController.signal,
-            msg.requestId
+            msg.requestId,
+            msg.conversationId
           );
 
           for await (const evt of generator) {
@@ -299,6 +324,7 @@ export function createWSHandlers() {
                 toolArgs: approvalEvt.arguments,
                 messages: approvalEvt._pendingMessages || [],
                 pageContext: msg.context,
+                conversationId: msg.conversationId,
                 allQuestions: approvalEvt._allQuestions,
                 queuedApprovals: approvalEvt._queuedApprovals,
               };

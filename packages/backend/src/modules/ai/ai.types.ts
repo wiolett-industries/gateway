@@ -67,12 +67,13 @@ export interface ChatMessage {
 // ── WebSocket Protocol ──
 
 export type WSClientMessage =
-  | { type: 'chat'; requestId: string; messages: ChatMessage[]; context?: PageContext }
+  | { type: 'chat'; requestId: string; messages: ChatMessage[]; context?: PageContext; conversationId?: string }
   | {
       type: 'tool_approval';
       requestId: string;
       toolCallId: string;
       approved: boolean;
+      conversationId?: string;
       answer?: string;
       answers?: Record<string, string>;
     }
@@ -117,6 +118,7 @@ export interface ToolExecutionResult {
 export interface ToolExecutionOptions {
   source?: 'ai' | 'mcp';
   pageContext?: PageContext;
+  conversationId?: string;
   scopes?: string[];
   tokenId?: string;
   tokenPrefix?: string;

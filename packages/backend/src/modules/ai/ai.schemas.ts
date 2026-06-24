@@ -52,6 +52,8 @@ export const UpdateAIConversationSchema = z.object({
   title: z.string().trim().min(1).max(255).optional(),
   messages: z.array(AIConversationMessageSchema).optional(),
   lastContext: PageContextSchema.nullable().optional(),
+  discoveredToolsets: z.array(z.string().trim().min(1).max(100)).optional(),
+  checkpoint: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 export const AIConfigUpdateSchema = z.object({
