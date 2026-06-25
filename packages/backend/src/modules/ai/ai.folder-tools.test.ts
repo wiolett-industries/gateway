@@ -1,0 +1,99 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { container } from '@/container.js';
+import { DomainFolderService } from '@/modules/domains/domain-folders.service.js';
+import { FolderService } from '@/modules/proxy/folder.service.js';
+import { executeFolderTool } from './ai.folder-tools.js';
+
+const BASE_USER = {
+  id: 'user-1',
+  oidcSubject: 'oidc-user',
+  email: 'admin@example.com',
+  name: 'Admin',
+  avatarUrl: null,
+  groupId: 'group-1',
+  groupName: 'admin',
+  scopes: [] as string[],
+  isBlocked: false,
+};
+
+describe('AI folder tools', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('strips raw proxy config fields from proxy folder listings', async () => {
+    const proxyFolderService = {
+      getFolderTree: vi.fn().mockResolvedValue([
+        {
+          id: 'folder-1',
+          name: 'Apps',
+          hosts: [
+            {
+              id: 'proxy-1',
+              domainNames: ['app.example.com'],
+              rawConfig: 'server { proxy_set_header Authorization secret; }',
+              rawConfigEnabled: true,
+            },
+          ],
+          children: [
+            {
+              id: 'folder-2',
+              name: 'Nested',
+              hosts: [
+                {
+                  id: 'proxy-2',
+                  domainNames: ['nested.example.com'],
+                  rawConfig: 'server { deny all; }',
+                  rawConfigEnabled: true,
+                },
+              ],
+              children: [],
+            },
+          ],
+        },
+      ]),
+    };
+    vi.spyOn(container, 'resolve').mockImplementation((token: unknown) => {
+      if (token === FolderService) return proxyFolderService as never;
+      throw new Error('Unexpected service resolution');
+    });
+
+    const result = await executeFolderTool({ ...BASE_USER, scopes: ['proxy:view:proxy-1'] }, 'list_resource_folders', {
+      resourceType: 'proxy_hosts',
+    });
+
+    expect(proxyFolderService.getFolderTree).toHaveBeenCalledWith({ allowedHostIds: ['proxy-1'] });
+    expect(JSON.stringify(result)).not.toContain('rawConfig');
+    expect(JSON.stringify(result)).not.toContain('rawConfigEnabled');
+    expect(JSON.stringify(result)).not.toContain('proxy_set_header Authorization');
+    expect(result).toMatchObject([
+      {
+        hosts: [{ id: 'proxy-1', domainNames: ['app.example.com'] }],
+        children: [{ hosts: [{ id: 'proxy-2', domainNames: ['nested.example.com'] }] }],
+      },
+    ]);
+  });
+
+  it('requires domain view scope for domain folder listings', async () => {
+    const domainFolderService = {
+      getFolderTree: vi.fn().mockResolvedValue([{ id: 'folder-1', name: 'Domains', children: [] }]),
+    };
+    vi.spyOn(container, 'resolve').mockImplementation((token: unknown) => {
+      if (token === DomainFolderService) return domainFolderService as never;
+      throw new Error('Unexpected service resolution');
+    });
+
+    await expect(
+      executeFolderTool({ ...BASE_USER, scopes: ['domains:folders:manage'] }, 'list_resource_folders', {
+        resourceType: 'domains',
+      })
+    ).rejects.toThrow('PERMISSION_DENIED: Missing required scope domains:view');
+
+    await expect(
+      executeFolderTool({ ...BASE_USER, scopes: ['domains:view', 'domains:folders:manage'] }, 'list_resource_folders', {
+        resourceType: 'domains',
+      })
+    ).resolves.toEqual([{ id: 'folder-1', name: 'Domains', children: [] }]);
+    expect(domainFolderService.getFolderTree).toHaveBeenCalledWith({ includeAllFolders: true });
+  });
+});

@@ -190,6 +190,149 @@ describe("AI conversation persistence", () => {
     expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
   });
 
+  it("classifies node file operations by operation safety", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User One",
+        groupName: "admin",
+        scopes: ["feat:ai:use"],
+        isBlocked: false,
+      } as any,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    const connectPromise = useAIStore.getState().connect();
+    const socket = MockWebSocket.instances[0];
+    socket.emit({ type: "auth_ok" });
+    await connectPromise;
+
+    useAIStore.getState().sendMessage("inspect node files");
+    await vi.waitFor(() =>
+      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
+    );
+    socket.send.mockClear();
+
+    socket.emit({
+      type: "tool_approval_required",
+      requestId: "request-1",
+      id: "node-file-read",
+      name: "manage_node_file",
+      arguments: { operation: "read", nodeId: "node-1", path: "/etc/hosts" },
+    });
+
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
+    socket.send.mockClear();
+
+    socket.emit({
+      type: "tool_approval_required",
+      requestId: "request-1",
+      id: "node-file-write-normal",
+      name: "manage_node_file",
+      arguments: { operation: "write", nodeId: "node-1", path: "/tmp/test", content: "hello" },
+    });
+
+    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
+
+    useUIStore.setState({ aiBypassEditApprovals: true });
+    socket.emit({
+      type: "tool_approval_required",
+      requestId: "request-1",
+      id: "node-file-write-bypass",
+      name: "manage_node_file",
+      arguments: { operation: "write", nodeId: "node-1", path: "/tmp/test", content: "hello" },
+    });
+
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
+    socket.send.mockClear();
+
+    socket.emit({
+      type: "tool_approval_required",
+      requestId: "request-1",
+      id: "node-file-delete-normal",
+      name: "manage_node_file",
+      arguments: { operation: "delete", nodeId: "node-1", path: "/tmp/test" },
+    });
+
+    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
+
+    useUIStore.setState({ aiBypassDeleteApprovals: true });
+    socket.emit({
+      type: "tool_approval_required",
+      requestId: "request-1",
+      id: "node-file-delete-bypass",
+      name: "manage_node_file",
+      arguments: { operation: "delete", nodeId: "node-1", path: "/tmp/test" },
+    });
+
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
+  });
+
+  it("classifies folder mutations as edit operations for bypass mode", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User One",
+        groupName: "admin",
+        scopes: ["feat:ai:use"],
+        isBlocked: false,
+      } as any,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    const connectPromise = useAIStore.getState().connect();
+    const socket = MockWebSocket.instances[0];
+    socket.emit({ type: "auth_ok" });
+    await connectPromise;
+
+    useAIStore.getState().sendMessage("move folder items");
+    await vi.waitFor(() =>
+      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
+    );
+    socket.send.mockClear();
+
+    socket.emit({
+      type: "tool_approval_required",
+      requestId: "request-1",
+      id: "folder-move-normal",
+      name: "manage_resource_folder",
+      arguments: {
+        operation: "move_resources",
+        resourceType: "domains",
+        folderId: "folder-1",
+        resourceIds: ["domain-1"],
+      },
+    });
+
+    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
+
+    useUIStore.setState({ aiBypassEditApprovals: true });
+    socket.emit({
+      type: "tool_approval_required",
+      requestId: "request-1",
+      id: "folder-move-bypass",
+      name: "manage_resource_folder",
+      arguments: {
+        operation: "move_resources",
+        resourceType: "domains",
+        folderId: "folder-1",
+        resourceIds: ["domain-1"],
+      },
+    });
+
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
+  });
+
   it("does not auto-approve read-only tools in always ask mode", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
     useAuthStore.setState({

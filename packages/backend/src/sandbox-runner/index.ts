@@ -1,6 +1,5 @@
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
-import dns from 'node:dns/promises';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -31,6 +30,7 @@ import type {
   SandboxRunnerWriteStdinResult,
 } from '@/modules/ai/ai.sandbox-runner.protocol.js';
 import { type DockerCreateContainerConfig, DockerService } from '@/services/docker.service.js';
+import { readResponseBodyCapped } from './network.js';
 
 const logger = createChildLogger('SandboxRunner');
 const SOCKET_PATH = process.env.SANDBOX_RUNNER_SOCKET || '/tmp/gateway-sandbox-runner.sock';
@@ -165,107 +165,6 @@ function resolveArtifactPath(rawPath: unknown, fallbackFilename?: string) {
 function isTextContentType(contentType: string | null): boolean {
   if (!contentType) return false;
   return /^(text\/|application\/(json|xml|javascript|x-javascript)|[^;]+\+json\b|[^;]+\+xml\b)/i.test(contentType);
-}
-
-async function readResponseBodyCapped(
-  url: string,
-  limitBytes: number
-): Promise<{
-  status: number;
-  contentType: string | null;
-  buffer: Buffer;
-}> {
-  await assertFetchUrlAllowed(url);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`fetch failed (${response.status} ${response.statusText})`);
-    }
-    if (!response.body) throw new Error('fetch response body is not readable');
-
-    const contentLength = response.headers.get('content-length');
-    if (contentLength && Number(contentLength) > limitBytes) {
-      throw new Error(`download exceeds ${limitBytes} byte limit`);
-    }
-
-    const reader = response.body.getReader();
-    const chunks: Buffer[] = [];
-    let total = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = Buffer.from(value);
-      total += chunk.byteLength;
-      if (total > limitBytes) {
-        await reader.cancel().catch(() => {});
-        throw new Error(`download exceeds ${limitBytes} byte limit`);
-      }
-      chunks.push(chunk);
-    }
-    return {
-      status: response.status,
-      contentType: response.headers.get('content-type'),
-      buffer: Buffer.concat(chunks, total),
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function assertFetchUrlAllowed(rawUrl: string): Promise<void> {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error('url must be a valid HTTP or HTTPS URL');
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('url must use http or https');
-  }
-  const hostname = parsed.hostname.toLowerCase();
-  if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
-    throw new Error('localhost URLs are not allowed');
-  }
-  const addresses =
-    net.isIP(hostname) !== 0
-      ? [{ address: hostname }]
-      : await dns.lookup(hostname, { all: true, verbatim: true }).catch((error) => {
-          throw new Error(`failed to resolve URL hostname: ${error instanceof Error ? error.message : String(error)}`);
-        });
-
-  for (const { address } of addresses) {
-    if (isBlockedNetworkAddress(address)) {
-      throw new Error(`URL resolves to a blocked network address: ${address}`);
-    }
-  }
-}
-
-function isBlockedNetworkAddress(address: string): boolean {
-  if (net.isIPv4(address)) {
-    const [a, b] = address.split('.').map((part) => Number(part));
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      a >= 224
-    );
-  }
-  if (!net.isIPv6(address)) return true;
-  const normalized = address.toLowerCase();
-  return (
-    normalized === '::1' ||
-    normalized === '::' ||
-    normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    normalized.startsWith('fe80:') ||
-    normalized.startsWith('ff')
-  );
 }
 
 function formatFetchedContent(

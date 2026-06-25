@@ -42,6 +42,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | proxy:create | Create proxy hosts (resource-scopable) |
 | proxy:edit | Update proxy hosts (resource-scopable) |
 | proxy:delete | Delete proxy hosts (resource-scopable) |
+| proxy:folders:manage | Manage proxy host folders and folder placement |
 | proxy:raw:read | View raw nginx config in browser-only raw config workflows (resource-scopable) |
 | proxy:raw:write | Write raw nginx config (resource-scopable) |
 | proxy:raw:toggle | Enable/disable raw config mode (resource-scopable) |
@@ -58,6 +59,15 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | ssl:cert:delete | Delete SSL certificates (resource-scopable) |
 | ssl:cert:revoke | Revoke SSL certificates (resource-scopable) |
 | ssl:cert:export | Export SSL certificates (resource-scopable) |
+
+### Domains
+| Scope | Description |
+|-------|-------------|
+| domains:view | List and view managed domains |
+| domains:create | Register domains |
+| domains:edit | Edit/check managed domains (resource-scopable) |
+| domains:delete | Delete managed domains (resource-scopable) |
+| domains:folders:manage | Manage domain folders and placement |
 
 ### Access Control Lists
 | Scope | Description |
@@ -82,12 +92,15 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | nodes:console | Open interactive shell (resource-scopable) |
 | nodes:files:read | Browse, open, copy, and download node files (resource-scopable) |
 | nodes:files:write | Create, edit, upload, move, and delete node files (resource-scopable) |
+| nodes:folders:manage | Manage node folders and folder placement |
 
 ### Administration
 | Scope | Description |
 |-------|-------------|
 | admin:users | Manage users and permission groups |
 | admin:groups | Manage permission groups |
+| admin:users:folders:manage | Manage administration user folders and placement |
+| admin:groups:folders:manage | Manage permission group folders and placement |
 | admin:audit | View audit log |
 | admin:system | System-level administration (protected) |
 | admin:update | Apply system updates |
@@ -117,6 +130,10 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 |-------|-------------|
 | feat:ai:use | Access the AI assistant |
 | feat:ai:configure | Configure AI assistant settings |
+| ai:sandbox:use | Use AI sandbox runner tools |
+| ai:sandbox:tier:medium | Allow medium sandbox resource tier |
+| ai:sandbox:tier:high | Allow high sandbox resource tier |
+| ai:sandbox:manage | View/manage sandbox jobs beyond the current user |
 | mcp:use | Allow a user account to access the remote MCP server with OAuth |
 
 ### Docker: Containers
@@ -134,6 +151,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | docker:containers:secrets | Manage encrypted secrets (resource-scopable) |
 | docker:containers:webhooks | Configure CI/CD webhook URLs |
 | docker:containers:mounts | Add, remove, or change container/deployment mounts (resource-scopable) |
+| docker:containers:folders:manage | Manage Docker resource folders and placement |
 
 ### Docker: Images
 | Scope | Description |
@@ -185,6 +203,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | databases:query:write | Run write queries; AI/MCP database tools also require databases:view for the same database |
 | databases:query:admin | Run admin queries; AI/MCP database tools also require databases:view for the same database |
 | databases:credentials:reveal | Reveal saved database credentials (resource-scopable) |
+| databases:folders:manage | Manage database folders and placement |
 
 ### Logging
 | Scope | Description |
@@ -194,6 +213,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | logs:environments:create | Create logging environments |
 | logs:environments:edit | Edit logging environments (resource-scopable) |
 | logs:environments:delete | Delete logging environments (resource-scopable) |
+| logs:environments:folders:manage | Manage logging environment folders and placement |
 | logs:tokens:view | List ingest tokens (resource-scopable by environment) |
 | logs:tokens:create | Create ingest tokens (resource-scopable by environment) |
 | logs:tokens:delete | Delete ingest tokens (resource-scopable by environment) |
@@ -202,6 +222,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | logs:schemas:create | Create logging schemas |
 | logs:schemas:edit | Edit logging schemas (resource-scopable by schema ID) |
 | logs:schemas:delete | Delete logging schemas (resource-scopable by schema ID) |
+| logs:schemas:folders:manage | Manage logging schema folders and placement |
 | logs:read | Search and inspect logs (resource-scopable by environment) |
 | logs:manage | Logging-wide override |
 

@@ -6,6 +6,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { container } from '@/container.js';
 import { getResourceScopedIds, hasScope, hasScopeBase, hasScopeForResource } from '@/lib/permissions.js';
+import { FOLDER_TOOL_REQUIREMENT_SCOPES } from '@/modules/ai/ai.folder-tool-scopes.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AI_TOOLS } from '@/modules/ai/ai.tools.js';
 import type { AIToolDefinition } from '@/modules/ai/ai.types.js';
@@ -125,10 +126,13 @@ const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
     'status-page:incidents:resolve',
     'status-page:incidents:delete',
   ],
+  list_resource_folders: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
+  manage_resource_folder: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
+  manage_node_file: ['nodes:files:read', 'nodes:files:write'],
 };
 const SENSITIVE_TOOL_ARG_RE =
   /(?:password|passwd|secret|signingsecret|privatekey|private_key|token|authorization|cookie|apikey|api_key|clientsecret|client_secret|refresh)/i;
-const MCP_ALWAYS_VISIBLE_AI_TOOLS = new Set(['find_resource']);
+const MCP_ALWAYS_VISIBLE_AI_TOOLS = new Set(['find_resource', 'wait']);
 const MCP_TOOLS_PAGE_SIZE = 80;
 const MCP_DISCOVERY_STATE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -171,7 +175,14 @@ const MCP_TOOLSET_DEFINITIONS: McpToolsetDefinition[] = [
       'list_cas',
       'list_certificates',
       'list_templates',
+      'list_resource_folders',
     ],
+  },
+  {
+    id: 'folders',
+    title: 'Folders',
+    description: 'Folder layout and foldered resource assignment operations across Gateway resources.',
+    toolNames: toolNamesForCategories(['Folders']),
   },
   {
     id: 'nodes',
@@ -288,6 +299,7 @@ function hasDirectDatabaseViewForResource(scopes: string[], databaseId: string):
 }
 
 function hasToolScope(scopes: string[], tool: AIToolDefinition): boolean {
+  if (tool.name === 'wait') return true;
   if (!tool.requiredScope) return false;
   if (DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS.has(tool.name)) {
     return hasDirectDatabaseViewForQueryTool(scopes, tool.requiredScope);
@@ -306,6 +318,7 @@ function hasToolScope(scopes: string[], tool: AIToolDefinition): boolean {
 }
 
 function hasToolScopeForArgs(scopes: string[], tool: AIToolDefinition, args: Record<string, unknown>): boolean {
+  if (tool.name === 'wait') return true;
   if (!tool.requiredScope) return false;
   if (DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS.has(tool.name)) {
     const resourceId = getToolAuthorizationResourceId(tool.name, args);

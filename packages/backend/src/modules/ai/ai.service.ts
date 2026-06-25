@@ -27,6 +27,7 @@ import { manageDockerContainerConfigTool } from './ai.docker-config-tools.js';
 import { DOCKER_TOOL_NAMES, executeDockerTool } from './ai.docker-tools.js';
 import { getInternalDocumentation } from './ai.docs.js';
 import { DOMAIN_TOOL_NAMES, executeDomainTool } from './ai.domain-tools.js';
+import { executeFolderTool, FOLDER_TOOL_NAMES } from './ai.folder-tools.js';
 import { executeGroupTool, GROUP_TOOL_NAMES } from './ai.group-tools.js';
 import { manageLoggingTool } from './ai.logging-tools.js';
 import { executeNodeTool, NODE_TOOL_NAMES } from './ai.node-tools.js';
@@ -416,6 +417,9 @@ export class AIService {
     }
     if (SANDBOX_TOOL_NAMES.has(toolName)) {
       return this.executeSandboxTool(user, toolName, args, runtimeContext);
+    }
+    if (FOLDER_TOOL_NAMES.has(toolName)) {
+      return executeFolderTool(user, toolName, args);
     }
     if (NODE_TOOL_NAMES.has(toolName)) {
       return executeNodeTool({ nodesService: this.nodesService }, user, toolName, args);

@@ -70,4 +70,16 @@ describe('MCP tool scope filtering', () => {
       expect.arrayContaining(sandboxToolNames)
     );
   });
+
+  it('keeps wait available as a safe MCP coordination tool without delegated scopes', () => {
+    expect(toolNames([])).toContain('wait');
+    expect(toolByName([], 'wait')?.destructive).toBe(false);
+  });
+
+  it('advertises Docker folder tools for every Docker resource view scope', () => {
+    expect(toolNames(['docker:containers:view'])).toContain('list_resource_folders');
+    expect(toolNames(['docker:images:view'])).toContain('list_resource_folders');
+    expect(toolNames(['docker:networks:view'])).toContain('list_resource_folders');
+    expect(toolNames(['docker:volumes:view'])).toContain('list_resource_folders');
+  });
 });

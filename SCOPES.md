@@ -75,6 +75,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `domains:create` |  |
 | `domains:edit` |  |
 | `domains:delete` |  |
+| `domains:folders:manage` |  |
 | `proxy:view` | Yes |
 | `proxy:create` | Yes |
 | `proxy:edit` | Yes |
@@ -107,9 +108,14 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `nodes:config:edit` | Yes |
 | `nodes:logs` | Yes |
 | `nodes:console` | Yes |
+| `nodes:files:read` | Yes |
+| `nodes:files:write` | Yes |
+| `nodes:folders:manage` |  |
 | `nodes:lock` | Yes |
 | `admin:users` |  |
 | `admin:groups` |  |
+| `admin:users:folders:manage` |  |
+| `admin:groups:folders:manage` |  |
 | `admin:audit` |  |
 | `admin:system` |  |
 | `admin:details:certificates` |  |
@@ -124,6 +130,10 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `license:manage` |  |
 | `feat:ai:use` |  |
 | `feat:ai:configure` |  |
+| `ai:sandbox:use` |  |
+| `ai:sandbox:tier:medium` |  |
+| `ai:sandbox:tier:high` |  |
+| `ai:sandbox:manage` |  |
 | `mcp:use` |  |
 | `docker:containers:view` | Yes |
 | `docker:containers:create` | Yes |
@@ -160,6 +170,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `databases:query:write` | Yes |
 | `databases:query:admin` | Yes |
 | `databases:credentials:reveal` | Yes |
+| `databases:folders:manage` |  |
 | `notifications:alerts:view` |  |
 | `notifications:alerts:create` |  |
 | `notifications:alerts:edit` |  |
@@ -175,6 +186,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `logs:environments:create` |  |
 | `logs:environments:edit` | Yes |
 | `logs:environments:delete` | Yes |
+| `logs:environments:folders:manage` |  |
 | `logs:tokens:view` | Yes |
 | `logs:tokens:create` | Yes |
 | `logs:tokens:delete` | Yes |
@@ -182,6 +194,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `logs:schemas:create` |  |
 | `logs:schemas:edit` | Yes |
 | `logs:schemas:delete` | Yes |
+| `logs:schemas:folders:manage` |  |
 | `logs:read` | Yes |
 | `logs:manage` |  |
 | `status-page:view` |  |
@@ -193,12 +206,16 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 
 ## API Token Delegation
 
-API and OAuth tokens can be granted 118 of the 133 scopes. They cannot be granted:
+API and OAuth tokens can be granted all scopes except the protected user/session-only scopes listed below. They cannot be granted:
 
 | Scope | Reason |
 |-------|--------|
 | `feat:ai:use` | User/session-only AI assistant access. |
 | `feat:ai:configure` | User/session-only AI configuration. |
+| `ai:sandbox:use` | User/session-only sandbox runner access. |
+| `ai:sandbox:tier:medium` | User/session-only sandbox runner tier access. |
+| `ai:sandbox:tier:high` | User/session-only sandbox runner tier access. |
+| `ai:sandbox:manage` | User/session-only sandbox runner management. |
 | `mcp:use` | User-account capability gate for remote MCP. |
 | `admin:system` | Protected system-administrator shielding. |
 | `admin:users` | User administration is session-only. |

@@ -75,9 +75,12 @@ const CREATE_OPERATIONS = new Set([
   "add_column",
   "create_secret",
   "create_update",
+  "mkdir",
+  "upload_init",
 ]);
 const READ_OPERATIONS = new Set([
   "list",
+  "read",
   "get",
   "search",
   "facets",
@@ -123,6 +126,15 @@ const EDIT_OPERATIONS = new Set([
   "set_key",
   "expire_key",
   "execute_command",
+  "move",
+  "move_folder",
+  "move_resources",
+  "reorder_folders",
+  "reorder_resources",
+  "upload_abort",
+  "upload_chunk",
+  "upload_complete",
+  "write",
 ]);
 const DELETE_OPERATIONS = new Set([
   "delete",

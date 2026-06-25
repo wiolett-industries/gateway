@@ -1,5 +1,6 @@
 import { getResourceScopedIds, hasScope, hasScopeBase, hasScopeForResource } from '@/lib/permissions.js';
 import { stripRawProxyConfigForProgrammatic } from '@/modules/proxy/raw-visibility.js';
+import { FOLDER_TOOL_REQUIREMENT_SCOPES } from './ai.folder-tool-scopes.js';
 
 const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
 const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
@@ -100,6 +101,9 @@ const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
     'status-page:incidents:resolve',
     'status-page:incidents:delete',
   ],
+  list_resource_folders: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
+  manage_resource_folder: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
+  manage_node_file: ['nodes:files:read', 'nodes:files:write'],
 };
 
 function caTypeViewScope(type: string): 'pki:ca:view:root' | 'pki:ca:view:intermediate' {

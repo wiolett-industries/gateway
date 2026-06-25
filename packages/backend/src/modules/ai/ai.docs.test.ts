@@ -24,6 +24,11 @@ describe('AI internal docs registry', () => {
       'postgres',
       'redis',
       'logging',
+      'folders',
+      'node-files',
+      'sandbox',
+      'conversations',
+      'status-page',
       'api',
       'notifications',
     ]);
@@ -32,6 +37,11 @@ describe('AI internal docs registry', () => {
       permissions: 'feat:ai:use',
       docker: 'docker:containers:view',
       logging: ['logs:environments:view', 'logs:schemas:view', 'logs:read', 'logs:manage'],
+      folders: expect.arrayContaining(['nodes:folders:manage', 'domains:folders:manage']),
+      'node-files': ['nodes:files:read', 'nodes:files:write'],
+      sandbox: 'ai:sandbox:use',
+      conversations: 'feat:ai:use',
+      'status-page': 'status-page:view',
       notifications: 'notifications:view',
       proxy: 'proxy:view',
     });
@@ -60,6 +70,22 @@ describe('AI internal docs registry', () => {
     expect(getInternalDocumentation('discovery', ['feat:ai:use']).content).toContain('find_resource');
     expect(getInternalDocumentation('logging', ['logs:schemas:view']).content).toContain('manage_logging');
     expect(getInternalDocumentation('logging', ['logs:read:env-1']).content).toContain('External Logging');
+    expect(getInternalDocumentation('folders', ['nodes:folders:manage']).content).toContain('list_resource_folders');
+    expect(getInternalDocumentation('node-files', ['nodes:files:read']).content).toContain('manage_node_file');
+    expect(getInternalDocumentation('sandbox', ['ai:sandbox:use']).content).toContain('download_artifact');
+    expect(getInternalDocumentation('conversations', ['feat:ai:use']).content).toContain('get_current_context');
+    expect(getInternalDocumentation('status-page', ['status-page:view']).content).toContain('manage_status_page');
+  });
+
+  it('does not regress to stale model-facing tool names or enum examples', () => {
+    const allDocs = Object.values(INTERNAL_DOCS).join('\n');
+
+    expect(allDocs).not.toContain('upload_ssl_cert');
+    expect(allDocs).not.toContain('createDomain');
+    expect(allDocs).not.toContain('checkDns');
+    expect(allDocs).not.toContain('update_user(');
+    expect(allDocs).not.toContain('reverse-proxy');
+    expect(allDocs).not.toContain('static-site');
   });
 
   it('filters unknown-topic suggestions and denies unauthorized topics', () => {

@@ -32,7 +32,7 @@ function sandboxToolNamesForScopes(scopes: string[], sandboxEnabled: boolean): s
 describe('AI tool scope filtering', () => {
   it('keeps core registry ordering, uniqueness, and invalidation contracts stable', () => {
     expect(new Set(AI_TOOLS.map((tool) => tool.name)).size).toBe(AI_TOOLS.length);
-    expect(AI_TOOLS.slice(0, 56).map((tool) => tool.name)).toEqual([
+    expect(AI_TOOLS.slice(0, 59).map((tool) => tool.name)).toEqual([
       'discover_tools',
       'get_current_context',
       'wait',
@@ -52,6 +52,8 @@ describe('AI tool scope filtering', () => {
       'create_template',
       'delete_template',
       'manage_template',
+      'list_resource_folders',
+      'manage_resource_folder',
       'list_proxy_hosts',
       'get_proxy_host',
       'create_proxy_host',
@@ -78,6 +80,7 @@ describe('AI tool scope filtering', () => {
       'create_node',
       'rename_node',
       'delete_node',
+      'manage_node_file',
       'get_proxy_rendered_config',
       'update_proxy_raw_config',
       'toggle_proxy_raw_mode',
@@ -96,8 +99,18 @@ describe('AI tool scope filtering', () => {
     expect(TOOL_STORE_INVALIDATION_MAP.manage_ssl_certificate).toEqual(['ssl']);
     expect(TOOL_STORE_INVALIDATION_MAP.update_user_role).toEqual(['users']);
     expect(isDestructiveTool('find_resource')).toBe(false);
+    expect(isDestructiveTool('list_proxy_hosts')).toBe(false);
+    expect(isDestructiveTool('get_proxy_host')).toBe(false);
     expect(isDestructiveTool('manage_ca')).toBe(true);
-    expect(isDestructiveTool('create_proxy_folder')).toBe(false);
+    expect(isDestructiveTool('create_proxy_folder')).toBe(true);
+  });
+
+  it('requires approval metadata for every store-invalidating tool', () => {
+    const invalidatingNonDestructiveTools = AI_TOOLS.filter(
+      (tool) => tool.invalidateStores.length > 0 && !tool.destructive
+    ).map((tool) => tool.name);
+
+    expect(invalidatingNonDestructiveTools).toEqual([]);
   });
 
   it('keeps PKI, proxy, SSL, and administration scope filtering stable', () => {

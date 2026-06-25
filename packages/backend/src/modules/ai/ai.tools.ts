@@ -1,5 +1,7 @@
 import { DATABASE_AI_TOOLS } from './ai.tools.databases.js';
 import { DOCKER_AI_TOOLS } from './ai.tools.docker.js';
+import { FOLDER_AI_TOOLS } from './ai.tools.folders.js';
+import { NODE_FILE_AI_TOOLS } from './ai.tools.node-files.js';
 import { NOTIFICATION_AI_TOOLS, WEB_SEARCH_AI_TOOL } from './ai.tools.notifications.js';
 import { OPERATION_AI_TOOLS } from './ai.tools.operations.js';
 import { PKI_AI_TOOLS } from './ai.tools.pki.js';
@@ -131,6 +133,9 @@ export const AI_TOOLS: AIToolDefinition[] = [
 
   // ── PKI ──
   ...PKI_AI_TOOLS,
+
+  // ── Folders ──
+  ...FOLDER_AI_TOOLS,
 
   // ── Reverse Proxy ──
   {
@@ -280,7 +285,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       },
       required: ['name'],
     },
-    destructive: false,
+    destructive: true,
     category: 'Reverse Proxy',
     requiredScope: 'proxy:folders:manage',
     invalidateStores: ['proxy'],
@@ -296,7 +301,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       },
       required: ['hostIds', 'folderId'],
     },
-    destructive: false,
+    destructive: true,
     category: 'Reverse Proxy',
     requiredScope: 'proxy:folders:manage',
     invalidateStores: ['proxy'],
@@ -395,7 +400,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       },
       required: ['internalCertId'],
     },
-    destructive: false,
+    destructive: true,
     category: 'SSL Certificates',
     requiredScope: 'ssl:cert:issue',
     invalidateStores: ['ssl'],
@@ -450,7 +455,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       },
       required: ['domain'],
     },
-    destructive: false,
+    destructive: true,
     category: 'Domains',
     requiredScope: 'domains:create',
     invalidateStores: ['domains'],
@@ -665,6 +670,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     requiredScope: 'nodes:delete',
     invalidateStores: ['nodes'],
   },
+  ...NODE_FILE_AI_TOOLS,
 
   // ── Raw Config ──
   {
@@ -884,7 +890,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'internal_documentation',
     description:
-      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: discovery, pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, housekeeping, permissions, docker, databases, postgres, redis, logging, api, notifications.',
+      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: discovery, pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, housekeeping, permissions, docker, databases, postgres, redis, logging, folders, node-files, sandbox, conversations, status-page, api, notifications.',
     parameters: {
       type: 'object',
       properties: {
@@ -910,6 +916,11 @@ export const AI_TOOLS: AIToolDefinition[] = [
             'postgres',
             'redis',
             'logging',
+            'folders',
+            'node-files',
+            'sandbox',
+            'conversations',
+            'status-page',
             'api',
             'notifications',
           ],

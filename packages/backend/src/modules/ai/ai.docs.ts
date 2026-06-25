@@ -72,7 +72,7 @@ SSL certificates in Gateway are used to enable HTTPS on proxy hosts. Three types
 
 ## Types
 1. **ACME** (Let's Encrypt): Automated free certificates via request_acme_cert. Requires domain verification. Auto-renewable.
-2. **Upload**: Manually uploaded PEM certificate + private key via upload_ssl_cert. No auto-renewal — must be re-uploaded before expiry.
+2. **Upload**: Manually uploaded PEM certificate + private key via manage_ssl_certificate({ operation: "upload", ... }). No auto-renewal — must be re-uploaded before expiry.
 3. **Internal**: Linked from PKI store via link_internal_cert(internalCertId). Uses the PKI cert's key material. Renewed by re-issuing the PKI cert and re-linking.
 
 ## ACME Certificates (Let's Encrypt)
@@ -83,7 +83,7 @@ SSL certificates in Gateway are used to enable HTTPS on proxy hosts. Three types
 - Staging mode available for testing (certs not browser-trusted).
 
 ## Uploading Custom Certificates
-- upload_ssl_cert({ certificatePem, privateKeyPem, chainPem? })
+- manage_ssl_certificate({ operation: "upload", certificatePem, privateKeyPem, chainPem? })
 - Chain PEM is optional (intermediate CA chain).
 - Expiry is parsed from the certificate — no auto-renewal.
 
@@ -151,10 +151,10 @@ Domains track DNS records and validation status for domains used across Gateway.
 - Required for ACME HTTP-01 challenges (domain must resolve to Gateway)
 
 ## Lifecycle
-1. Register a domain: createDomain({ domain: "example.com" })
+1. Register a domain: create_domain({ domain: "example.com" })
 2. Gateway checks DNS records automatically every 5 minutes
 3. Status: pending → valid (DNS resolves correctly) or invalid (DNS misconfigured)
-4. Use checkDns to manually trigger an immediate re-check
+4. Use manage_domain({ operation: "check_dns", domainId }) to manually trigger an immediate re-check
 
 ## DNS Records Tracked
 - **A**: IPv4 address — should point to your Gateway/nginx node IP
@@ -228,7 +228,7 @@ Templates define preset configurations for issuing PKI certificates. They save t
 
 ## Nginx Config Templates
 Separate from certificate templates — these define nginx server block templates for proxy hosts.
-- Each template has a type (reverse-proxy, redirect, static-site, etc.)
+- Each template has a type: proxy, redirect, or 404.
 - Templates use variable syntax ({{variableName}}) for dynamic values
 - Can be cloned and customized
 - Assigned to proxy hosts via nginxTemplateId`,
@@ -285,7 +285,7 @@ Users authenticate via OIDC (OpenID Connect). Gateway acts as a relying party �
 ## Managing Users
 - View all users: list_users
 - Change a user's group: update_user_role(userId, groupId) — changes their permissions immediately
-- Block a user: update_user(userId, { isBlocked: true }) — blocked users see a "blocked" page after login and cannot use any features
+- Block/unblock users from the Administration UI/API; there is no current AI tool for blocking users.
 - Users cannot be deleted (they're linked to audit logs), only blocked
 
 ## User Fields
@@ -663,6 +663,113 @@ fieldSchema entries:
 - Create tokens with { resource: "token", operation: "create", environmentId, payload: { name, expiresAt? } }.
 - The raw token is shown only once. Do not expose it unless the user explicitly needs to configure an ingest client.`,
 
+  folders: `# Foldered Resources
+
+Gateway uses shared folder views for several resource lists. Use folder tools instead of guessing REST paths.
+
+## Tools
+- list_resource_folders({ resourceType, dockerResourceType? }) lists folders and visible assignments.
+- manage_resource_folder({ resourceType, operation, ... }) mutates folder trees and item placement.
+
+## Resource Types
+- nodes
+- databases
+- domains
+- logging_environments
+- logging_schemas
+- admin_users
+- permission_groups
+- proxy_hosts
+- docker with dockerResourceType: container, image, network, or volume
+
+## Operations
+- create: { name, parentId? }
+- update: { folderId, name?, parentId? }
+- delete: { folderId }
+- reorder_folders: { items: [{ id, sortOrder }] }
+- move_resources: { folderId, resourceIds }
+- reorder_resources: { items: [{ id, sortOrder }] }
+- move_folder is supported only where the underlying resource service supports moving folders.
+
+## Scope Rules
+- nodes: list with nodes:details or nodes:folders:manage; mutate with nodes:folders:manage.
+- databases: list with databases:view or databases:folders:manage; mutate with databases:folders:manage.
+- domains: list with domains:view; mutate with domains:folders:manage.
+- logging_environments: list with logs:environments:view, logs:environments:folders:manage, or logs:manage; mutate with logs:environments:folders:manage or logs:manage.
+- logging_schemas: list with logs:schemas:view, logs:schemas:folders:manage, or logs:manage; mutate with logs:schemas:folders:manage or logs:manage.
+- admin_users: list with admin:users or admin:users:folders:manage; mutate with admin:users:folders:manage.
+- permission_groups: list with admin:groups or admin:groups:folders:manage; mutate with admin:groups:folders:manage.
+- proxy_hosts: list with proxy:view or proxy:folders:manage; mutate folders with proxy:folders:manage; moving hosts also checks proxy:edit for each host.
+- docker: list uses dockerResourceType-specific view scope: docker:containers:view, docker:images:view, docker:networks:view, or docker:volumes:view. Folder mutation uses docker:containers:folders:manage. Moving or reordering container placements also checks docker:containers:edit for each item node; image, network, and volume placement follows the shared Docker folder route and does not require container edit scope.`,
+
+  'node-files': `# Node File Management
+
+Use manage_node_file for node filesystem operations. This works through the node daemon and follows the same validation as the node Files UI.
+
+## Operations
+- list: { nodeId, operation: "list", path? }
+- read: { nodeId, operation: "read", path, encoding?: "auto"|"utf8"|"base64", limitBytes? }
+- write: { nodeId, operation: "write", path, content? or contentBase64? }
+- create: { nodeId, operation: "create", path, content? or contentBase64? }
+- mkdir: { nodeId, operation: "mkdir", path }
+- delete: { nodeId, operation: "delete", path }
+- move: { nodeId, operation: "move", fromPath, toPath }
+- upload_init: { nodeId, operation: "upload_init", path, totalBytes }
+- upload_chunk: { nodeId, operation: "upload_chunk", uploadId, offset, contentBase64 }
+- upload_complete: { nodeId, operation: "upload_complete", uploadId, path, totalBytes }
+- upload_abort: { nodeId, operation: "upload_abort", uploadId }
+
+Read output is capped and returns { encoding, content, sizeBytes, returnedBytes, truncated }. Use base64 for binary files.`,
+
+  sandbox: `# Sandbox Runner
+
+Sandbox tools run bounded commands in Docker containers owned by the current user. They are AI-only and intentionally not exposed through MCP.
+
+## Execution Tools
+- execute_script: run a short script in a fresh container, return output, then remove the container.
+- run_process: start a longer process with a TTL.
+- read_process_output: read stdout/stderr from a running process.
+- write_process_stdin: send stdin to a running process.
+- kill_process: stop a running sandbox process.
+- list_sandbox_jobs: list current user's running sandbox jobs.
+
+## Network and Artifacts
+Sandbox containers have no direct network access. Use Gateway-mediated helpers:
+- fetch: read network content through Gateway, capped at 10 MB.
+- download_artifact: download a URL through Gateway and place it in a running sandbox, capped at 200 MB.
+- read_artifact: read a file from the sandbox in chunks, capped per read.
+- send_artifact: save a sandbox file as a Gateway-managed downloadable artifact for the user.
+
+Resource tiers are low, medium, and high. TTL is capped by tier. The agent may request ttlSeconds but cannot exceed the tier cap.`,
+
+  conversations: `# AI Conversations and Lite Mode
+
+AI conversations are stored on the backend. Tool discovery is conversation-scoped, so discovered toolsets remain available when returning to a saved conversation.
+
+## Context
+- get_current_context returns the current UI route and focused resource when the user says "this page" or "current resource".
+- compact summarizes older conversation history when context grows.
+- Recent conversations are loaded from the backend, not local storage.
+
+## Lite Mode
+Lite mode is an AI-first desktop layout. The assistant becomes the main screen, the sidebar shows recent and pinned conversations, and Settings/Administration/top-level pages keep a back button to return to chat.
+
+Do not assume the current page from chat text. Use get_current_context when the user refers to their visible page.`,
+
+  'status-page': `# Status Pages
+
+Gateway can publish status-page data from monitored services and incidents. Use manage_status_page for settings, services, incidents, updates, proxy-template choices, and preview.
+
+## Resources and Operations
+- settings: { resource: "settings", operation: "get"|"update", payload? }
+- proxy_templates: { resource: "proxy_templates", operation: "list" }
+- services: { resource: "services", operation: "list"|"create"|"update"|"delete", serviceId?, payload? }
+- incidents: { resource: "incidents", operation: "list"|"create"|"update"|"delete"|"resolve"|"promote", incidentId?, status?, limit?, payload? }
+- incident_updates: { resource: "incident_updates", operation: "create_update", incidentId, payload }
+- preview: { resource: "preview", operation: "preview" }
+
+Scopes: status-page:view for reads/preview, status-page:manage for settings/services, and status-page:incidents:* for incident mutations.`,
+
   api: `# Gateway REST API
 
 Gateway provides REST access for external scripts, CI/CD pipelines, CLI tools, and integrations without a browser session.
@@ -884,11 +991,26 @@ export const DOC_TOPIC_SCOPES: Record<string, string | string[]> = {
   audit: 'admin:audit',
   nginx: 'proxy:edit',
   nodes: 'nodes:details',
+  folders: [
+    'nodes:folders:manage',
+    'databases:folders:manage',
+    'domains:folders:manage',
+    'logs:environments:folders:manage',
+    'logs:schemas:folders:manage',
+    'admin:users:folders:manage',
+    'admin:groups:folders:manage',
+    'proxy:folders:manage',
+    'docker:containers:folders:manage',
+  ],
+  'node-files': ['nodes:files:read', 'nodes:files:write'],
   docker: 'docker:containers:view',
+  sandbox: 'ai:sandbox:use',
+  conversations: 'feat:ai:use',
   databases: 'databases:view',
   postgres: 'databases:view',
   redis: 'databases:view',
   logging: ['logs:environments:view', 'logs:schemas:view', 'logs:read', 'logs:manage'],
+  'status-page': 'status-page:view',
   housekeeping: 'housekeeping:view',
   permissions: 'feat:ai:use',
   api: 'feat:ai:use',

@@ -612,6 +612,30 @@ const RAW_TOKEN_SCOPES = [
     group: "Features",
   },
   {
+    value: "ai:sandbox:use",
+    label: "Use Sandbox Runner",
+    desc: "Run bounded AI sandbox jobs",
+    group: "Features",
+  },
+  {
+    value: "ai:sandbox:tier:medium",
+    label: "Use Medium Sandbox Tier",
+    desc: "Run AI sandbox jobs with medium resource limits",
+    group: "Features",
+  },
+  {
+    value: "ai:sandbox:tier:high",
+    label: "Use High Sandbox Tier",
+    desc: "Run AI sandbox jobs with high resource limits",
+    group: "Features",
+  },
+  {
+    value: "ai:sandbox:manage",
+    label: "Manage Sandbox Jobs",
+    desc: "View and kill AI sandbox jobs",
+    group: "Features",
+  },
+  {
     value: "mcp:use",
     label: "Use MCP",
     desc: "Allow this user account to access the remote MCP server with OAuth",
@@ -955,6 +979,10 @@ export const TOKEN_SCOPES = RAW_TOKEN_SCOPES;
 const PROGRAMMATIC_DENIED_SCOPE_VALUES = new Set<string>([
   "feat:ai:use",
   "feat:ai:configure",
+  "ai:sandbox:use",
+  "ai:sandbox:tier:medium",
+  "ai:sandbox:tier:high",
+  "ai:sandbox:manage",
   "mcp:use",
   "admin:system",
   "admin:users",
