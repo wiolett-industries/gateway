@@ -156,7 +156,7 @@ export function NetworksSection({
               canManageNetworks
                 ? "grid-cols-[minmax(0,1fr)_120px_120px_36px]"
                 : "grid-cols-[minmax(0,1fr)_120px_120px]"
-            } border-b border-border bg-muted/60 text-xs font-medium text-muted-foreground uppercase tracking-wider dark:bg-muted`}
+            } border-b border-border bg-muted text-xs font-medium text-muted-foreground uppercase tracking-wider`}
           >
             <div className="px-3 py-2">Network</div>
             <div className="px-3 py-2 border-l border-border">IP</div>

@@ -420,7 +420,7 @@ export async function removeVolume(
   nodeId: string,
   name: string,
   force: boolean,
-  userId: string
+  userId: string | null
 ) {
   const result = await context.nodeDispatch.sendDockerVolumeCommand(nodeId, 'remove', { name, force });
   context.parseResult(result);

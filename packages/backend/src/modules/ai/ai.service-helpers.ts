@@ -2,7 +2,7 @@ import { getResourceScopedIds, hasScope, hasScopeBase, hasScopeForResource } fro
 import { stripRawProxyConfigForProgrammatic } from '@/modules/proxy/raw-visibility.js';
 import { FOLDER_TOOL_REQUIREMENT_SCOPES } from './ai.folder-tool-scopes.js';
 
-const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
+const BROAD_ONLY_TOOL_SCOPES = new Set<string>();
 const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
 const DIRECT_RAW_READ_TOOLS = new Set(['get_proxy_rendered_config']);
 const PROXY_HOST_UPDATE_FIELDS = [
@@ -128,6 +128,7 @@ const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
   ],
   list_resource_folders: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
   manage_resource_folder: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
+  manage_node_config: ['nodes:config:view', 'nodes:config:edit'],
   manage_node_file: ['nodes:files:read', 'nodes:files:write'],
 };
 
@@ -205,8 +206,7 @@ function getToolResourceId(args: Record<string, unknown>): string {
   );
 }
 
-function getToolAuthorizationResourceId(toolName: string, args: Record<string, unknown>): string {
-  if (toolName === 'create_proxy_host') return '';
+function getToolAuthorizationResourceId(_toolName: string, args: Record<string, unknown>): string {
   return getToolResourceId(args);
 }
 

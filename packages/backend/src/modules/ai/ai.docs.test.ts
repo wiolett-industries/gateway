@@ -73,12 +73,19 @@ describe('AI internal docs registry', () => {
     expect(getInternalDocumentation('logging', ['logs:schemas:view']).content).toContain('manage_logging');
     expect(getInternalDocumentation('logging', ['logs:read:env-1']).content).toContain('External Logging');
     expect(getInternalDocumentation('folders', ['nodes:folders:manage']).content).toContain('list_resource_folders');
+    expect(getInternalDocumentation('nodes', ['nodes:details']).content).toContain('manage_node_config');
     expect(getInternalDocumentation('node-files', ['nodes:files:read']).content).toContain('manage_node_file');
     expect(getInternalDocumentation('sandbox', ['ai:sandbox:use']).content).toContain('download_artifact');
     expect(getInternalDocumentation('conversations', ['feat:ai:use']).content).toContain('manage_ai_conversation');
     expect(getInternalDocumentation('api', ['feat:ai:use']).content).toContain('manage_oauth_authorization');
+    expect(getInternalDocumentation('api', ['feat:ai:use']).content).toContain('manage_api_token');
     expect(getInternalDocumentation('ai-settings', ['feat:ai:configure']).content).toContain('update_ai_settings');
+    expect(getInternalDocumentation('ai-settings', ['feat:ai:configure']).content).toContain('providerUrl');
+    expect(getInternalDocumentation('ai-settings', ['feat:ai:configure']).content).not.toContain('baseUrl:');
     expect(getInternalDocumentation('status-page', ['status-page:view']).content).toContain('manage_status_page');
+    expect(getInternalDocumentation('status-page', ['status-page:view']).content).toContain(
+      'status-page:incidents:create'
+    );
   });
 
   it('does not regress to stale model-facing tool names or enum examples', () => {
@@ -91,6 +98,7 @@ describe('AI internal docs registry', () => {
     expect(allDocs).not.toContain('reverse-proxy');
     expect(allDocs).not.toContain('static-site');
     expect(allDocs).not.toContain('Satisfy Mode');
+    expect(allDocs).not.toContain('status-page:incidents:*');
   });
 
   it('filters unknown-topic suggestions and denies unauthorized topics', () => {

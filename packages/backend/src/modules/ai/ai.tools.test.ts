@@ -32,10 +32,11 @@ function sandboxToolNamesForScopes(scopes: string[], sandboxEnabled: boolean): s
 describe('AI tool scope filtering', () => {
   it('keeps core registry ordering, uniqueness, and invalidation contracts stable', () => {
     expect(new Set(AI_TOOLS.map((tool) => tool.name)).size).toBe(AI_TOOLS.length);
-    expect(AI_TOOLS.slice(0, 74).map((tool) => tool.name)).toEqual([
+    expect(AI_TOOLS.slice(0, 77).map((tool) => tool.name)).toEqual([
       'discover_tools',
       'get_current_context',
       'wait',
+      'end_conversation',
       'find_resource',
       'list_cas',
       'get_ca',
@@ -80,6 +81,7 @@ describe('AI tool scope filtering', () => {
       'create_node',
       'rename_node',
       'delete_node',
+      'manage_node_config',
       'manage_node_file',
       'get_proxy_rendered_config',
       'update_proxy_raw_config',
@@ -95,6 +97,7 @@ describe('AI tool scope filtering', () => {
       'get_sandbox_runtime_status',
       'manage_ai_conversation',
       'manage_oauth_authorization',
+      'manage_api_token',
       'get_license_status',
       'manage_license',
       'manage_housekeeping',
@@ -240,6 +243,17 @@ describe('AI tool scope filtering', () => {
     expect(loggingToolNames).not.toContain('web_search');
   });
 
+  it('exposes fetch as a base tool for direct URLs when sandbox access is enabled', () => {
+    const baseToolNames = getOpenAITools([], ['feat:ai:use', 'ai:sandbox:use'], false, {
+      discoveredToolsets: [],
+      sandboxEnabled: true,
+    }).map((tool) => tool.function.name);
+
+    expect(baseToolNames).toContain('fetch');
+    expect(baseToolNames).not.toContain('execute_script');
+    expect(baseToolNames).not.toContain('download_artifact');
+  });
+
   it('keeps logging and status-page tool registry contracts stable', () => {
     const manageLogging = AI_TOOLS.find((tool) => tool.name === 'manage_logging');
     expect(AI_TOOLS.filter((tool) => tool.category === 'Logging').map((tool) => tool.name)).toEqual(['manage_logging']);
@@ -283,10 +297,11 @@ describe('AI tool scope filtering', () => {
       'manage_oauth_authorization',
     ]);
     expect(toolNames(['feat:ai:use'])).toEqual(
-      expect.arrayContaining(['manage_ai_conversation', 'manage_oauth_authorization'])
+      expect.arrayContaining(['manage_ai_conversation', 'manage_oauth_authorization', 'manage_api_token'])
     );
     expect(isDestructiveTool('manage_ai_conversation')).toBe(true);
     expect(isDestructiveTool('manage_oauth_authorization')).toBe(true);
+    expect(isDestructiveTool('manage_api_token')).toBe(true);
   });
 
   it('keeps maintenance tools scoped to license and housekeeping permissions', () => {

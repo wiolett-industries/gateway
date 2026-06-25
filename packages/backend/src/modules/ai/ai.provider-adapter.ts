@@ -158,12 +158,35 @@ function splitInstructions(messages: Record<string, unknown>[]): { instructions:
       continue;
     }
 
-    if (role === 'user' && content) {
-      input.push({ role: 'user', content });
+    if (role === 'user') {
+      const userContent = toResponsesUserContent(message.content);
+      if (userContent) input.push({ role: 'user', content: userContent });
     }
   }
 
   return { instructions: instructions.join('\n\n') || null, input };
+}
+
+function toResponsesUserContent(content: unknown): string | unknown[] | null {
+  if (typeof content === 'string') return content || null;
+  if (!Array.isArray(content)) return null;
+
+  const parts: unknown[] = [];
+  for (const item of content) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    if (record.type === 'text' && typeof record.text === 'string' && record.text) {
+      parts.push({ type: 'input_text', text: record.text });
+      continue;
+    }
+    if (record.type === 'image_url' && record.image_url && typeof record.image_url === 'object') {
+      const image = record.image_url as Record<string, unknown>;
+      if (typeof image.url === 'string' && image.url) {
+        parts.push({ type: 'input_image', image_url: image.url });
+      }
+    }
+  }
+  return parts.length > 0 ? parts : null;
 }
 
 async function* streamResponsesModel({

@@ -1,7 +1,9 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { aiConversationMessages, aiConversations } from '@/db/schema/index.js';
-import type { PageContext } from './ai.types.js';
+import type { AISandboxService } from './ai.sandbox.service.js';
+import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
+import type { AIConversationStatus, PageContext } from './ai.types.js';
 
 const RETAIN_FULL_TOOL_OUTPUT_COUNT = 10;
 
@@ -11,6 +13,8 @@ export interface AIConversationSummary {
   createdAt: Date;
   updatedAt: Date;
   messageCount: number;
+  status: AIConversationStatus;
+  blockReason: string | null;
 }
 
 export interface AIConversationDetail extends AIConversationSummary {
@@ -33,7 +37,13 @@ export interface AIConversationRuntimeStateInput {
 }
 
 export class AIConversationService {
-  constructor(private readonly db: DrizzleClient) {}
+  constructor(
+    private readonly db: DrizzleClient,
+    private readonly cleanup?: {
+      artifacts: AISandboxArtifactService;
+      sandbox: AISandboxService;
+    }
+  ) {}
 
   async listConversations(userId: string): Promise<AIConversationSummary[]> {
     const rows = await this.db
@@ -42,13 +52,14 @@ export class AIConversationService {
       .where(eq(aiConversations.userId, userId))
       .orderBy(desc(aiConversations.updatedAt));
 
-    const counts = await Promise.all(rows.map((row) => this.countMessages(row.id)));
+    const messagesByRow = await Promise.all(rows.map((row) => this.loadMessages(row.id)));
     return rows.map((row, index) => ({
       id: row.id,
       title: row.title,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      messageCount: counts[index],
+      messageCount: countVisibleMessages(messagesByRow[index]),
+      ...deriveConversationStatus(messagesByRow[index]),
     }));
   }
 
@@ -61,12 +72,23 @@ export class AIConversationService {
       title: row.title,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      messageCount: messages.length,
+      messageCount: countVisibleMessages(messages),
+      ...deriveConversationStatus(messages),
       messages,
       lastContext: row.lastContext,
       discoveredToolsets: row.discoveredToolsets,
       checkpoint: row.checkpoint,
     };
+  }
+
+  async listConversationTitles(userId: string, conversationIds: string[]): Promise<Record<string, string>> {
+    const ids = [...new Set(conversationIds.filter(Boolean))];
+    if (ids.length === 0) return {};
+    const rows = await this.db
+      .select({ id: aiConversations.id, title: aiConversations.title })
+      .from(aiConversations)
+      .where(and(eq(aiConversations.userId, userId), inArray(aiConversations.id, ids)));
+    return Object.fromEntries(rows.map((row) => [row.id, row.title]));
   }
 
   async saveConversation(userId: string, input: SaveAIConversationInput): Promise<AIConversationDetail> {
@@ -108,6 +130,7 @@ export class AIConversationService {
       }
     });
 
+    await this.attachArtifactsFromMessages(userId, conversationId!, messages);
     const saved = await this.getConversation(userId, conversationId!);
     if (!saved) throw new Error('Failed to save conversation');
     return saved;
@@ -149,6 +172,13 @@ export class AIConversationService {
       }
     });
 
+    if (input.messages) {
+      await this.attachArtifactsFromMessages(
+        userId,
+        conversationId,
+        sanitizeConversationMessagesForStorage(input.messages)
+      );
+    }
     return this.getConversation(userId, conversationId);
   }
 
@@ -179,17 +209,25 @@ export class AIConversationService {
   }
 
   async deleteConversation(userId: string, conversationId: string): Promise<boolean> {
+    const existing = await this.getOwnedConversation(userId, conversationId);
+    if (!existing) return false;
+    await this.cleanupConversationResources(userId, existing.id);
     const [deleted] = await this.db
       .delete(aiConversations)
-      .where(and(eq(aiConversations.id, conversationId), eq(aiConversations.userId, userId)))
+      .where(and(eq(aiConversations.id, existing.id), eq(aiConversations.userId, userId)))
       .returning({ id: aiConversations.id });
     return !!deleted;
   }
 
   async deleteConversationByTitle(userId: string, title: string): Promise<boolean> {
+    const existing = await this.db.query.aiConversations.findFirst({
+      where: and(eq(aiConversations.userId, userId), eq(aiConversations.title, normalizeTitle(title))),
+    });
+    if (!existing) return false;
+    await this.cleanupConversationResources(userId, existing.id);
     const [deleted] = await this.db
       .delete(aiConversations)
-      .where(and(eq(aiConversations.userId, userId), eq(aiConversations.title, normalizeTitle(title))))
+      .where(and(eq(aiConversations.userId, userId), eq(aiConversations.id, existing.id)))
       .returning({ id: aiConversations.id });
     return !!deleted;
   }
@@ -209,12 +247,22 @@ export class AIConversationService {
     return rows.map((row) => row.uiMessage);
   }
 
-  private async countMessages(conversationId: string): Promise<number> {
-    const rows = await this.db
-      .select({ id: aiConversationMessages.id })
-      .from(aiConversationMessages)
-      .where(eq(aiConversationMessages.conversationId, conversationId));
-    return rows.length;
+  private async cleanupConversationResources(userId: string, conversationId: string): Promise<void> {
+    if (!this.cleanup) return;
+    await Promise.all([
+      this.cleanup.artifacts.deleteForConversation(userId, conversationId),
+      this.cleanup.sandbox.killConversationJobs(userId, conversationId),
+    ]);
+  }
+
+  private async attachArtifactsFromMessages(
+    userId: string,
+    conversationId: string,
+    messages: unknown[]
+  ): Promise<void> {
+    if (!this.cleanup) return;
+    const artifactIds = collectConversationArtifactIds(messages);
+    await this.cleanup.artifacts.syncConversationArtifacts(userId, artifactIds, conversationId);
   }
 }
 
@@ -276,6 +324,47 @@ function sanitizeToolCall(toolCall: unknown, retainedToolCallIds: Set<string>): 
 
 function toRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function deriveConversationStatus(messages: unknown[]): { status: AIConversationStatus; blockReason: string | null } {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const record = toRecord(messages[i]);
+    if (!record || typeof record.conversationStatus !== 'string') continue;
+    if (record.conversationStatus === 'ended' || record.conversationStatus === 'context_blocked') {
+      return {
+        status: record.conversationStatus,
+        blockReason: typeof record.blockReason === 'string' ? record.blockReason : null,
+      };
+    }
+  }
+  return { status: 'active', blockReason: null };
+}
+
+function countVisibleMessages(messages: unknown[]): number {
+  return messages.filter((message) => !toRecord(message)?.conversationStatus).length;
+}
+
+function collectConversationArtifactIds(messages: unknown[]): string[] {
+  const ids: string[] = [];
+  for (const message of messages) {
+    const record = toRecord(message);
+    if (!record) continue;
+    if (Array.isArray(record.attachments)) {
+      for (const attachment of record.attachments) {
+        const attachmentRecord = toRecord(attachment);
+        if (typeof attachmentRecord?.artifactId === 'string') ids.push(attachmentRecord.artifactId);
+      }
+    }
+    if (Array.isArray(record.toolCalls)) {
+      for (const toolCall of record.toolCalls) {
+        const toolRecord = toRecord(toolCall);
+        if (toolRecord?.name !== 'send_artifact') continue;
+        const result = toRecord(toolRecord.result);
+        if (typeof result?.artifactId === 'string') ids.push(result.artifactId);
+      }
+    }
+  }
+  return ids;
 }
 
 function toConversationMessage(conversationId: string, message: unknown, index: number) {

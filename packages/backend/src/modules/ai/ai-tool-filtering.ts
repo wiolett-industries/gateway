@@ -1,7 +1,7 @@
 import { getResourceScopedIds, hasScope, hasScopeBase } from '@/lib/permissions.js';
 import { FOLDER_TOOL_REQUIREMENT_SCOPES } from './ai.folder-tool-scopes.js';
 
-const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
+const BROAD_ONLY_TOOL_SCOPES = new Set<string>();
 const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
 const DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS = new Set([
   'query_postgres_read',
@@ -102,6 +102,7 @@ const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
   ],
   list_resource_folders: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
   manage_resource_folder: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
+  manage_node_config: ['nodes:config:view', 'nodes:config:edit'],
   manage_node_file: ['nodes:files:read', 'nodes:files:write'],
 };
 

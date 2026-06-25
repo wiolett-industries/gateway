@@ -141,6 +141,19 @@ export class AISandboxJobsService {
       .where(and(eq(sandboxJobs.userId, userId), inArray(sandboxJobs.status, ACTIVE_SANDBOX_STATUSES)));
   }
 
+  async listActiveForConversation(userId: string, conversationId: string) {
+    return this.db
+      .select()
+      .from(sandboxJobs)
+      .where(
+        and(
+          eq(sandboxJobs.userId, userId),
+          eq(sandboxJobs.conversationId, conversationId),
+          inArray(sandboxJobs.status, ACTIVE_SANDBOX_STATUSES)
+        )
+      );
+  }
+
   async listActiveWithEffectiveScopes() {
     const groupMap = await fetchGroupScopeMap(this.db);
     const rows = await this.db

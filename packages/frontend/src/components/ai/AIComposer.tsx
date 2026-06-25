@@ -1,7 +1,18 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ChevronDown, Send, Shield, ShieldAlert, ShieldCheck, Square } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Plus,
+  Send,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Square,
+  X,
+} from "lucide-react";
 import type { ChangeEvent, ElementType, KeyboardEvent, RefObject } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,7 +23,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { type AIContextUsage, getAIContextUsage } from "@/stores/ai";
-import type { AIMessage as AIMessageType } from "@/types/ai";
+import type { AIComposerAttachment, AIMessage as AIMessageType } from "@/types/ai";
+import { getComposerAttachmentId, getComposerAttachmentPreviewUrl } from "./useAIComposerDraft";
 
 export type AIApprovalMode =
   | "always-ask"
@@ -42,6 +54,12 @@ interface AIComposerProps {
   approvalMode: AIApprovalMode;
   approvalModeLabel: string;
   setApprovalMode: (mode: AIApprovalMode) => void | Promise<void>;
+  attachments?: AIComposerAttachment[];
+  canAttachImages?: boolean;
+  uploadingAttachments?: boolean;
+  onAttachFiles?: (files: File[]) => void | Promise<void>;
+  onRemoveAttachment?: (attachmentId: string) => void;
+  onPreviewAttachment?: (attachment: AIComposerAttachment) => void;
   maxRows?: number;
   className?: string;
   surfaceClassName?: string;
@@ -65,6 +83,8 @@ const APPROVAL_MODE_META: Record<
     icon: ShieldAlert,
   },
 };
+
+const MAX_IMAGE_ATTACHMENTS = 3;
 
 function ContextRing({ usage }: { usage: AIContextUsage | null }) {
   const percent = Math.max(0, Math.min(100, usage?.percent ?? 0));
@@ -148,6 +168,12 @@ export function AIComposer({
   approvalMode,
   approvalModeLabel,
   setApprovalMode,
+  attachments = [],
+  canAttachImages = false,
+  uploadingAttachments = false,
+  onAttachFiles,
+  onRemoveAttachment,
+  onPreviewAttachment,
   className,
   surfaceClassName,
   showDisclaimer = false,
@@ -157,6 +183,7 @@ export function AIComposer({
   const disabled = !isConnected || !!retryAfter;
   const [usage, setUsage] = useState<AIContextUsage | null>(null);
   const [textareaFocused, setTextareaFocused] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -168,8 +195,29 @@ export function AIComposer({
     };
   }, [messages]);
 
+  const attachFiles = (files: FileList | File[] | null) => {
+    if (!canAttachImages || !files || !onAttachFiles) return;
+    const images = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    if (images.length + attachments.length > MAX_IMAGE_ATTACHMENTS) {
+      toast.error(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images`);
+      return;
+    }
+    if (images.length > 0) void onAttachFiles(images);
+  };
+
   return (
-    <div className={cn("relative", className)}>
+    <div
+      className={cn("relative", className)}
+      onDragOver={(event) => {
+        if (!canAttachImages) return;
+        event.preventDefault();
+      }}
+      onDrop={(event) => {
+        if (!canAttachImages) return;
+        event.preventDefault();
+        attachFiles(event.dataTransfer.files);
+      }}
+    >
       <AnimatePresence>
         {slashResults.length > 0 && (
           <motion.div
@@ -209,6 +257,39 @@ export function AIComposer({
           surfaceClassName
         )}
       >
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-2 pt-2">
+            {attachments.map((attachment) => (
+              <button
+                key={getComposerAttachmentId(attachment)}
+                type="button"
+                className="group relative h-16 w-16 overflow-hidden border border-border bg-muted transition-colors hover:border-foreground"
+                onClick={() => onPreviewAttachment?.(attachment)}
+                aria-label={`Preview ${attachment.filename}`}
+              >
+                <img
+                  src={getComposerAttachmentPreviewUrl(attachment)}
+                  alt={attachment.filename}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+                <span className="absolute inset-0 bg-background/0 transition-colors group-hover:bg-background/30" />
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  className="absolute inset-0 flex items-center justify-center bg-background/45 text-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemoveAttachment?.(getComposerAttachmentId(attachment));
+                  }}
+                  aria-label={`Remove ${attachment.filename}`}
+                >
+                  <X className="h-7 w-7" />
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <Textarea
           ref={textareaRef}
           value={input}
@@ -216,6 +297,7 @@ export function AIComposer({
           onKeyDown={onKeyDown}
           onFocus={() => setTextareaFocused(true)}
           onBlur={() => setTextareaFocused(false)}
+          onPaste={(event) => attachFiles(event.clipboardData.files)}
           placeholder={isStreaming ? "AI is responding..." : "Ask anything... (/ commands)"}
           disabled={disabled}
           rows={1}
@@ -256,12 +338,44 @@ export function AIComposer({
           </DropdownMenu>
 
           <div className="flex items-center">
+            {canAttachImages && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    attachFiles(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingAttachments || disabled}
+                  aria-label="Attach images"
+                  title="Attach images"
+                >
+                  {uploadingAttachments ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/40 border-t-muted-foreground" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+                </button>
+              </>
+            )}
             <ContextRing usage={usage} />
             <button
               type="button"
               className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
               onClick={isStreaming ? onStop : onSend}
-              disabled={!isStreaming && (!input.trim() || !isConnected || !!retryAfter)}
+              disabled={
+                !isStreaming &&
+                ((!input.trim() && attachments.length === 0) || !isConnected || !!retryAfter)
+              }
               aria-label={isStreaming ? "Stop response" : "Send message"}
             >
               {isStreaming ? <Square className="h-4 w-4" /> : <Send className="h-4 w-4" />}

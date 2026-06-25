@@ -62,7 +62,7 @@ export function SimpleTable<TRow>({
         <thead>
           <tr
             className={cn(
-              "border-b border-border bg-muted/60 text-xs uppercase tracking-wider text-muted-foreground dark:bg-muted",
+              "border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground",
               headerRowClassName
             )}
           >

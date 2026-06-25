@@ -136,6 +136,17 @@ describe('AIService proxy tool routing', () => {
     );
 
     await expect(
+      service.executeTool({ ...BASE_USER, scopes: ['proxy:create:node-1'] }, 'create_proxy_host', {
+        nodeId: 'node-1',
+        domainNames: ['scoped.example.com'],
+      })
+    ).resolves.toEqual({ result: COMPACT_HOST, invalidateStores: ['proxy'] });
+    expect(proxyService.createProxyHost).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nodeId: 'node-1', domainNames: ['scoped.example.com'] }),
+      'user-1'
+    );
+
+    await expect(
       service.executeTool({ ...BASE_USER, scopes: [`proxy:delete:${COMPACT_HOST.id}`] }, 'delete_proxy_host', {
         proxyHostId: COMPACT_HOST.id,
       })

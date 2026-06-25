@@ -20,6 +20,7 @@ const MCP_EXCLUDED_TOOLS = new Set([
   'web_search',
   'manage_ai_conversation',
   'manage_oauth_authorization',
+  'manage_api_token',
   'execute_script',
   'run_process',
   'fetch',
@@ -30,9 +31,10 @@ const MCP_EXCLUDED_TOOLS = new Set([
   'write_process_stdin',
   'kill_process',
   'list_sandbox_jobs',
+  'manage_node_config',
   'manage_node_file',
 ]);
-const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
+const BROAD_ONLY_TOOL_SCOPES = new Set<string>();
 const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
 const DIRECT_RAW_READ_TOOLS = new Set(['get_proxy_rendered_config']);
 const DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS = new Set([
@@ -131,6 +133,7 @@ const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
   ],
   list_resource_folders: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
   manage_resource_folder: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
+  manage_node_config: ['nodes:config:view', 'nodes:config:edit'],
 };
 const SENSITIVE_TOOL_ARG_RE =
   /(?:password|passwd|secret|signingsecret|privatekey|private_key|token|authorization|cookie|apikey|api_key|clientsecret|client_secret|refresh)/i;
@@ -486,8 +489,7 @@ function getToolResourceId(args: Record<string, unknown>): string {
   );
 }
 
-function getToolAuthorizationResourceId(toolName: string, args: Record<string, unknown>): string {
-  if (toolName === 'create_proxy_host') return '';
+function getToolAuthorizationResourceId(_toolName: string, args: Record<string, unknown>): string {
   return getToolResourceId(args);
 }
 

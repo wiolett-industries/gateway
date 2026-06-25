@@ -30,7 +30,9 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
     auditLog: { enabled: true, retentionDays: 90 },
     dismissedAlerts: { enabled: true, retentionDays: 30 },
     deliveryLog: { enabled: true, retentionDays: 7 },
-    sandboxArtifacts: { enabled: true, retentionDays: 7 },
+    orphanedAIArtifacts: { enabled: true },
+    gatewayLogs: { enabled: false },
+    orphanedVolumes: { enabled: false, retentionDays: 30 },
     dockerPrune: { enabled: true },
     orphanedCerts: { enabled: false },
     acmeCleanup: { enabled: true },
@@ -301,6 +303,61 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
               disabled={controlsDisabled}
             />
             <HousekeepingCard
+              label="Orphaned AI Artifacts"
+              description="Delete AI files no longer attached to a chat"
+              stat={hkStats ? formatBytes(hkStats.orphanedAIArtifacts.totalSizeBytes) : "..."}
+              statDetail={hkStats ? `${hkStats.orphanedAIArtifacts.count} files` : "files"}
+              enabled={hkConfig.orphanedAIArtifacts.enabled}
+              onToggle={(v) =>
+                setHkConfig((current) => ({
+                  ...current,
+                  orphanedAIArtifacts: { enabled: v },
+                }))
+              }
+              lastResult={hkStats?.lastRun?.categories.find(
+                (c) => c.category === "Orphaned AI Artifacts"
+              )}
+              disabled={controlsDisabled}
+            />
+            <HousekeepingCard
+              label="Gateway Logs"
+              description="Clean stored Gateway application logs"
+              stat={hkStats ? formatBytes(hkStats.gatewayLogs.totalSizeBytes) : "..."}
+              statDetail="disabled"
+              enabled={false}
+              onToggle={() => {}}
+              disabled
+              disabledReason="Log storage is not enabled"
+            />
+            <HousekeepingCard
+              label="Orphaned Volumes"
+              description="Remove old anonymous Docker volumes not used by containers"
+              stat={hkStats ? String(hkStats.orphanedVolumes.count) : "..."}
+              statDetail={
+                hkStats
+                  ? `volumes (${formatBytes(hkStats.orphanedVolumes.reclaimableBytes)})`
+                  : "volumes"
+              }
+              enabled={hkConfig.orphanedVolumes.enabled}
+              onToggle={(v) =>
+                setHkConfig((current) => ({
+                  ...current,
+                  orphanedVolumes: { ...current.orphanedVolumes, enabled: v },
+                }))
+              }
+              retentionDays={hkConfig.orphanedVolumes.retentionDays}
+              onRetentionChange={(v) =>
+                setHkConfig((current) => ({
+                  ...current,
+                  orphanedVolumes: { ...current.orphanedVolumes, retentionDays: v },
+                }))
+              }
+              lastResult={hkStats?.lastRun?.categories.find(
+                (c) => c.category === "Orphaned Volumes"
+              )}
+              disabled={controlsDisabled}
+            />
+            <HousekeepingCard
               label="Orphaned Certs"
               description="Remove unreferenced cert files"
               stat={hkStats ? String(hkStats.orphanedCerts.count) : "..."}
@@ -400,6 +457,7 @@ function HousekeepingCard({
   onRetentionChange,
   lastResult,
   disabled,
+  disabledReason,
 }: {
   label: string;
   description: string;
@@ -411,6 +469,7 @@ function HousekeepingCard({
   onRetentionChange?: (v: number) => void;
   lastResult?: HousekeepingCategoryResult;
   disabled?: boolean;
+  disabledReason?: string;
 }) {
   const [localDays, setLocalDays] = useState(retentionDays ?? 30);
 
@@ -436,6 +495,12 @@ function HousekeepingCard({
             {stat}
             {statDetail ? ` ${statDetail}` : ""}
           </span>
+          {disabledReason && (
+            <>
+              <span>&middot;</span>
+              <span>{disabledReason}</span>
+            </>
+          )}
           {retentionDays !== undefined && onRetentionChange && (
             <>
               <span>&middot;</span>

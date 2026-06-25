@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   LogOut,
+  Lock,
   MessageSquare,
   PanelLeft,
   PanelLeftClose,
@@ -376,7 +377,11 @@ function ConversationMenuItem({
         className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden px-3 py-2 pr-1 text-left text-sm"
         onClick={onLoad}
       >
-        <MessageSquare className="h-4 w-4 shrink-0" />
+        {conversation.status === "active" ? (
+          <MessageSquare className="h-4 w-4 shrink-0" />
+        ) : (
+          <Lock className="h-4 w-4 shrink-0" />
+        )}
         <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
       </button>
       <motion.div

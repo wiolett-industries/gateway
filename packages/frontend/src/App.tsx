@@ -11,6 +11,7 @@ import { AccessLists } from "@/pages/AccessLists";
 import { Administration } from "@/pages/Administration";
 import { AdminNodeDetail } from "@/pages/AdminNodeDetail";
 import { AdminNodes } from "@/pages/AdminNodes";
+import { AIArtifactPopout } from "@/pages/AIArtifactPopout";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { BlockedPage } from "@/pages/Blocked";
 import { CADetail } from "@/pages/CADetail";
@@ -597,6 +598,14 @@ export default function App() {
               element={
                 <PopoutAuthGate>
                   <DockerFilePopout />
+                </PopoutAuthGate>
+              }
+            />
+            <Route
+              path="/ai/artifact/:artifactId"
+              element={
+                <PopoutAuthGate>
+                  <AIArtifactPopout />
                 </PopoutAuthGate>
               }
             />

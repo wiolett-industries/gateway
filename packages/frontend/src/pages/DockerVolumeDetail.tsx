@@ -1,4 +1,14 @@
-import { Download, EllipsisVertical, Folder, Save, Settings, Trash2, Type } from "lucide-react";
+import {
+  Download,
+  EllipsisVertical,
+  Folder,
+  Save,
+  Settings,
+  ShieldCheck,
+  ShieldOff,
+  Trash2,
+  Type,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -42,6 +52,7 @@ type VolumeUsageContainer = {
   state: string;
   canOpen: boolean;
 };
+const VOLUME_CLEANUP_PROTECTED_LABEL = "gateway.housekeeping.protected";
 
 function labelsToEntries(labels: Record<string, string> | undefined): LabelEntry[] {
   return Object.entries(labels ?? {}).map(([key, value]) => ({ key, value }));
@@ -93,6 +104,8 @@ export function DockerVolumeDetail() {
   const canDeleteVolume =
     hasScope("docker:volumes:delete") || !!(nodeId && hasScope(`docker:volumes:delete:${nodeId}`));
   const canRenameVolume = canCreateVolume && canDeleteVolume;
+  const isAnonymousVolume = /^[a-f0-9]{64}$/i.test(decodedVolumeName);
+  const isCleanupProtected = volume?.labels?.[VOLUME_CLEANUP_PROTECTED_LABEL] === "true";
   const canReadVolumeFiles =
     hasScope("docker:volumes:files:read") ||
     !!(nodeId && hasScope(`docker:volumes:files:read:${nodeId}`));
@@ -359,6 +372,36 @@ export function DockerVolumeDetail() {
     }
   }, [decodedVolumeName, fetchVolume, isUsed, labels, labelsChanged, nodeId]);
 
+  const handleToggleCleanupProtection = useCallback(async () => {
+    if (!nodeId || !decodedVolumeName || !isAnonymousVolume || isUsed) return;
+    setActionLoading(true);
+    try {
+      const nextLabels = { ...(volume?.labels ?? {}) };
+      if (isCleanupProtected) {
+        delete nextLabels[VOLUME_CLEANUP_PROTECTED_LABEL];
+      } else {
+        nextLabels[VOLUME_CLEANUP_PROTECTED_LABEL] = "true";
+      }
+      await api.updateVolumeLabels(nodeId, decodedVolumeName, nextLabels);
+      toast.success(
+        isCleanupProtected ? "Volume cleanup protection removed" : "Volume protected from cleanup"
+      );
+      await fetchVolume(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update cleanup protection");
+    } finally {
+      setActionLoading(false);
+    }
+  }, [
+    decodedVolumeName,
+    fetchVolume,
+    isAnonymousVolume,
+    isCleanupProtected,
+    isUsed,
+    nodeId,
+    volume?.labels,
+  ]);
+
   const headerActions = [
     ...(canRenameVolume
       ? [
@@ -367,6 +410,21 @@ export function DockerVolumeDetail() {
             icon: <Type className="h-4 w-4" />,
             onClick: openRename,
             disabled: actionLoading || isUsed,
+          },
+        ]
+      : []),
+    ...(canRenameVolume && isAnonymousVolume
+      ? [
+          {
+            label: isCleanupProtected ? "Unprotect from cleanup" : "Protect from cleanup",
+            icon: isCleanupProtected ? (
+              <ShieldOff className="h-4 w-4" />
+            ) : (
+              <ShieldCheck className="h-4 w-4" />
+            ),
+            onClick: handleToggleCleanupProtection,
+            disabled: actionLoading || isUsed,
+            separatorBefore: true,
           },
         ]
       : []),
@@ -421,6 +479,16 @@ export function DockerVolumeDetail() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {canRenameVolume && isAnonymousVolume && (
+                      <DropdownMenuItem onClick={handleToggleCleanupProtection} disabled={isUsed}>
+                        {isCleanupProtected ? (
+                          <ShieldOff className="h-3.5 w-3.5 mr-2" />
+                        ) : (
+                          <ShieldCheck className="h-3.5 w-3.5 mr-2" />
+                        )}
+                        {isCleanupProtected ? "Unprotect from cleanup" : "Protect from cleanup"}
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                       onClick={handleRemove}
                       disabled={isUsed}

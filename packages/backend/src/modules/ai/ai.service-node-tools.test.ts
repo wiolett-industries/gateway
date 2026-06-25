@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { container } from '@/container.js';
+import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { AIService } from './ai.service.js';
 
 const BASE_USER = {
@@ -141,5 +143,54 @@ describe('AIService node tool routing', () => {
       service.executeTool({ ...BASE_USER, scopes: ['nodes:delete:node-1'] }, 'delete_node', { nodeId: 'node-1' })
     ).resolves.toEqual({ result: { success: true }, invalidateStores: ['nodes'] });
     expect(nodesService.remove).toHaveBeenCalledWith('node-1', 'user-1');
+  });
+
+  it('reads, updates, and tests node nginx config through the node dispatch service', async () => {
+    const dispatchService = {
+      readGlobalConfig: vi.fn().mockResolvedValue({ success: true, detail: 'events {}' }),
+      updateGlobalConfig: vi.fn().mockResolvedValue({ success: true }),
+      testConfig: vi.fn().mockResolvedValue({ success: true, detail: 'nginx: syntax is ok' }),
+    };
+    const resolveSpy = vi.spyOn(container, 'resolve').mockImplementation((token) => {
+      if (token === NodeDispatchService) return dispatchService as never;
+      throw new Error('Unexpected container resolve');
+    });
+    const service = createService({});
+
+    try {
+      await expect(
+        service.executeTool({ ...BASE_USER, scopes: ['nodes:config:view:node-1'] }, 'manage_node_config', {
+          operation: 'read',
+          nodeId: 'node-1',
+        })
+      ).resolves.toEqual({ result: { nodeId: 'node-1', content: 'events {}' }, invalidateStores: ['nodes'] });
+      expect(dispatchService.readGlobalConfig).toHaveBeenCalledWith('node-1');
+
+      await expect(
+        service.executeTool({ ...BASE_USER, scopes: ['nodes:config:edit:node-1'] }, 'manage_node_config', {
+          operation: 'update',
+          nodeId: 'node-1',
+          content: 'events { worker_connections 1024; }',
+        })
+      ).resolves.toEqual({ result: { nodeId: 'node-1', valid: true, error: null }, invalidateStores: ['nodes'] });
+      expect(dispatchService.updateGlobalConfig).toHaveBeenCalledWith(
+        'node-1',
+        'events { worker_connections 1024; }',
+        ''
+      );
+
+      await expect(
+        service.executeTool({ ...BASE_USER, scopes: ['nodes:config:edit:node-1'] }, 'manage_node_config', {
+          operation: 'test',
+          nodeId: 'node-1',
+        })
+      ).resolves.toEqual({
+        result: { nodeId: 'node-1', valid: true, output: 'nginx: syntax is ok', error: null },
+        invalidateStores: ['nodes'],
+      });
+      expect(dispatchService.testConfig).toHaveBeenCalledWith('node-1');
+    } finally {
+      resolveSpy.mockRestore();
+    }
   });
 });

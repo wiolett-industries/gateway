@@ -11,16 +11,22 @@ export interface AIToolCall {
   error?: string;
 }
 
+export type AIConversationStatus = "active" | "ended" | "context_blocked";
+
 // ── AI Message ──
 
 export interface AIMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: AIMessageAttachment[];
+  createdAt?: string;
   toolCalls?: AIToolCall[];
   isStreaming?: boolean;
   localOnly?: boolean;
   compactMarker?: boolean;
+  conversationStatus?: Exclude<AIConversationStatus, "active">;
+  blockReason?: string;
   rawToolCalls?: Array<{
     id: string;
     type: string;
@@ -37,6 +43,7 @@ export interface AIConfig {
   enabled: boolean;
   providerUrl: string;
   endpointMode: AIEndpointMode;
+  supportsImages: boolean;
   model: string;
   maxCompletionTokens: number;
   maxTokensField: "max_tokens" | "max_completion_tokens";
@@ -94,6 +101,20 @@ export interface AISandboxOutput {
   outputBytes: number;
 }
 
+export interface AISandboxArtifact {
+  id: string;
+  userId: string;
+  conversationId: string | null;
+  conversationTitle: string | null;
+  sourceProcessId: string;
+  sourcePath: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+  createdAt: string;
+  downloadUrl: string;
+}
+
 // ── Page Context ──
 
 export interface PageContext {
@@ -114,6 +135,7 @@ export interface QuickAction {
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | null;
+  attachments?: AIMessageAttachment[];
   tool_calls?: Array<{
     id: string;
     type: "function";
@@ -122,6 +144,27 @@ export interface ChatMessage {
   tool_call_id?: string;
   name?: string;
 }
+
+export interface AIMessageAttachment {
+  artifactId: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+  downloadUrl: string;
+  kind: "image";
+}
+
+export interface AIComposerLocalImageAttachment {
+  localId: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+  dataUrl: string;
+  previewUrl: string;
+  kind: "image";
+}
+
+export type AIComposerAttachment = AIMessageAttachment | AIComposerLocalImageAttachment;
 
 // ── WebSocket Messages ──
 
@@ -172,6 +215,8 @@ export type WSServerMessage =
       error?: string;
     }
   | { type: "invalidate_stores"; requestId: string; stores: string[] }
+  | { type: "conversation_ended"; requestId: string; reason: string }
+  | { type: "context_blocked"; requestId: string; reason: string }
   | { type: "done"; requestId: string }
   | { type: "error"; requestId: string; message: string; code?: string }
   | { type: "rate_limited"; retryAfter: number }

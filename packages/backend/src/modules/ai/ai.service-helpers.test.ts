@@ -35,8 +35,8 @@ describe('AI service helpers', () => {
     });
   });
 
-  it('keeps create_proxy_host authorization broad and resource-less', () => {
-    expect(getToolAuthorizationResourceId('create_proxy_host', { proxyHostId: 'host-1' })).toBe('');
+  it('binds create_proxy_host authorization to the target node', () => {
+    expect(getToolAuthorizationResourceId('create_proxy_host', { nodeId: 'node-1' })).toBe('node-1');
     expect(getToolAuthorizationResourceId('update_proxy_host', { proxyHostId: 'host-1' })).toBe('host-1');
   });
 

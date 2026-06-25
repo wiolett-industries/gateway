@@ -76,6 +76,25 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: [],
   },
   {
+    name: 'end_conversation',
+    description:
+      'End this AI conversation with a localized reason. Use only when the conversation should be closed, for example after repeated unrelated requests or when continuing would be unsafe or outside scope.',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: {
+          type: 'string',
+          description: 'Short reason shown to the user in their language.',
+        },
+      },
+      required: ['reason'],
+    },
+    destructive: false,
+    category: 'Interaction',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
     name: 'find_resource',
     description:
       'Global resource search and type-scoped listing. Use this FIRST when the user names a resource but you need its ID, nodeId, or exact type. When the user asks to list resources of a type, pass an empty query with that type, for example { query: "", types: ["docker_container"] }. It searches across readable nodes, Docker containers/images/volumes/networks, proxy hosts, certificates, domains, logging resources, databases, notifications, and more. Do not manually list every node and then scan each node when find_resource can search the resource type directly.',
@@ -762,6 +781,28 @@ export const AI_TOOLS: AIToolDefinition[] = [
     requiredScope: 'nodes:delete',
     invalidateStores: ['nodes'],
   },
+  {
+    name: 'manage_node_config',
+    description:
+      'Read, update, or test the global nginx configuration on a node. Operations: read, update, test. read requires nodes:config:view:<nodeId>; update/test require nodes:config:edit:<nodeId>.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['read', 'update', 'test'],
+          description: 'Node config operation to perform.',
+        },
+        nodeId: { type: 'string', description: 'Node UUID' },
+        content: { type: 'string', description: 'Full nginx config content for update.' },
+      },
+      required: ['operation', 'nodeId'],
+    },
+    destructive: true,
+    category: 'Nodes',
+    requiredScope: 'nodes:config:view',
+    invalidateStores: ['nodes'],
+  },
   ...NODE_FILE_AI_TOOLS,
 
   // ── Raw Config ──
@@ -1028,6 +1069,33 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'OAuth',
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
+  },
+  {
+    name: 'manage_api_token',
+    description:
+      'Manage Gateway API tokens for the current browser user. Operations: list, create, update, revoke. Token secrets are returned only on create.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['list', 'create', 'update', 'revoke'],
+          description: 'API token operation to perform.',
+        },
+        tokenId: { type: 'string', description: 'Token UUID for update or revoke.' },
+        name: { type: 'string', description: 'Token name for create or update.' },
+        scopes: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'API token scopes for create or update. Must be a subset of the current user scopes.',
+        },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Settings',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: ['settings'],
   },
 
   // ── Maintenance and Control Plane ──
@@ -1357,9 +1425,11 @@ const BASE_AI_TOOL_NAMES = new Set([
   'discover_tools',
   'get_current_context',
   'wait',
+  'end_conversation',
   'find_resource',
   'ask_question',
   'internal_documentation',
+  'fetch',
   'web_search',
 ]);
 

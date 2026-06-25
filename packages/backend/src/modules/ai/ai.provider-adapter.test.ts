@@ -4,6 +4,7 @@ import type { AIConfig } from './ai.types.js';
 
 const BASE_CONFIG: AIConfig = {
   enabled: true,
+  supportsImages: false,
   providerUrl: '',
   endpointMode: 'auto',
   model: 'gpt-5.4-mini',

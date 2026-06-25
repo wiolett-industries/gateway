@@ -1,0 +1,194 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuthStore } from "@/stores/auth";
+import type { AIComposerAttachment, AIComposerLocalImageAttachment } from "@/types/ai";
+
+const DRAFT_PREFIX = "gateway-ai-composer-draft";
+const NEW_CONVERSATION_KEY = "new";
+
+function storageKey(userId: string | undefined, conversationId: string | null) {
+  return `${DRAFT_PREFIX}:${userId ?? "anonymous"}:${conversationId ?? NEW_CONVERSATION_KEY}`;
+}
+
+function readDraft(key: string): string {
+  try {
+    return window.localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeDraft(key: string, value: string): void {
+  try {
+    if (value.length > 0) {
+      window.localStorage.setItem(key, value);
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Storage may be unavailable in private or embedded contexts.
+  }
+}
+
+export function useAIComposerDraft(
+  conversationId: string | null
+): [string, (value: string) => void] {
+  const userId = useAuthStore((state) => state.user?.id);
+  const key = useMemo(() => storageKey(userId, conversationId), [conversationId, userId]);
+  const [value, setValue] = useState(() => readDraft(key));
+  const keyRef = useRef(key);
+  const valueRef = useRef(value);
+
+  const setDraftValue = useCallback((nextValue: string) => {
+    valueRef.current = nextValue;
+    setValue(nextValue);
+    writeDraft(keyRef.current, nextValue);
+  }, []);
+
+  useEffect(() => {
+    if (keyRef.current === key) return;
+
+    writeDraft(keyRef.current, valueRef.current);
+    keyRef.current = key;
+    const nextValue = readDraft(key);
+    valueRef.current = nextValue;
+    setValue(nextValue);
+  }, [key]);
+
+  useEffect(() => {
+    return () => {
+      writeDraft(keyRef.current, valueRef.current);
+    };
+  }, []);
+
+  return [value, setDraftValue];
+}
+
+const ATTACHMENT_DRAFT_PREFIX = "gateway-ai-composer-attachments";
+
+function attachmentStorageKey(userId: string | undefined, conversationId: string | null) {
+  return `${ATTACHMENT_DRAFT_PREFIX}:${userId ?? "anonymous"}:${conversationId ?? NEW_CONVERSATION_KEY}`;
+}
+
+function readAttachmentDraft(key: string): AIComposerAttachment[] {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is AIComposerAttachment => isAttachmentDraftItem(item))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAttachmentDraft(key: string, value: AIComposerAttachment[]): void {
+  try {
+    if (value.length > 0) {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Storage may be unavailable in private or embedded contexts.
+  }
+}
+
+function isAttachmentDraftItem(value: unknown): value is AIComposerAttachment {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.kind === "image" &&
+    typeof record.filename === "string" &&
+    typeof record.mediaType === "string" &&
+    typeof record.sizeBytes === "number" &&
+    ((typeof record.artifactId === "string" && typeof record.downloadUrl === "string") ||
+      (typeof record.localId === "string" &&
+        typeof record.dataUrl === "string" &&
+        typeof record.previewUrl === "string"))
+  );
+}
+
+export function useAIComposerAttachmentsDraft(
+  conversationId: string | null
+): [AIComposerAttachment[], (value: AIComposerAttachment[]) => void] {
+  const userId = useAuthStore((state) => state.user?.id);
+  const key = useMemo(() => attachmentStorageKey(userId, conversationId), [conversationId, userId]);
+  const [value, setValue] = useState(() => readAttachmentDraft(key));
+  const keyRef = useRef(key);
+  const valueRef = useRef(value);
+
+  const setDraftValue = useCallback((nextValue: AIComposerAttachment[]) => {
+    valueRef.current = nextValue;
+    setValue(nextValue);
+    writeAttachmentDraft(keyRef.current, nextValue);
+  }, []);
+
+  useEffect(() => {
+    if (keyRef.current === key) return;
+
+    writeAttachmentDraft(keyRef.current, valueRef.current);
+    keyRef.current = key;
+    const nextValue = readAttachmentDraft(key);
+    valueRef.current = nextValue;
+    setValue(nextValue);
+  }, [key]);
+
+  useEffect(() => {
+    return () => {
+      writeAttachmentDraft(keyRef.current, valueRef.current);
+    };
+  }, []);
+
+  return [value, setDraftValue];
+}
+
+export function getComposerAttachmentId(attachment: AIComposerAttachment): string {
+  return "artifactId" in attachment ? attachment.artifactId : attachment.localId;
+}
+
+export function getComposerAttachmentPreviewUrl(attachment: AIComposerAttachment): string {
+  return "downloadUrl" in attachment ? attachment.downloadUrl : attachment.previewUrl;
+}
+
+export async function filesToComposerAttachments(
+  files: File[]
+): Promise<AIComposerLocalImageAttachment[]> {
+  return Promise.all(
+    files.map(async (file) => {
+      const dataUrl = await fileToDataUrl(file);
+      return {
+        localId: `${Date.now()}-${crypto.randomUUID()}`,
+        filename: file.name,
+        mediaType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        dataUrl,
+        previewUrl: dataUrl,
+        kind: "image" as const,
+      };
+    })
+  );
+}
+
+export async function composerAttachmentToFile(
+  attachment: AIComposerLocalImageAttachment
+): Promise<File> {
+  const response = await fetch(attachment.dataUrl);
+  const blob = await response.blob();
+  return new File([blob], attachment.filename, { type: attachment.mediaType });
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Failed to read image"));
+      }
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read image"));
+    reader.readAsDataURL(file);
+  });
+}

@@ -1,15 +1,32 @@
 import { Minimize2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
+import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
-import { useAIStore } from "@/stores/ai";
+import { api } from "@/services/api";
+import { getConversationBlock, useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
-import type { PageContext } from "@/types/ai";
+import type {
+  AIComposerAttachment,
+  AIComposerLocalImageAttachment,
+  AIConfig,
+  AIMessageAttachment,
+  PageContext,
+} from "@/types/ai";
 import { type AIApprovalMode, AIComposer } from "./AIComposer";
+import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
 import { AIMessage } from "./AIMessage";
 import { QuestionBlock } from "./AIToolCallBlock";
 import { QuickActionChips } from "./QuickActionChips";
+import {
+  composerAttachmentToFile,
+  filesToComposerAttachments,
+  getComposerAttachmentId,
+  getComposerAttachmentPreviewUrl,
+  useAIComposerAttachmentsDraft,
+  useAIComposerDraft,
+} from "./useAIComposerDraft";
 
 const BOTTOM_SCROLL_THRESHOLD = 48;
 const SLASH_COMMANDS = [
@@ -33,6 +50,29 @@ function autoResizeTextarea(el: HTMLTextAreaElement, maxRows = 8) {
   const targetHeight = Math.max(minHeight, Math.min(el.scrollHeight, maxHeight));
   el.style.overflow = el.scrollHeight > maxHeight ? "auto" : "hidden";
   el.style.height = `${targetHeight}px`;
+}
+
+async function uploadComposerAttachments(
+  attachments: AIComposerAttachment[],
+  conversationId: string | null
+): Promise<AIMessageAttachment[]> {
+  const uploaded: AIMessageAttachment[] = [];
+  for (const attachment of attachments) {
+    if ("artifactId" in attachment) {
+      uploaded.push(attachment);
+      continue;
+    }
+    uploaded.push(await uploadLocalComposerAttachment(attachment, conversationId));
+  }
+  return uploaded;
+}
+
+async function uploadLocalComposerAttachment(
+  attachment: AIComposerLocalImageAttachment,
+  conversationId: string | null
+): Promise<AIMessageAttachment> {
+  const file = await composerAttachmentToFile(attachment);
+  return api.uploadAIChatArtifact(file, conversationId);
 }
 
 function usePageContext(): PageContext {
@@ -80,11 +120,15 @@ export function AILitePanel() {
     isConnecting,
     connectionError,
     retryAfter,
+    activeConversationId,
     sendMessage,
     approveTool,
     rejectTool,
     answerQuestion,
     stopStreaming,
+    clearMessages,
+    clearOldestConversationContext,
+    rollbackToMessage,
     handleSlashCommand,
     connect,
   } = useAIStore();
@@ -100,7 +144,10 @@ export function AILitePanel() {
     setAIBypassDeleteApprovals,
   } = useUIStore();
 
-  const [input, setInput] = useState("");
+  const [input, setInput] = useAIComposerDraft(activeConversationId);
+  const [attachments, setAttachments] = useAIComposerAttachmentsDraft(activeConversationId);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [canAttachImages, setCanAttachImages] = useState(false);
   const [slashResults, setSlashResults] = useState<typeof SLASH_COMMANDS>([]);
   const [slashIndex, setSlashIndex] = useState(0);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
@@ -126,6 +173,7 @@ export function AILitePanel() {
         : approvalMode === "bypass-non-destructive"
           ? "AI mode: bypass non-destructive"
           : "AI mode: normal";
+  const conversationBlock = getConversationBlock(messages);
 
   const setApprovalMode = useCallback(
     async (mode: AIApprovalMode) => {
@@ -155,9 +203,58 @@ export function AILitePanel() {
   }, [connect]);
 
   useEffect(() => {
+    const cached = api.getCached<AIConfig>("settings:ai-config");
+    if (cached) setCanAttachImages(Boolean(cached.supportsImages));
+    let cancelled = false;
+    void api
+      .getAIConfig()
+      .then((config) => {
+        if (!cancelled) setCanAttachImages(Boolean((config as unknown as AIConfig).supportsImages));
+      })
+      .catch(() => {
+        if (!cancelled) setCanAttachImages(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => textareaRef.current?.focus(), 150);
     return () => clearTimeout(timer);
   }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: input changes must re-measure restored composer drafts.
+  useLayoutEffect(() => {
+    if (textareaRef.current) autoResizeTextarea(textareaRef.current);
+  }, [input]);
+
+  const previewAttachment = useCallback((attachment: AIComposerAttachment) => {
+    if ("artifactId" in attachment) {
+      const params = new URLSearchParams({ filename: attachment.filename });
+      params.set("mediaType", attachment.mediaType);
+      window.open(
+        `/ai/artifact/${encodeURIComponent(attachment.artifactId)}?${params.toString()}`,
+        `artifact-${attachment.artifactId}`,
+        "width=900,height=600,menubar=no,toolbar=no"
+      );
+      return;
+    }
+    window.open(getComposerAttachmentPreviewUrl(attachment), "_blank", "noopener,noreferrer");
+  }, []);
+
+  const handleAttachFiles = useCallback(
+    async (files: File[]) => {
+      if (!canAttachImages || files.length === 0) return;
+      try {
+        const nextAttachments = await filesToComposerAttachments(files);
+        setAttachments([...attachments, ...nextAttachments]);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to attach image");
+      }
+    },
+    [attachments, canAttachImages, setAttachments]
+  );
 
   const updateStickToBottom = useCallback(() => {
     const node = scrollViewportRef.current;
@@ -195,22 +292,45 @@ export function AILitePanel() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || isStreaming) return;
+    if ((!text && attachments.length === 0) || isStreaming) return;
 
-    if (text.startsWith("/")) {
+    if (attachments.length === 0 && text.startsWith("/")) {
       const handled = await handleSlashCommand(text);
       if (handled) {
         setInput("");
+        setAttachments([]);
         setSlashResults([]);
         return;
       }
     }
 
-    setInput("");
-    setSlashResults([]);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-    sendMessage(text, context);
-  }, [context, handleSlashCommand, input, isStreaming, sendMessage]);
+    setUploadingAttachments(true);
+    try {
+      const uploadedAttachments = await uploadComposerAttachments(
+        attachments,
+        activeConversationId
+      );
+      setInput("");
+      setAttachments([]);
+      setSlashResults([]);
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      sendMessage(text, context, uploadedAttachments);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to attach image");
+    } finally {
+      setUploadingAttachments(false);
+    }
+  }, [
+    activeConversationId,
+    attachments,
+    context,
+    handleSlashCommand,
+    input,
+    isStreaming,
+    sendMessage,
+    setAttachments,
+    setInput,
+  ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (slashResults.length > 0) {
@@ -258,6 +378,23 @@ export function AILitePanel() {
       setSlashResults([]);
     }
   };
+
+  const handleEditUserMessage = useCallback(
+    (messageId: string, content: string, nextAttachments: AIMessageAttachment[]) => {
+      const message = rollbackToMessage(messageId);
+      if (!message) return;
+      setInput(content);
+      setAttachments(nextAttachments);
+      setSlashResults([]);
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        autoResizeTextarea(textarea);
+      });
+    },
+    [rollbackToMessage, setAttachments, setInput]
+  );
 
   const handleQuickAction = (prompt: string) => {
     sendMessage(prompt, context);
@@ -330,6 +467,7 @@ export function AILitePanel() {
                   onApprove={approveTool}
                   onReject={rejectTool}
                   onAnswer={answerQuestion}
+                  onEditUserMessage={handleEditUserMessage}
                 />
               ))}
             </div>
@@ -360,6 +498,17 @@ export function AILitePanel() {
             <QuestionBlock toolCall={activeQuestion} onAnswer={answerQuestion} />
           </div>
         </div>
+      ) : conversationBlock ? (
+        <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
+          <div className="border border-border bg-background">
+            <AIConversationBlockedBlock
+              block={conversationBlock}
+              onNewChat={clearMessages}
+              onClearOldContext={clearOldestConversationContext}
+              showTopBorder={false}
+            />
+          </div>
+        </div>
       ) : (
         <div className="relative mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
           <AIComposer
@@ -372,6 +521,7 @@ export function AILitePanel() {
             onSlashCommandSelect={(command) => {
               void handleSlashCommand(`/${command.name}`);
               setInput("");
+              setAttachments([]);
               setSlashResults([]);
             }}
             slashResults={slashResults}
@@ -383,6 +533,18 @@ export function AILitePanel() {
             approvalMode={approvalMode}
             approvalModeLabel={approvalModeLabel}
             setApprovalMode={setApprovalMode}
+            attachments={attachments}
+            canAttachImages={canAttachImages}
+            uploadingAttachments={uploadingAttachments}
+            onAttachFiles={handleAttachFiles}
+            onRemoveAttachment={(artifactId) =>
+              setAttachments(
+                attachments.filter(
+                  (attachment) => getComposerAttachmentId(attachment) !== artifactId
+                )
+              )
+            }
+            onPreviewAttachment={previewAttachment}
             showDisclaimer
           />
         </div>

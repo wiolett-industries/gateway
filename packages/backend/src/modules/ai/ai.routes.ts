@@ -36,6 +36,7 @@ function toolSubject(name: string): string {
 function userFacingToolDescription(name: string, category: string, destructive: boolean): string {
   if (name === 'discover_tools') return 'Find available Gateway tool groups and capabilities.';
   if (name === 'get_current_context') return 'Read the page and resource currently open in the UI.';
+  if (name === 'end_conversation') return 'Close the current assistant conversation with a reason.';
   if (name === 'find_resource') return 'Search Gateway resources by name, type, or identifier.';
   if (name === 'internal_documentation') return 'Search the assistant documentation for Gateway operations.';
   if (name === 'wait') return 'Pause briefly before checking an operation again.';
@@ -212,7 +213,67 @@ aiRoutes.get('/sandbox/jobs/:id/output', requireScope('ai:sandbox:use'), async (
   return c.json({ data });
 });
 
-aiRoutes.get('/sandbox/artifacts/:id/download', requireScope('ai:sandbox:use'), async (c) => {
+const MAX_CHAT_IMAGE_BYTES = 10 * 1024 * 1024;
+
+aiRoutes.post('/sandbox/artifacts', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AISandboxArtifactService);
+  const user = c.get('user')!;
+  const body = await c.req.parseBody();
+  const file = body.file;
+  const conversationId = typeof body.conversationId === 'string' && body.conversationId ? body.conversationId : null;
+  if (!(file instanceof File)) {
+    return c.json({ code: 'VALIDATION_ERROR', message: 'Image file is required' }, 400);
+  }
+  if (!file.type.startsWith('image/')) {
+    return c.json({ code: 'VALIDATION_ERROR', message: 'Only image attachments are supported' }, 400);
+  }
+  if (file.size > MAX_CHAT_IMAGE_BYTES) {
+    return c.json({ code: 'VALIDATION_ERROR', message: 'Image attachment must be 10 MB or smaller' }, 400);
+  }
+  const artifact = await service.saveFromBuffer({
+    userId: user.id,
+    conversationId,
+    filename: file.name || 'image',
+    mediaType: file.type,
+    buffer: Buffer.from(await file.arrayBuffer()),
+  });
+  return c.json({
+    data: {
+      artifactId: artifact.id,
+      filename: artifact.filename,
+      mediaType: artifact.mediaType,
+      sizeBytes: artifact.sizeBytes,
+      downloadUrl: artifact.downloadUrl,
+      kind: 'image',
+    },
+  });
+});
+
+aiRoutes.get('/sandbox/artifacts', requireScope('feat:ai:use'), async (c) => {
+  const artifactService = container.resolve(AISandboxArtifactService);
+  const conversationService = container.resolve(AIConversationService);
+  const user = c.get('user')!;
+  const artifacts = await artifactService.listForUser(user.id);
+  const conversationTitles = await conversationService.listConversationTitles(
+    user.id,
+    artifacts.map((artifact) => artifact.conversationId).filter((id): id is string => Boolean(id))
+  );
+  return c.json({
+    data: artifacts.map((artifact) => ({
+      ...artifact,
+      conversationTitle: artifact.conversationId ? (conversationTitles[artifact.conversationId] ?? null) : null,
+    })),
+  });
+});
+
+aiRoutes.delete('/sandbox/artifacts/:id', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AISandboxArtifactService);
+  const user = c.get('user')!;
+  await service.delete(user.id, c.req.param('id'));
+  return c.json({ data: { deleted: true } });
+});
+
+aiRoutes.get('/sandbox/artifacts/:id/download', requireScope('feat:ai:use'), async (c) => {
   const service = container.resolve(AISandboxArtifactService);
   const user = c.get('user')!;
   const artifact = await service.getDownload(user.id, c.req.param('id'));

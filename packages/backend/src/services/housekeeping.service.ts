@@ -6,14 +6,17 @@ import type { Env } from '@/config/env.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { alerts } from '@/db/schema/alerts.js';
 import { auditLog } from '@/db/schema/audit-log.js';
+import { nodes } from '@/db/schema/nodes.js';
 import { settings } from '@/db/schema/settings.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { AISandboxArtifactService } from '@/modules/ai/ai.sandbox-artifact.service.js';
+import type { DockerManagementService } from '@/modules/docker/docker.service.js';
 import type { NotificationDeliveryService } from '@/modules/notifications/notification-delivery.service.js';
 import type { DockerService } from './docker.service.js';
 import type { NodeDispatchService } from './node-dispatch.service.js';
 
 const logger = createChildLogger('HousekeepingService');
+const VOLUME_CLEANUP_PROTECTED_LABEL = 'gateway.housekeeping.protected';
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -24,7 +27,9 @@ export interface HousekeepingConfig {
   auditLog: { enabled: boolean; retentionDays: number };
   dismissedAlerts: { enabled: boolean; retentionDays: number };
   deliveryLog: { enabled: boolean; retentionDays: number };
-  sandboxArtifacts: { enabled: boolean; retentionDays: number };
+  orphanedAIArtifacts: { enabled: boolean };
+  gatewayLogs: { enabled: false };
+  orphanedVolumes: { enabled: boolean; retentionDays: number };
   dockerPrune: { enabled: boolean };
   orphanedCerts: { enabled: boolean };
   acmeCleanup: { enabled: boolean };
@@ -53,6 +58,9 @@ export interface HousekeepingStats {
   nginxLogs: { totalSizeBytes: number; fileCount: number; oldestFile: string | null };
   auditLog: { totalRows: number; oldestEntry: string | null };
   dismissedAlerts: { count: number; oldestAlert: string | null };
+  orphanedAIArtifacts: { count: number; totalSizeBytes: number };
+  gatewayLogs: { totalSizeBytes: number; fileCount: number; available: false };
+  orphanedVolumes: { count: number; reclaimableBytes: number };
   orphanedCerts: { count: number; certIds: string[] };
   acmeChallenges: { fileCount: number; totalSizeBytes: number };
   dockerImages: { oldImageCount: number; reclaimableBytes: number };
@@ -73,8 +81,9 @@ const KEYS = {
   dismissedAlertsRetention: 'housekeeping:dismissed_alerts:retention_days',
   deliveryLogEnabled: 'housekeeping:delivery_log:enabled',
   deliveryLogRetention: 'housekeeping:delivery_log:retention_days',
-  sandboxArtifactsEnabled: 'housekeeping:sandbox_artifacts:enabled',
-  sandboxArtifactsRetention: 'housekeeping:sandbox_artifacts:retention_days',
+  orphanedAIArtifactsEnabled: 'housekeeping:orphaned_ai_artifacts:enabled',
+  orphanedVolumesEnabled: 'housekeeping:orphaned_volumes:enabled',
+  orphanedVolumesRetention: 'housekeeping:orphaned_volumes:retention_days',
   dockerPruneEnabled: 'housekeeping:docker_prune:enabled',
   orphanedCertsEnabled: 'housekeeping:orphaned_certs:enabled',
   acmeCleanupEnabled: 'housekeeping:acme_cleanup:enabled',
@@ -93,8 +102,9 @@ const DEFAULTS: Record<string, unknown> = {
   [KEYS.dismissedAlertsRetention]: 30,
   [KEYS.deliveryLogEnabled]: true,
   [KEYS.deliveryLogRetention]: 7,
-  [KEYS.sandboxArtifactsEnabled]: true,
-  [KEYS.sandboxArtifactsRetention]: 7,
+  [KEYS.orphanedAIArtifactsEnabled]: true,
+  [KEYS.orphanedVolumesEnabled]: false,
+  [KEYS.orphanedVolumesRetention]: 30,
   [KEYS.dockerPruneEnabled]: true,
   [KEYS.orphanedCertsEnabled]: false,
   [KEYS.acmeCleanupEnabled]: true,
@@ -148,9 +158,15 @@ export class HousekeepingService {
         enabled: get(KEYS.deliveryLogEnabled, DEFAULTS[KEYS.deliveryLogEnabled] as boolean),
         retentionDays: get(KEYS.deliveryLogRetention, DEFAULTS[KEYS.deliveryLogRetention] as number),
       },
-      sandboxArtifacts: {
-        enabled: get(KEYS.sandboxArtifactsEnabled, DEFAULTS[KEYS.sandboxArtifactsEnabled] as boolean),
-        retentionDays: get(KEYS.sandboxArtifactsRetention, DEFAULTS[KEYS.sandboxArtifactsRetention] as number),
+      orphanedAIArtifacts: {
+        enabled: get(KEYS.orphanedAIArtifactsEnabled, DEFAULTS[KEYS.orphanedAIArtifactsEnabled] as boolean),
+      },
+      gatewayLogs: {
+        enabled: false,
+      },
+      orphanedVolumes: {
+        enabled: get(KEYS.orphanedVolumesEnabled, DEFAULTS[KEYS.orphanedVolumesEnabled] as boolean),
+        retentionDays: get(KEYS.orphanedVolumesRetention, DEFAULTS[KEYS.orphanedVolumesRetention] as number),
       },
       dockerPrune: {
         enabled: get(KEYS.dockerPruneEnabled, DEFAULTS[KEYS.dockerPruneEnabled] as boolean),
@@ -183,10 +199,12 @@ export class HousekeepingService {
       updates.push([KEYS.deliveryLogEnabled, partial.deliveryLog.enabled]);
     if (partial.deliveryLog?.retentionDays !== undefined)
       updates.push([KEYS.deliveryLogRetention, partial.deliveryLog.retentionDays]);
-    if (partial.sandboxArtifacts?.enabled !== undefined)
-      updates.push([KEYS.sandboxArtifactsEnabled, partial.sandboxArtifacts.enabled]);
-    if (partial.sandboxArtifacts?.retentionDays !== undefined)
-      updates.push([KEYS.sandboxArtifactsRetention, partial.sandboxArtifacts.retentionDays]);
+    if (partial.orphanedAIArtifacts?.enabled !== undefined)
+      updates.push([KEYS.orphanedAIArtifactsEnabled, partial.orphanedAIArtifacts.enabled]);
+    if (partial.orphanedVolumes?.enabled !== undefined)
+      updates.push([KEYS.orphanedVolumesEnabled, partial.orphanedVolumes.enabled]);
+    if (partial.orphanedVolumes?.retentionDays !== undefined)
+      updates.push([KEYS.orphanedVolumesRetention, partial.orphanedVolumes.retentionDays]);
     if (partial.dockerPrune?.enabled !== undefined)
       updates.push([KEYS.dockerPruneEnabled, partial.dockerPrune.enabled]);
     if (partial.orphanedCerts?.enabled !== undefined)
@@ -204,10 +222,24 @@ export class HousekeepingService {
   // ── Stats ───────────────────────────────────────────────────────
 
   async getStats(): Promise<HousekeepingStats> {
-    const [nginxLogs, auditLogStats, alertStats, orphanedCerts, acme, docker, lastRun] = await Promise.all([
+    const [
+      nginxLogs,
+      auditLogStats,
+      alertStats,
+      orphanedAIArtifacts,
+      gatewayLogs,
+      orphanedVolumes,
+      orphanedCerts,
+      acme,
+      docker,
+      lastRun,
+    ] = await Promise.all([
       this.getNginxLogStats(),
       this.getAuditLogStats(),
       this.getDismissedAlertStats(),
+      this.getOrphanedAIArtifactStats(),
+      this.getGatewayLogStats(),
+      this.getOrphanedVolumeStats(),
       this.getOrphanedCertStats(),
       this.getAcmeChallengeStats(),
       this.getDockerImageStats(),
@@ -218,6 +250,9 @@ export class HousekeepingService {
       nginxLogs,
       auditLog: auditLogStats,
       dismissedAlerts: alertStats,
+      orphanedAIArtifacts,
+      gatewayLogs,
+      orphanedVolumes,
       orphanedCerts,
       acmeChallenges: acme,
       dockerImages: docker,
@@ -260,10 +295,13 @@ export class HousekeepingService {
           await this.runCategory('Delivery Log', () => this.cleanDeliveryLog(config.deliveryLog.retentionDays))
         );
       }
-      if (config.sandboxArtifacts.enabled) {
+      if (config.orphanedAIArtifacts.enabled) {
+        categories.push(await this.runCategory('Orphaned AI Artifacts', () => this.cleanOrphanedAIArtifacts()));
+      }
+      if (config.orphanedVolumes.enabled) {
         categories.push(
-          await this.runCategory('Sandbox Artifacts', () =>
-            this.cleanSandboxArtifacts(config.sandboxArtifacts.retentionDays)
+          await this.runCategory('Orphaned Volumes', () =>
+            this.cleanOrphanedVolumes(config.orphanedVolumes.retentionDays, userId ?? null)
           )
         );
       }
@@ -351,17 +389,46 @@ export class HousekeepingService {
     this.sandboxArtifactService = svc;
   }
 
+  private dockerManagementService?: DockerManagementService;
+  setDockerManagementService(svc: DockerManagementService) {
+    this.dockerManagementService = svc;
+  }
+
   private async cleanDeliveryLog(retentionDays: number): Promise<{ itemsCleaned: number }> {
     if (!this.notifDeliveryService) return { itemsCleaned: 0 };
     const count = await this.notifDeliveryService.cleanOldEntries(retentionDays);
     return { itemsCleaned: count };
   }
 
-  private async cleanSandboxArtifacts(
-    retentionDays: number
-  ): Promise<{ itemsCleaned: number; spaceFreedBytes?: number }> {
+  private async cleanOrphanedAIArtifacts(): Promise<{ itemsCleaned: number; spaceFreedBytes?: number }> {
     if (!this.sandboxArtifactService) return { itemsCleaned: 0 };
-    return this.sandboxArtifactService.cleanOldArtifacts(retentionDays);
+    return this.sandboxArtifactService.cleanOrphanedArtifacts();
+  }
+
+  private async cleanOrphanedVolumes(
+    retentionDays: number,
+    userId: string | null
+  ): Promise<{ itemsCleaned: number; spaceFreedBytes?: number }> {
+    if (!this.dockerManagementService) return { itemsCleaned: 0 };
+    const candidates = await this.findOrphanedVolumes(retentionDays);
+    let itemsCleaned = 0;
+    let spaceFreedBytes = 0;
+
+    for (const candidate of candidates) {
+      try {
+        await this.dockerManagementService.removeVolume(candidate.nodeId, candidate.name, false, userId);
+        itemsCleaned += 1;
+        spaceFreedBytes += candidate.sizeBytes ?? 0;
+      } catch (error) {
+        logger.warn('Failed to remove orphaned Docker volume', {
+          nodeId: candidate.nodeId,
+          name: candidate.name,
+          error,
+        });
+      }
+    }
+
+    return { itemsCleaned, spaceFreedBytes };
   }
 
   private async cleanOrphanedCerts(): Promise<{ itemsCleaned: number }> {
@@ -505,6 +572,24 @@ export class HousekeepingService {
     };
   }
 
+  private async getOrphanedAIArtifactStats(): Promise<HousekeepingStats['orphanedAIArtifacts']> {
+    if (!this.sandboxArtifactService) return { count: 0, totalSizeBytes: 0 };
+    return this.sandboxArtifactService.getOrphanedStats();
+  }
+
+  private async getGatewayLogStats(): Promise<HousekeepingStats['gatewayLogs']> {
+    return { totalSizeBytes: 0, fileCount: 0, available: false };
+  }
+
+  private async getOrphanedVolumeStats(): Promise<HousekeepingStats['orphanedVolumes']> {
+    const config = await this.getConfig();
+    const candidates = await this.findOrphanedVolumes(config.orphanedVolumes.retentionDays);
+    return {
+      count: candidates.length,
+      reclaimableBytes: candidates.reduce((sum, candidate) => sum + (candidate.sizeBytes ?? 0), 0),
+    };
+  }
+
   private async getOrphanedCertStats(): Promise<HousekeepingStats['orphanedCerts']> {
     // Cert files are on daemon nodes, not accessible from Gateway
     return { count: 0, certIds: [] };
@@ -549,6 +634,42 @@ export class HousekeepingService {
     } catch {
       return { oldImageCount: 0, reclaimableBytes: 0 };
     }
+  }
+
+  private async findOrphanedVolumes(
+    retentionDays: number
+  ): Promise<Array<{ nodeId: string; name: string; sizeBytes?: number }>> {
+    const dockerNodes = await this.db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(and(eq(nodes.type, 'docker'), eq(nodes.status, 'online')));
+    const threshold = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const candidates: Array<{ nodeId: string; name: string; sizeBytes?: number }> = [];
+    if (!this.dockerManagementService) return candidates;
+
+    for (const node of dockerNodes) {
+      let volumes: unknown;
+      try {
+        volumes = await this.dockerManagementService.listVolumes(node.id);
+      } catch (error) {
+        logger.debug('Failed to list Docker volumes for housekeeping', { nodeId: node.id, error });
+        continue;
+      }
+
+      if (!Array.isArray(volumes)) continue;
+      for (const volume of volumes) {
+        const candidate = normalizeHousekeepingVolume(volume);
+        if (!candidate) continue;
+        if (!isAnonymousDockerVolumeName(candidate.name)) continue;
+        if (candidate.usedBy.length > 0 || candidate.usedByCount > 0) continue;
+        if (candidate.labels[VOLUME_CLEANUP_PROTECTED_LABEL] === 'true') continue;
+        const createdAtMs = candidate.createdAt ? Date.parse(candidate.createdAt) : Number.NaN;
+        if (!Number.isFinite(createdAtMs) || createdAtMs > threshold) continue;
+        candidates.push({ nodeId: node.id, name: candidate.name, sizeBytes: candidate.sizeBytes });
+      }
+    }
+
+    return candidates;
   }
 
   // ── Helpers ─────────────────────────────────────────────────────
@@ -635,4 +756,45 @@ export class HousekeepingService {
       req.end();
     });
   }
+}
+
+function isAnonymousDockerVolumeName(name: string): boolean {
+  return /^[a-f0-9]{64}$/i.test(name);
+}
+
+function normalizeHousekeepingVolume(volume: unknown): {
+  name: string;
+  labels: Record<string, string>;
+  createdAt: string | null;
+  usedBy: string[];
+  usedByCount: number;
+  sizeBytes?: number;
+} | null {
+  if (!volume || typeof volume !== 'object') return null;
+  const record = volume as Record<string, unknown>;
+  const name = record.name ?? record.Name;
+  if (typeof name !== 'string' || !name) return null;
+
+  const labels = (record.labels ?? record.Labels ?? {}) as Record<string, string>;
+  const usedBy = record.usedBy ?? record.UsedBy;
+  const usageData = record.usageData ?? record.UsageData;
+  const usageRecord = usageData && typeof usageData === 'object' ? (usageData as Record<string, unknown>) : null;
+  const size = usageRecord?.Size ?? usageRecord?.size;
+  const createdAt = record.createdAt ?? record.CreatedAt;
+
+  return {
+    name,
+    labels: labels && typeof labels === 'object' ? labels : {},
+    createdAt: typeof createdAt === 'string' ? createdAt : null,
+    usedBy: Array.isArray(usedBy) ? usedBy.filter((item): item is string => typeof item === 'string') : [],
+    usedByCount:
+      typeof record.usedByCount === 'number'
+        ? record.usedByCount
+        : typeof record.UsedByCount === 'number'
+          ? record.UsedByCount
+          : Array.isArray(usedBy)
+            ? usedBy.length
+            : 0,
+    sizeBytes: typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : undefined,
+  };
 }

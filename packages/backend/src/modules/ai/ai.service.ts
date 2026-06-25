@@ -1,9 +1,11 @@
+import fs from 'node:fs/promises';
 import { eq } from 'drizzle-orm';
 import OpenAI from 'openai';
 import { container, TOKENS } from '@/container.js';
 import { nodes as nodesTable } from '@/db/schema/nodes.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { canManageUser, hasScope, hasScopeBase, hasScopeForResource, isScopeSubset } from '@/lib/permissions.js';
+import { canonicalizeScopes } from '@/lib/scopes.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import { UpdateAuthProvisioningSettingsSchema } from '@/modules/admin/admin.schemas.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -28,6 +30,8 @@ import { NetworkSettingsService } from '@/modules/settings/network-settings.serv
 import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
 import { UploadCertSchema } from '@/modules/ssl/ssl.schemas.js';
 import type { SSLService } from '@/modules/ssl/ssl.service.js';
+import { CreateTokenSchema, UpdateTokenSchema } from '@/modules/tokens/tokens.schemas.js';
+import { TokensService } from '@/modules/tokens/tokens.service.js';
 import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { EventBusService } from '@/services/event-bus.service.js';
 import { HousekeepingService } from '@/services/housekeeping.service.js';
@@ -54,6 +58,7 @@ import { streamModelResponse } from './ai.provider-adapter.js';
 import { executeProxyTool, PROXY_TOOL_NAMES } from './ai.proxy-tools.js';
 import { findResource } from './ai.resource-search.js';
 import type { AISandboxService } from './ai.sandbox.service.js';
+import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
 import {
   agentPage,
   agentPageLimit,
@@ -72,6 +77,7 @@ import { manageStatusPageTool } from './ai.status-page-tools.js';
 import { buildAISystemPrompt } from './ai.system-prompt.js';
 import { AI_TOOLS, getOpenAITools, isDestructiveTool, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
 import type {
+  AIMessageAttachment,
   ChatMessage,
   PageContext,
   ToolExecutionOptions,
@@ -105,6 +111,23 @@ type ToolRuntimeContext = {
   pageContext?: PageContext;
   conversationId?: string;
 };
+
+function isContextWindowError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null
+        ? JSON.stringify(error)
+        : String(error);
+  return /context(?:_| )?(?:length|window)|maximum context|max(?:imum)? tokens|too many tokens/i.test(message);
+}
+
+function conversationEndReason(result: unknown, fallback: string): string {
+  if (isRecord(result) && typeof result.reason === 'string' && result.reason.trim()) {
+    return result.reason.trim();
+  }
+  return fallback;
+}
 
 function compactToolResultForModel(toolName: string, value: unknown): unknown {
   if (value == null) return value;
@@ -182,6 +205,7 @@ const AI_SETTINGS_UPDATE_FIELDS = new Set([
   'enabled',
   'providerUrl',
   'endpointMode',
+  'supportsImages',
   'apiKey',
   'model',
   'customSystemPrompt',
@@ -243,7 +267,8 @@ export class AIService {
     private readonly notifWebhookService?: import('@/modules/notifications/notification-webhook.service.js').NotificationWebhookService,
     private readonly notifDeliveryService?: import('@/modules/notifications/notification-delivery.service.js').NotificationDeliveryService,
     private readonly notifDispatcherService?: import('@/modules/notifications/notification-dispatcher.service.js').NotificationDispatcherService,
-    private readonly sandboxService?: AISandboxService
+    private readonly sandboxService?: AISandboxService,
+    private readonly artifactService?: AISandboxArtifactService
   ) {}
 
   async buildSystemPrompt(user: User, pageContext?: PageContext): Promise<string> {
@@ -472,7 +497,12 @@ export class AIService {
       return executeFolderTool(user, toolName, args);
     }
     if (NODE_TOOL_NAMES.has(toolName)) {
-      return executeNodeTool({ nodesService: this.nodesService }, user, toolName, args);
+      return executeNodeTool(
+        { nodesService: this.nodesService, getDispatchService: () => container.resolve(NodeDispatchService) },
+        user,
+        toolName,
+        args
+      );
     }
     if (GROUP_TOOL_NAMES.has(toolName)) {
       return executeGroupTool({ groupService: this.groupService }, user, toolName, args);
@@ -559,6 +589,14 @@ export class AIService {
           waitedSeconds: seconds,
           reason: stringArg(a.reason) ?? null,
           nextStep: 'Call the relevant read/status tool again to verify whether the pending operation completed.',
+        };
+      }
+
+      case 'end_conversation': {
+        const reason = String(a.reason ?? '').trim();
+        return {
+          ended: true,
+          reason: reason || 'This conversation has been ended.',
         };
       }
 
@@ -820,6 +858,45 @@ export class AIService {
           }
           default:
             throw new Error('Unsupported OAuth authorization operation');
+        }
+      }
+      case 'manage_api_token': {
+        const tokensService = container.resolve(TokensService);
+        const operation = String(a.operation ?? '');
+        switch (operation) {
+          case 'list':
+            return tokensService.listTokens(user.id);
+          case 'create': {
+            const input = CreateTokenSchema.parse({
+              name: a.name,
+              scopes: Array.isArray(a.scopes) ? canonicalizeScopes(a.scopes.map(String)) : a.scopes,
+            });
+            if (!isScopeSubset(input.scopes, user.scopes)) {
+              throw new Error('Cannot create a token with scopes you do not possess');
+            }
+            return tokensService.createToken(user.id, input);
+          }
+          case 'update': {
+            const tokenId = String(a.tokenId ?? '');
+            if (!tokenId) throw new Error('tokenId is required');
+            const input = UpdateTokenSchema.parse({
+              name: a.name,
+              scopes: Array.isArray(a.scopes) ? canonicalizeScopes(a.scopes.map(String)) : a.scopes,
+            });
+            if (input.scopes !== undefined && !isScopeSubset(input.scopes, user.scopes)) {
+              throw new Error('Cannot update a token with scopes you do not possess');
+            }
+            await tokensService.updateToken(user.id, tokenId, input);
+            return { success: true };
+          }
+          case 'revoke': {
+            const tokenId = String(a.tokenId ?? '');
+            if (!tokenId) throw new Error('tokenId is required');
+            await tokensService.revokeToken(user.id, tokenId);
+            return { success: true };
+          }
+          default:
+            throw new Error('Unsupported API token operation');
         }
       }
       case 'get_license_status':
@@ -1182,6 +1259,45 @@ export class AIService {
     }
   }
 
+  private async toProviderMessage(user: User, message: ChatMessage, config: { supportsImages: boolean }) {
+    const msg: Record<string, unknown> = { role: message.role, content: message.content };
+    if (message.role === 'user' && config.supportsImages && message.attachments?.length && this.artifactService) {
+      const parts: Array<Record<string, unknown>> = [];
+      if (message.content) parts.push({ type: 'text', text: message.content });
+      const imageParts: Array<Record<string, unknown> | null> = await Promise.all(
+        message.attachments
+          .filter((attachment) => attachment.kind === 'image')
+          .map((attachment) => this.attachmentToImagePart(user.id, attachment))
+      );
+      parts.push(...imageParts.filter((part): part is Record<string, unknown> => part !== null));
+      if (parts.length > 0) msg.content = parts;
+    }
+    if (message.tool_calls) msg.tool_calls = message.tool_calls;
+    if (message.tool_call_id) msg.tool_call_id = message.tool_call_id;
+    if (message.name) msg.name = message.name;
+    return msg;
+  }
+
+  private async attachmentToImagePart(
+    userId: string,
+    attachment: AIMessageAttachment
+  ): Promise<Record<string, unknown> | null> {
+    if (!attachment.mediaType.startsWith('image/')) return null;
+    try {
+      const artifact = await this.artifactService?.getDownload(userId, attachment.artifactId);
+      if (!artifact) return null;
+      const buffer = await fs.readFile(artifact.filePath);
+      const dataUrl = `data:${artifact.metadata.mediaType};base64,${buffer.toString('base64')}`;
+      return { type: 'image_url', image_url: { url: dataUrl } };
+    } catch (error) {
+      logger.warn('Failed to attach AI message image artifact', {
+        artifactId: attachment.artifactId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
   /**
    * Stream a chat completion with tool calling.
    * Yields WSServerMessage events for the WebSocket handler to forward.
@@ -1214,13 +1330,7 @@ export class AIService {
     // Build messages array: system + client messages
     let messages: Record<string, unknown>[] = [
       { role: 'system', content: systemPrompt },
-      ...clientMessages.map((m) => {
-        const msg: Record<string, unknown> = { role: m.role, content: m.content };
-        if (m.tool_calls) msg.tool_calls = m.tool_calls;
-        if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
-        if (m.name) msg.name = m.name;
-        return msg;
-      }),
+      ...(await Promise.all(clientMessages.map((message) => this.toProviderMessage(user, message, config)))),
     ];
 
     const maxContextTokens = config.maxContextTokens;
@@ -1248,6 +1358,16 @@ export class AIService {
         if (err instanceof Error && err.name === 'AbortError') return;
         const message = err instanceof Error ? err.message : 'Stream error';
         logger.error('OpenAI API error', { error: err });
+        if (isContextWindowError(err)) {
+          yield {
+            type: 'context_blocked',
+            requestId,
+            reason:
+              'This chat has run out of usable context and could not be compacted automatically. Clear part of the oldest context or start a new chat.',
+          };
+          yield { type: 'done', requestId };
+          return;
+        }
         yield { type: 'error', requestId, message };
         yield { type: 'done', requestId };
         return;
@@ -1321,6 +1441,15 @@ export class AIService {
         };
         if (result.invalidateStores.length > 0) {
           yield { type: 'invalidate_stores', requestId, stores: result.invalidateStores };
+        }
+        if (tc.name === 'end_conversation' && !result.error) {
+          yield {
+            type: 'conversation_ended',
+            requestId,
+            reason: conversationEndReason(result.result, 'This conversation has been ended.'),
+          };
+          yield { type: 'done', requestId };
+          return;
         }
       }
 
@@ -1435,6 +1564,15 @@ export class AIService {
       if (result.invalidateStores.length > 0) {
         yield { type: 'invalidate_stores', requestId, stores: result.invalidateStores };
       }
+      if (toolName === 'end_conversation' && !result.error) {
+        yield {
+          type: 'conversation_ended',
+          requestId,
+          reason: conversationEndReason(result.result, 'This conversation has been ended.'),
+        };
+        yield { type: 'done', requestId };
+        return;
+      }
     }
 
     if (queuedApprovals.length > 0) {
@@ -1497,6 +1635,16 @@ export class AIService {
         if (err instanceof Error && err.name === 'AbortError') return;
         const message = err instanceof Error ? err.message : 'Stream error';
         logger.error('OpenAI API error', { error: err });
+        if (isContextWindowError(err)) {
+          yield {
+            type: 'context_blocked',
+            requestId,
+            reason:
+              'This chat has run out of usable context and could not be compacted automatically. Clear part of the oldest context or start a new chat.',
+          };
+          yield { type: 'done', requestId };
+          return;
+        }
         yield { type: 'error', requestId, message };
         yield { type: 'done', requestId };
         return;
@@ -1561,6 +1709,15 @@ export class AIService {
         };
         if (result.invalidateStores.length > 0) {
           yield { type: 'invalidate_stores', requestId, stores: result.invalidateStores };
+        }
+        if (tc.name === 'end_conversation' && !result.error) {
+          yield {
+            type: 'conversation_ended',
+            requestId,
+            reason: conversationEndReason(result.result, 'This conversation has been ended.'),
+          };
+          yield { type: 'done', requestId };
+          return;
         }
       }
 

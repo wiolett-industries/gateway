@@ -139,7 +139,6 @@ const envSchema = z.object({
 
   // AI sandbox artifacts
   AI_SANDBOX_ARTIFACT_DIR: nonEmptyStringWithDefault('/var/lib/gateway/ai-artifacts'),
-  AI_SANDBOX_ARTIFACT_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
 });
 
 export type Env = z.infer<typeof envSchema>;

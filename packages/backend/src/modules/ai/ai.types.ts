@@ -10,6 +10,7 @@ export interface AIConfig {
   enabled: boolean;
   providerUrl: string;
   endpointMode: AIEndpointMode;
+  supportsImages: boolean;
   model: string;
   maxCompletionTokens: number;
   maxTokensField: MaxTokensField;
@@ -57,6 +58,7 @@ export interface PageContext {
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
+  attachments?: AIMessageAttachment[];
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -65,6 +67,17 @@ export interface ChatMessage {
   tool_call_id?: string;
   name?: string;
 }
+
+export interface AIMessageAttachment {
+  artifactId: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+  downloadUrl: string;
+  kind: 'image';
+}
+
+export type AIConversationStatus = 'active' | 'ended' | 'context_blocked';
 
 // ── WebSocket Protocol ──
 
@@ -90,6 +103,8 @@ export type WSServerMessage =
   | { type: 'tool_approval_required'; requestId: string; id: string; name: string; arguments: Record<string, unknown> }
   | { type: 'tool_result'; requestId: string; id: string; name: string; result: unknown; error?: string }
   | { type: 'invalidate_stores'; requestId: string; stores: string[] }
+  | { type: 'conversation_ended'; requestId: string; reason: string }
+  | { type: 'context_blocked'; requestId: string; reason: string }
   | { type: 'done'; requestId: string }
   | { type: 'error'; requestId: string; message: string; code?: string }
   | { type: 'rate_limited'; retryAfter: number }

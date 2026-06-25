@@ -6,7 +6,9 @@ export interface HousekeepingConfig {
   auditLog: { enabled: boolean; retentionDays: number };
   dismissedAlerts: { enabled: boolean; retentionDays: number };
   deliveryLog: { enabled: boolean; retentionDays: number };
-  sandboxArtifacts: { enabled: boolean; retentionDays: number };
+  orphanedAIArtifacts: { enabled: boolean };
+  gatewayLogs: { enabled: false };
+  orphanedVolumes: { enabled: boolean; retentionDays: number };
   dockerPrune: { enabled: boolean };
   orphanedCerts: { enabled: boolean };
   acmeCleanup: { enabled: boolean };
@@ -35,6 +37,9 @@ export interface HousekeepingStats {
   nginxLogs: { totalSizeBytes: number; fileCount: number; oldestFile: string | null };
   auditLog: { totalRows: number; oldestEntry: string | null };
   dismissedAlerts: { count: number; oldestAlert: string | null };
+  orphanedAIArtifacts: { count: number; totalSizeBytes: number };
+  gatewayLogs: { totalSizeBytes: number; fileCount: number; available: false };
+  orphanedVolumes: { count: number; reclaimableBytes: number };
   orphanedCerts: { count: number; certIds: string[] };
   acmeChallenges: { fileCount: number; totalSizeBytes: number };
   dockerImages: { oldImageCount: number; reclaimableBytes: number };

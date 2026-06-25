@@ -71,8 +71,15 @@ describe('MCP tool scope filtering', () => {
     );
   });
 
-  it('never exposes node filesystem tools through MCP', () => {
+  it('never exposes node config or filesystem tools through MCP', () => {
+    expect(toolNames(['nodes:config:view', 'nodes:config:edit'])).not.toContain('manage_node_config');
     expect(toolNames(['nodes:files:read', 'nodes:files:write'])).not.toContain('manage_node_file');
+  });
+
+  it('never exposes browser-session-only current-user tools through MCP', () => {
+    expect(toolNames(['feat:ai:use'])).not.toEqual(
+      expect.arrayContaining(['manage_ai_conversation', 'manage_oauth_authorization', 'manage_api_token'])
+    );
   });
 
   it('keeps wait available as a safe MCP coordination tool without delegated scopes', () => {

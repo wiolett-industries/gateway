@@ -7,6 +7,7 @@ import {
   FileUploadInitSchema,
 } from '@/modules/docker/docker.schemas.js';
 import type { NodesService } from '@/modules/nodes/nodes.service.js';
+import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { User } from '@/types.js';
 import { agentPage, agentPageLimit, allowedResourceIdsForScopes } from './ai.service-helpers.js';
 
@@ -16,6 +17,7 @@ export const NODE_TOOL_NAMES = new Set([
   'create_node',
   'rename_node',
   'delete_node',
+  'manage_node_config',
   'manage_node_file',
 ]);
 
@@ -24,6 +26,7 @@ const NODE_FILE_READ_LIMIT_BYTES = 256 * 1024;
 
 export interface NodeToolContext {
   nodesService: NodesService;
+  getDispatchService?: () => NodeDispatchService;
 }
 
 export async function executeNodeTool(
@@ -79,11 +82,60 @@ export async function executeNodeTool(
     case 'delete_node':
       await context.nodesService.remove(a.nodeId, user.id);
       return { success: true };
+    case 'manage_node_config':
+      return executeNodeConfigTool(context, user, a);
     case 'manage_node_file':
       return executeNodeFileTool(context.nodesService, user, a);
     default:
       throw new Error(`Unsupported node tool: ${toolName}`);
   }
+}
+
+async function executeNodeConfigTool(context: NodeToolContext, user: User, args: Record<string, unknown>) {
+  const nodeId = String(args.nodeId || '');
+  const operation = String(args.operation || '');
+  if (!nodeId) throw new Error('nodeId is required');
+  if (!operation) throw new Error('operation is required');
+
+  const dispatchService = getRequiredDispatchService(context);
+
+  switch (operation) {
+    case 'read': {
+      assertNodeConfigScope(user, 'nodes:config:view', nodeId);
+      const result = await dispatchService.readGlobalConfig(nodeId);
+      if (!result.success) throw new Error(result.error || 'Failed to read node config');
+      return { nodeId, content: result.detail ?? '' };
+    }
+    case 'update': {
+      assertNodeConfigScope(user, 'nodes:config:edit', nodeId);
+      const content = typeof args.content === 'string' ? args.content : '';
+      if (!content) throw new Error('content is required');
+      if (Buffer.byteLength(content, 'utf8') > 1024 * 1024) {
+        throw new Error('Config content is too large. Maximum size is 1 MB.');
+      }
+      const result = await dispatchService.updateGlobalConfig(nodeId, content, '');
+      return { nodeId, valid: result.success, error: result.success ? null : result.error };
+    }
+    case 'test': {
+      assertNodeConfigScope(user, 'nodes:config:edit', nodeId);
+      const result = await dispatchService.testConfig(nodeId);
+      return {
+        nodeId,
+        valid: result.success,
+        output: result.detail ?? null,
+        error: result.success ? null : result.error,
+      };
+    }
+    default:
+      throw new Error(`Unsupported node config operation: ${operation}`);
+  }
+}
+
+function getRequiredDispatchService(context: NodeToolContext): NodeDispatchService {
+  if (!context.getDispatchService) {
+    throw new Error('Node dispatch service is not available');
+  }
+  return context.getDispatchService();
 }
 
 async function executeNodeFileTool(nodesService: NodesService, user: User, args: Record<string, unknown>) {
@@ -172,6 +224,12 @@ async function executeNodeFileTool(nodesService: NodesService, user: User, args:
     }
     default:
       throw new Error(`Unsupported node file operation: ${operation}`);
+  }
+}
+
+function assertNodeConfigScope(user: User, scope: 'nodes:config:view' | 'nodes:config:edit', nodeId: string) {
+  if (!hasScopeForResource(user.scopes, scope, nodeId)) {
+    throw new Error(`Missing required scope: ${scope}:${nodeId}`);
   }
 }
 

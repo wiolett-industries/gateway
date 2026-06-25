@@ -17,6 +17,14 @@ export const HousekeepingConfigUpdateSchema = z
     dismissedAlerts: z
       .object({ enabled: z.boolean().optional(), retentionDays: z.number().int().min(1).max(365).optional() })
       .optional(),
+    deliveryLog: z
+      .object({ enabled: z.boolean().optional(), retentionDays: z.number().int().min(1).max(365).optional() })
+      .optional(),
+    orphanedAIArtifacts: z.object({ enabled: z.boolean().optional() }).optional(),
+    gatewayLogs: z.object({ enabled: z.literal(false).optional() }).optional(),
+    orphanedVolumes: z
+      .object({ enabled: z.boolean().optional(), retentionDays: z.number().int().min(1).max(365).optional() })
+      .optional(),
     dockerPrune: z.object({ enabled: z.boolean().optional() }).optional(),
     orphanedCerts: z.object({ enabled: z.boolean().optional() }).optional(),
     acmeCleanup: z.object({ enabled: z.boolean().optional() }).optional(),

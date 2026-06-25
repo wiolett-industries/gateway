@@ -57,6 +57,8 @@ describeIfDocker('AISandboxRunnerService docker smoke', () => {
       policy: makePolicy('process-smoke', 'process', 30),
       command: ['sh', '-lc', 'echo process-ready | tee result.txt; sleep 20'],
     });
+    const readyOutput = await waitForOutput(runner, processResult.processId, 'process-ready');
+    expect(readyOutput.output).toContain('process-ready');
 
     const readResult = await runner.readArtifact({
       processId: processResult.processId,
@@ -77,13 +79,26 @@ describeIfDocker('AISandboxRunnerService docker smoke', () => {
     expect((await stat(sendResult.tempFilePath)).size).toBe(sendResult.sizeBytes);
     await rm(sendResult.tempFilePath, { force: true });
 
-    const output = await runner.readProcessOutput({ processId: processResult.processId, tail: 20 });
-    expect(output.output).toContain('process-ready');
-
     const killed = await runner.killProcess({ processId: processResult.processId });
     expect(killed.killed).toBe(true);
   }, 60_000);
 });
+
+async function waitForOutput(
+  runner: AISandboxRunnerService,
+  processId: string,
+  expected: string
+): Promise<{ output: string }> {
+  const deadline = Date.now() + 5_000;
+  let lastOutput = '';
+  while (Date.now() < deadline) {
+    const output = await runner.readProcessOutput({ processId, tail: 20 });
+    lastOutput = output.output;
+    if (lastOutput.includes(expected)) return output;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Timed out waiting for process output ${expected}. Last output: ${lastOutput}`);
+}
 
 function cleanupTestContainers(): void {
   try {

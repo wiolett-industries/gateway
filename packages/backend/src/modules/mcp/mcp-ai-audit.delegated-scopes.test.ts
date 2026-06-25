@@ -94,7 +94,7 @@ describe('AIService MCP delegated scope audit behavior', () => {
     expect(schemas.result).toEqual([{ id: 'schema-1', name: 'prod schema', slug: 'prod-schema' }]);
   });
 
-  it('does not authorize proxy host creation from a node-scoped proxy:create grant', async () => {
+  it('authorizes proxy host creation from a node-scoped proxy:create grant', async () => {
     const auditService = { log: vi.fn().mockResolvedValue(undefined) };
     const proxyService = {
       createProxyHost: vi.fn().mockResolvedValue({ id: 'proxy-1' }),
@@ -108,8 +108,12 @@ describe('AIService MCP delegated scope audit behavior', () => {
       { source: 'mcp', scopes: ['proxy:create:node-1'], tokenId: 'token-1', tokenPrefix: 'gwo_abc1234' }
     );
 
-    expect(result.error).toContain('PERMISSION_DENIED');
-    expect(proxyService.createProxyHost).not.toHaveBeenCalled();
+    expect(result.error).toBeUndefined();
+    expect(result.result).toMatchObject({ id: 'proxy-1' });
+    expect(proxyService.createProxyHost).toHaveBeenCalledWith(
+      expect.objectContaining({ nodeId: 'node-1', domainNames: ['example.com'] }),
+      USER.id
+    );
   });
 
   it('binds resource-scoped intermediate CA creation to the parent CA id', async () => {

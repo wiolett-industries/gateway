@@ -13,6 +13,7 @@ Gateway AI starts conversations with a small base tool surface. Domain-specific 
 - find_resource: globally search readable resources by name, ID, domain, image, etc.
 - internal_documentation: read workflow and argument docs before complex operations.
 - ask_question: ask concise clarifying questions.
+- fetch: read a direct HTTP/HTTPS URL through Gateway when sandbox runner is enabled and the user has sandbox access.
 - web_search: available only when enabled by settings.
 
 ## Tool Discovery
@@ -29,6 +30,7 @@ Use find_resource with an empty query and a concrete type when the user asks to 
 - Use get_current_context when the user refers to the page or resource they are currently viewing.
 - Use wait for short pending states such as container startup, image pull completion, DNS/SSL validation, deployments, daemon reloads, or log ingestion. After wait, call the relevant read/status tool again; do not finish the conversation just because the operation is not complete yet.
 - Prefer find_resource before broad list sweeps.
+- For a direct URL, use fetch. Use web_search only when you need search results rather than the exact URL content.
 - Do not list every node and then inspect every node for Docker resources unless find_resource failed, the user explicitly asked for per-node enumeration, or you need a complete inventory.
 - If the result includes nodeId, pass that nodeId to Docker tools.
 - If exactly one result is valid/applicable for the operation, use it without asking. For Docker image/container operations, ignore non-Docker nodes as choices.
@@ -390,6 +392,13 @@ The setup script:
 ### Step 3: Verify connection
 The node status changes from **pending** to **online** in the Nodes list once the daemon connects. The enrollment token is invalidated after first use.
 
+## Assistant Tools
+- list_nodes: list daemon nodes visible to the current user.
+- get_node: inspect one node.
+- create_node, rename_node, delete_node: manage node records.
+- manage_node_config: read/update/test nginx node config. Use { operation: "read"|"update"|"test", nodeId, content? }. read requires nodes:config:view:<nodeId>; update/test require nodes:config:edit:<nodeId>. This tool is browser-session-only and is not available to MCP tokens.
+- manage_node_file: manage node filesystem paths. This tool is browser-session-only and is not available to MCP tokens.
+
 ### Alternative: Manual installation
 If you cannot use the setup script, you can install manually:
 1. Download the daemon binary and place it at \`/usr/local/bin/<type>-daemon\`
@@ -741,6 +750,8 @@ Sandbox containers have no direct network access. Use Gateway-mediated helpers:
 - read_artifact: read a file from the sandbox in chunks, capped per read.
 - send_artifact: save a sandbox file as a Gateway-managed downloadable artifact for the user.
 
+When send_artifact succeeds, do not print the download URL in a markdown table or manual link. The chat UI automatically attaches the file card from the tool result; respond with a short confirmation such as "Attached the file."
+
 Resource tiers are low, medium, and high. TTL is capped by tier. The agent may request ttlSeconds but cannot exceed the tier cap.`,
 
   conversations: `# AI Conversations and Lite Mode
@@ -757,6 +768,8 @@ AI conversations are stored on the backend. Tool discovery is conversation-scope
   - { operation: "delete", conversationId }
   - { operation: "delete_by_title", title }
 - manage_ai_conversation never creates, rewrites, or repairs conversation history. Use the chat UI/runtime for saving active messages.
+- end_conversation closes the current chat with a localized reason. Use it only when the conversation should stop, especially after the third unrelated/off-topic request in the same conversation.
+- If context is exhausted, the UI can block the composer and offer to clear the oldest saved context. Do not keep retrying the same oversized request.
 
 ## Lite Mode
 Lite mode is an AI-first desktop layout. The assistant becomes the main screen, the sidebar shows recent and pinned conversations, and Settings/Administration/top-level pages keep a back button to return to chat.
@@ -775,12 +788,12 @@ Gateway can publish status-page data from monitored services and incidents. Use 
 - incident_updates: { resource: "incident_updates", operation: "create_update", incidentId, payload }
 - preview: { resource: "preview", operation: "preview" }
 
-Scopes: status-page:view for reads/preview, status-page:manage for settings/services, and status-page:incidents:* for incident mutations.`,
+Scopes: status-page:view for reads/preview, status-page:manage for settings/services, and status-page:incidents:create, status-page:incidents:update, status-page:incidents:resolve, or status-page:incidents:delete for incident mutations.`,
 
   api: `# Gateway REST API
 
 Gateway provides REST access for external scripts, CI/CD pipelines, CLI tools, and integrations without a browser session.
-Programmatic REST clients can use either Gateway API tokens (\`gw_\`) or OAuth Authorization Code + PKCE access tokens (\`gwo_\`). AI assistant access, AI configuration, MCP user access, auth administration, raw nginx config, gateway settings, node raw config, node filesystem access, \`proxy:raw:bypass\`, and \`proxy:advanced:bypass\` cannot be delegated to API/OAuth tokens. MCP clients use OAuth access tokens for the MCP resource with ordinary delegated API scopes; the owning user account must have \`mcp:use\`. The node file-management assistant tool is intentionally AI-session-only and is not exposed through MCP.
+Programmatic REST clients can use either Gateway API tokens (\`gw_\`) or OAuth Authorization Code + PKCE access tokens (\`gwo_\`). AI assistant access, AI configuration, MCP user access, auth administration, raw nginx config, gateway settings, node raw config, node filesystem access, \`proxy:raw:bypass\`, and \`proxy:advanced:bypass\` cannot be delegated to API/OAuth tokens. MCP clients use OAuth access tokens for the MCP resource with ordinary delegated API scopes; the owning user account must have \`mcp:use\`. Node config and node file-management assistant tools are intentionally AI-session-only and are not exposed through MCP.
 
 ## Current-User OAuth Authorizations
 The assistant can manage existing OAuth authorizations for the current browser user with manage_oauth_authorization:
@@ -789,6 +802,15 @@ The assistant can manage existing OAuth authorizations for the current browser u
 - { operation: "revoke", clientId, resource }
 
 Pending OAuth consent remains browser-only. Do not try to approve a new OAuth client through tools.
+
+## Current-User Gateway API Tokens
+The assistant can manage the current browser user's Gateway API tokens with manage_api_token:
+- { operation: "list" }
+- { operation: "create", name, scopes }
+- { operation: "update", tokenId, name?, scopes? }
+- { operation: "revoke", tokenId }
+
+Token scopes must be a subset of the current user's scopes. Token secrets are returned only by create and cannot be read later. manage_api_token is browser-session-only and is not exposed through MCP.
 
 ## Creating an API Token
 1. Go to **Settings** page → **API Tokens** section
@@ -899,21 +921,22 @@ AI assistant settings control the provider, request limits, tool exposure, web s
 - get_sandbox_runtime_status: read sandbox runner enablement and runtime health.
 
 ## Provider Settings
-- baseUrl: OpenAI-compatible API base URL.
-- endpoint: chat or responses.
+- providerUrl: OpenAI-compatible API base URL.
+- endpointMode: auto, chat_completions, or responses.
 - model: provider model name.
 - apiKey: only set this when replacing the stored provider key. The current secret is never returned in full.
 
 ## Limits
-- requestsPerWindow and requestWindowSeconds: rate limit for assistant requests.
+- rateLimitMax and rateLimitWindowSeconds: rate limit for assistant requests.
 - maxToolRounds: maximum sequential tool-call rounds in one assistant run.
-- contextTokens: context budget used by the conversation builder.
-- maxTokens and tokenField: response token cap and provider field name.
+- maxContextTokens: context budget used by the conversation builder.
+- maxCompletionTokens and maxTokensField: response token cap and provider field name.
+- reasoningEffort: low, medium, high, or none. Use none for models/providers that do not support reasoning controls.
 
 ## Tool Access
 - disabledTools: exact tool names hidden from the assistant.
-- webSearchEnabled: whether web_search can be exposed as a base tool.
-- webSearchProvider and webSearchApiKey: provider selection and secret replacement for web search.
+- webSearchProvider, webSearchBaseUrl, and webSearchApiKey: provider selection, optional provider URL, and secret replacement for web search.
+- sandboxEnabled and sandboxDefaultTier: sandbox runner exposure and default tier.
 
 ## Sandbox Runner
 - sandboxEnabled: expose sandbox execution and artifact tools to the assistant.

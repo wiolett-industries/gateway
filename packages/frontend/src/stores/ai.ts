@@ -20,6 +20,7 @@ import { useSSLStore } from "@/stores/ssl";
 import { useUIStore } from "@/stores/ui";
 import type {
   AIConfig,
+  AIConversationStatus,
   AIMessage,
   AIToolCall,
   ChatMessage,
@@ -348,6 +349,10 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
 function compactToolResultForModel(toolName: string, value: unknown): unknown {
   if (value == null) return value;
   if (toolName === "get_docker_container_logs")
@@ -438,7 +443,11 @@ interface AIState {
   // Actions
   connect: () => Promise<boolean>;
   disconnect: () => void;
-  sendMessage: (content: string, context?: PageContext) => void;
+  sendMessage: (
+    content: string,
+    context?: PageContext,
+    attachments?: AIMessage["attachments"]
+  ) => void;
   approveTool: (toolCallId: string) => void;
   rejectTool: (toolCallId: string) => void;
   answerQuestion: (toolCallId: string, answer: string) => void;
@@ -447,6 +456,8 @@ interface AIState {
   fetchRecentConversations: () => Promise<void>;
   loadConversation: (conversationId: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
+  clearOldestConversationContext: () => void;
+  rollbackToMessage: (messageId: string) => AIMessage | null;
   setEnabled: (enabled: boolean) => void;
   handleSlashCommand: (input: string) => Promise<boolean>;
   setMessages: (messages: AIMessage[]) => void;
@@ -467,6 +478,38 @@ function userMessagesAfterLastCompact(messages: AIMessage[]): number {
     -1
   );
   return messages.slice(lastCompactIndex + 1).filter((message) => message.role === "user").length;
+}
+
+export interface AIConversationBlock {
+  status: Exclude<AIConversationStatus, "active">;
+  reason: string;
+}
+
+export function getConversationBlock(messages: AIMessage[]): AIConversationBlock | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.conversationStatus) {
+      return {
+        status: message.conversationStatus,
+        reason: message.blockReason || "This conversation cannot continue.",
+      };
+    }
+  }
+  return null;
+}
+
+function createConversationStatusMarker(
+  status: Exclude<AIConversationStatus, "active">,
+  reason: string
+): AIMessage {
+  return {
+    id: generateId(),
+    role: "assistant",
+    content: "",
+    createdAt: nowIso(),
+    conversationStatus: status,
+    blockReason: reason,
+  };
 }
 
 async function ensureActiveConversation(
@@ -502,7 +545,6 @@ async function persistActiveConversationSnapshot(): Promise<void> {
   if (!conversationId) return;
 
   const messages = state.messages.filter((message) => !message.localOnly);
-  if (messages.length === 0) return;
 
   try {
     const saved = await compactConversation(conversationId, messages, state.lastContext);
@@ -521,9 +563,9 @@ async function persistActiveConversationSnapshot(): Promise<void> {
 function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
   const result: ChatMessage[] = [];
   for (const msg of messages) {
-    if (msg.localOnly) continue;
+    if (msg.localOnly || msg.conversationStatus) continue;
     if (msg.role === "user") {
-      result.push({ role: "user", content: msg.content });
+      result.push({ role: "user", content: msg.content, attachments: msg.attachments });
     } else if (msg.role === "assistant") {
       const chatMsg: ChatMessage = { role: "assistant", content: msg.content || null };
 
@@ -667,19 +709,27 @@ export const useAIStore = create<AIState>()((set, get) => ({
     set({ isConnected: false, isConnecting: false, connectionError: null, isStreaming: false });
   },
 
-  sendMessage: (content: string, context?: PageContext) => {
+  sendMessage: (
+    content: string,
+    context?: PageContext,
+    attachments: AIMessage["attachments"] = []
+  ) => {
     const { messages } = get();
+    if (getConversationBlock(messages)) return;
 
     const userMsg: AIMessage = {
       id: generateId(),
       role: "user",
       content,
+      attachments,
+      createdAt: nowIso(),
     };
 
     const assistantMsg: AIMessage = {
       id: generateId(),
       role: "assistant",
       content: "",
+      createdAt: nowIso(),
       isStreaming: true,
     };
 
@@ -819,6 +869,28 @@ export const useAIStore = create<AIState>()((set, get) => ({
     void get().fetchRecentConversations();
   },
 
+  clearOldestConversationContext: () => {
+    const state = get();
+    const persistedMessages = state.messages.filter(
+      (message) => !message.localOnly && !message.conversationStatus
+    );
+    if (persistedMessages.length === 0) {
+      set({ messages: [], savedName: null, activeConversationId: null, lastContext: null });
+      return;
+    }
+    const dropCount = Math.max(1, Math.floor(persistedMessages.length * 0.4));
+    const compactMarker: AIMessage = {
+      id: generateId(),
+      role: "assistant",
+      content: "Oldest context was cleared. You can continue this chat.",
+      createdAt: nowIso(),
+      localOnly: true,
+      compactMarker: true,
+    };
+    set({ messages: [...persistedMessages.slice(dropCount), compactMarker] });
+    void persistActiveConversationSnapshot();
+  },
+
   fetchRecentConversations: async () => {
     if (!useAuthStore.getState().user) return;
     set({ isLoadingRecentConversations: true });
@@ -844,6 +916,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         id: generateId(),
         role: "assistant",
         content: "Failed to load conversation.",
+        createdAt: nowIso(),
         localOnly: true,
       };
       set((state) => ({ messages: [...state.messages, localMsg] }));
@@ -867,6 +940,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         id: generateId(),
         role: "assistant",
         content: "Failed to delete conversation.",
+        createdAt: nowIso(),
         localOnly: true,
       };
       set((state) => ({ messages: [...state.messages, localMsg] }));
@@ -879,6 +953,26 @@ export const useAIStore = create<AIState>()((set, get) => ({
 
   setMessages: (messages: AIMessage[]) => {
     set({ messages });
+  },
+
+  rollbackToMessage: (messageId: string) => {
+    const state = get();
+    const index = state.messages.findIndex((message) => message.id === messageId);
+    const message = index >= 0 ? state.messages[index] : null;
+    if (!message || message.role !== "user") return null;
+
+    if (currentRequestId) {
+      wsClient?.send({ type: "cancel", requestId: currentRequestId });
+      currentRequestId = null;
+    }
+
+    set({
+      messages: state.messages.slice(0, index),
+      isStreaming: false,
+      pendingApprovalToolCallId: null,
+    });
+    void persistActiveConversationSnapshot();
+    return message;
   },
 
   handleSlashCommand: async (input: string): Promise<boolean> => {
@@ -902,6 +996,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         id: generateId(),
         role: "assistant",
         content: `**Context Usage**\n- Messages: ${usage.messageCount}\n- Estimated tokens: ${usage.estimatedTokens.toLocaleString()} / ${usage.limit.toLocaleString()} (${usage.percent}%)\n- Chat: ~${usage.chatTokens.toLocaleString()} tokens\n- System overhead: ~${usage.overheadTokens.toLocaleString()} tokens\n- Reasoning: ${usage.reasoningEffort}${sourceNote}`,
+        createdAt: nowIso(),
         localOnly: true,
       };
       set((state) => ({ messages: [...state.messages, localMsg] }));
@@ -917,6 +1012,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
           id: generateId(),
           role: "assistant",
           content: "Nothing to compact yet.",
+          createdAt: nowIso(),
           localOnly: true,
         };
         set((current) => ({ messages: [...current.messages, localMsg] }));
@@ -938,6 +1034,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
           id: generateId(),
           role: "assistant",
           content: `Compacted **${conversation.title}**. Full tool outputs are kept for the latest 10 tool calls.`,
+          createdAt: nowIso(),
           localOnly: true,
           compactMarker: true,
         };
@@ -953,6 +1050,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
           id: generateId(),
           role: "assistant",
           content: "Failed to compact conversation.",
+          createdAt: nowIso(),
           localOnly: true,
         };
         set((current) => ({ messages: [...current.messages, localMsg] }));
@@ -996,9 +1094,7 @@ function handleWSMessage(
   switch (msg.type) {
     case "text_delta":
       set((state) => ({
-        messages: state.messages.map((m) =>
-          m.isStreaming && m.role === "assistant" ? { ...m, content: m.content + msg.content } : m
-        ),
+        messages: appendTextDeltaToStreamingAssistant(state.messages, msg.content),
       }));
       break;
 
@@ -1010,11 +1106,7 @@ function handleWSMessage(
         status: "running",
       };
       set((state) => ({
-        messages: state.messages.map((m) =>
-          m.isStreaming && m.role === "assistant"
-            ? { ...m, toolCalls: [...(m.toolCalls || []), toolCall] }
-            : m
-        ),
+        messages: appendToolCallToStreamingAssistant(state.messages, toolCall),
       }));
       break;
     }
@@ -1074,6 +1166,21 @@ function handleWSMessage(
       }
       break;
 
+    case "conversation_ended":
+      set((state) => ({
+        messages: [...state.messages, createConversationStatusMarker("ended", msg.reason)],
+      }));
+      break;
+
+    case "context_blocked":
+      set((state) => ({
+        messages: [
+          ...state.messages,
+          createConversationStatusMarker("context_blocked", msg.reason),
+        ],
+      }));
+      break;
+
     case "done": {
       set((state) => ({
         isStreaming: false,
@@ -1109,6 +1216,77 @@ function handleWSMessage(
       }, 1000);
       break;
   }
+}
+
+function appendTextDeltaToStreamingAssistant(messages: AIMessage[], content: string): AIMessage[] {
+  const lastStreamingIndex = findLastStreamingAssistantIndex(messages);
+  if (lastStreamingIndex === -1) {
+    return [
+      ...messages,
+      {
+        id: generateId(),
+        role: "assistant",
+        content,
+        createdAt: nowIso(),
+        isStreaming: true,
+      },
+    ];
+  }
+
+  return messages.map((message, index) =>
+    index === lastStreamingIndex ? { ...message, content: message.content + content } : message
+  );
+}
+
+function appendToolCallToStreamingAssistant(
+  messages: AIMessage[],
+  toolCall: AIToolCall
+): AIMessage[] {
+  const lastStreamingIndex = findLastStreamingAssistantIndex(messages);
+  if (lastStreamingIndex === -1) {
+    return [
+      ...messages,
+      {
+        id: generateId(),
+        role: "assistant",
+        content: "",
+        createdAt: nowIso(),
+        isStreaming: true,
+        toolCalls: [toolCall],
+      },
+    ];
+  }
+
+  const current = messages[lastStreamingIndex];
+  if (current.content.length > 0) {
+    return [
+      ...messages.slice(0, lastStreamingIndex),
+      { ...current, isStreaming: false },
+      ...messages.slice(lastStreamingIndex + 1),
+      {
+        id: generateId(),
+        role: "assistant",
+        content: "",
+        createdAt: nowIso(),
+        isStreaming: true,
+        toolCalls: [toolCall],
+      },
+    ];
+  }
+
+  return messages.map((message, index) =>
+    index === lastStreamingIndex
+      ? { ...message, toolCalls: [...(message.toolCalls || []), toolCall] }
+      : message
+  );
+}
+
+function findLastStreamingAssistantIndex(messages: AIMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === "assistant" && message.isStreaming) return index;
+  }
+  return -1;
 }
 
 // Auto-manage WS lifecycle based on visible AI surfaces.

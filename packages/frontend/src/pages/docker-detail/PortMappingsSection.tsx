@@ -64,7 +64,7 @@ export function PortMappingsSection({
       {ports.length > 0 ? (
         <>
           <div
-            className={`grid ${gridColumns} border-b border-border bg-muted/60 text-xs font-medium text-muted-foreground uppercase tracking-wider dark:bg-muted`}
+            className={`grid ${gridColumns} border-b border-border bg-muted text-xs font-medium text-muted-foreground uppercase tracking-wider`}
           >
             <div className="px-3 py-2">Host Port</div>
             <div className="px-3 py-2 border-l border-border">Container Port</div>

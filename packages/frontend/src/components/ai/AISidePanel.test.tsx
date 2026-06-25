@@ -185,6 +185,8 @@ describe("AISidePanel autoscroll", () => {
             title: "Recent chat",
             updatedAt: new Date().toISOString(),
             messageCount: 3,
+            status: "active",
+            blockReason: null,
           },
         ],
         isLoadingRecentConversations: false,

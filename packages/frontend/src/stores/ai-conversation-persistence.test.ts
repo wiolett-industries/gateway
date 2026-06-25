@@ -110,6 +110,83 @@ describe("AI conversation persistence", () => {
     expect(listConversations).toHaveBeenCalled();
   });
 
+  it("keeps multi-step assistant text and tool calls in streaming order", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User One",
+        groupName: "admin",
+        scopes: ["feat:ai:use"],
+        isBlocked: false,
+      } as any,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    const connectPromise = useAIStore.getState().connect();
+    const socket = MockWebSocket.instances[0];
+    socket.emit({ type: "auth_ok" });
+    await connectPromise;
+
+    useAIStore.getState().sendMessage("do a multi-step task");
+    await vi.waitFor(() => expect(saveConversation).toHaveBeenCalled());
+
+    socket.emit({ type: "text_delta", requestId: "request-1", content: "first text" });
+    socket.emit({
+      type: "tool_call_start",
+      requestId: "request-1",
+      id: "tool-1",
+      name: "find_resource",
+      arguments: { query: "redis" },
+    });
+    socket.emit({
+      type: "tool_result",
+      requestId: "request-1",
+      id: "tool-1",
+      name: "find_resource",
+      result: { ok: true },
+    });
+    socket.emit({ type: "text_delta", requestId: "request-1", content: "second text" });
+    socket.emit({
+      type: "tool_call_start",
+      requestId: "request-1",
+      id: "tool-2",
+      name: "read_process_output",
+      arguments: { processId: "process-1" },
+    });
+    socket.emit({
+      type: "tool_result",
+      requestId: "request-1",
+      id: "tool-2",
+      name: "read_process_output",
+      result: { output: "done" },
+    });
+    socket.emit({ type: "text_delta", requestId: "request-1", content: "final text" });
+
+    const assistantMessages = useAIStore
+      .getState()
+      .messages.filter((message) => message.role === "assistant");
+
+    expect(assistantMessages).toMatchObject([
+      {
+        content: "first text",
+        isStreaming: false,
+      },
+      {
+        content: "second text",
+        isStreaming: false,
+        toolCalls: [expect.objectContaining({ id: "tool-1", status: "completed" })],
+      },
+      {
+        content: "final text",
+        isStreaming: true,
+        toolCalls: [expect.objectContaining({ id: "tool-2", status: "completed" })],
+      },
+    ]);
+  });
+
   it("auto-approves Docker image pulls in bypass create/edit mode", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
     useAuthStore.setState({

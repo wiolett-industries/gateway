@@ -923,7 +923,7 @@ export class DockerManagementService {
     return createDockerVolume(this.volumeNetworkOperationContext(), nodeId, config, userId);
   }
 
-  async removeVolume(nodeId: string, name: string, force: boolean, userId: string) {
+  async removeVolume(nodeId: string, name: string, force: boolean, userId: string | null) {
     await this.validateDockerNode(nodeId);
     await removeDockerVolume(this.volumeNetworkOperationContext(), nodeId, name, force, userId);
   }

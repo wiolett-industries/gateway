@@ -127,7 +127,7 @@ export function DataTable<T>({
         >
           {/* Sticky header — sibling of the virtualized body, sharing the same grid template */}
           <div
-            className="sticky top-0 z-10 grid bg-muted/60 text-xs font-medium uppercase tracking-wider text-muted-foreground shadow-[inset_0_-1px_0_var(--color-border)] dark:bg-muted"
+            className="sticky top-0 z-10 grid bg-muted text-xs font-medium uppercase tracking-wider text-muted-foreground shadow-[inset_0_-1px_0_var(--color-border)]"
             style={{ gridTemplateColumns }}
           >
             {columns.map((col) => (

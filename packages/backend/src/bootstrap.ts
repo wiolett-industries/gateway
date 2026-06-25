@@ -449,8 +449,6 @@ export async function initializeContainer(): Promise<void> {
   // AI Settings
   const aiSettingsService = new AISettingsService(db, cryptoService);
   container.registerInstance(AISettingsService, aiSettingsService);
-  const aiConversationService = new AIConversationService(db);
-  container.registerInstance(AIConversationService, aiConversationService);
   const aiSandboxArtifactService = new AISandboxArtifactService(env);
   container.registerInstance(AISandboxArtifactService, aiSandboxArtifactService);
   const aiSandboxJobsService = new AISandboxJobsService(db);
@@ -459,6 +457,11 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(AISandboxRunnerService, aiSandboxRunnerService);
   const aiSandboxService = new AISandboxService(aiSandboxJobsService, aiSandboxRunnerService, aiSandboxArtifactService);
   container.registerInstance(AISandboxService, aiSandboxService);
+  const aiConversationService = new AIConversationService(db, {
+    artifacts: aiSandboxArtifactService,
+    sandbox: aiSandboxService,
+  });
+  container.registerInstance(AIConversationService, aiConversationService);
   aiSandboxService.startPolicyReconciliation();
   authService.setSandboxService(aiSandboxService);
 
@@ -556,6 +559,7 @@ export async function initializeContainer(): Promise<void> {
   // Housekeeping service
   const housekeepingService = new HousekeepingService(db, dockerService, nodeDispatch, env);
   housekeepingService.setSandboxArtifactService(aiSandboxArtifactService);
+  housekeepingService.setDockerManagementService(dockerManagementService);
   container.registerInstance(HousekeepingService, housekeepingService);
 
   // Group service (injectable — resolve from container)
@@ -608,7 +612,8 @@ export async function initializeContainer(): Promise<void> {
     notifWebhookService,
     notifDeliveryService,
     notifDispatcherService,
-    aiSandboxService
+    aiSandboxService,
+    aiSandboxArtifactService
   );
   container.registerInstance(AIService, aiService);
 

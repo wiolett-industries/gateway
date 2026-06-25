@@ -1,19 +1,36 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Expand, MessageSquare, Sparkles, Trash2, X } from "lucide-react";
+import { Expand, Lock, MessageSquare, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useAIStore } from "@/stores/ai";
+import { api } from "@/services/api";
+import { getConversationBlock, useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
-import type { PageContext } from "@/types/ai";
+import type {
+  AIComposerAttachment,
+  AIComposerLocalImageAttachment,
+  AIConfig,
+  AIMessageAttachment,
+  PageContext,
+} from "@/types/ai";
 import { type AIApprovalMode, AIComposer } from "./AIComposer";
+import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
 import { AIMessage } from "./AIMessage";
 import { QuestionBlock } from "./AIToolCallBlock";
 import { confirmAILiteMode } from "./confirm-lite-mode";
 import { QuickActionChips } from "./QuickActionChips";
+import {
+  composerAttachmentToFile,
+  filesToComposerAttachments,
+  getComposerAttachmentId,
+  getComposerAttachmentPreviewUrl,
+  useAIComposerAttachmentsDraft,
+  useAIComposerDraft,
+} from "./useAIComposerDraft";
 
 function autoResizeTextarea(el: HTMLTextAreaElement, maxRows = 6) {
   const style = getComputedStyle(el);
@@ -29,6 +46,29 @@ function autoResizeTextarea(el: HTMLTextAreaElement, maxRows = 6) {
   const targetHeight = Math.max(minHeight, Math.min(el.scrollHeight, maxHeight));
   el.style.overflow = el.scrollHeight > maxHeight ? "auto" : "hidden";
   el.style.height = `${targetHeight}px`;
+}
+
+async function uploadComposerAttachments(
+  attachments: AIComposerAttachment[],
+  conversationId: string | null
+): Promise<AIMessageAttachment[]> {
+  const uploaded: AIMessageAttachment[] = [];
+  for (const attachment of attachments) {
+    if ("artifactId" in attachment) {
+      uploaded.push(attachment);
+      continue;
+    }
+    uploaded.push(await uploadLocalComposerAttachment(attachment, conversationId));
+  }
+  return uploaded;
+}
+
+async function uploadLocalComposerAttachment(
+  attachment: AIComposerLocalImageAttachment,
+  conversationId: string | null
+): Promise<AIMessageAttachment> {
+  const file = await composerAttachmentToFile(attachment);
+  return api.uploadAIChatArtifact(file, conversationId);
 }
 
 const PANEL_WIDTH_KEY = "gateway-ai-panel-width";
@@ -125,11 +165,15 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     recentConversations,
     isLoadingRecentConversations,
     retryAfter,
+    activeConversationId,
     sendMessage,
     approveTool,
     rejectTool,
     answerQuestion,
     stopStreaming,
+    clearMessages,
+    clearOldestConversationContext,
+    rollbackToMessage,
     handleSlashCommand,
     fetchRecentConversations,
     loadConversation,
@@ -137,7 +181,10 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     connect,
   } = useAIStore();
 
-  const [input, setInput] = useState("");
+  const [input, setInput] = useAIComposerDraft(activeConversationId);
+  const [attachments, setAttachments] = useAIComposerAttachmentsDraft(activeConversationId);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [canAttachImages, setCanAttachImages] = useState(false);
   const [slashResults, setSlashResults] = useState<typeof SLASH_COMMANDS>([]);
   const [slashIndex, setSlashIndex] = useState(0);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
@@ -173,6 +220,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
         : approvalMode === "bypass-non-destructive"
           ? "AI mode: bypass non-destructive"
           : "AI mode: normal";
+  const conversationBlock = getConversationBlock(messages);
 
   const setApprovalMode = useCallback(
     async (mode: AIApprovalMode) => {
@@ -201,6 +249,24 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     if (!active) return;
     void connect();
   }, [active, connect]);
+
+  useEffect(() => {
+    if (!active) return;
+    const cached = api.getCached<AIConfig>("settings:ai-config");
+    if (cached) setCanAttachImages(Boolean(cached.supportsImages));
+    let cancelled = false;
+    void api
+      .getAIConfig()
+      .then((config) => {
+        if (!cancelled) setCanAttachImages(Boolean((config as unknown as AIConfig).supportsImages));
+      })
+      .catch(() => {
+        if (!cancelled) setCanAttachImages(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
 
   const updateStickToBottom = useCallback(() => {
     const node = scrollViewportRef.current;
@@ -241,29 +307,84 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     return () => clearTimeout(timer);
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: input changes must re-measure restored composer drafts.
+  useLayoutEffect(() => {
+    if (textareaRef.current) autoResizeTextarea(textareaRef.current);
+  }, [input]);
+
+  const previewAttachment = useCallback((attachment: AIComposerAttachment) => {
+    if ("artifactId" in attachment) {
+      const params = new URLSearchParams({ filename: attachment.filename });
+      params.set("mediaType", attachment.mediaType);
+      window.open(
+        `/ai/artifact/${encodeURIComponent(attachment.artifactId)}?${params.toString()}`,
+        `artifact-${attachment.artifactId}`,
+        "width=900,height=600,menubar=no,toolbar=no"
+      );
+      return;
+    }
+    window.open(getComposerAttachmentPreviewUrl(attachment), "_blank", "noopener,noreferrer");
+  }, []);
+
+  const handleAttachFiles = useCallback(
+    async (files: File[]) => {
+      if (!canAttachImages || files.length === 0) return;
+      try {
+        const nextAttachments = await filesToComposerAttachments(files);
+        setAttachments([...attachments, ...nextAttachments]);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to attach image");
+      }
+    },
+    [attachments, canAttachImages, setAttachments]
+  );
+
   useEffect(() => {
     if (messages.length === 0) void fetchRecentConversations();
   }, [fetchRecentConversations, messages.length]);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text && attachments.length === 0) return;
     if (isStreaming) return;
 
-    if (text.startsWith("/")) {
+    if (attachments.length === 0 && text.startsWith("/")) {
       const handled = await handleSlashCommand(text);
       if (handled) {
         setInput("");
+        setAttachments([]);
         setSlashResults([]);
         return;
       }
     }
 
-    setInput("");
-    setSlashResults([]);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-    sendMessage(text, context);
-  }, [input, context, isStreaming, sendMessage, handleSlashCommand]);
+    setUploadingAttachments(true);
+    try {
+      const uploadedAttachments = await uploadComposerAttachments(
+        attachments,
+        activeConversationId
+      );
+      setInput("");
+      setAttachments([]);
+      setSlashResults([]);
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      sendMessage(text, context, uploadedAttachments);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to attach image");
+    } finally {
+      setUploadingAttachments(false);
+    }
+  }, [
+    activeConversationId,
+    attachments,
+    context,
+    handleSlashCommand,
+    input,
+    isStreaming,
+    sendMessage,
+    setAttachments,
+    setInput,
+  ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Slash command navigation
@@ -318,6 +439,23 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
       setSlashResults([]);
     }
   };
+
+  const handleEditUserMessage = useCallback(
+    (messageId: string, content: string, nextAttachments: AIMessageAttachment[]) => {
+      const message = rollbackToMessage(messageId);
+      if (!message) return;
+      setInput(content);
+      setAttachments(nextAttachments);
+      setSlashResults([]);
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        autoResizeTextarea(textarea);
+      });
+    },
+    [rollbackToMessage, setAttachments, setInput]
+  );
 
   // Find next unanswered question and count progress
   const { activeQuestion, questionIndex, questionsTotal } = (() => {
@@ -396,7 +534,11 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
                       className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
                       onClick={() => void loadConversation(conversation.id)}
                     >
-                      <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      {conversation.status === "active" ? (
+                        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs text-foreground">
                           {conversation.title}
@@ -439,6 +581,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
                 onApprove={approveTool}
                 onReject={rejectTool}
                 onAnswer={answerQuestion}
+                onEditUserMessage={handleEditUserMessage}
               />
             ))}
             <div className="pb-4" />
@@ -470,6 +613,12 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
           )}
           <QuestionBlock toolCall={activeQuestion} onAnswer={answerQuestion} />
         </div>
+      ) : conversationBlock ? (
+        <AIConversationBlockedBlock
+          block={conversationBlock}
+          onNewChat={clearMessages}
+          onClearOldContext={clearOldestConversationContext}
+        />
       ) : (
         <div className="relative shrink-0">
           <AIComposer
@@ -482,6 +631,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
             onSlashCommandSelect={(command) => {
               void handleSlashCommand(`/${command.name}`);
               setInput("");
+              setAttachments([]);
               setSlashResults([]);
             }}
             slashResults={slashResults}
@@ -493,6 +643,18 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
             approvalMode={approvalMode}
             approvalModeLabel={approvalModeLabel}
             setApprovalMode={setApprovalMode}
+            attachments={attachments}
+            canAttachImages={canAttachImages}
+            uploadingAttachments={uploadingAttachments}
+            onAttachFiles={handleAttachFiles}
+            onRemoveAttachment={(artifactId) =>
+              setAttachments(
+                attachments.filter(
+                  (attachment) => getComposerAttachmentId(attachment) !== artifactId
+                )
+              )
+            }
+            onPreviewAttachment={previewAttachment}
             surfaceClassName="border-x-0 border-b-0 focus-within:ring-0"
           />
         </div>

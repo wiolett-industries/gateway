@@ -355,7 +355,7 @@ export function AccessLists() {
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold">IP Rules</h3>
                 <div className="overflow-hidden border border-border">
-                  <div className="grid grid-cols-[9rem_minmax(0,1fr)_2.25rem] border-b border-border bg-muted/60 text-xs font-medium uppercase tracking-wider text-muted-foreground dark:bg-muted">
+                  <div className="grid grid-cols-[9rem_minmax(0,1fr)_2.25rem] border-b border-border bg-muted text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     <div className="px-3 py-2">Type</div>
                     <div className="border-l border-border px-3 py-2">Address / CIDR</div>
                     <div />
@@ -430,7 +430,7 @@ export function AccessLists() {
                 {basicAuthEnabled && (
                   <div className="space-y-3">
                     <div className="overflow-hidden border border-border">
-                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] border-b border-border bg-muted/60 text-xs font-medium uppercase tracking-wider text-muted-foreground dark:bg-muted">
+                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] border-b border-border bg-muted text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         <div className="px-3 py-2">Username</div>
                         <div className="border-l border-border px-3 py-2">Password</div>
                         <div />

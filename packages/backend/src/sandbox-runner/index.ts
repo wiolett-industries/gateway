@@ -44,10 +44,13 @@ const SEND_ARTIFACT_LIMIT_BYTES = 10 * 1024 * 1024;
 const CPU_PERIOD = 100_000;
 const RECONCILE_INTERVAL_MS = 30_000;
 const ARTIFACT_ROOT = '/workspace';
+const WORKSPACE_HOST_ROOT =
+  process.env.SANDBOX_RUNNER_WORKSPACE_DIR || path.join(os.tmpdir(), 'gateway-sandbox-workspaces');
 
 const docker = new DockerService(DOCKER_SOCKET, '');
 const runningTimeouts = new Map<string, NodeJS.Timeout>();
 const imageEnsurePromises = new Map<string, Promise<string>>();
+const workspaceDirs = new Map<string, string>();
 
 interface RuntimeImageSpec {
   upstreamImage: string;
@@ -126,10 +129,6 @@ function truncateOutput(output: string): string {
   return `${buffer.subarray(0, OUTPUT_LIMIT_BYTES).toString('utf-8')}\n[output truncated at ${OUTPUT_LIMIT_BYTES} bytes]`;
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
 function sanitizeArtifactFilename(value: string): string {
   const cleaned = value.replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '');
   return cleaned || 'artifact.bin';
@@ -193,40 +192,11 @@ function formatFetchedContent(
   };
 }
 
-function writeOctal(header: Buffer, value: number, offset: number, length: number): void {
-  const text = value
-    .toString(8)
-    .padStart(length - 1, '0')
-    .slice(-(length - 1));
-  header.write(`${text}\0`, offset, length, 'ascii');
-}
-
-function createSingleFileTar(filename: string, content: Buffer): Buffer {
-  const name = filename.replace(/^\/+/, '');
-  if (!name || name.includes('/') || name === '.' || name === '..') {
-    throw new Error('tar filename must be a single file basename');
-  }
-  const header = Buffer.alloc(512, 0);
-  header.write(name, 0, Math.min(Buffer.byteLength(name), 100), 'utf-8');
-  writeOctal(header, 0o644, 100, 8);
-  writeOctal(header, 0, 108, 8);
-  writeOctal(header, 0, 116, 8);
-  writeOctal(header, content.byteLength, 124, 12);
-  writeOctal(header, Math.floor(Date.now() / 1000), 136, 12);
-  header.fill(0x20, 148, 156);
-  header[156] = '0'.charCodeAt(0);
-  header.write('ustar\0', 257, 6, 'ascii');
-  header.write('00', 263, 2, 'ascii');
-
-  let checksum = 0;
-  for (const byte of header) checksum += byte;
-  writeOctal(header, checksum, 148, 8);
-
-  const paddingLength = (512 - (content.byteLength % 512)) % 512;
-  return Buffer.concat([header, content, Buffer.alloc(paddingLength), Buffer.alloc(1024)]);
-}
-
-function sandboxLabels(policy: SandboxRunnerExecuteScriptParams['policy'], expiresAt: Date): Record<string, string> {
+function sandboxLabels(
+  policy: SandboxRunnerExecuteScriptParams['policy'],
+  expiresAt: Date,
+  workspaceDir: string
+): Record<string, string> {
   return {
     'gateway.sandbox': 'true',
     'gateway.sandbox.user_id': policy.userId,
@@ -236,46 +206,142 @@ function sandboxLabels(policy: SandboxRunnerExecuteScriptParams['policy'], expir
     'gateway.sandbox.tier': policy.tier,
     'gateway.sandbox.required_scopes': policy.requiredScopes.join(','),
     'gateway.sandbox.expires_at': expiresAt.toISOString(),
+    'gateway.sandbox.workspace_dir': workspaceDir,
   };
+}
+
+interface SandboxContainerConfig {
+  config: DockerCreateContainerConfig;
+  workspaceDir: string;
+}
+
+async function createWorkspaceDir(): Promise<string> {
+  await fs.mkdir(WORKSPACE_HOST_ROOT, { recursive: true, mode: 0o700 });
+  await fs.chmod(WORKSPACE_HOST_ROOT, 0o700).catch(() => {});
+  const workspaceDir = await fs.mkdtemp(path.join(WORKSPACE_HOST_ROOT, `${randomUUID()}-`));
+  try {
+    await fs.chown(workspaceDir, 65534, 65534);
+    await fs.chmod(workspaceDir, 0o700);
+  } catch {
+    // Docker Desktop and non-root dev setups may not allow chown. The parent
+    // directory remains private to the gateway process; this keeps the bind
+    // writable from the sandbox user in development.
+    await fs.chmod(workspaceDir, 0o777).catch(() => {});
+  }
+  return workspaceDir;
+}
+
+async function cleanupWorkspaceDir(workspaceDir: string | undefined): Promise<void> {
+  if (!workspaceDir) return;
+  const root = await fs.realpath(WORKSPACE_HOST_ROOT).catch(() => WORKSPACE_HOST_ROOT);
+  const target = await fs.realpath(workspaceDir).catch(() => workspaceDir);
+  if (target !== root && target.startsWith(`${root}${path.sep}`)) {
+    await fs.rm(target, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function allowSandboxDirectoryAccess(directoryPath: string): Promise<void> {
+  try {
+    await fs.chown(directoryPath, 65534, 65534);
+    await fs.chmod(directoryPath, 0o700);
+  } catch {
+    await fs.chmod(directoryPath, 0o777).catch(() => {});
+  }
+}
+
+async function allowSandboxFileAccess(filePath: string): Promise<void> {
+  try {
+    await fs.chown(filePath, 65534, 65534);
+    await fs.chmod(filePath, 0o600);
+  } catch {
+    await fs.chmod(filePath, 0o644).catch(() => {});
+  }
+}
+
+async function removeContainerAndWorkspace(containerId: string): Promise<void> {
+  let workspaceDir = workspaceDirs.get(containerId);
+  if (!workspaceDir) {
+    const inspect = (await docker.inspectContainer(containerId).catch(() => null)) as any;
+    const label = inspect?.Config?.Labels?.['gateway.sandbox.workspace_dir'];
+    workspaceDir = typeof label === 'string' ? label : undefined;
+  }
+  await docker.removeContainer(containerId).catch(() => {});
+  workspaceDirs.delete(containerId);
+  await cleanupWorkspaceDir(workspaceDir);
+}
+
+async function workspaceDirForProcess(processId: string): Promise<string> {
+  const mapped = workspaceDirs.get(processId);
+  if (mapped) return mapped;
+  const inspect = (await docker.inspectContainer(processId)) as any;
+  const workspaceDir = inspect?.Config?.Labels?.['gateway.sandbox.workspace_dir'];
+  if (typeof workspaceDir !== 'string' || !workspaceDir) {
+    throw new Error('sandbox workspace is not available for this process; restart the sandbox process');
+  }
+  workspaceDirs.set(processId, workspaceDir);
+  return workspaceDir;
+}
+
+async function resolveHostArtifactPath(workspaceDir: string, relativePath: string): Promise<string> {
+  const root = await fs.realpath(workspaceDir);
+  const hostPath = path.join(root, ...relativePath.split('/'));
+  const parentPath = path.dirname(hostPath);
+  await fs.mkdir(parentPath, { recursive: true });
+  const realParent = await fs.realpath(parentPath);
+  if (realParent !== root && !realParent.startsWith(`${root}${path.sep}`)) {
+    throw new Error('artifact path must stay inside /workspace');
+  }
+  await allowSandboxDirectoryAccess(realParent);
+
+  const existing = await fs.lstat(hostPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (existing?.isSymbolicLink()) {
+    throw new Error('artifact path must not be a symbolic link');
+  }
+  return hostPath;
 }
 
 async function containerConfig(
   policy: SandboxRunnerExecuteScriptParams['policy'],
   command: string[],
   options: { openStdin?: boolean } = {}
-): Promise<DockerCreateContainerConfig> {
+): Promise<SandboxContainerConfig> {
   const expiresAt = new Date(Date.now() + policy.ttlSeconds * 1000);
+  const workspaceDir = await createWorkspaceDir();
   return {
-    Image: await ensureRuntimeImage(policy.runtime),
-    Cmd: command,
-    Labels: sandboxLabels(policy, expiresAt),
-    User: '65534:65534',
-    WorkingDir: '/workspace',
-    AttachStdout: true,
-    AttachStderr: true,
-    AttachStdin: !!options.openStdin,
-    OpenStdin: !!options.openStdin,
-    StdinOnce: false,
-    Tty: false,
-    HostConfig: {
-      AutoRemove: false,
-      ReadonlyRootfs: true,
-      NetworkMode: 'none',
-      CapDrop: ['ALL'],
-      SecurityOpt: ['no-new-privileges'],
-      PidsLimit: policy.pidsLimit,
-      Memory: policy.memoryBytes,
-      MemorySwap: policy.memoryBytes,
-      CpuPeriod: CPU_PERIOD,
-      CpuQuota: policy.cpuQuota,
-      Tmpfs: {
-        '/workspace': `rw,nosuid,nodev,size=${policy.workspaceBytes},uid=65534,gid=65534,mode=700`,
-      },
-      LogConfig: {
-        Type: 'json-file',
-        Config: {
-          'max-size': '256k',
-          'max-file': '1',
+    workspaceDir,
+    config: {
+      Image: await ensureRuntimeImage(policy.runtime),
+      Cmd: command,
+      Labels: sandboxLabels(policy, expiresAt, workspaceDir),
+      User: '65534:65534',
+      WorkingDir: '/workspace',
+      AttachStdout: true,
+      AttachStderr: true,
+      AttachStdin: !!options.openStdin,
+      OpenStdin: !!options.openStdin,
+      StdinOnce: false,
+      Tty: false,
+      HostConfig: {
+        AutoRemove: false,
+        ReadonlyRootfs: true,
+        Binds: [`${workspaceDir}:/workspace:rw`],
+        NetworkMode: 'none',
+        CapDrop: ['ALL'],
+        SecurityOpt: ['no-new-privileges'],
+        PidsLimit: policy.pidsLimit,
+        Memory: policy.memoryBytes,
+        MemorySwap: policy.memoryBytes,
+        CpuPeriod: CPU_PERIOD,
+        CpuQuota: policy.cpuQuota,
+        LogConfig: {
+          Type: 'json-file',
+          Config: {
+            'max-size': '256k',
+            'max-file': '1',
+          },
         },
       },
     },
@@ -291,7 +357,7 @@ function scheduleKill(containerId: string, ttlSeconds: number): void {
         logger.warn('Failed to kill expired sandbox container', { containerId, error });
       })
       .finally(() => {
-        docker.removeContainer(containerId).catch(() => {});
+        removeContainerAndWorkspace(containerId).catch(() => {});
       });
   }, ttlSeconds * 1000);
   timeout.unref();
@@ -305,8 +371,18 @@ function clearKill(containerId: string): void {
 }
 
 async function executeScript(params: SandboxRunnerExecuteScriptParams): Promise<SandboxRunnerExecutionResult> {
-  const config = await containerConfig(params.policy, runtimeShell(params.policy.runtime, params.script));
-  const containerId = await docker.createContainer(config);
+  const { config, workspaceDir } = await containerConfig(
+    params.policy,
+    runtimeShell(params.policy.runtime, params.script)
+  );
+  let containerId = '';
+  try {
+    containerId = await docker.createContainer(config);
+    workspaceDirs.set(containerId, workspaceDir);
+  } catch (error) {
+    await cleanupWorkspaceDir(workspaceDir);
+    throw error;
+  }
   scheduleKill(containerId, params.policy.ttlSeconds);
 
   let timedOut = false;
@@ -330,14 +406,20 @@ async function executeScript(params: SandboxRunnerExecuteScriptParams): Promise<
     };
   } finally {
     clearKill(containerId);
-    await docker.removeContainer(containerId).catch(() => {});
+    await removeContainerAndWorkspace(containerId);
   }
 }
 
 async function runProcess(params: SandboxRunnerRunProcessParams): Promise<SandboxRunnerProcessResult> {
-  const containerId = await docker.createContainer(
-    await containerConfig(params.policy, params.command, { openStdin: true })
-  );
+  const { config, workspaceDir } = await containerConfig(params.policy, params.command, { openStdin: true });
+  let containerId = '';
+  try {
+    containerId = await docker.createContainer(config);
+    workspaceDirs.set(containerId, workspaceDir);
+  } catch (error) {
+    await cleanupWorkspaceDir(workspaceDir);
+    throw error;
+  }
   await docker.startContainer(containerId);
   scheduleKill(containerId, params.policy.ttlSeconds);
   return {
@@ -363,12 +445,10 @@ async function downloadArtifact(
   const fallbackFilename = fallbackFilenameFromUrl(url);
   const artifactPath = resolveArtifactPath(params.path, fallbackFilename);
   const { status, contentType, buffer } = await readResponseBodyCapped(url, DOWNLOAD_LIMIT_BYTES);
-  await docker.execInContainer(params.processId, ['sh', '-lc', `mkdir -p ${shellQuote(artifactPath.parentPath)}`]);
-  await docker.putContainerArchive(
-    params.processId,
-    artifactPath.parentPath,
-    createSingleFileTar(artifactPath.basename, buffer)
-  );
+  const workspaceDir = await workspaceDirForProcess(params.processId);
+  const hostPath = await resolveHostArtifactPath(workspaceDir, artifactPath.relativePath);
+  await fs.writeFile(hostPath, buffer, { mode: 0o600 });
+  await allowSandboxFileAccess(hostPath);
   return {
     processId: params.processId,
     url,
@@ -394,22 +474,24 @@ async function readArtifactBytes(
       ? Math.max(1, Math.floor(lengthInput))
       : Math.min(64 * 1024, maxBytes);
   const length = Math.min(requestedLength, maxBytes);
-  const script = [
-    'set -eu',
-    `file=${shellQuote(artifactPath.absolutePath)}`,
-    'test -f "$file"',
-    'size=$(wc -c < "$file" | tr -d " ")',
-    'printf "SIZE:%s\\n" "$size"',
-    `dd if="$file" bs=1 skip=${offset} count=${length} 2>/dev/null | base64`,
-  ].join('\n');
-  const result = await docker.execInContainer(processId, ['sh', '-lc', script]);
-  if (result.exitCode !== 0) throw new Error(`artifact read failed: ${result.output}`);
-  const separator = result.output.indexOf('\n');
-  if (separator === -1 || !result.output.startsWith('SIZE:'))
-    throw new Error('artifact read returned malformed output');
-  const totalBytes = Number(result.output.slice(5, separator).trim());
-  const encoded = result.output.slice(separator + 1).replace(/\s+/g, '');
-  const bytes = Buffer.from(encoded, 'base64');
+  const workspaceDir = await workspaceDirForProcess(processId);
+  const hostPath = await resolveHostArtifactPath(workspaceDir, artifactPath.relativePath);
+  const stat = await fs.stat(hostPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') throw new Error(`artifact read failed: ${artifactPath.relativePath} not found`);
+    throw error;
+  });
+  if (!stat.isFile()) throw new Error(`artifact read failed: ${artifactPath.relativePath} is not a file`);
+  const totalBytes = stat.size;
+  const bytesToRead = Math.max(0, Math.min(length, Math.max(0, totalBytes - offset)));
+  const file = await fs.open(hostPath, 'r');
+  let bytes = Buffer.alloc(0);
+  try {
+    const buffer = Buffer.alloc(bytesToRead);
+    const { bytesRead } = await file.read(buffer, 0, bytesToRead, offset);
+    bytes = buffer.subarray(0, bytesRead);
+  } finally {
+    await file.close();
+  }
   return {
     path: artifactPath.relativePath,
     totalBytes,
@@ -496,7 +578,7 @@ async function writeProcessStdin(params: SandboxRunnerWriteStdinParams): Promise
 async function killProcess(params: SandboxRunnerProcessParams): Promise<SandboxRunnerKillResult> {
   await docker.killContainer(params.processId);
   clearKill(params.processId);
-  await docker.removeContainer(params.processId).catch(() => {});
+  await removeContainerAndWorkspace(params.processId);
   return { processId: params.processId, killed: true };
 }
 
@@ -509,6 +591,7 @@ async function revokeUserSandboxAccess(params: SandboxRunnerRevokeUserParams): P
     const stillAllowed = required.every((scope) => params.currentScopes.includes(scope));
     if (stillAllowed) continue;
     await docker.killContainer(container.Id).catch(() => {});
+    await removeContainerAndWorkspace(container.Id);
     clearKill(container.Id);
     revoked += 1;
   }
@@ -529,7 +612,7 @@ async function reconcileSandboxContainers(): Promise<{ removed: number }> {
     }
 
     await docker.killContainer(container.Id).catch(() => {});
-    await docker.removeContainer(container.Id).catch(() => {});
+    await removeContainerAndWorkspace(container.Id);
     clearKill(container.Id);
     removed += 1;
   }

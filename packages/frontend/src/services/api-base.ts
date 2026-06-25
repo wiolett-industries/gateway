@@ -241,6 +241,9 @@ export class ApiClientBase {
     if (options.headers) {
       new Headers(options.headers).forEach((value, key) => headers.set(key, value));
     }
+    if (options.body instanceof FormData) {
+      headers.delete("Content-Type");
+    }
 
     if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
       headers.set("X-CSRF-Token", await this.getCsrfToken());

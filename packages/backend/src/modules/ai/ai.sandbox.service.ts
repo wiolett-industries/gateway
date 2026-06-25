@@ -256,6 +256,34 @@ export class AISandboxService {
     return result;
   }
 
+  async killConversationJobs(userId: string, conversationId: string) {
+    const jobs = await this.jobs.listActiveForConversation(userId, conversationId);
+    let killed = 0;
+
+    for (const job of jobs) {
+      if (job.containerId) {
+        await this.runner.killProcess({ processId: job.containerId }).catch((error) => {
+          logger.warn('Failed to kill sandbox job for deleted conversation', {
+            jobId: job.id,
+            conversationId,
+            containerId: job.containerId,
+            error,
+          });
+        });
+      }
+      await this.jobs.markFinished(job.id, 'killed').catch((error) => {
+        logger.warn('Failed to mark sandbox job killed for deleted conversation', {
+          jobId: job.id,
+          conversationId,
+          error,
+        });
+      });
+      killed += 1;
+    }
+
+    return { killed };
+  }
+
   async listJobs(user: User, input: { activeOnly?: boolean; status?: string; limit?: number } = {}) {
     const canManageAll = hasSandboxManageAccess(user.scopes);
     await this.expireDueJobs({ userId: user.id, canManageAll });

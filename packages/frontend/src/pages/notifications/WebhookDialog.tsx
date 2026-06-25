@@ -234,7 +234,7 @@ export function WebhookDialog({
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Custom Headers</label>
                   <div className="overflow-hidden border border-border">
-                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] border-b border-border bg-muted/60 text-xs font-medium uppercase tracking-wider text-muted-foreground dark:bg-muted">
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] border-b border-border bg-muted text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       <div className="px-3 py-2">Header</div>
                       <div className="border-l border-border px-3 py-2">Value</div>
                       <div />

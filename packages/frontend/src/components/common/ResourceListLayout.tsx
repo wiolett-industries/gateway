@@ -58,7 +58,7 @@ export function ResourceListHeaderTable<TItem = unknown>({
   return (
     <table className="w-full" style={{ tableLayout: "fixed" }}>
       <ResourceListColGroup columns={columns} />
-      <thead className="border-b border-border bg-muted/60 dark:bg-muted">
+      <thead className="border-b border-border bg-muted">
         <tr className="text-left">
           {columns.map((column) => (
             <th

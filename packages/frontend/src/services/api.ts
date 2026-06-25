@@ -39,6 +39,8 @@ import type {
 } from "@/types";
 import type {
   AIMessage,
+  AIMessageAttachment,
+  AISandboxArtifact,
   AISandboxJob,
   AISandboxOutput,
   AISandboxStatus,
@@ -771,7 +773,15 @@ class ApiClient extends withLoggingApi(
   }
 
   async listAIConversations(): Promise<
-    Array<{ id: string; title: string; createdAt: string; updatedAt: string; messageCount: number }>
+    Array<{
+      id: string;
+      title: string;
+      createdAt: string;
+      updatedAt: string;
+      messageCount: number;
+      status: "active" | "ended" | "context_blocked";
+      blockReason: string | null;
+    }>
   > {
     const res = await this.request<{
       data: Array<{
@@ -780,6 +790,8 @@ class ApiClient extends withLoggingApi(
         createdAt: string;
         updatedAt: string;
         messageCount: number;
+        status: "active" | "ended" | "context_blocked";
+        blockReason: string | null;
       }>;
     }>("/ai/conversations");
     return res.data;
@@ -791,6 +803,8 @@ class ApiClient extends withLoggingApi(
     createdAt: string;
     updatedAt: string;
     messageCount: number;
+    status: "active" | "ended" | "context_blocked";
+    blockReason: string | null;
     messages: AIMessage[];
     lastContext: PageContext | null;
     discoveredToolsets: string[];
@@ -803,6 +817,8 @@ class ApiClient extends withLoggingApi(
         createdAt: string;
         updatedAt: string;
         messageCount: number;
+        status: "active" | "ended" | "context_blocked";
+        blockReason: string | null;
         messages: AIMessage[];
         lastContext: PageContext | null;
         discoveredToolsets: string[];
@@ -818,6 +834,8 @@ class ApiClient extends withLoggingApi(
         id: string;
         title: string;
         updatedAt: string;
+        status: "active" | "ended" | "context_blocked";
+        blockReason: string | null;
         messages: AIMessage[];
         lastContext: PageContext | null;
       };
@@ -841,6 +859,8 @@ class ApiClient extends withLoggingApi(
         id: string;
         title: string;
         updatedAt: string;
+        status: "active" | "ended" | "context_blocked";
+        blockReason: string | null;
         messages: AIMessage[];
         lastContext: PageContext | null;
       };
@@ -894,6 +914,29 @@ class ApiClient extends withLoggingApi(
     const res = await this.request<{ data: AISandboxOutput }>(
       `/ai/sandbox/jobs/${id}/output?${params}`
     );
+    return res.data;
+  }
+
+  async listAISandboxArtifacts(): Promise<AISandboxArtifact[]> {
+    const res = await this.request<{ data: AISandboxArtifact[] }>("/ai/sandbox/artifacts");
+    return res.data;
+  }
+
+  async deleteAISandboxArtifact(id: string): Promise<void> {
+    await this.request(`/ai/sandbox/artifacts/${id}`, { method: "DELETE" });
+  }
+
+  async uploadAIChatArtifact(
+    file: File,
+    conversationId?: string | null
+  ): Promise<AIMessageAttachment> {
+    const body = new FormData();
+    body.append("file", file);
+    if (conversationId) body.append("conversationId", conversationId);
+    const res = await this.request<{ data: AIMessageAttachment }>("/ai/sandbox/artifacts", {
+      method: "POST",
+      body,
+    });
     return res.data;
   }
 

@@ -22,7 +22,7 @@ export function SettingsControlRow({
       </div>
       <div
         className={cn(
-          "w-full shrink-0 sm:w-auto sm:min-w-[14rem] sm:max-w-[24rem]",
+          "flex w-full shrink-0 items-center justify-end sm:w-auto sm:min-w-[14rem] sm:max-w-[24rem]",
           controlsClassName
         )}
       >

@@ -1,4 +1,4 @@
-import { Eye, Trash2 } from "lucide-react";
+import { Download, Eye, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AIToolAccessModal } from "@/components/ai/AIToolAccessModal";
@@ -19,15 +19,17 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { formatBytes } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
-import type { AISandboxJob, AISandboxStatus } from "@/types/ai";
+import type { AISandboxArtifact, AISandboxJob, AISandboxStatus } from "@/types/ai";
 import { SaveSettingsButton, SettingsControlRow } from "./AISettingsControls";
 
 interface AIConfigState {
   enabled: boolean;
   providerUrl: string;
   endpointMode: string;
+  supportsImages: boolean;
   model: string;
   maxCompletionTokens: number;
   maxTokensField: string;
@@ -270,6 +272,175 @@ function SandboxJobsPanel() {
   );
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
+  return date.toLocaleString();
+}
+
+function openArtifactPreview(artifact: AISandboxArtifact) {
+  const params = new URLSearchParams({ filename: artifact.filename });
+  if (artifact.mediaType) params.set("mediaType", artifact.mediaType);
+  window.open(
+    `/ai/artifact/${encodeURIComponent(artifact.id)}?${params.toString()}`,
+    `artifact-${artifact.id}`,
+    "width=900,height=600,menubar=no,toolbar=no"
+  );
+}
+
+function SandboxArtifactsPanel() {
+  const [artifacts, setArtifacts] = useState<AISandboxArtifact[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const loadArtifacts = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) setLoading(true);
+    try {
+      setArtifacts(await api.listAISandboxArtifacts());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load artifacts");
+    } finally {
+      if (!options.silent) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadArtifacts();
+  }, [loadArtifacts]);
+
+  const deleteArtifact = async (artifact: AISandboxArtifact) => {
+    setDeletingId(artifact.id);
+    try {
+      await api.deleteAISandboxArtifact(artifact.id);
+      toast.success("Artifact deleted");
+      await loadArtifacts({ silent: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete artifact");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const columns: SimpleTableColumn<AISandboxArtifact>[] = [
+    {
+      id: "artifact",
+      header: "Artifact",
+      className: "min-w-[14rem]",
+      cellClassName: "min-w-[14rem]",
+      render: (artifact) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium" title={artifact.filename}>
+            {artifact.filename}
+          </p>
+          <p className="truncate text-xs text-muted-foreground" title={artifact.mediaType}>
+            {artifact.mediaType || "application/octet-stream"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: "chat",
+      header: "Chat",
+      className: "min-w-[14rem]",
+      cellClassName: "min-w-[14rem]",
+      render: (artifact) => (
+        <div className="min-w-0">
+          <p
+            className="truncate text-sm"
+            title={artifact.conversationTitle ?? artifact.conversationId ?? ""}
+          >
+            {artifact.conversationTitle ??
+              (artifact.conversationId ? artifact.conversationId : "-")}
+          </p>
+          {artifact.conversationTitle && artifact.conversationId ? (
+            <p className="truncate font-mono text-xs text-muted-foreground">
+              {artifact.conversationId}
+            </p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "size",
+      header: "Size",
+      className: "w-28",
+      cellClassName: "w-28 whitespace-nowrap",
+      render: (artifact) => formatBytes(artifact.sizeBytes),
+    },
+    {
+      id: "created",
+      header: "Created",
+      className: "w-44",
+      cellClassName: "w-44 whitespace-nowrap",
+      render: (artifact) => formatDateTime(artifact.createdAt),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      className: "w-32",
+      cellClassName: "w-32",
+      render: (artifact) => (
+        <div className="flex justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(event) => {
+              event.stopPropagation();
+              openArtifactPreview(artifact);
+            }}
+            aria-label={`Preview ${artifact.filename}`}
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button asChild variant="ghost" size="icon" aria-label={`Download ${artifact.filename}`}>
+            <a
+              href={artifact.downloadUrl}
+              download={artifact.filename}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <Download className="h-4 w-4" />
+            </a>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(event) => {
+              event.stopPropagation();
+              deleteArtifact(artifact);
+            }}
+            disabled={deletingId === artifact.id}
+            aria-label={`Delete ${artifact.filename}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <PanelShell
+      title="Stored Artifacts"
+      description="Files currently retained from assistant sandbox runs"
+      actions={
+        <RefreshButton minDurationMs={1400} onClick={() => loadArtifacts({ silent: true })} />
+      }
+    >
+      <SimpleTable
+        columns={columns}
+        rows={artifacts}
+        getRowKey={(artifact) => artifact.id}
+        loading={loading}
+        emptyMessage="No stored artifacts"
+        tableClassName="table-fixed"
+        onRowClick={openArtifactPreview}
+      />
+    </PanelShell>
+  );
+}
+
 export function AIConfigSection() {
   const [aiConfig, setAiConfig] = useState<AIConfigState | null>(
     () => api.getCached<AIConfigState>("settings:ai-config") ?? null
@@ -302,6 +473,7 @@ export function AIConfigSection() {
     return (
       aiConfig.providerUrl !== aiSavedConfig.providerUrl ||
       aiConfig.endpointMode !== aiSavedConfig.endpointMode ||
+      aiConfig.supportsImages !== aiSavedConfig.supportsImages ||
       aiConfig.model !== aiSavedConfig.model
     );
   })();
@@ -388,6 +560,7 @@ export function AIConfigSection() {
     const updates: Record<string, unknown> = {
       providerUrl: aiConfig.providerUrl,
       endpointMode: aiConfig.endpointMode,
+      supportsImages: aiConfig.supportsImages,
       model: aiConfig.model,
     };
     if (aiApiKey) updates.apiKey = aiApiKey;
@@ -631,6 +804,16 @@ export function AIConfigSection() {
               </SelectContent>
             </Select>
           </SettingsControlRow>
+          <SettingsControlRow
+            title="Image input"
+            description="Enable when the selected model can process uploaded images."
+          >
+            <Switch
+              checked={!!aiConfig.supportsImages}
+              disabled={aiSaving}
+              onChange={(supportsImages) => setAiConfig({ ...aiConfig, supportsImages })}
+            />
+          </SettingsControlRow>
           <SettingsControlRow title="Model" description="Model name used for assistant responses.">
             <Input
               aria-label="Model"
@@ -803,6 +986,7 @@ export function AIConfigSection() {
       </PanelShell>
 
       <SandboxJobsPanel />
+      <SandboxArtifactsPanel />
 
       <AIToolAccessModal
         open={aiToolsModalOpen}

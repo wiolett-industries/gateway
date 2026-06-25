@@ -3,6 +3,18 @@ import { z } from 'zod';
 export const ChatMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: z.string().nullable(),
+  attachments: z
+    .array(
+      z.object({
+        artifactId: z.string(),
+        filename: z.string(),
+        mediaType: z.string(),
+        sizeBytes: z.number(),
+        downloadUrl: z.string(),
+        kind: z.literal('image'),
+      })
+    )
+    .optional(),
   tool_calls: z
     .array(
       z.object({
@@ -60,6 +72,7 @@ export const AIConfigUpdateSchema = z.object({
   enabled: z.boolean().optional(),
   providerUrl: z.union([z.string().url(), z.literal('')]).optional(),
   endpointMode: z.enum(['auto', 'chat_completions', 'responses']).optional(),
+  supportsImages: z.boolean().optional(),
   apiKey: z.string().optional(),
   model: z.string().optional(),
   customSystemPrompt: z.string().optional(),
