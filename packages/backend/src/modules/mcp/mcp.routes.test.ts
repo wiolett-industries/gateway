@@ -277,6 +277,8 @@ describe('MCP tools', () => {
     expect(names).not.toContain('ask_question');
     expect(names).not.toContain('internal_documentation');
     expect(names).not.toContain('web_search');
+    expect(names).not.toContain('manage_ai_conversation');
+    expect(names).not.toContain('manage_oauth_authorization');
   });
 
   it('does not call tools hidden by effective token scopes', async () => {

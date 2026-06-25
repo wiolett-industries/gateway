@@ -30,6 +30,7 @@ describe('AI internal docs registry', () => {
       'conversations',
       'status-page',
       'api',
+      'ai-settings',
       'notifications',
     ]);
     expect(DOC_TOPIC_SCOPES).toMatchObject({
@@ -41,6 +42,7 @@ describe('AI internal docs registry', () => {
       'node-files': ['nodes:files:read', 'nodes:files:write'],
       sandbox: 'ai:sandbox:use',
       conversations: 'feat:ai:use',
+      'ai-settings': 'feat:ai:configure',
       'status-page': 'status-page:view',
       notifications: 'notifications:view',
       proxy: 'proxy:view',
@@ -73,7 +75,9 @@ describe('AI internal docs registry', () => {
     expect(getInternalDocumentation('folders', ['nodes:folders:manage']).content).toContain('list_resource_folders');
     expect(getInternalDocumentation('node-files', ['nodes:files:read']).content).toContain('manage_node_file');
     expect(getInternalDocumentation('sandbox', ['ai:sandbox:use']).content).toContain('download_artifact');
-    expect(getInternalDocumentation('conversations', ['feat:ai:use']).content).toContain('get_current_context');
+    expect(getInternalDocumentation('conversations', ['feat:ai:use']).content).toContain('manage_ai_conversation');
+    expect(getInternalDocumentation('api', ['feat:ai:use']).content).toContain('manage_oauth_authorization');
+    expect(getInternalDocumentation('ai-settings', ['feat:ai:configure']).content).toContain('update_ai_settings');
     expect(getInternalDocumentation('status-page', ['status-page:view']).content).toContain('manage_status_page');
   });
 
@@ -86,6 +90,7 @@ describe('AI internal docs registry', () => {
     expect(allDocs).not.toContain('update_user(');
     expect(allDocs).not.toContain('reverse-proxy');
     expect(allDocs).not.toContain('static-site');
+    expect(allDocs).not.toContain('Satisfy Mode');
   });
 
   it('filters unknown-topic suggestions and denies unauthorized topics', () => {

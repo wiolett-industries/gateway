@@ -190,9 +190,10 @@ Access lists provide IP-based access control and HTTP basic authentication for p
 - Passwords are hashed with bcrypt before storage in htpasswd format
 - Htpasswd files are deployed to nginx nodes via daemon
 
-## Satisfy Mode
-- **"any"** (default): request passes if IP matches OR auth succeeds (logical OR)
-- **"all"**: request must satisfy BOTH IP rules AND auth (logical AND)
+## Tool Argument Shapes
+- create_access_list accepts allowIps and denyIps as string arrays plus basicAuthUsers.
+- manage_access_list({ operation: "update", accessListId, ... }) accepts ipRules as ordered { type, value } objects and basicAuthUsers as { username, password } objects.
+- Use basicAuthEnabled to turn HTTP basic auth on or off. If it is enabled, provide at least one basic auth user.
 
 ## Usage
 - One access list can be shared across multiple proxy hosts
@@ -750,6 +751,12 @@ AI conversations are stored on the backend. Tool discovery is conversation-scope
 - get_current_context returns the current UI route and focused resource when the user says "this page" or "current resource".
 - compact summarizes older conversation history when context grows.
 - Recent conversations are loaded from the backend, not local storage.
+- manage_ai_conversation can list, read, and delete the current user's saved conversations:
+  - { operation: "list" }
+  - { operation: "get", conversationId }
+  - { operation: "delete", conversationId }
+  - { operation: "delete_by_title", title }
+- manage_ai_conversation never creates, rewrites, or repairs conversation history. Use the chat UI/runtime for saving active messages.
 
 ## Lite Mode
 Lite mode is an AI-first desktop layout. The assistant becomes the main screen, the sidebar shows recent and pinned conversations, and Settings/Administration/top-level pages keep a back button to return to chat.
@@ -773,7 +780,15 @@ Scopes: status-page:view for reads/preview, status-page:manage for settings/serv
   api: `# Gateway REST API
 
 Gateway provides REST access for external scripts, CI/CD pipelines, CLI tools, and integrations without a browser session.
-Programmatic REST clients can use either Gateway API tokens (\`gw_\`) or OAuth Authorization Code + PKCE access tokens (\`gwo_\`). AI assistant access, AI configuration, MCP user access, auth administration, raw nginx config, gateway settings, node raw config, \`proxy:raw:bypass\`, and \`proxy:advanced:bypass\` cannot be delegated to API/OAuth tokens. MCP clients use OAuth access tokens for the MCP resource with ordinary delegated API scopes; the owning user account must have \`mcp:use\`.
+Programmatic REST clients can use either Gateway API tokens (\`gw_\`) or OAuth Authorization Code + PKCE access tokens (\`gwo_\`). AI assistant access, AI configuration, MCP user access, auth administration, raw nginx config, gateway settings, node raw config, node filesystem access, \`proxy:raw:bypass\`, and \`proxy:advanced:bypass\` cannot be delegated to API/OAuth tokens. MCP clients use OAuth access tokens for the MCP resource with ordinary delegated API scopes; the owning user account must have \`mcp:use\`. The node file-management assistant tool is intentionally AI-session-only and is not exposed through MCP.
+
+## Current-User OAuth Authorizations
+The assistant can manage existing OAuth authorizations for the current browser user with manage_oauth_authorization:
+- { operation: "list" }
+- { operation: "update_scopes", clientId, resource, scopes }
+- { operation: "revoke", clientId, resource }
+
+Pending OAuth consent remains browser-only. Do not try to approve a new OAuth client through tools.
 
 ## Creating an API Token
 1. Go to **Settings** page → **API Tokens** section
@@ -873,6 +888,38 @@ Token permissions are controlled by scopes. Each endpoint requires specific scop
 - Token last-used timestamp is tracked for auditing
 - Tokens inherit the user's resource restrictions (if the user's group restricts a scope to specific resources, the token is similarly restricted)`,
 
+  'ai-settings': `# AI Assistant Settings
+
+AI assistant settings control the provider, request limits, tool exposure, web search, and sandbox runner. Use these tools instead of guessing from UI labels:
+
+## Tools
+- get_ai_settings: read provider, model, limits, system prompt, tool access, web search, and sandbox runner settings.
+- update_ai_settings: update supported assistant settings. Send only fields that should change.
+- list_ai_tools: list available assistant tools with categories, scopes, descriptions, and whether they are destructive.
+- get_sandbox_runtime_status: read sandbox runner enablement and runtime health.
+
+## Provider Settings
+- baseUrl: OpenAI-compatible API base URL.
+- endpoint: chat or responses.
+- model: provider model name.
+- apiKey: only set this when replacing the stored provider key. The current secret is never returned in full.
+
+## Limits
+- requestsPerWindow and requestWindowSeconds: rate limit for assistant requests.
+- maxToolRounds: maximum sequential tool-call rounds in one assistant run.
+- contextTokens: context budget used by the conversation builder.
+- maxTokens and tokenField: response token cap and provider field name.
+
+## Tool Access
+- disabledTools: exact tool names hidden from the assistant.
+- webSearchEnabled: whether web_search can be exposed as a base tool.
+- webSearchProvider and webSearchApiKey: provider selection and secret replacement for web search.
+
+## Sandbox Runner
+- sandboxEnabled: expose sandbox execution and artifact tools to the assistant.
+- sandboxDefaultTier: default resource tier. The agent may request a tier only if the user has the required scope.
+- Sandbox tools are intentionally excluded from MCP exposure and are available only to the assistant when enabled and permitted.`,
+
   notifications: `# Webhook Notifications
 
 ## Overview
@@ -880,7 +927,7 @@ The notification system sends HTTP webhook notifications when alert conditions a
 
 ## Alert Rules
 Each alert rule defines:
-- **Category**: node, container, proxy, or certificate
+- **Category**: node, container, proxy, certificate, database_postgres, or database_redis
 - **Type**: threshold (metric breaches a value) or event (something happens)
 - **Threshold fields** (for threshold type): metric, metricTarget (optional sub-target such as a specific node disk mount), operator (>, >=, <, <=), thresholdValue, durationSeconds (fire observation window), fireThresholdPercent (percent of probes in that window that must breach), resolveAfterSeconds (resolve observation window, default 60s), resolveThresholdPercent (percent of probes in that window that must be clear)
 - **Event fields** (for event type): eventPattern (offline, stopped, oom_killed, etc.)
@@ -924,6 +971,12 @@ Available in message templates (per-alert) and body templates (per-webhook):
 - Container: \`{{node_name}}\` — hosting node
 - Proxy: \`{{health_status}}\` — health status
 - Certificate: \`{{days_until_expiry}}\`, \`{{expiry_date}}\`
+- Database: \`{{metric}}\`, \`{{value}}\`, \`{{threshold}}\`, and \`{{resource.name}}\`
+
+## Database Alert Categories
+- database_postgres metrics: latency_ms, active_connections_pct, database_size_mb.
+- database_redis metrics: latency_ms, memory_pct.
+- database health events: health.offline, health.degraded, health.online. These events can also be used with threshold-style observation windows when supportsThreshold is true.
 
 ## Handlebars Helpers
 Available in all templates:
@@ -1010,6 +1063,7 @@ export const DOC_TOPIC_SCOPES: Record<string, string | string[]> = {
   postgres: 'databases:view',
   redis: 'databases:view',
   logging: ['logs:environments:view', 'logs:schemas:view', 'logs:read', 'logs:manage'],
+  'ai-settings': 'feat:ai:configure',
   'status-page': 'status-page:view',
   housekeeping: 'housekeeping:view',
   permissions: 'feat:ai:use',

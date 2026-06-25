@@ -1,14 +1,20 @@
+import { eq } from 'drizzle-orm';
 import OpenAI from 'openai';
-import { container } from '@/container.js';
+import { container, TOKENS } from '@/container.js';
+import { nodes as nodesTable } from '@/db/schema/nodes.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { hasScope, hasScopeBase, hasScopeForResource } from '@/lib/permissions.js';
+import { canManageUser, hasScope, hasScopeBase, hasScopeForResource, isScopeSubset } from '@/lib/permissions.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
+import { UpdateAuthProvisioningSettingsSchema } from '@/modules/admin/admin.schemas.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
+import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import type { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import type { DockerManagementService } from '@/modules/docker/docker.service.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { GroupService } from '@/modules/groups/group.service.js';
+import { LicenseService } from '@/modules/license/license.service.js';
+import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
 import type { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
 import type { NodesService } from '@/modules/nodes/nodes.service.js';
 import type { CAService } from '@/modules/pki/ca.service.js';
@@ -17,9 +23,18 @@ import type { TemplatesService } from '@/modules/pki/templates.service.js';
 import type { FolderService } from '@/modules/proxy/folder.service.js';
 import { CreateNginxTemplateSchema, UpdateNginxTemplateSchema } from '@/modules/proxy/nginx-template.schemas.js';
 import type { ProxyService } from '@/modules/proxy/proxy.service.js';
+import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
+import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
+import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
 import { UploadCertSchema } from '@/modules/ssl/ssl.schemas.js';
 import type { SSLService } from '@/modules/ssl/ssl.service.js';
+import { DaemonUpdateService } from '@/services/daemon-update.service.js';
+import { EventBusService } from '@/services/event-bus.service.js';
+import { HousekeepingService } from '@/services/housekeeping.service.js';
+import { NodeDispatchService } from '@/services/node-dispatch.service.js';
+import { SchedulerService } from '@/services/scheduler.service.js';
 import { SessionService } from '@/services/session.service.js';
+import { UpdateService } from '@/services/update.service.js';
 import type { User } from '@/types.js';
 import { ACCESS_LIST_TOOL_NAMES, executeAccessListTool } from './ai.access-list-tools.js';
 import { DATABASE_TOOL_NAMES, executeDatabaseTool } from './ai.database-tools.js';
@@ -157,6 +172,41 @@ function stringArg(value: unknown): string | undefined {
 
 function boolArg(value: unknown): boolean {
   return value === true;
+}
+
+function getEffectiveGroupScopes(group: { scopes?: string[]; inheritedScopes?: string[] }): string[] {
+  return [...new Set([...(group.scopes ?? []), ...(group.inheritedScopes ?? [])])];
+}
+
+const AI_SETTINGS_UPDATE_FIELDS = new Set([
+  'enabled',
+  'providerUrl',
+  'endpointMode',
+  'apiKey',
+  'model',
+  'customSystemPrompt',
+  'rateLimitMax',
+  'rateLimitWindowSeconds',
+  'maxToolRounds',
+  'maxContextTokens',
+  'maxCompletionTokens',
+  'maxTokensField',
+  'reasoningEffort',
+  'disabledTools',
+  'webSearchProvider',
+  'webSearchBaseUrl',
+  'webSearchApiKey',
+  'sandboxEnabled',
+  'sandboxDefaultTier',
+]);
+
+function aiSettingsUpdatesFromArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const updatesSource = isRecord(args.updates) ? args.updates : args;
+  const updates: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(updatesSource)) {
+    if (AI_SETTINGS_UPDATE_FIELDS.has(key)) updates[key] = value;
+  }
+  return updates;
 }
 
 function mergeToolsets(existing: string[], added: string[]): string[] {
@@ -628,6 +678,17 @@ export class AIService {
       // ── Administration ──
       case 'list_users':
         return this.authService.listUsers();
+      case 'create_user': {
+        const destGroup = await this.groupService.getGroup(a.groupId);
+        if (!isScopeSubset(getEffectiveGroupScopes(destGroup), user.scopes)) {
+          throw new Error('Cannot assign a group with permissions you do not possess');
+        }
+        return this.authService.createUser({
+          email: a.email,
+          name: a.name,
+          groupId: a.groupId,
+        });
+      }
       case 'update_user_role': {
         if (a.userId === user.id) {
           throw new Error('Cannot change your own group');
@@ -641,6 +702,313 @@ export class AIService {
         const updated = await this.authService.updateUserGroup(a.userId, a.groupId);
         await container.resolve(SessionService).destroyAllUserSessions(a.userId);
         return updated;
+      }
+      case 'set_user_blocked': {
+        if (a.userId === user.id) {
+          throw new Error('Cannot block yourself');
+        }
+        const targetUser = await this.authService.getUserById(a.userId);
+        if (!targetUser) throw new Error('User not found');
+        if (targetUser.oidcSubject.startsWith('system:')) {
+          throw new Error('Cannot modify the system user');
+        }
+        const denyReason = canManageUser(user.scopes, targetUser.scopes);
+        if (denyReason) throw new Error(denyReason);
+        return a.blocked ? this.authService.blockUser(a.userId) : this.authService.unblockUser(a.userId);
+      }
+      case 'delete_user': {
+        if (a.userId === user.id) {
+          throw new Error('Cannot delete your own account');
+        }
+        const targetUser = await this.authService.getUserById(a.userId);
+        if (!targetUser) throw new Error('User not found');
+        if (targetUser.oidcSubject.startsWith('system:')) {
+          throw new Error('Cannot delete the system user');
+        }
+        const denyReason = canManageUser(user.scopes, targetUser.scopes);
+        if (denyReason) throw new Error(denyReason);
+        await this.authService.deleteUser(a.userId);
+        return { success: true };
+      }
+      case 'get_ai_settings':
+        return this.settingsService.getConfigForAdmin();
+      case 'update_ai_settings': {
+        const updates = aiSettingsUpdatesFromArgs(args);
+        if (Object.keys(updates).length === 0) {
+          throw new Error('No supported AI settings fields were provided');
+        }
+        await this.settingsService.updateConfig(updates);
+        return this.settingsService.getConfigForAdmin();
+      }
+      case 'list_ai_tools':
+        return AI_TOOLS.map((tool) => ({
+          name: tool.name,
+          category: tool.category,
+          description: tool.description,
+          destructive: tool.destructive,
+          requiredScope: tool.requiredScope,
+          invalidateStores: tool.invalidateStores,
+        }));
+      case 'get_sandbox_runtime_status': {
+        const config = await this.settingsService.getConfig();
+        const status = this.sandboxService?.status() ?? { status: 'unconfigured' };
+        const health = this.sandboxService
+          ? await this.sandboxService.health().catch((error) => ({
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            }))
+          : { ok: false, error: 'Sandbox runner is not configured' };
+        return {
+          enabled: config.sandboxEnabled,
+          defaultTier: config.sandboxDefaultTier,
+          status,
+          health,
+        };
+      }
+      case 'manage_ai_conversation': {
+        const conversationService = container.resolve(AIConversationService);
+        const operation = String(a.operation ?? '');
+        switch (operation) {
+          case 'list':
+            return conversationService.listConversations(user.id);
+          case 'get': {
+            const conversationId = String(a.conversationId ?? '');
+            if (!conversationId) throw new Error('conversationId is required');
+            const conversation = await conversationService.getConversation(user.id, conversationId);
+            if (!conversation) throw new Error('Conversation not found');
+            return conversation;
+          }
+          case 'delete': {
+            const conversationId = String(a.conversationId ?? '');
+            if (!conversationId) throw new Error('conversationId is required');
+            const deleted = await conversationService.deleteConversation(user.id, conversationId);
+            if (!deleted) throw new Error('Conversation not found');
+            return { deleted: true };
+          }
+          case 'delete_by_title': {
+            const title = String(a.title ?? '');
+            if (!title.trim()) throw new Error('title is required');
+            return { deleted: await conversationService.deleteConversationByTitle(user.id, title) };
+          }
+          default:
+            throw new Error('Unsupported conversation operation');
+        }
+      }
+      case 'manage_oauth_authorization': {
+        const { OAuthService } = await import('@/modules/oauth/oauth.service.js');
+        const oauthService = container.resolve(OAuthService);
+        const operation = String(a.operation ?? '');
+        switch (operation) {
+          case 'list':
+            return oauthService.listUserAuthorizations(user.id);
+          case 'update_scopes': {
+            const clientId = String(a.clientId ?? '');
+            const resource = String(a.resource ?? '');
+            const scopes = Array.isArray(a.scopes) ? a.scopes.map(String) : [];
+            if (!clientId) throw new Error('clientId is required');
+            if (!resource) throw new Error('resource is required');
+            if (scopes.length === 0) throw new Error('scopes are required');
+            return oauthService.updateUserAuthorizationScopes(user, clientId, resource, scopes);
+          }
+          case 'revoke': {
+            const clientId = String(a.clientId ?? '');
+            const resource = String(a.resource ?? '');
+            if (!clientId) throw new Error('clientId is required');
+            if (!resource) throw new Error('resource is required');
+            await oauthService.revokeUserAuthorization(user.id, clientId, resource);
+            return { revoked: true };
+          }
+          default:
+            throw new Error('Unsupported OAuth authorization operation');
+        }
+      }
+      case 'get_license_status':
+        return container.resolve(LicenseService).getStatus();
+      case 'manage_license': {
+        const service = container.resolve(LicenseService);
+        switch (a.operation) {
+          case 'activate':
+            return service.activateKey(String(a.licenseKey ?? ''));
+          case 'check':
+            return service.checkNow();
+          case 'clear':
+            return service.clearKey();
+          default:
+            throw new Error('Unsupported license operation');
+        }
+      }
+      case 'manage_housekeeping': {
+        const service = container.resolve(HousekeepingService);
+        switch (a.operation) {
+          case 'get_config':
+            return service.getConfig();
+          case 'get_stats':
+            return service.getStats();
+          case 'get_history':
+            return service.getRunHistory();
+          case 'update_config': {
+            this.ensureToolScope(user, 'housekeeping:configure');
+            const config = isRecord(a.config) ? a.config : {};
+            const updated = await service.updateConfig(config as Parameters<typeof service.updateConfig>[0]);
+            if (typeof config.cronExpression === 'string') {
+              container.resolve(SchedulerService).updateSchedule('housekeeping', config.cronExpression);
+            }
+            return updated;
+          }
+          case 'run':
+            this.ensureToolScope(user, 'housekeeping:run');
+            return service.runAll('manual', user.id);
+          default:
+            throw new Error('Unsupported housekeeping operation');
+        }
+      }
+      case 'get_gateway_settings': {
+        const authSettingsService = container.resolve(AuthSettingsService);
+        const mcpSettingsService = container.resolve(McpSettingsService);
+        const generalSettingsService = container.resolve(GeneralSettingsService);
+        const networkSettingsService = container.resolve(NetworkSettingsService);
+        const outboundWebhookPolicyService = container.resolve(OutboundWebhookPolicyService);
+        const [settings, mcpSettings, generalSettings, networkSecurity, outboundWebhookPolicy, groups] =
+          await Promise.all([
+            authSettingsService.getConfig(),
+            mcpSettingsService.getConfig(),
+            generalSettingsService.getConfig(),
+            networkSettingsService.getConfig(),
+            outboundWebhookPolicyService.getConfig(),
+            this.groupService.listGroups(),
+          ]);
+        const availableGroups = groups
+          .filter((group) => isScopeSubset(getEffectiveGroupScopes(group), user.scopes))
+          .map((group) => ({ id: group.id, name: group.name, isBuiltin: group.isBuiltin }));
+        return {
+          ...settings,
+          mcpServerEnabled: mcpSettings.serverEnabled,
+          generalSettings,
+          networkSecurity,
+          outboundWebhookPolicy,
+          availableGroups,
+        };
+      }
+      case 'update_gateway_settings': {
+        const input = UpdateAuthProvisioningSettingsSchema.parse(args);
+        if (input.oidcDefaultGroupId) {
+          const destGroup = await this.groupService.getGroup(input.oidcDefaultGroupId);
+          if (!isScopeSubset(getEffectiveGroupScopes(destGroup), user.scopes)) {
+            throw new Error('Cannot assign a group with permissions you do not possess');
+          }
+        }
+        const authSettingsService = container.resolve(AuthSettingsService);
+        const mcpSettingsService = container.resolve(McpSettingsService);
+        const generalSettingsService = container.resolve(GeneralSettingsService);
+        const networkSettingsService = container.resolve(NetworkSettingsService);
+        const outboundWebhookPolicyService = container.resolve(OutboundWebhookPolicyService);
+        const [settings, mcpSettings, generalSettings, networkSecurity, outboundWebhookPolicy] = await Promise.all([
+          authSettingsService.updateConfig(input),
+          mcpSettingsService.updateConfig({ serverEnabled: input.mcpServerEnabled }),
+          input.generalSettings
+            ? generalSettingsService.updateConfig(input.generalSettings)
+            : generalSettingsService.getConfig(),
+          input.networkSecurity
+            ? networkSettingsService.updateConfig(input.networkSecurity)
+            : networkSettingsService.getConfig(),
+          input.outboundWebhookPolicy
+            ? outboundWebhookPolicyService.updateConfig(input.outboundWebhookPolicy)
+            : outboundWebhookPolicyService.getConfig(),
+        ]);
+        const groups = await this.groupService.listGroups();
+        const availableGroups = groups
+          .filter((group) => isScopeSubset(getEffectiveGroupScopes(group), user.scopes))
+          .map((group) => ({ id: group.id, name: group.name, isBuiltin: group.isBuiltin }));
+        return {
+          ...settings,
+          mcpServerEnabled: mcpSettings.serverEnabled,
+          generalSettings,
+          networkSecurity,
+          outboundWebhookPolicy,
+          availableGroups,
+        };
+      }
+      case 'manage_system_updates': {
+        const operation = String(a.operation ?? '');
+        const updateService = container.resolve(UpdateService);
+        switch (operation) {
+          case 'get_gateway_status':
+            return updateService.getCachedStatus();
+          case 'check_gateway':
+            return updateService.checkForUpdates();
+          case 'get_gateway_release_notes': {
+            const version = String(a.version ?? '');
+            if (!/^v?\d+\.\d+\.\d+$/.test(version)) throw new Error('version must be a semantic version');
+            return { version, notes: await updateService.getReleaseNotes(version) };
+          }
+          case 'perform_gateway_update': {
+            const version = String(a.version ?? '');
+            if (!/^v?\d+\.\d+\.\d+$/.test(version)) throw new Error('version must be a semantic version');
+            const status = await updateService.getCachedStatus();
+            if (!status.updateAvailable) throw new Error('No gateway update is available');
+            if (version !== status.latestVersion) throw new Error('Requested version does not match available update');
+            const artifact = await updateService.prepareGatewayUpdate(version);
+            const eventBus = container.resolve(EventBusService);
+            eventBus.publish('system.update.changed', { updating: true, targetVersion: version });
+            setTimeout(() => {
+              updateService.performUpdate(version, artifact).catch((error) => {
+                eventBus.publish('system.update.changed', { updating: false, targetVersion: version });
+                logger.error('Gateway update failed from AI tool', {
+                  error: error instanceof Error ? error.message : String(error),
+                  stack: error instanceof Error ? error.stack : undefined,
+                });
+              });
+            }, 500);
+            return { status: 'updating', targetVersion: version };
+          }
+          case 'list_daemon_updates':
+            return container.resolve(DaemonUpdateService).getCachedStatus();
+          case 'check_daemon_updates':
+            return container.resolve(DaemonUpdateService).checkForUpdates();
+          case 'update_daemon': {
+            const nodeId = String(a.nodeId ?? '');
+            if (!nodeId) throw new Error('nodeId is required');
+            const daemonUpdateService = container.resolve(DaemonUpdateService);
+            const db = container.resolve<any>(TOKENS.DrizzleClient);
+            const [node] = await db.select().from(nodesTable).where(eq(nodesTable.id, nodeId)).limit(1);
+            if (!node) throw new Error('Node not found');
+
+            const daemonType = node.type as 'nginx' | 'docker' | 'monitoring';
+            const release = await daemonUpdateService.getLatestRelease(daemonType);
+            if (!release) throw new Error('No release found for this daemon type');
+
+            const arch = (((node.capabilities ?? {}) as Record<string, unknown>).architecture as string) ?? 'amd64';
+            const artifact = await daemonUpdateService.prepareTrustedDaemonUpdate(
+              daemonType,
+              release.tagName,
+              release.version,
+              arch
+            );
+            await daemonUpdateService.markNodeUpdateInProgress(nodeId, release.version);
+            try {
+              const result = await container
+                .resolve(NodeDispatchService)
+                .sendUpdateDaemonCommand(
+                  nodeId,
+                  artifact.downloadUrl,
+                  release.version,
+                  artifact.checksum,
+                  artifact.signedManifest
+                );
+              if (!result.success) {
+                await daemonUpdateService.clearNodeUpdateInProgress(nodeId);
+                throw new Error(result.error || 'Failed to start daemon update');
+              }
+            } catch (error) {
+              await daemonUpdateService.clearNodeUpdateInProgress(nodeId);
+              throw error;
+            }
+
+            return { scheduled: true, targetVersion: release.version };
+          }
+          default:
+            throw new Error('Unsupported system update operation');
+        }
       }
       case 'get_audit_log':
         return this.auditService.getAuditLog({

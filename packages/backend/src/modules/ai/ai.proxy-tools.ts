@@ -73,8 +73,10 @@ export async function executeProxyTool(
             cacheOptions: a.cacheOptions,
             rateLimitEnabled: a.rateLimitEnabled || false,
             rateLimitOptions: a.rateLimitOptions,
-            customRewrites: [],
+            customRewrites: a.customRewrites || [],
+            internalCertificateId: a.internalCertificateId,
             accessListId: a.accessListId,
+            folderId: a.folderId,
             nginxTemplateId: a.nginxTemplateId,
             templateVariables: a.templateVariables,
             healthCheckEnabled: a.healthCheckEnabled || false,
@@ -82,6 +84,8 @@ export async function executeProxyTool(
             healthCheckInterval: a.healthCheckInterval,
             healthCheckExpectedStatus: a.healthCheckExpectedStatus,
             healthCheckExpectedBody: a.healthCheckExpectedBody,
+            healthCheckBodyMatchMode: a.healthCheckBodyMatchMode,
+            healthCheckSlowThreshold: a.healthCheckSlowThreshold,
           },
           user.id
         )

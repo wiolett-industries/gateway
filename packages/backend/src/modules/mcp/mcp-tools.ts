@@ -18,6 +18,8 @@ const MCP_EXCLUDED_TOOLS = new Set([
   'ask_question',
   'internal_documentation',
   'web_search',
+  'manage_ai_conversation',
+  'manage_oauth_authorization',
   'execute_script',
   'run_process',
   'fetch',
@@ -28,6 +30,7 @@ const MCP_EXCLUDED_TOOLS = new Set([
   'write_process_stdin',
   'kill_process',
   'list_sandbox_jobs',
+  'manage_node_file',
 ]);
 const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
 const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
@@ -128,7 +131,6 @@ const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
   ],
   list_resource_folders: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
   manage_resource_folder: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
-  manage_node_file: ['nodes:files:read', 'nodes:files:write'],
 };
 const SENSITIVE_TOOL_ARG_RE =
   /(?:password|passwd|secret|signingsecret|privatekey|private_key|token|authorization|cookie|apikey|api_key|clientsecret|client_secret|refresh)/i;
@@ -242,6 +244,18 @@ const MCP_TOOLSET_DEFINITIONS: McpToolsetDefinition[] = [
     title: 'Administration',
     description: 'Administrative tools that are still subject to MCP/OAuth delegability and token scopes.',
     toolNames: toolNamesForCategories(['Administration']),
+  },
+  {
+    id: 'maintenance',
+    title: 'Maintenance',
+    description: 'License and housekeeping control-plane operations when delegated.',
+    toolNames: toolNamesForCategories(['Maintenance']),
+  },
+  {
+    id: 'ai_assistant',
+    title: 'AI assistant',
+    description: 'AI assistant provider, limits, tool access, web search, and sandbox runner configuration.',
+    toolNames: toolNamesForCategories(['AI Assistant']),
   },
 ];
 

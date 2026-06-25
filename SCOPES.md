@@ -6,7 +6,7 @@ All scopes follow `domain:resource:action[:qualifier]`. Resource-scopable scopes
 
 | Group | Description |
 |-------|-------------|
-| `system-admin` | All 133 scopes, including protected `admin:system`. |
+| `system-admin` | All 149 scopes, including protected `admin:system`. |
 | `admin` | Curated broad access, excluding `admin:system`, gateway settings edit, housekeeping configure, and Docker registry mutation defaults. |
 | `operator` | Operational access for day-to-day PKI, proxy, SSL, ACL, node, Docker container, database, notification, and logging read/query work. |
 | `viewer` | Read-only view/discovery access. |
@@ -153,6 +153,8 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `docker:volumes:view` | Yes |
 | `docker:volumes:create` | Yes |
 | `docker:volumes:delete` | Yes |
+| `docker:volumes:files:read` | Yes |
+| `docker:volumes:files:write` | Yes |
 | `docker:networks:view` | Yes |
 | `docker:networks:create` | Yes |
 | `docker:networks:edit` | Yes |
@@ -162,6 +164,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `docker:registries:edit` |  |
 | `docker:registries:delete` |  |
 | `docker:tasks` |  |
+| `docker:tasks:manage` | Yes |
 | `databases:view` | Yes |
 | `databases:create` |  |
 | `databases:edit` | Yes |
@@ -229,6 +232,8 @@ API and OAuth tokens can be granted all scopes except the protected user/session
 | `proxy:advanced:bypass` | Unrestricted advanced nginx snippets are session-only. |
 | `nodes:config:view` | Global node nginx config is session-only. |
 | `nodes:config:edit` | Global node nginx config is session-only. |
+| `nodes:files:read` | Node filesystem access is session-only and is not delegated to API tokens or MCP. |
+| `nodes:files:write` | Node filesystem writes are session-only and are not delegated to API tokens or MCP. |
 
 `mcp:use` is not a token scope. It gates whether the owning user account may use the MCP endpoint at all. MCP tokens use ordinary delegated Gateway scopes such as `nodes:details`, `proxy:view`, or `docker:containers:view` to determine which MCP tools and resources are available.
 

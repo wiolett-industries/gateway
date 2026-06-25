@@ -32,7 +32,7 @@ function sandboxToolNamesForScopes(scopes: string[], sandboxEnabled: boolean): s
 describe('AI tool scope filtering', () => {
   it('keeps core registry ordering, uniqueness, and invalidation contracts stable', () => {
     expect(new Set(AI_TOOLS.map((tool) => tool.name)).size).toBe(AI_TOOLS.length);
-    expect(AI_TOOLS.slice(0, 59).map((tool) => tool.name)).toEqual([
+    expect(AI_TOOLS.slice(0, 74).map((tool) => tool.name)).toEqual([
       'discover_tools',
       'get_current_context',
       'wait',
@@ -85,7 +85,22 @@ describe('AI tool scope filtering', () => {
       'update_proxy_raw_config',
       'toggle_proxy_raw_mode',
       'list_users',
+      'create_user',
       'update_user_role',
+      'set_user_blocked',
+      'delete_user',
+      'get_ai_settings',
+      'update_ai_settings',
+      'list_ai_tools',
+      'get_sandbox_runtime_status',
+      'manage_ai_conversation',
+      'manage_oauth_authorization',
+      'get_license_status',
+      'manage_license',
+      'manage_housekeeping',
+      'get_gateway_settings',
+      'update_gateway_settings',
+      'manage_system_updates',
       'get_audit_log',
       'get_dashboard_stats',
       'list_groups',
@@ -97,7 +112,14 @@ describe('AI tool scope filtering', () => {
     expect(TOOL_STORE_INVALIDATION_MAP.manage_certificate).toEqual(['certificates', 'ca']);
     expect(TOOL_STORE_INVALIDATION_MAP.update_proxy_host).toEqual(['proxy']);
     expect(TOOL_STORE_INVALIDATION_MAP.manage_ssl_certificate).toEqual(['ssl']);
+    expect(TOOL_STORE_INVALIDATION_MAP.create_user).toEqual(['users']);
     expect(TOOL_STORE_INVALIDATION_MAP.update_user_role).toEqual(['users']);
+    expect(TOOL_STORE_INVALIDATION_MAP.set_user_blocked).toEqual(['users']);
+    expect(TOOL_STORE_INVALIDATION_MAP.delete_user).toEqual(['users']);
+    expect(TOOL_STORE_INVALIDATION_MAP.update_ai_settings).toEqual(['settings']);
+    expect(TOOL_STORE_INVALIDATION_MAP.manage_license).toEqual(['settings']);
+    expect(TOOL_STORE_INVALIDATION_MAP.manage_housekeeping).toEqual(['settings']);
+    expect(TOOL_STORE_INVALIDATION_MAP.update_gateway_settings).toEqual(['settings']);
     expect(isDestructiveTool('find_resource')).toBe(false);
     expect(isDestructiveTool('list_proxy_hosts')).toBe(false);
     expect(isDestructiveTool('get_proxy_host')).toBe(false);
@@ -126,7 +148,9 @@ describe('AI tool scope filtering', () => {
     expect(toolNames(['ssl:cert:view'])).toEqual(
       expect.arrayContaining(['list_ssl_certificates', 'manage_ssl_certificate'])
     );
-    expect(toolNames(['admin:users'])).toEqual(expect.arrayContaining(['list_users', 'update_user_role']));
+    expect(toolNames(['admin:users'])).toEqual(
+      expect.arrayContaining(['list_users', 'create_user', 'update_user_role', 'set_user_blocked', 'delete_user'])
+    );
     expect(toolNames(['admin:groups'])).toEqual(
       expect.arrayContaining(['list_groups', 'create_group', 'update_group', 'delete_group'])
     );
@@ -136,6 +160,8 @@ describe('AI tool scope filtering', () => {
         'get_current_context',
         'wait',
         'find_resource',
+        'manage_ai_conversation',
+        'manage_oauth_authorization',
         'get_dashboard_stats',
         'ask_question',
         'internal_documentation',
@@ -230,6 +256,67 @@ describe('AI tool scope filtering', () => {
     expect(toolNames(['logs:read'])).toContain('manage_logging');
     expect(isDestructiveTool('manage_logging')).toBe(true);
     expect(isDestructiveTool('manage_status_page')).toBe(true);
+  });
+
+  it('keeps AI assistant configuration tools scoped to assistant configuration admins', () => {
+    const aiToolNames = AI_TOOLS.filter((tool) => tool.category === 'AI Assistant').map((tool) => tool.name);
+
+    expect(aiToolNames).toEqual([
+      'get_ai_settings',
+      'update_ai_settings',
+      'list_ai_tools',
+      'get_sandbox_runtime_status',
+    ]);
+    expect(toolNames(['feat:ai:configure'])).toEqual(expect.arrayContaining(aiToolNames));
+    expect(toolNames(['feat:ai:use'])).not.toEqual(expect.arrayContaining(aiToolNames));
+    expect(isDestructiveTool('get_ai_settings')).toBe(false);
+    expect(isDestructiveTool('list_ai_tools')).toBe(false);
+    expect(isDestructiveTool('get_sandbox_runtime_status')).toBe(false);
+    expect(isDestructiveTool('update_ai_settings')).toBe(true);
+  });
+
+  it('keeps user-owned conversation and OAuth tools scoped to assistant users', () => {
+    expect(AI_TOOLS.filter((tool) => tool.category === 'Conversations').map((tool) => tool.name)).toEqual([
+      'manage_ai_conversation',
+    ]);
+    expect(AI_TOOLS.filter((tool) => tool.category === 'OAuth').map((tool) => tool.name)).toEqual([
+      'manage_oauth_authorization',
+    ]);
+    expect(toolNames(['feat:ai:use'])).toEqual(
+      expect.arrayContaining(['manage_ai_conversation', 'manage_oauth_authorization'])
+    );
+    expect(isDestructiveTool('manage_ai_conversation')).toBe(true);
+    expect(isDestructiveTool('manage_oauth_authorization')).toBe(true);
+  });
+
+  it('keeps maintenance tools scoped to license and housekeeping permissions', () => {
+    const maintenanceToolNames = AI_TOOLS.filter((tool) => tool.category === 'Maintenance').map((tool) => tool.name);
+
+    expect(maintenanceToolNames).toEqual([
+      'get_license_status',
+      'manage_license',
+      'manage_housekeeping',
+      'get_gateway_settings',
+      'update_gateway_settings',
+      'manage_system_updates',
+    ]);
+    expect(toolNames(['license:view'])).toContain('get_license_status');
+    expect(toolNames(['license:view'])).not.toContain('manage_license');
+    expect(toolNames(['license:manage'])).toEqual(expect.arrayContaining(['get_license_status', 'manage_license']));
+    expect(toolNames(['housekeeping:view'])).toContain('manage_housekeeping');
+    expect(toolNames(['settings:gateway:view'])).toContain('get_gateway_settings');
+    expect(toolNames(['settings:gateway:view'])).not.toContain('update_gateway_settings');
+    expect(toolNames(['settings:gateway:edit'])).toEqual(
+      expect.arrayContaining(['get_gateway_settings', 'update_gateway_settings'])
+    );
+    expect(toolNames(['admin:update'])).toContain('manage_system_updates');
+    expect(toolNames(['feat:ai:use'])).not.toEqual(expect.arrayContaining(maintenanceToolNames));
+    expect(isDestructiveTool('get_license_status')).toBe(false);
+    expect(isDestructiveTool('get_gateway_settings')).toBe(false);
+    expect(isDestructiveTool('manage_license')).toBe(true);
+    expect(isDestructiveTool('manage_housekeeping')).toBe(true);
+    expect(isDestructiveTool('update_gateway_settings')).toBe(true);
+    expect(isDestructiveTool('manage_system_updates')).toBe(true);
   });
 
   it('keeps database tool registry contracts stable', () => {

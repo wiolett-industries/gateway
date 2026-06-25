@@ -96,4 +96,53 @@ describe('AI folder tools', () => {
     ).resolves.toEqual([{ id: 'folder-1', name: 'Domains', children: [] }]);
     expect(domainFolderService.getFolderTree).toHaveBeenCalledWith({ includeAllFolders: true });
   });
+
+  it('requires proxy edit scope for every proxy host reorder item', async () => {
+    const proxyOneId = '11111111-1111-4111-8111-111111111111';
+    const proxyTwoId = '22222222-2222-4222-8222-222222222222';
+    const proxyFolderService = {
+      reorderHosts: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.spyOn(container, 'resolve').mockImplementation((token: unknown) => {
+      if (token === FolderService) return proxyFolderService as never;
+      throw new Error('Unexpected service resolution');
+    });
+
+    await expect(
+      executeFolderTool(
+        { ...BASE_USER, scopes: ['proxy:folders:manage', `proxy:edit:${proxyOneId}`] },
+        'manage_resource_folder',
+        {
+          resourceType: 'proxy_hosts',
+          operation: 'reorder_resources',
+          items: [
+            { id: proxyOneId, sortOrder: 0 },
+            { id: proxyTwoId, sortOrder: 1 },
+          ],
+        }
+      )
+    ).rejects.toThrow(`PERMISSION_DENIED: Missing required scope proxy:edit:${proxyTwoId}`);
+    expect(proxyFolderService.reorderHosts).not.toHaveBeenCalled();
+
+    await expect(
+      executeFolderTool(
+        { ...BASE_USER, scopes: ['proxy:folders:manage', `proxy:edit:${proxyOneId}`, `proxy:edit:${proxyTwoId}`] },
+        'manage_resource_folder',
+        {
+          resourceType: 'proxy_hosts',
+          operation: 'reorder_resources',
+          items: [
+            { id: proxyOneId, sortOrder: 0 },
+            { id: proxyTwoId, sortOrder: 1 },
+          ],
+        }
+      )
+    ).resolves.toEqual({ success: true });
+    expect(proxyFolderService.reorderHosts).toHaveBeenCalledWith({
+      items: [
+        { id: proxyOneId, sortOrder: 0 },
+        { id: proxyTwoId, sortOrder: 1 },
+      ],
+    });
+  });
 });

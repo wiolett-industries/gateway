@@ -191,6 +191,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
         http2Support: { type: 'boolean', description: 'Enable HTTP/2' },
         redirectUrl: { type: 'string', description: 'Redirect target URL (for redirect type)' },
         redirectStatusCode: { type: 'number', enum: [301, 302, 307, 308], description: 'Redirect status code' },
+        internalCertificateId: { type: 'string', description: 'Linked internal PKI certificate UUID' },
         customHeaders: {
           type: 'array',
           items: {
@@ -219,7 +220,21 @@ export const AI_TOOLS: AIToolDefinition[] = [
           required: ['requestsPerSecond'],
           description: 'Rate limit configuration (requires rateLimitEnabled)',
         },
+        customRewrites: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              source: { type: 'string' },
+              destination: { type: 'string' },
+              type: { type: 'string', enum: ['permanent', 'temporary'] },
+            },
+            required: ['source', 'destination', 'type'],
+          },
+          description: 'URL rewrite rules applied before proxying',
+        },
         accessListId: { type: 'string', description: 'Access list UUID for IP/auth restrictions' },
+        folderId: { type: 'string', description: 'Folder UUID for organizing this proxy host' },
         nginxTemplateId: { type: 'string', description: 'Custom nginx config template UUID' },
         templateVariables: { type: 'object', description: 'Variables for the nginx template (key-value pairs)' },
         healthCheckEnabled: { type: 'boolean', description: 'Enable backend health checks' },
@@ -227,6 +242,12 @@ export const AI_TOOLS: AIToolDefinition[] = [
         healthCheckInterval: { type: 'number', description: 'Seconds between health checks (5-3600, default: 30)' },
         healthCheckExpectedStatus: { type: 'number', description: 'Expected HTTP status code (100-599)' },
         healthCheckExpectedBody: { type: 'string', description: 'Expected response body string' },
+        healthCheckBodyMatchMode: {
+          type: 'string',
+          enum: ['includes', 'exact', 'starts_with', 'ends_with'],
+          description: 'How to match the expected health-check response body',
+        },
+        healthCheckSlowThreshold: { type: 'number', description: 'Nx average threshold for degraded health checks' },
       },
       required: ['nodeId', 'domainNames'],
     },
@@ -242,12 +263,83 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         proxyHostId: { type: 'string', description: 'Proxy host UUID' },
+        type: {
+          type: 'string',
+          enum: ['proxy', 'redirect', '404'],
+          description: 'Host type; raw is handled by raw tools',
+        },
+        nodeId: { type: 'string', description: 'Node UUID to deploy this proxy host on' },
         domainNames: { type: 'array', items: { type: 'string' }, description: 'Domain names' },
-        forwardHost: { type: 'string', description: 'Backend host' },
-        forwardPort: { type: 'number', description: 'Backend port' },
+        forwardHost: { type: ['string', 'null'], description: 'Backend host; null clears it' },
+        forwardPort: { type: ['number', 'null'], description: 'Backend port; null clears it' },
         forwardScheme: { type: 'string', enum: ['http', 'https'] },
         sslEnabled: { type: 'boolean' },
-        sslCertificateId: { type: 'string' },
+        sslForced: { type: 'boolean', description: 'Force HTTPS redirect' },
+        http2Support: { type: 'boolean', description: 'Enable HTTP/2' },
+        websocketSupport: { type: 'boolean', description: 'Enable WebSocket proxying' },
+        sslCertificateId: { type: ['string', 'null'], description: 'SSL certificate UUID; null clears it' },
+        internalCertificateId: {
+          type: ['string', 'null'],
+          description: 'Internal PKI certificate UUID; null clears it',
+        },
+        redirectUrl: { type: ['string', 'null'], description: 'Redirect target URL; null clears it' },
+        redirectStatusCode: { type: ['number', 'null'], enum: [301, 302, 307, 308, null] },
+        customHeaders: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { name: { type: 'string' }, value: { type: 'string' } },
+            required: ['name', 'value'],
+          },
+          description: 'Full replacement list of custom HTTP headers',
+        },
+        cacheEnabled: { type: 'boolean', description: 'Enable response caching' },
+        cacheOptions: {
+          type: ['object', 'null'],
+          properties: {
+            maxAge: { type: 'number' },
+            staleWhileRevalidate: { type: 'number' },
+          },
+          description: 'Cache configuration; null clears it',
+        },
+        rateLimitEnabled: { type: 'boolean', description: 'Enable rate limiting' },
+        rateLimitOptions: {
+          type: ['object', 'null'],
+          properties: {
+            requestsPerSecond: { type: 'number' },
+            burst: { type: 'number' },
+          },
+          description: 'Rate limit configuration; null clears it',
+        },
+        customRewrites: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              source: { type: 'string' },
+              destination: { type: 'string' },
+              type: { type: 'string', enum: ['permanent', 'temporary'] },
+            },
+            required: ['source', 'destination', 'type'],
+          },
+          description: 'Full replacement list of URL rewrite rules',
+        },
+        advancedConfig: { type: ['string', 'null'], description: 'Advanced nginx snippet; requires proxy:advanced' },
+        accessListId: { type: ['string', 'null'], description: 'Access list UUID; null clears it' },
+        folderId: { type: ['string', 'null'], description: 'Folder UUID; null moves to root' },
+        nginxTemplateId: { type: ['string', 'null'], description: 'Config template UUID; null uses default' },
+        templateVariables: { type: ['object', 'null'], description: 'Template variables; null clears them' },
+        healthCheckEnabled: { type: 'boolean', description: 'Enable backend health checks' },
+        healthCheckUrl: { type: ['string', 'null'], description: 'Health check endpoint path; null clears it' },
+        healthCheckInterval: { type: ['number', 'null'], description: 'Seconds between health checks; null clears it' },
+        healthCheckExpectedStatus: { type: ['number', 'null'], description: 'Expected status; null clears it' },
+        healthCheckExpectedBody: { type: ['string', 'null'], description: 'Expected body text; null clears it' },
+        healthCheckBodyMatchMode: {
+          type: ['string', 'null'],
+          enum: ['includes', 'exact', 'starts_with', 'ends_with', null],
+          description: 'How to match the expected response body; null clears it',
+        },
+        healthCheckSlowThreshold: { type: ['number', 'null'], description: 'Nx average threshold; null clears it' },
         enabled: { type: 'boolean', description: 'Enable/disable the host' },
       },
       required: ['proxyHostId'],
@@ -734,6 +826,24 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: [],
   },
   {
+    name: 'create_user',
+    description:
+      'Create a user before first login and assign an initial permission group. You can only assign groups within your own effective scopes.',
+    parameters: {
+      type: 'object',
+      properties: {
+        email: { type: 'string', description: 'User email address' },
+        name: { type: 'string', description: 'Optional display name' },
+        groupId: { type: 'string', description: 'Initial permission group UUID' },
+      },
+      required: ['email', 'groupId'],
+    },
+    destructive: true,
+    category: 'Administration',
+    requiredScope: 'admin:users',
+    invalidateStores: ['users'],
+  },
+  {
     name: 'update_user_role',
     description: "Change a user's permission group. Use list_users to see available groups.",
     parameters: {
@@ -748,6 +858,294 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Administration',
     requiredScope: 'admin:users',
     invalidateStores: ['users'],
+  },
+  {
+    name: 'set_user_blocked',
+    description:
+      'Block or unblock a user account. Cannot target yourself, the system user, or users whose scopes exceed yours.',
+    parameters: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', description: 'User UUID' },
+        blocked: { type: 'boolean', description: 'true to block, false to unblock' },
+      },
+      required: ['userId', 'blocked'],
+    },
+    destructive: true,
+    category: 'Administration',
+    requiredScope: 'admin:users',
+    invalidateStores: ['users'],
+  },
+  {
+    name: 'delete_user',
+    description: 'Delete a user account. Cannot target yourself, the system user, or users whose scopes exceed yours.',
+    parameters: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', description: 'User UUID' },
+      },
+      required: ['userId'],
+    },
+    destructive: true,
+    category: 'Administration',
+    requiredScope: 'admin:users',
+    invalidateStores: ['users'],
+  },
+
+  // ── AI Assistant Configuration ──
+  {
+    name: 'get_ai_settings',
+    description:
+      'Read AI assistant configuration, including provider, limits, disabled tools, web search, and sandbox runner settings. Secrets are returned only as masked metadata.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'AI Assistant',
+    requiredScope: 'feat:ai:configure',
+    invalidateStores: [],
+  },
+  {
+    name: 'update_ai_settings',
+    description:
+      'Update AI assistant configuration. Only pass fields that should change; API keys may be replaced or cleared with an empty string.',
+    parameters: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean', description: 'Enable or disable the AI assistant.' },
+        providerUrl: { type: 'string', description: 'OpenAI-compatible provider base URL.' },
+        endpointMode: {
+          type: 'string',
+          enum: ['auto', 'chat_completions', 'responses'],
+          description: 'Provider endpoint family.',
+        },
+        apiKey: { type: 'string', description: 'Provider API key. Empty string clears the saved key.' },
+        model: { type: 'string', description: 'Model name.' },
+        customSystemPrompt: { type: 'string', description: 'Additional system prompt instructions.' },
+        rateLimitMax: { type: 'number', description: 'Maximum assistant requests per window.' },
+        rateLimitWindowSeconds: { type: 'number', description: 'Rate limit window in seconds.' },
+        maxToolRounds: { type: 'number', description: 'Maximum sequential tool calls per assistant response.' },
+        maxContextTokens: { type: 'number', description: 'Context token budget.' },
+        maxCompletionTokens: { type: 'number', description: 'Maximum generated response tokens.' },
+        maxTokensField: {
+          type: 'string',
+          enum: ['max_tokens', 'max_completion_tokens'],
+          description: 'Provider request token field.',
+        },
+        reasoningEffort: {
+          type: 'string',
+          enum: ['low', 'medium', 'high', 'none'],
+          description: 'Reasoning effort setting.',
+        },
+        disabledTools: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Tool names disabled for the assistant.',
+        },
+        webSearchProvider: {
+          type: 'string',
+          enum: ['tavily', 'brave', 'serper', 'searxng', 'exa'],
+          description: 'Web search provider.',
+        },
+        webSearchBaseUrl: { type: 'string', description: 'Web search provider base URL, used by SearXNG.' },
+        webSearchApiKey: { type: 'string', description: 'Web search API key. Empty string clears the saved key.' },
+        sandboxEnabled: { type: 'boolean', description: 'Expose sandbox execution tools to the assistant.' },
+        sandboxDefaultTier: {
+          type: 'string',
+          enum: ['low', 'medium', 'high'],
+          description: 'Default sandbox resource tier.',
+        },
+      },
+    },
+    destructive: true,
+    category: 'AI Assistant',
+    requiredScope: 'feat:ai:configure',
+    invalidateStores: ['settings'],
+  },
+  {
+    name: 'list_ai_tools',
+    description:
+      'List AI assistant tools with categories, descriptions, scopes, and destructive metadata for configuration or auditing.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'AI Assistant',
+    requiredScope: 'feat:ai:configure',
+    invalidateStores: [],
+  },
+  {
+    name: 'get_sandbox_runtime_status',
+    description:
+      'Read sandbox runner configuration and runtime health without starting a sandbox job. Use this to diagnose whether sandbox execution is enabled and available.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'AI Assistant',
+    requiredScope: 'feat:ai:configure',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_ai_conversation',
+    description:
+      'Manage the current user AI conversations. Operations: list, get, delete, delete_by_title. This tool never creates or rewrites conversation history.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['list', 'get', 'delete', 'delete_by_title'],
+          description: 'Conversation operation to perform.',
+        },
+        conversationId: { type: 'string', description: 'Conversation UUID for get or delete.' },
+        title: { type: 'string', description: 'Conversation title for delete_by_title.' },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Conversations',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_oauth_authorization',
+    description:
+      'Manage existing OAuth authorizations for the current user. Operations: list, update_scopes, revoke. Pending browser consent is intentionally not exposed.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['list', 'update_scopes', 'revoke'],
+          description: 'OAuth authorization operation to perform.',
+        },
+        clientId: { type: 'string', description: 'OAuth client ID for update_scopes or revoke.' },
+        resource: { type: 'string', description: 'OAuth resource URL for update_scopes or revoke.' },
+        scopes: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Replacement delegated scopes for update_scopes.',
+        },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'OAuth',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+
+  // ── Maintenance and Control Plane ──
+  {
+    name: 'get_license_status',
+    description: 'Read Gateway license status, tier, installation ID, expiry, grace state, and masked key metadata.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'Maintenance',
+    requiredScope: 'license:view',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_license',
+    description:
+      'Manage the Gateway license. operation must be one of activate, check, or clear. activate requires licenseKey.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['activate', 'check', 'clear'],
+          description: 'License operation to perform.',
+        },
+        licenseKey: { type: 'string', description: 'License key for activate.' },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Maintenance',
+    requiredScope: 'license:manage',
+    invalidateStores: ['settings'],
+  },
+  {
+    name: 'manage_housekeeping',
+    description:
+      'Read or manage housekeeping. operation: get_config, get_stats, get_history, update_config, or run. update_config requires config.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['get_config', 'get_stats', 'get_history', 'update_config', 'run'],
+          description: 'Housekeeping operation to perform.',
+        },
+        config: { type: 'object', description: 'Partial housekeeping config for update_config.' },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Maintenance',
+    requiredScope: 'housekeeping:view',
+    invalidateStores: ['settings'],
+  },
+  {
+    name: 'get_gateway_settings',
+    description:
+      'Read Gateway control-plane settings: OIDC provisioning, MCP server enablement, general feature limits, network security, and outbound webhook policy.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'Maintenance',
+    requiredScope: 'settings:gateway:view',
+    invalidateStores: [],
+  },
+  {
+    name: 'update_gateway_settings',
+    description:
+      'Update Gateway control-plane settings. Pass only fields to change: OIDC provisioning, MCP server enablement, generalSettings, networkSecurity, or outboundWebhookPolicy.',
+    parameters: {
+      type: 'object',
+      properties: {
+        oidcAutoCreateUsers: { type: 'boolean' },
+        oidcDefaultGroupId: { type: 'string', description: 'Default permission group UUID for auto-created users.' },
+        oidcRequireVerifiedEmail: { type: 'boolean' },
+        oauthExtendedCallbackCompatibility: { type: 'boolean' },
+        mcpServerEnabled: { type: 'boolean' },
+        generalSettings: { type: 'object' },
+        networkSecurity: { type: 'object' },
+        outboundWebhookPolicy: { type: 'object' },
+      },
+    },
+    destructive: true,
+    category: 'Maintenance',
+    requiredScope: 'settings:gateway:edit',
+    invalidateStores: ['settings'],
+  },
+  {
+    name: 'manage_system_updates',
+    description:
+      'Read or manage Gateway and daemon updates. Operations: get_gateway_status, check_gateway, get_gateway_release_notes, perform_gateway_update, list_daemon_updates, check_daemon_updates, update_daemon. Mutating operations require explicit approval unless the user bypass mode allows it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: [
+            'get_gateway_status',
+            'check_gateway',
+            'get_gateway_release_notes',
+            'perform_gateway_update',
+            'list_daemon_updates',
+            'check_daemon_updates',
+            'update_daemon',
+          ],
+          description: 'System update operation to perform.',
+        },
+        version: {
+          type: 'string',
+          description: 'Gateway version for get_gateway_release_notes or perform_gateway_update.',
+        },
+        nodeId: { type: 'string', description: 'Daemon node UUID for update_daemon.' },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Maintenance',
+    requiredScope: 'admin:update',
+    invalidateStores: ['settings', 'nodes'],
   },
   {
     name: 'get_audit_log',
@@ -890,7 +1288,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'internal_documentation',
     description:
-      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: discovery, pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, housekeeping, permissions, docker, databases, postgres, redis, logging, folders, node-files, sandbox, conversations, status-page, api, notifications.',
+      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: discovery, pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, housekeeping, permissions, docker, databases, postgres, redis, logging, folders, node-files, sandbox, conversations, ai-settings, status-page, api, notifications.',
     parameters: {
       type: 'object',
       properties: {
@@ -922,6 +1320,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
             'conversations',
             'status-page',
             'api',
+            'ai-settings',
             'notifications',
           ],
           description: 'The topic to get documentation about',

@@ -71,6 +71,10 @@ describe('MCP tool scope filtering', () => {
     );
   });
 
+  it('never exposes node filesystem tools through MCP', () => {
+    expect(toolNames(['nodes:files:read', 'nodes:files:write'])).not.toContain('manage_node_file');
+  });
+
   it('keeps wait available as a safe MCP coordination tool without delegated scopes', () => {
     expect(toolNames([])).toContain('wait');
     expect(toolByName([], 'wait')?.destructive).toBe(false);

@@ -252,9 +252,12 @@ async function executeProxyFolderTool(user: User, args: Record<string, unknown>)
       await service.moveHostsToFolder(parsed, user.id);
       return { success: true };
     }
-    case 'reorder_resources':
-      await service.reorderHosts(ReorderHostsSchema.parse(args));
+    case 'reorder_resources': {
+      const parsed = ReorderHostsSchema.parse(args);
+      for (const item of parsed.items) ensureScopeForResource(user, 'proxy:edit', item.id);
+      await service.reorderHosts(parsed);
       return { success: true };
+    }
     default:
       throw new Error(`Unsupported proxy folder operation: ${operation}`);
   }
