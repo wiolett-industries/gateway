@@ -94,6 +94,10 @@ export const ALL_SCOPES = [
   // ── Features ─────────────────────────────────────────────────────
   'feat:ai:use',
   'feat:ai:configure',
+  'ai:sandbox:use',
+  'ai:sandbox:tier:medium',
+  'ai:sandbox:tier:high',
+  'ai:sandbox:manage',
   'mcp:use',
   // ── Docker: Containers ───────────────────────────────────────────
   'docker:containers:view',
@@ -180,7 +184,15 @@ export const ALL_SCOPES = [
 
 export type Scope = (typeof ALL_SCOPES)[number];
 
-export const USER_ONLY_SCOPES = ['feat:ai:use', 'feat:ai:configure', 'mcp:use'] as const;
+export const USER_ONLY_SCOPES = [
+  'feat:ai:use',
+  'feat:ai:configure',
+  'ai:sandbox:use',
+  'ai:sandbox:tier:medium',
+  'ai:sandbox:tier:high',
+  'ai:sandbox:manage',
+  'mcp:use',
+] as const;
 export const PROGRAMMATIC_DENIED_BASE_SCOPES = [
   ...USER_ONLY_SCOPES,
   'admin:system',
@@ -278,6 +290,10 @@ export const ADMIN_SCOPES: readonly string[] = [
   'license:manage',
   'feat:ai:use',
   'feat:ai:configure',
+  'ai:sandbox:use',
+  'ai:sandbox:tier:medium',
+  'ai:sandbox:tier:high',
+  'ai:sandbox:manage',
   'mcp:use',
   'docker:containers:view',
   'docker:containers:create',
@@ -386,6 +402,7 @@ export const OPERATOR_SCOPES: readonly string[] = [
   'nodes:rename',
   'nodes:folders:manage',
   'feat:ai:use',
+  'ai:sandbox:use',
   'mcp:use',
   'admin:alerts',
   'license:view',

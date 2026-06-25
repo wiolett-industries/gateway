@@ -51,4 +51,23 @@ describe('MCP tool scope filtering', () => {
     expect(toolNames(['logs:read:env-1'])).toContain('manage_logging');
     expect(toolNames(['status-page:incidents:resolve'])).toContain('manage_status_page');
   });
+
+  it('never exposes AI sandbox runner tools through MCP', () => {
+    const sandboxToolNames = [
+      'execute_script',
+      'run_process',
+      'fetch',
+      'download_artifact',
+      'read_artifact',
+      'send_artifact',
+      'read_process_output',
+      'write_process_stdin',
+      'kill_process',
+      'list_sandbox_jobs',
+    ];
+
+    expect(toolNames(['ai:sandbox:use', 'ai:sandbox:tier:medium', 'ai:sandbox:tier:high'])).not.toEqual(
+      expect.arrayContaining(sandboxToolNames)
+    );
+  });
 });

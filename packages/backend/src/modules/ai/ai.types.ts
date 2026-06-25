@@ -23,6 +23,8 @@ export interface AIConfig {
   webSearchEnabled: boolean;
   webSearchProvider: WebSearchProvider;
   webSearchBaseUrl: string;
+  sandboxEnabled: boolean;
+  sandboxDefaultTier: 'low' | 'medium' | 'high';
 }
 
 export interface EncryptedValue {

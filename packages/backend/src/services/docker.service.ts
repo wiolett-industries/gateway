@@ -73,10 +73,12 @@ export class DockerService {
     method: string,
     path: string,
     body?: unknown,
-    timeoutMs?: number
+    timeoutMs?: number,
+    headers: Record<string, string> = {}
   ): Promise<{ statusCode: number; body: string; bodyRaw: Buffer }> {
     return new Promise((resolve, reject) => {
-      const payload = body !== undefined ? JSON.stringify(body) : undefined;
+      const payload =
+        body === undefined ? undefined : Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body), 'utf-8');
 
       const req = http.request(
         {
@@ -85,10 +87,11 @@ export class DockerService {
           path,
           timeout: timeoutMs,
           headers: {
+            ...headers,
             ...(payload !== undefined
               ? {
-                  'Content-Type': 'application/json',
-                  'Content-Length': Buffer.byteLength(payload),
+                  ...(!headers['Content-Type'] ? { 'Content-Type': 'application/json' } : {}),
+                  'Content-Length': payload.byteLength,
                 }
               : {}),
           },
@@ -113,9 +116,7 @@ export class DockerService {
       });
       req.on('error', reject);
 
-      if (payload !== undefined) {
-        req.write(payload);
-      }
+      if (payload !== undefined) req.write(payload);
 
       req.end();
     });
@@ -314,12 +315,12 @@ export class DockerService {
   /**
    * Wait for a container to exit. Returns the exit code.
    */
-  async waitContainer(id: string): Promise<number> {
+  async waitContainer(id: string, timeoutMs = 300_000): Promise<number> {
     const res = await this.request(
       'POST',
       `${API_VERSION}/containers/${encodeURIComponent(id)}/wait`,
       undefined,
-      300_000
+      timeoutMs
     );
     if (res.statusCode !== 200) {
       throw new Error(`Docker container wait failed (${res.statusCode}): ${res.body}`);
@@ -335,6 +336,59 @@ export class DockerService {
     const res = await this.request('DELETE', `${API_VERSION}/containers/${encodeURIComponent(id)}?force=true`);
     if (res.statusCode !== 204 && res.statusCode !== 404) {
       throw new Error(`Docker container remove failed (${res.statusCode}): ${res.body}`);
+    }
+  }
+
+  async stopContainer(id: string, timeoutSeconds = 5): Promise<void> {
+    const res = await this.request(
+      'POST',
+      `${API_VERSION}/containers/${encodeURIComponent(id)}/stop?t=${encodeURIComponent(String(timeoutSeconds))}`
+    );
+    if (res.statusCode !== 204 && res.statusCode !== 304 && res.statusCode !== 404) {
+      throw new Error(`Docker container stop failed (${res.statusCode}): ${res.body}`);
+    }
+  }
+
+  async killContainer(id: string): Promise<void> {
+    const res = await this.request('POST', `${API_VERSION}/containers/${encodeURIComponent(id)}/kill`);
+    if (res.statusCode !== 204 && res.statusCode !== 404) {
+      throw new Error(`Docker container kill failed (${res.statusCode}): ${res.body}`);
+    }
+  }
+
+  async getContainerLogs(id: string, options: { stdout?: boolean; stderr?: boolean; tail?: number } = {}): Promise<string> {
+    const params = new URLSearchParams({
+      stdout: String(options.stdout ?? true),
+      stderr: String(options.stderr ?? true),
+    });
+    if (options.tail !== undefined) params.set('tail', String(Math.max(0, Math.floor(options.tail))));
+    const res = await this.request('GET', `${API_VERSION}/containers/${encodeURIComponent(id)}/logs?${params}`);
+    if (res.statusCode !== 200 && res.statusCode !== 404) {
+      throw new Error(`Docker container logs failed (${res.statusCode}): ${res.body}`);
+    }
+    return this.stripDockerStreamHeaders(res.bodyRaw);
+  }
+
+  async listContainersByLabel(label: string): Promise<DockerContainerListItem[]> {
+    const filters = encodeURIComponent(JSON.stringify({ label: [label] }));
+    const res = await this.request('GET', `${API_VERSION}/containers/json?all=true&filters=${filters}`);
+    if (res.statusCode !== 200) {
+      throw new Error(`Docker container list failed (${res.statusCode}): ${res.body}`);
+    }
+    return JSON.parse(res.body) as DockerContainerListItem[];
+  }
+
+  async putContainerArchive(id: string, containerPath: string, tarArchive: Buffer): Promise<void> {
+    const params = new URLSearchParams({ path: containerPath });
+    const res = await this.request(
+      'PUT',
+      `${API_VERSION}/containers/${encodeURIComponent(id)}/archive?${params}`,
+      tarArchive,
+      300_000,
+      { 'Content-Type': 'application/x-tar' }
+    );
+    if (res.statusCode !== 200) {
+      throw new Error(`Docker put archive failed (${res.statusCode}): ${res.body}`);
     }
   }
 
@@ -414,9 +468,42 @@ export interface DockerContainerFullInspect extends DockerContainerInspect {
 export interface DockerCreateContainerConfig {
   Image: string;
   Cmd?: string[];
+  Entrypoint?: string[];
   Env?: string[];
+  Labels?: Record<string, string>;
+  User?: string;
+  WorkingDir?: string;
+  AttachStdout?: boolean;
+  AttachStderr?: boolean;
+  AttachStdin?: boolean;
+  OpenStdin?: boolean;
+  StdinOnce?: boolean;
+  Tty?: boolean;
   HostConfig?: {
     Binds?: string[];
     AutoRemove?: boolean;
+    ReadonlyRootfs?: boolean;
+    NetworkMode?: string;
+    CapDrop?: string[];
+    SecurityOpt?: string[];
+    PidsLimit?: number;
+    Memory?: number;
+    MemorySwap?: number;
+    CpuPeriod?: number;
+    CpuQuota?: number;
+    Tmpfs?: Record<string, string>;
+    LogConfig?: {
+      Type: string;
+      Config?: Record<string, string>;
+    };
   };
+}
+
+export interface DockerContainerListItem {
+  Id: string;
+  Names: string[];
+  Image: string;
+  State: string;
+  Status: string;
+  Labels?: Record<string, string>;
 }

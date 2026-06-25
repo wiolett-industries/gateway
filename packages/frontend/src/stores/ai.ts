@@ -295,6 +295,30 @@ function compactToolResultForModel(toolName: string, value: unknown): unknown {
   if (toolName === "get_docker_container_logs")
     return compactLogLikeResult(value, "Docker container logs");
   if (
+    toolName === "send_artifact" &&
+    typeof value === "object" &&
+    value !== null
+  ) {
+    const { artifactId, filename, mediaType, sizeBytes, sourcePath, downloadUrl } =
+      value as Record<string, unknown>;
+    return { artifactId, filename, mediaType, sizeBytes, sourcePath, downloadUrl };
+  }
+  if (
+    (toolName === "fetch" || toolName === "read_artifact") &&
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { content?: unknown }).content === "string" &&
+    ((value as { content: string }).content.length > 4000)
+  ) {
+    const content = (value as { content: string }).content;
+    return {
+      ...(value as Record<string, unknown>),
+      content: undefined,
+      contentPreview: content.slice(0, 2000),
+      contentOmitted: true,
+    };
+  }
+  if (
     toolName === "manage_logging" &&
     typeof value === "object" &&
     value !== null &&

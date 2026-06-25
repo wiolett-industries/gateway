@@ -19,6 +19,8 @@ const BASE_CONFIG: AIConfig = {
   webSearchEnabled: false,
   webSearchProvider: 'tavily',
   webSearchBaseUrl: '',
+  sandboxEnabled: false,
+  sandboxDefaultTier: 'low',
 };
 
 const TOOLS = [

@@ -22,6 +22,13 @@ function dockerToolNamesForScopes(scopes: string[]): string[] {
   return toolNames(scopes).filter((name) => dockerToolNames.has(name));
 }
 
+function sandboxToolNamesForScopes(scopes: string[], sandboxEnabled: boolean): string[] {
+  const sandboxToolNames = new Set(AI_TOOLS.filter((tool) => tool.category === 'Sandbox').map((tool) => tool.name));
+  return getOpenAITools([], scopes, false, { sandboxEnabled })
+    .map((tool) => tool.function.name)
+    .filter((name) => sandboxToolNames.has(name));
+}
+
 describe('AI tool scope filtering', () => {
   it('keeps core registry ordering, uniqueness, and invalidation contracts stable', () => {
     expect(new Set(AI_TOOLS.map((tool) => tool.name)).size).toBe(AI_TOOLS.length);
@@ -328,5 +335,35 @@ describe('AI tool scope filtering', () => {
     expect(isDestructiveTool('list_docker_containers')).toBe(false);
     expect(isDestructiveTool('create_docker_container')).toBe(true);
     expect(isDestructiveTool('manage_docker_task')).toBe(false);
+  });
+
+  it('only advertises sandbox tools when sandbox is enabled and scoped', () => {
+    const expectedSandboxTools = [
+      'execute_script',
+      'run_process',
+      'fetch',
+      'download_artifact',
+      'read_artifact',
+      'send_artifact',
+      'read_process_output',
+      'write_process_stdin',
+      'kill_process',
+      'list_sandbox_jobs',
+    ];
+
+    expect(AI_TOOLS.filter((tool) => tool.category === 'Sandbox').map((tool) => tool.name)).toEqual(
+      expectedSandboxTools
+    );
+    expect(sandboxToolNamesForScopes(['ai:sandbox:use'], false)).toEqual([]);
+    expect(sandboxToolNamesForScopes([], true)).toEqual([]);
+    expect(sandboxToolNamesForScopes(['ai:sandbox:use'], true)).toEqual(expectedSandboxTools);
+    expect(isDestructiveTool('execute_script')).toBe(true);
+    expect(isDestructiveTool('run_process')).toBe(true);
+    expect(isDestructiveTool('fetch')).toBe(false);
+    expect(isDestructiveTool('download_artifact')).toBe(false);
+    expect(isDestructiveTool('read_artifact')).toBe(false);
+    expect(isDestructiveTool('send_artifact')).toBe(false);
+    expect(isDestructiveTool('read_process_output')).toBe(false);
+    expect(isDestructiveTool('list_sandbox_jobs')).toBe(false);
   });
 });

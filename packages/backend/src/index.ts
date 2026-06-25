@@ -21,6 +21,8 @@ import { TOKENS } from '@/container.js';
 import { startGrpcServer, stopGrpcServer } from '@/grpc/server.js';
 import { logger } from '@/lib/logger.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
+import { AISandboxRunnerService } from '@/modules/ai/ai.sandbox-runner.service.js';
+import { AISandboxService } from '@/modules/ai/ai.sandbox.service.js';
 import { LoggingClickHouseService } from '@/modules/logging/logging-clickhouse.service.js';
 import { LoggingMetadataService } from '@/modules/logging/logging-metadata.service.js';
 import { CAService } from '@/modules/pki/ca.service.js';
@@ -93,6 +95,13 @@ async function main() {
     });
 
     // Start background jobs
+    const sandboxRunner = container.resolve(AISandboxRunnerService);
+    try {
+      await sandboxRunner.health();
+    } catch (err) {
+      logger.warn('Sandbox runner is unavailable at startup', { err });
+    }
+
     const scheduler = container.resolve(SchedulerService);
     scheduler.start();
 
@@ -105,6 +114,15 @@ async function main() {
         await stopGrpcServer();
       } catch (err) {
         logger.error('Failed to stop gRPC server', { err });
+      }
+
+      try {
+        const sandbox = container.resolve(AISandboxService);
+        sandbox.stopPolicyReconciliation();
+        await sandboxRunner.stop();
+        logger.info('Sandbox runner stopped');
+      } catch (err) {
+        logger.error('Failed to stop sandbox runner', { err });
       }
 
       try {

@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Download,
   FileText,
   Globe,
   HelpCircle,
@@ -66,6 +67,10 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   internal_documentation: BookOpen,
   ask_question: HelpCircle,
   wait: Clock,
+  fetch: Globe,
+  download_artifact: Download,
+  read_artifact: FileText,
+  send_artifact: Download,
 };
 
 interface AIToolCallBlockProps {
@@ -118,6 +123,7 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
   const hasError = !!safeToolCall.error;
   const hasContent = hasArgs || hasResult || hasError || toolStatus === "rejected";
   const isExpandedChevronVisible = expanded || toolStatus === "running" || toolStatus === "failed";
+  const artifactResult = parseArtifactResult(safeToolCall.result);
 
   return (
     <div className="my-0.5 text-sm">
@@ -192,7 +198,19 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
               {JSON.stringify(toolArguments, null, 2)}
             </pre>
           )}
-          {hasResult && (
+          {artifactResult && (
+            <div className="border border-t-0 border-border bg-muted/50 px-2.5 py-2 text-sm">
+              <a
+                href={artifactResult.downloadUrl}
+                className="inline-flex items-center gap-2 border border-border px-2.5 py-1.5 transition-colors hover:border-foreground hover:text-foreground"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="font-medium">{artifactResult.filename}</span>
+                <span className="text-muted-foreground">{formatBytes(artifactResult.sizeBytes)}</span>
+              </a>
+            </div>
+          )}
+          {hasResult && !artifactResult && (
             <pre className="max-h-48 overflow-x-auto whitespace-pre-wrap border border-t-0 border-border bg-muted/50 px-2.5 py-1.5 text-[11px]">
               {typeof safeToolCall.result === "string"
                 ? safeToolCall.result
@@ -213,6 +231,32 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
       </div>
     </div>
   );
+}
+
+function parseArtifactResult(value: unknown):
+  | { filename: string; sizeBytes: number; downloadUrl: string }
+  | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.downloadUrl !== "string" ||
+    typeof record.filename !== "string" ||
+    typeof record.sizeBytes !== "number"
+  ) {
+    return null;
+  }
+  return {
+    filename: record.filename,
+    sizeBytes: record.sizeBytes,
+    downloadUrl: record.downloadUrl,
+  };
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export function QuestionBlock({

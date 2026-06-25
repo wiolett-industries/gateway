@@ -7,6 +7,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import { hasScope, isScopeSubset } from '@/lib/permissions.js';
 import { canonicalizeScopes } from '@/lib/scopes.js';
 import { AppError } from '@/middleware/error-handler.js';
+import type { AISandboxService } from '@/modules/ai/ai.sandbox.service.js';
 import { computeEffectiveGroupAccess, fetchGroupScopeMap } from '@/modules/auth/live-session-user.js';
 import type { CreateGroupInput, UpdateGroupInput } from './group.schemas.js';
 
@@ -27,8 +28,12 @@ export class GroupService {
   constructor(@inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient) {}
 
   private eventBus?: import('@/services/event-bus.service.js').EventBusService;
+  private sandboxService?: AISandboxService;
   setEventBus(bus: import('@/services/event-bus.service.js').EventBusService) {
     this.eventBus = bus;
+  }
+  setSandboxService(service: AISandboxService) {
+    this.sandboxService = service;
   }
   private emitGroup(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('group.changed', { id, action });
@@ -55,18 +60,20 @@ export class GroupService {
 
   /** Cascade a permissions change to every user in the affected group tree. */
   private async cascadePermissions(groupId: string) {
-    if (!this.eventBus) return;
-
-    const allGroups = await this.db
-      .select({ id: permissionGroups.id, parentId: permissionGroups.parentId })
-      .from(permissionGroups);
-    const groupMap = new Map(allGroups.map((group) => [group.id, group]));
+    const groupMap = await fetchGroupScopeMap(this.db);
     const affectedGroupIds = [groupId, ...this.collectDescendantGroupIds(groupId, groupMap)];
 
-    const affected = await this.db.select({ id: users.id }).from(users).where(inArray(users.groupId, affectedGroupIds));
+    const affected = await this.db
+      .select({ id: users.id, groupId: users.groupId, isBlocked: users.isBlocked })
+      .from(users)
+      .where(inArray(users.groupId, affectedGroupIds));
 
     for (const u of affected) {
-      this.eventBus.publish(`permissions.changed.${u.id}`, { groupId });
+      const scopes = u.isBlocked ? [] : computeEffectiveGroupAccess(u.groupId, groupMap).scopes;
+      this.eventBus?.publish(`permissions.changed.${u.id}`, { scopes, groupId: u.groupId });
+      await this.sandboxService?.revokeUserAccess(u.id, scopes, 'permissions_changed').catch((error) => {
+        logger.warn('Failed to revoke sandbox jobs after group permission cascade', { userId: u.id, groupId, error });
+      });
     }
   }
 

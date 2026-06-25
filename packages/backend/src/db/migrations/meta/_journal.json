@@ -281,6 +281,13 @@
       "when": 1782396000000,
       "tag": "0039_ai_conversations",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1782482400000,
+      "tag": "0040_sandbox_jobs",
+      "breakpoints": true
     }
   ]
 }

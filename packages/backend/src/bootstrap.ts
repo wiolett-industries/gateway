@@ -16,6 +16,10 @@ import { AdminUserFolderService } from '@/modules/admin/admin-user-folders.servi
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
 import { AIConversationService } from '@/modules/ai/ai-conversation.service.js';
+import { AISandboxArtifactService } from '@/modules/ai/ai.sandbox-artifact.service.js';
+import { AISandboxJobsService } from '@/modules/ai/ai.sandbox-jobs.service.js';
+import { AISandboxRunnerService } from '@/modules/ai/ai.sandbox-runner.service.js';
+import { AISandboxService } from '@/modules/ai/ai.sandbox.service.js';
 import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
@@ -447,6 +451,16 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(AISettingsService, aiSettingsService);
   const aiConversationService = new AIConversationService(db);
   container.registerInstance(AIConversationService, aiConversationService);
+  const aiSandboxArtifactService = new AISandboxArtifactService(env);
+  container.registerInstance(AISandboxArtifactService, aiSandboxArtifactService);
+  const aiSandboxJobsService = new AISandboxJobsService(db);
+  container.registerInstance(AISandboxJobsService, aiSandboxJobsService);
+  const aiSandboxRunnerService = new AISandboxRunnerService();
+  container.registerInstance(AISandboxRunnerService, aiSandboxRunnerService);
+  const aiSandboxService = new AISandboxService(aiSandboxJobsService, aiSandboxRunnerService, aiSandboxArtifactService);
+  container.registerInstance(AISandboxService, aiSandboxService);
+  aiSandboxService.startPolicyReconciliation();
+  authService.setSandboxService(aiSandboxService);
 
   // Domain management
   const domainsService = new DomainsService(db, auditService);
@@ -541,11 +555,13 @@ export async function initializeContainer(): Promise<void> {
 
   // Housekeeping service
   const housekeepingService = new HousekeepingService(db, dockerService, nodeDispatch, env);
+  housekeepingService.setSandboxArtifactService(aiSandboxArtifactService);
   container.registerInstance(HousekeepingService, housekeepingService);
 
   // Group service (injectable — resolve from container)
   const groupService = container.resolve(GroupService);
   groupService.setEventBus(eventBus);
+  groupService.setSandboxService(aiSandboxService);
   const permissionGroupFolderService = new PermissionGroupFolderService(db, auditService);
   permissionGroupFolderService.setEventBus(eventBus);
   container.registerInstance(PermissionGroupFolderService, permissionGroupFolderService);
@@ -591,7 +607,8 @@ export async function initializeContainer(): Promise<void> {
     notifRuleService,
     notifWebhookService,
     notifDeliveryService,
-    notifDispatcherService
+    notifDispatcherService,
+    aiSandboxService
   );
   container.registerInstance(AIService, aiService);
 

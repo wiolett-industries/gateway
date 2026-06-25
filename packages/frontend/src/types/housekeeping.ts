@@ -5,6 +5,8 @@ export interface HousekeepingConfig {
   nginxLogs: { enabled: boolean; retentionDays: number };
   auditLog: { enabled: boolean; retentionDays: number };
   dismissedAlerts: { enabled: boolean; retentionDays: number };
+  deliveryLog: { enabled: boolean; retentionDays: number };
+  sandboxArtifacts: { enabled: boolean; retentionDays: number };
   dockerPrune: { enabled: boolean };
   orphanedCerts: { enabled: boolean };
   acmeCleanup: { enabled: boolean };

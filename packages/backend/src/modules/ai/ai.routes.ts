@@ -1,3 +1,5 @@
+import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
@@ -5,6 +7,8 @@ import { canUseAI } from '@/lib/permissions.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { aiStatusRoute, getAiConfigRoute, listAiToolsRoute, updateAiConfigRoute } from './ai.openapi.js';
+import { AISandboxService } from './ai.sandbox.service.js';
+import { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
 import { AIConfigUpdateSchema, SaveAIConversationSchema, UpdateAIConversationSchema } from './ai.schemas.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS } from './ai.tools.js';
@@ -136,7 +140,8 @@ aiRoutes.openapi({ ...updateAiConfigRoute, middleware: requireScope('feat:ai:con
   }
 
   const settingsService = container.resolve(AISettingsService);
-  const config = await settingsService.updateConfig(body.data);
+  await settingsService.updateConfig(body.data);
+  const config = await settingsService.getConfigForAdmin();
   return c.json({ data: config });
 });
 
@@ -166,3 +171,50 @@ aiRoutes.openapi({ ...listAiToolsRoute, middleware: requireScope('feat:ai:config
 
   return c.json({ data: grouped });
 });
+
+aiRoutes.get('/sandbox/status', requireScope('ai:sandbox:use'), async (c) => {
+  const service = container.resolve(AISandboxService);
+  const status = service.status();
+  return c.json({ data: status });
+});
+
+aiRoutes.get('/sandbox/jobs', requireScope('ai:sandbox:use'), async (c) => {
+  const service = container.resolve(AISandboxService);
+  const user = c.get('user')!;
+  const activeOnly = c.req.query('activeOnly') === 'true';
+  const limitRaw = Number(c.req.query('limit') ?? 50);
+  const data = await service.listJobs(user, {
+    activeOnly,
+    limit: Number.isFinite(limitRaw) ? limitRaw : 50,
+  });
+  return c.json({ data });
+});
+
+aiRoutes.post('/sandbox/jobs/:id/kill', requireScope('ai:sandbox:use'), async (c) => {
+  const service = container.resolve(AISandboxService);
+  const user = c.get('user')!;
+  const data = await service.killProcess(user, c.req.param('id'));
+  return c.json({ data });
+});
+
+aiRoutes.get('/sandbox/jobs/:id/output', requireScope('ai:sandbox:use'), async (c) => {
+  const service = container.resolve(AISandboxService);
+  const user = c.get('user')!;
+  const tailRaw = Number(c.req.query('tail') ?? 200);
+  const data = await service.readProcessOutput(user, c.req.param('id'), Number.isFinite(tailRaw) ? tailRaw : 200);
+  return c.json({ data });
+});
+
+aiRoutes.get('/sandbox/artifacts/:id/download', requireScope('ai:sandbox:use'), async (c) => {
+  const service = container.resolve(AISandboxArtifactService);
+  const user = c.get('user')!;
+  const artifact = await service.getDownload(user.id, c.req.param('id'));
+  c.header('Content-Type', artifact.metadata.mediaType);
+  c.header('Content-Length', String(artifact.metadata.sizeBytes));
+  c.header('Content-Disposition', `attachment; filename="${contentDispositionFilename(artifact.metadata.filename)}"`);
+  return c.body(Readable.toWeb(createReadStream(artifact.filePath)) as ReadableStream);
+});
+
+function contentDispositionFilename(filename: string): string {
+  return filename.replace(/["\r\n\\]/g, '_');
+}

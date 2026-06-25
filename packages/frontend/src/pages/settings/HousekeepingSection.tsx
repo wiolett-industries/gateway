@@ -29,6 +29,8 @@ export function HousekeepingSection({ canRun, canConfigure }: HousekeepingSectio
     nginxLogs: { enabled: true, retentionDays: 30 },
     auditLog: { enabled: true, retentionDays: 90 },
     dismissedAlerts: { enabled: true, retentionDays: 30 },
+    deliveryLog: { enabled: true, retentionDays: 7 },
+    sandboxArtifacts: { enabled: true, retentionDays: 7 },
     dockerPrune: { enabled: true },
     orphanedCerts: { enabled: false },
     acmeCleanup: { enabled: true },

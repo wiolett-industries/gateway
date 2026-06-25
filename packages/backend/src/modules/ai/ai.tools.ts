@@ -3,6 +3,7 @@ import { DOCKER_AI_TOOLS } from './ai.tools.docker.js';
 import { NOTIFICATION_AI_TOOLS, WEB_SEARCH_AI_TOOL } from './ai.tools.notifications.js';
 import { OPERATION_AI_TOOLS } from './ai.tools.operations.js';
 import { PKI_AI_TOOLS } from './ai.tools.pki.js';
+import { SANDBOX_AI_TOOLS } from './ai.tools.sandbox.js';
 import type { AIToolDefinition } from './ai.types.js';
 import { canUseAiTool } from './ai-tool-filtering.js';
 
@@ -930,6 +931,9 @@ export const AI_TOOLS: AIToolDefinition[] = [
   // ── Operations ──
   ...OPERATION_AI_TOOLS,
 
+  // ── Sandbox ──
+  ...SANDBOX_AI_TOOLS,
+
   // ── Notifications ──
   ...NOTIFICATION_AI_TOOLS,
 
@@ -969,12 +973,13 @@ export function getOpenAITools(
   disabledTools: string[],
   userScopes: string[],
   webSearchEnabled: boolean,
-  options: { discoveredToolsets?: string[] } = {}
+  options: { discoveredToolsets?: string[]; sandboxEnabled?: boolean } = {}
 ): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
   const discoveredToolsets = options.discoveredToolsets === undefined ? undefined : new Set(options.discoveredToolsets);
   return AI_TOOLS.filter((t) => {
     if (disabledTools.includes(t.name)) return false;
     if (t.name === 'web_search' && !webSearchEnabled) return false;
+    if (t.category === 'Sandbox' && options.sandboxEnabled !== true) return false;
     if (discoveredToolsets && !BASE_AI_TOOL_NAMES.has(t.name) && !discoveredToolsets.has(t.category)) return false;
     // Every tool must have a requiredScope — reject tools without one
     if (!t.requiredScope) return false;

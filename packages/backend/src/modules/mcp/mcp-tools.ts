@@ -13,7 +13,21 @@ import { AuditService } from '@/modules/audit/audit.service.js';
 import type { User } from '@/types.js';
 import type { McpAuthContext } from './mcp-types.js';
 
-const MCP_EXCLUDED_TOOLS = new Set(['ask_question', 'internal_documentation', 'web_search']);
+const MCP_EXCLUDED_TOOLS = new Set([
+  'ask_question',
+  'internal_documentation',
+  'web_search',
+  'execute_script',
+  'run_process',
+  'fetch',
+  'download_artifact',
+  'read_artifact',
+  'send_artifact',
+  'read_process_output',
+  'write_process_stdin',
+  'kill_process',
+  'list_sandbox_jobs',
+]);
 const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
 const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
 const DIRECT_RAW_READ_TOOLS = new Set(['get_proxy_rendered_config']);

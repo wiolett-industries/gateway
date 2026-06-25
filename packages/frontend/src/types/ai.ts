@@ -50,9 +50,48 @@ export interface AIConfig {
   webSearchEnabled: boolean;
   webSearchProvider: WebSearchProvider;
   webSearchBaseUrl: string;
+  sandboxEnabled: boolean;
+  sandboxDefaultTier: "low" | "medium" | "high";
   hasApiKey: boolean;
   apiKeyLast4: string;
   hasWebSearchKey: boolean;
+  webSearchApiKeyLast4: string;
+}
+
+export interface AISandboxStatus {
+  state: "stopped" | "starting" | "running" | "unavailable";
+  socketPath?: string;
+  pid?: number;
+  lastError?: string;
+}
+
+export interface AISandboxJob {
+  id: string;
+  userId: string;
+  conversationId: string | null;
+  kind: "script" | "process";
+  runtime: "alpine" | "node" | "python";
+  resourceTier: "low" | "medium" | "high";
+  requestedTtlSeconds: number;
+  effectiveTtlSeconds: number;
+  requiredScopes: string[];
+  status: "queued" | "running" | "exited" | "killed" | "timeout" | "failed" | "revoked";
+  containerId: string | null;
+  exitCode: number | null;
+  outputBytes: number;
+  revocationReason: string | null;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  expiresAt: string | null;
+  updatedAt: string;
+}
+
+export interface AISandboxOutput {
+  processId: string;
+  output: string;
+  outputBytes: number;
 }
 
 // ── Page Context ──

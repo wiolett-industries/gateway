@@ -63,8 +63,21 @@ import type {
 } from './ai.types.js';
 import { executeWebSearch } from './ai.web-search.js';
 import { AIConversationService } from './ai-conversation.service.js';
+import type { AISandboxService } from './ai.sandbox.service.js';
 
 const logger = createChildLogger('AIService');
+const SANDBOX_TOOL_NAMES = new Set([
+  'execute_script',
+  'run_process',
+  'fetch',
+  'download_artifact',
+  'read_artifact',
+  'send_artifact',
+  'read_process_output',
+  'write_process_stdin',
+  'kill_process',
+  'list_sandbox_jobs',
+]);
 
 type QueuedApproval = {
   id: string;
@@ -74,11 +87,27 @@ type QueuedApproval = {
 
 type ToolRuntimeContext = {
   pageContext?: PageContext;
+  conversationId?: string;
 };
 
 function compactToolResultForModel(toolName: string, value: unknown): unknown {
   if (value == null) return value;
   if (toolName === 'get_docker_container_logs') return compactLogLikeResult(value, 'Docker container logs');
+  if (toolName === 'send_artifact' && isRecord(value)) {
+    const { artifactId, filename, mediaType, sizeBytes, sourcePath, downloadUrl } = value;
+    return { artifactId, filename, mediaType, sizeBytes, sourcePath, downloadUrl };
+  }
+  if ((toolName === 'fetch' || toolName === 'read_artifact') && isRecord(value)) {
+    const content = typeof value.content === 'string' ? value.content : undefined;
+    if (content && content.length > 4000) {
+      return {
+        ...value,
+        content: undefined,
+        contentPreview: content.slice(0, 2000),
+        contentOmitted: true,
+      };
+    }
+  }
   if (toolName === 'manage_logging' && isRecord(value) && Array.isArray(value.rows)) {
     return compactLogLikeResult(value.rows, 'Structured log search results');
   }
@@ -162,7 +191,8 @@ export class AIService {
     private readonly notifRuleService?: import('@/modules/notifications/notification-alert-rule.service.js').NotificationAlertRuleService,
     private readonly notifWebhookService?: import('@/modules/notifications/notification-webhook.service.js').NotificationWebhookService,
     private readonly notifDeliveryService?: import('@/modules/notifications/notification-delivery.service.js').NotificationDeliveryService,
-    private readonly notifDispatcherService?: import('@/modules/notifications/notification-dispatcher.service.js').NotificationDispatcherService
+    private readonly notifDispatcherService?: import('@/modules/notifications/notification-dispatcher.service.js').NotificationDispatcherService,
+    private readonly sandboxService?: AISandboxService
   ) {}
 
   async buildSystemPrompt(user: User, pageContext?: PageContext): Promise<string> {
@@ -210,6 +240,7 @@ export class AIService {
     try {
       const result = await this.executeToolInternal(executionUser, toolName, args, {
         pageContext: options.pageContext,
+        conversationId: options.conversationId,
       });
       const invalidateStores = TOOL_STORE_INVALIDATION_MAP[toolName] || [];
       await this.persistToolRuntimeState(user, options, toolName, result);
@@ -262,6 +293,82 @@ export class AIService {
     }
   }
 
+  private async executeSandboxTool(
+    user: User,
+    toolName: string,
+    args: Record<string, unknown>,
+    runtimeContext: ToolRuntimeContext
+  ) {
+    const config = await this.settingsService.getConfig();
+    if (!config.sandboxEnabled) {
+      throw new Error('Sandbox runner is disabled');
+    }
+    if (!this.sandboxService) {
+      throw new Error('Sandbox runner is not configured');
+    }
+    const a = args as Record<string, unknown>;
+    const resourceTier = (a.resourceTier ?? config.sandboxDefaultTier) as never;
+    switch (toolName) {
+      case 'execute_script':
+        return this.sandboxService.executeScript(user, {
+          runtime: a.runtime,
+          script: String(a.script ?? ''),
+          resourceTier,
+          ttlSeconds: typeof a.ttlSeconds === 'number' ? a.ttlSeconds : undefined,
+          conversationId: runtimeContext.conversationId,
+        });
+      case 'run_process':
+        return this.sandboxService.runProcess(user, {
+          runtime: a.runtime,
+          command: Array.isArray(a.command) ? a.command.map(String) : [],
+          resourceTier,
+          ttlSeconds: typeof a.ttlSeconds === 'number' ? a.ttlSeconds : undefined,
+          conversationId: runtimeContext.conversationId,
+        });
+      case 'fetch':
+        return this.sandboxService.fetch(user, { url: String(a.url ?? '') });
+      case 'download_artifact':
+        return this.sandboxService.downloadArtifact(user, {
+          processId: String(a.processId ?? ''),
+          url: String(a.url ?? ''),
+          path: typeof a.path === 'string' ? a.path : undefined,
+        });
+      case 'read_artifact':
+        return this.sandboxService.readArtifact(user, {
+          processId: String(a.processId ?? ''),
+          path: String(a.path ?? ''),
+          offset: typeof a.offset === 'number' ? a.offset : undefined,
+          length: typeof a.length === 'number' ? a.length : undefined,
+          encoding: a.encoding === 'base64' ? 'base64' : 'utf8',
+        });
+      case 'send_artifact':
+        return this.sandboxService.sendArtifact(user, {
+          processId: String(a.processId ?? ''),
+          path: String(a.path ?? ''),
+          filename: typeof a.filename === 'string' ? a.filename : undefined,
+          mediaType: typeof a.mediaType === 'string' ? a.mediaType : undefined,
+          conversationId: runtimeContext.conversationId,
+        });
+      case 'read_process_output':
+        return this.sandboxService.readProcessOutput(
+          user,
+          String(a.processId ?? ''),
+          typeof a.tail === 'number' ? a.tail : undefined
+        );
+      case 'write_process_stdin':
+        return this.sandboxService.writeProcessStdin(user, String(a.processId ?? ''), String(a.data ?? ''), a.close === true);
+      case 'kill_process':
+        return this.sandboxService.killProcess(user, String(a.processId ?? ''));
+      case 'list_sandbox_jobs':
+        return this.sandboxService.listJobs(user, {
+          activeOnly: a.activeOnly === true,
+          limit: typeof a.limit === 'number' ? a.limit : undefined,
+        });
+      default:
+        throw new Error(`Unsupported sandbox tool: ${toolName}`);
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async executeToolInternal(
     user: User,
@@ -301,6 +408,9 @@ export class AIService {
         toolName,
         args
       );
+    }
+    if (SANDBOX_TOOL_NAMES.has(toolName)) {
+      return this.executeSandboxTool(user, toolName, args, runtimeContext);
     }
     if (NODE_TOOL_NAMES.has(toolName)) {
       return executeNodeTool({ nodesService: this.nodesService }, user, toolName, args);
@@ -578,7 +688,9 @@ export class AIService {
   private async discoverTools(user: User, args: Record<string, unknown>) {
     const config = await this.settingsService.getConfig();
     const callableNames = new Set(
-      getOpenAITools(config.disabledTools, user.scopes, config.webSearchEnabled).map((tool) => tool.function.name)
+      getOpenAITools(config.disabledTools, user.scopes, config.webSearchEnabled, {
+        sandboxEnabled: config.sandboxEnabled,
+      }).map((tool) => tool.function.name)
     );
     const categoryFilter = stringArg(args.category)?.toLowerCase();
     const query = stringArg(args.query)?.toLowerCase();
@@ -646,12 +758,13 @@ export class AIService {
   }
 
   private buildModelTools(
-    config: { disabledTools: string[]; webSearchEnabled: boolean },
+    config: { disabledTools: string[]; webSearchEnabled: boolean; sandboxEnabled: boolean },
     user: User,
     discoveredToolsets: string[] | undefined
   ) {
     return getOpenAITools(config.disabledTools, user.scopes, config.webSearchEnabled, {
       discoveredToolsets,
+      sandboxEnabled: config.sandboxEnabled,
     });
   }
 

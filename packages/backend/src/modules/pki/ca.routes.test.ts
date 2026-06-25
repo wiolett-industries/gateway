@@ -11,11 +11,14 @@ const mocks = vi.hoisted(() => ({
     getCA: vi.fn(),
     createIntermediateCA: vi.fn(),
   },
+  generalSettings: {
+    isFeatureEnabled: vi.fn().mockResolvedValue(true),
+  },
 }));
 
 vi.mock('@/container.js', () => ({
   container: {
-    resolve: vi.fn(() => mocks.caService),
+    resolve: vi.fn((token) => (token?.name === 'GeneralSettingsService' ? mocks.generalSettings : mocks.caService)),
   },
 }));
 
@@ -65,6 +68,7 @@ describe('CA routes scoped visibility', () => {
       { id: 'root-1', type: 'root', commonName: 'Root' },
       { id: 'int-1', type: 'intermediate', commonName: 'Intermediate' },
     ]);
+    mocks.generalSettings.isFeatureEnabled.mockResolvedValue(true);
     mocks.caService.getCA.mockResolvedValue({ id: 'root-1', type: 'root', commonName: 'Root' });
     mocks.caService.createIntermediateCA.mockResolvedValue({ id: 'int-2', type: 'intermediate' });
   });

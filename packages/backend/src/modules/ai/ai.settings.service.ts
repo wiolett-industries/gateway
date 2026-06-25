@@ -30,6 +30,8 @@ const AI_SETTINGS_DEFAULTS: Record<string, unknown> = {
   'ai:web_search_api_key_encrypted': null,
   'ai:web_search_provider': 'tavily',
   'ai:web_search_base_url': '',
+  'ai:sandbox_enabled': false,
+  'ai:sandbox_default_tier': 'low',
 };
 
 export class AISettingsService {
@@ -68,6 +70,8 @@ export class AISettingsService {
       disabledTools: getValue<string[]>('ai:disabled_tools'),
       webSearchProvider: getValue<WebSearchProvider>('ai:web_search_provider'),
       webSearchBaseUrl: getValue<string>('ai:web_search_base_url'),
+      sandboxEnabled: getValue<boolean>('ai:sandbox_enabled'),
+      sandboxDefaultTier: getValue<'low' | 'medium' | 'high'>('ai:sandbox_default_tier'),
       webSearchEnabled:
         getValue<WebSearchProvider>('ai:web_search_provider') === 'searxng'
           ? !!getValue<string>('ai:web_search_base_url')
@@ -78,7 +82,14 @@ export class AISettingsService {
   /**
    * Returns the config with masked API key info for admin display.
    */
-  async getConfigForAdmin(): Promise<AIConfig & { hasApiKey: boolean; apiKeyLast4: string; hasWebSearchKey: boolean }> {
+  async getConfigForAdmin(): Promise<
+    AIConfig & {
+      hasApiKey: boolean;
+      apiKeyLast4: string;
+      hasWebSearchKey: boolean;
+      webSearchApiKeyLast4: string;
+    }
+  > {
     const config = await this.getConfig();
     const encrypted = await this.getSetting<EncryptedValue | null>('ai:api_key_encrypted');
     const webSearchEncrypted = await this.getSetting<EncryptedValue | null>('ai:web_search_api_key_encrypted');
@@ -93,11 +104,22 @@ export class AISettingsService {
       }
     }
 
+    let webSearchApiKeyLast4 = '';
+    if (webSearchEncrypted) {
+      try {
+        const key = this.cryptoService.decryptString(webSearchEncrypted);
+        webSearchApiKeyLast4 = key.slice(-4);
+      } catch {
+        // corrupted key
+      }
+    }
+
     return {
       ...config,
       hasApiKey: !!encrypted,
       apiKeyLast4,
       hasWebSearchKey: !!webSearchEncrypted,
+      webSearchApiKeyLast4,
     };
   }
 
@@ -118,6 +140,8 @@ export class AISettingsService {
       disabledTools: 'ai:disabled_tools',
       webSearchProvider: 'ai:web_search_provider',
       webSearchBaseUrl: 'ai:web_search_base_url',
+      sandboxEnabled: 'ai:sandbox_enabled',
+      sandboxDefaultTier: 'ai:sandbox_default_tier',
     };
 
     for (const [field, value] of Object.entries(updates)) {

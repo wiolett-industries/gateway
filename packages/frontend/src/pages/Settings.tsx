@@ -1,4 +1,4 @@
-import { Moon, ServerCog, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
+import { Bot, Moon, ServerCog, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -25,7 +25,7 @@ import { OAuthApplicationsSection } from "./settings/OAuthApplicationsSection";
 import { StatusPageSection } from "./settings/StatusPageSection";
 import { UpdateSection } from "./settings/UpdateSection";
 
-const SETTINGS_TABS = ["preferences", "gateway", "features"] as const;
+const SETTINGS_TABS = ["preferences", "gateway", "features", "ai"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 function isSettingsTab(value: string | null | undefined): value is SettingsTab {
@@ -72,13 +72,14 @@ export function Settings() {
   const userScopes = user?.scopes;
   const canAccessGatewayTab =
     canViewGatewaySettings || canManageRegistries || canUpdate || canViewLicense;
-  const canAccessFeaturesTab = canConfigAI || canViewStatusPage || canViewHousekeeping;
+  const canAccessFeaturesTab = canViewStatusPage || canViewHousekeeping;
   const availableTabs = useMemo<SettingsTab[]>(() => {
     const tabs: SettingsTab[] = ["preferences"];
     if (canAccessGatewayTab) tabs.push("gateway");
     if (canAccessFeaturesTab) tabs.push("features");
+    if (canConfigAI) tabs.push("ai");
     return tabs;
-  }, [canAccessFeaturesTab, canAccessGatewayTab]);
+  }, [canAccessFeaturesTab, canAccessGatewayTab, canConfigAI]);
   const currentTab = availableTabs.includes(activeTab) ? activeTab : availableTabs[0];
 
   useEffect(() => {
@@ -232,6 +233,12 @@ export function Settings() {
                 Features
               </TabsTrigger>
             )}
+            {canConfigAI && (
+              <TabsTrigger value="ai" className="gap-1.5">
+                <Bot className="h-3.5 w-3.5" />
+                AI Assistant
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="preferences" className="pb-0">
@@ -376,8 +383,6 @@ export function Settings() {
           {canAccessFeaturesTab && (
             <TabsContent value="features" className="pb-0">
               <div className="space-y-4">
-                {canConfigAI && <AIConfigSection />}
-
                 {canViewStatusPage && <StatusPageSection nodesList={nodesList} />}
 
                 {canViewHousekeeping && (
@@ -386,6 +391,14 @@ export function Settings() {
                     canConfigure={canConfigureHousekeeping}
                   />
                 )}
+              </div>
+            </TabsContent>
+          )}
+
+          {canConfigAI && (
+            <TabsContent value="ai" className="pb-0">
+              <div className="space-y-4">
+                <AIConfigSection />
               </div>
             </TabsContent>
           )}

@@ -8,6 +8,7 @@ import { permissionGroups, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { canManageUser, isScopeSubset } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
+import type { AISandboxService } from '@/modules/ai/ai.sandbox.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CacheService } from '@/services/cache.service.js';
 import type { SessionService } from '@/services/session.service.js';
@@ -69,14 +70,26 @@ export class AuthService {
   ) {}
 
   private eventBus?: import('@/services/event-bus.service.js').EventBusService;
+  private sandboxService?: AISandboxService;
   setEventBus(bus: import('@/services/event-bus.service.js').EventBusService) {
     this.eventBus = bus;
+  }
+  setSandboxService(service: AISandboxService) {
+    this.sandboxService = service;
   }
   private emitUser(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('user.changed', { id, action });
   }
-  private emitPermissions(userId: string, scopes: string[], groupId: string | null) {
+  private emitPermissions(
+    userId: string,
+    scopes: string[],
+    groupId: string | null,
+    reason = 'permissions_changed'
+  ) {
     this.eventBus?.publish(`permissions.changed.${userId}`, { scopes, groupId });
+    void this.sandboxService?.revokeUserAccess(userId, scopes, reason).catch((error) => {
+      logger.warn('Failed to revoke sandbox jobs after permission change', { userId, reason, error });
+    });
   }
 
   private async getOIDCConfig(): Promise<client.Configuration> {
@@ -530,7 +543,7 @@ export class AuthService {
     }
 
     this.emitUser(userId, 'updated');
-    this.emitPermissions(userId, [], null);
+    this.emitPermissions(userId, [], null, 'user_blocked');
     return this.mapDbUserToUser(updatedUser);
   }
 
@@ -563,7 +576,7 @@ export class AuthService {
 
     logger.info('User deleted', { userId });
     this.emitUser(userId, 'deleted');
-    this.emitPermissions(userId, [], null);
+    this.emitPermissions(userId, [], null, 'user_deleted');
   }
 
   async validateSession(sessionId: string): Promise<User | null> {

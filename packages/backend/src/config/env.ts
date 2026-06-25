@@ -136,6 +136,10 @@ const envSchema = z.object({
   GRPC_TLS_CERT: optionalNonEmptyString,
   GRPC_TLS_KEY: optionalNonEmptyString,
   GRPC_TLS_AUTO_DIR: nonEmptyStringWithDefault('/var/lib/gateway/tls'),
+
+  // AI sandbox artifacts
+  AI_SANDBOX_ARTIFACT_DIR: nonEmptyStringWithDefault('/var/lib/gateway/ai-artifacts'),
+  AI_SANDBOX_ARTIFACT_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
 });
 
 export type Env = z.infer<typeof envSchema>;
