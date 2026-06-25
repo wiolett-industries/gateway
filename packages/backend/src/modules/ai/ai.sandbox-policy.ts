@@ -12,7 +12,15 @@ export const SANDBOX_RUNTIMES = ['alpine', 'node', 'python'] as const;
 export type SandboxRuntime = (typeof SANDBOX_RUNTIMES)[number];
 
 export type SandboxJobKind = 'script' | 'process';
-export type SandboxJobStatus = 'queued' | 'running' | 'exited' | 'killed' | 'timeout' | 'failed' | 'revoked';
+export type SandboxJobStatus =
+  | 'queued'
+  | 'running'
+  | 'exited'
+  | 'killed'
+  | 'timeout'
+  | 'failed'
+  | 'revoked'
+  | 'expired';
 
 export interface SandboxTierPolicy {
   tier: SandboxResourceTier;

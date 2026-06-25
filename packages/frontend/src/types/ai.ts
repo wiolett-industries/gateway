@@ -75,7 +75,7 @@ export interface AISandboxJob {
   requestedTtlSeconds: number;
   effectiveTtlSeconds: number;
   requiredScopes: string[];
-  status: "queued" | "running" | "exited" | "killed" | "timeout" | "failed" | "revoked";
+  status: "queued" | "running" | "exited" | "killed" | "timeout" | "failed" | "revoked" | "expired";
   containerId: string | null;
   exitCode: number | null;
   outputBytes: number;

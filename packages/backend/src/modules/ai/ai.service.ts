@@ -37,6 +37,7 @@ import { executePkiTemplateTool, PKI_TEMPLATE_TOOL_NAMES } from './ai.pki-templa
 import { streamModelResponse } from './ai.provider-adapter.js';
 import { executeProxyTool, PROXY_TOOL_NAMES } from './ai.proxy-tools.js';
 import { findResource } from './ai.resource-search.js';
+import type { AISandboxService } from './ai.sandbox.service.js';
 import {
   agentPage,
   agentPageLimit,
@@ -63,7 +64,6 @@ import type {
 } from './ai.types.js';
 import { executeWebSearch } from './ai.web-search.js';
 import { AIConversationService } from './ai-conversation.service.js';
-import type { AISandboxService } from './ai.sandbox.service.js';
 
 const logger = createChildLogger('AIService');
 const SANDBOX_TOOL_NAMES = new Set([
@@ -356,7 +356,12 @@ export class AIService {
           typeof a.tail === 'number' ? a.tail : undefined
         );
       case 'write_process_stdin':
-        return this.sandboxService.writeProcessStdin(user, String(a.processId ?? ''), String(a.data ?? ''), a.close === true);
+        return this.sandboxService.writeProcessStdin(
+          user,
+          String(a.processId ?? ''),
+          String(a.data ?? ''),
+          a.close === true
+        );
       case 'kill_process':
         return this.sandboxService.killProcess(user, String(a.processId ?? ''));
       case 'list_sandbox_jobs':

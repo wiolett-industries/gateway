@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, lte } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import type { NewSandboxJob } from '@/db/schema/index.js';
+import type { NewSandboxJob, SandboxJob } from '@/db/schema/index.js';
 import { sandboxJobs, users } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { computeEffectiveGroupAccess, fetchGroupScopeMap } from '@/modules/auth/live-session-user.js';
@@ -25,6 +25,12 @@ export interface ListSandboxJobsInput {
   status?: SandboxJobStatus;
   activeOnly?: boolean;
   limit?: number;
+}
+
+export interface ListExpiredSandboxJobsInput {
+  userId?: string;
+  canManageAll?: boolean;
+  now?: Date;
 }
 
 export class AISandboxJobsService {
@@ -77,6 +83,20 @@ export class AISandboxJobsService {
       .limit(Math.min(Math.max(input.limit ?? 50, 1), 200));
   }
 
+  async listExpiredActive(input: ListExpiredSandboxJobsInput = {}): Promise<SandboxJob[]> {
+    const conditions = [
+      inArray(sandboxJobs.status, ACTIVE_SANDBOX_STATUSES),
+      lte(sandboxJobs.expiresAt, input.now ?? new Date()),
+    ];
+    if (!input.canManageAll && input.userId) conditions.push(eq(sandboxJobs.userId, input.userId));
+
+    return this.db
+      .select()
+      .from(sandboxJobs)
+      .where(and(...conditions))
+      .orderBy(desc(sandboxJobs.createdAt));
+  }
+
   async markRunning(id: string, containerId: string) {
     const now = new Date();
     return this.update(id, {
@@ -89,8 +109,13 @@ export class AISandboxJobsService {
 
   async markFinished(
     id: string,
-    status: Extract<SandboxJobStatus, 'exited' | 'killed' | 'timeout' | 'failed' | 'revoked'>,
-    updates: { exitCode?: number | null; error?: string | null; revocationReason?: string | null; outputBytes?: number } = {}
+    status: Extract<SandboxJobStatus, 'exited' | 'killed' | 'timeout' | 'failed' | 'revoked' | 'expired'>,
+    updates: {
+      exitCode?: number | null;
+      error?: string | null;
+      revocationReason?: string | null;
+      outputBytes?: number;
+    } = {}
   ) {
     return this.update(id, {
       status,

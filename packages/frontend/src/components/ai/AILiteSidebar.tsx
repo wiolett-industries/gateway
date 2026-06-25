@@ -23,10 +23,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ResizeHandle } from "@/components/ui/resize-handle";
+import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, getInitials } from "@/lib/utils";
-import { api } from "@/services/api";
 import type { AIConversationSummary } from "@/services/ai-conversations";
+import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -62,8 +63,14 @@ export function AILiteSidebar({
 }: AILiteSidebarProps) {
   const navigate = useNavigate();
   const { user, hasAnyScope, logout } = useAuthStore();
-  const { sidebarOpen, toggleSidebar, pinnedAIConversationIds, togglePinnedAIConversation } =
-    useUIStore();
+  const {
+    sidebarOpen,
+    toggleSidebar,
+    pinnedAIConversationIds,
+    togglePinnedAIConversation,
+    showAILiteModeCTA,
+    setAILiteMode,
+  } = useUIStore();
   const {
     activeConversationId,
     recentConversations,
@@ -106,6 +113,10 @@ export function AILiteSidebar({
       logout();
       navigate("/login");
     }
+  };
+
+  const handleSwitchToDefaultMode = () => {
+    setAILiteMode(false);
   };
 
   return (
@@ -240,6 +251,7 @@ export function AILiteSidebar({
                             conversation={conversation}
                             active={activeConversationId === conversation.id}
                             pinned
+                            disableLayoutAnimation={isResizing}
                             onLoad={() => void handleLoadConversation(conversation.id)}
                             onTogglePin={() => togglePinnedAIConversation(conversation.id)}
                             onDelete={() => void deleteConversation(conversation.id)}
@@ -268,6 +280,7 @@ export function AILiteSidebar({
                             conversation={conversation}
                             active={activeConversationId === conversation.id}
                             pinned={false}
+                            disableLayoutAnimation={isResizing}
                             onLoad={() => void handleLoadConversation(conversation.id)}
                             onTogglePin={() => togglePinnedAIConversation(conversation.id)}
                             onDelete={() => void deleteConversation(conversation.id)}
@@ -280,29 +293,46 @@ export function AILiteSidebar({
               </div>
             </div>
 
-            <div className="border-t border-border p-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    className="flex h-auto w-full items-center justify-start gap-2 px-1 py-1.5"
-                  >
-                    <Avatar className="h-7 w-7 shrink-0">
-                      <AvatarImage src={user?.avatarUrl ?? undefined} />
-                      <AvatarFallback className="text-xs">
-                        {getInitials(user?.name || user?.email || "?")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="truncate text-sm font-medium">{user?.name || "User"}</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" side="top" className="w-56">
-                  <AccountDropdownContent
-                    canAccessAdministration={canAccessAdministration}
-                    handleLogout={handleLogout}
-                  />
-                </DropdownMenuContent>
-              </DropdownMenu>
+            <div className="border-t border-border">
+              {showAILiteModeCTA && (
+                <>
+                  <div className="px-2 py-2">
+                    <button
+                      type="button"
+                      onClick={handleSwitchToDefaultMode}
+                      className="flex w-full items-center gap-2 bg-sidebar-accent px-3 py-2 text-left text-sm font-medium text-sidebar-accent-foreground/80 transition-colors hover:bg-muted hover:text-sidebar-accent-foreground"
+                    >
+                      <PanelLeft className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Switch to default mode</span>
+                    </button>
+                  </div>
+                  <Separator />
+                </>
+              )}
+              <div className="p-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="flex h-auto w-full items-center justify-start gap-2 px-1 py-1.5"
+                    >
+                      <Avatar className="h-7 w-7 shrink-0">
+                        <AvatarImage src={user?.avatarUrl ?? undefined} />
+                        <AvatarFallback className="text-xs">
+                          {getInitials(user?.name || user?.email || "?")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="truncate text-sm font-medium">{user?.name || "User"}</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="top" className="w-56">
+                    <AccountDropdownContent
+                      canAccessAdministration={canAccessAdministration}
+                      handleLogout={handleLogout}
+                    />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </motion.div>
         )}
@@ -315,6 +345,7 @@ function ConversationMenuItem({
   conversation,
   active,
   pinned,
+  disableLayoutAnimation,
   onLoad,
   onTogglePin,
   onDelete,
@@ -322,6 +353,7 @@ function ConversationMenuItem({
   conversation: AIConversationSummary;
   active: boolean;
   pinned: boolean;
+  disableLayoutAnimation?: boolean;
   onLoad: () => void;
   onTogglePin: () => void;
   onDelete: () => void;
@@ -348,7 +380,7 @@ function ConversationMenuItem({
         <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
       </button>
       <motion.div
-        layout
+        layout={!disableLayoutAnimation}
         className="mr-2 flex h-6 shrink-0 items-center justify-end overflow-hidden"
         transition={{ duration: 0.16, ease: "easeOut" }}
       >
@@ -356,7 +388,7 @@ function ConversationMenuItem({
           {isHovered ? (
             <motion.div
               key="actions"
-              layout
+              layout={!disableLayoutAnimation}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -389,7 +421,7 @@ function ConversationMenuItem({
           ) : (
             <motion.span
               key="time"
-              layout
+              layout={!disableLayoutAnimation}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}

@@ -1,11 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  Expand,
-  MessageSquare,
-  Sparkles,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Expand, MessageSquare, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -15,9 +9,10 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
 import type { PageContext } from "@/types/ai";
-import { AIComposer, type AIApprovalMode } from "./AIComposer";
+import { type AIApprovalMode, AIComposer } from "./AIComposer";
 import { AIMessage } from "./AIMessage";
 import { QuestionBlock } from "./AIToolCallBlock";
+import { confirmAILiteMode } from "./confirm-lite-mode";
 import { QuickActionChips } from "./QuickActionChips";
 
 function autoResizeTextarea(el: HTMLTextAreaElement, maxRows = 6) {
@@ -80,7 +75,9 @@ const SLASH_COMMANDS = [
   { name: "context", description: "Show token usage" },
 ];
 
-function userMessagesAfterLastCompact(messages: ReturnType<typeof useAIStore.getState>["messages"]): number {
+function userMessagesAfterLastCompact(
+  messages: ReturnType<typeof useAIStore.getState>["messages"]
+): number {
   const lastCompactIndex = messages.reduce(
     (latest, message, index) => (message.compactMarker ? index : latest),
     -1
@@ -118,11 +115,7 @@ interface AIChatSurfaceProps {
   onEnterLiteMode?: () => void;
 }
 
-export function AIChatSurface({
-  active = true,
-  onClose,
-  onEnterLiteMode,
-}: AIChatSurfaceProps) {
+export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AIChatSurfaceProps) {
   const {
     messages,
     isStreaming,
@@ -152,26 +145,34 @@ export function AIChatSurface({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const context = usePageContext();
   const {
+    aiAlwaysAskApprovals,
     aiBypassCreateApprovals,
     aiBypassEditApprovals,
     aiBypassDeleteApprovals,
+    setAIAlwaysAskApprovals,
     setAIBypassCreateApprovals,
     setAIBypassEditApprovals,
     setAIBypassDeleteApprovals,
   } = useUIStore();
   const canCompact = userMessagesAfterLastCompact(messages) > 3;
-  const visibleSlashCommands = SLASH_COMMANDS.filter((command) => command.name !== "compact" || canCompact);
-  const approvalMode: AIApprovalMode = aiBypassDeleteApprovals
-    ? "bypass-everything"
-    : aiBypassCreateApprovals || aiBypassEditApprovals
-      ? "bypass-write"
-      : "normal";
+  const visibleSlashCommands = SLASH_COMMANDS.filter(
+    (command) => command.name !== "compact" || canCompact
+  );
+  const approvalMode: AIApprovalMode = aiAlwaysAskApprovals
+    ? "always-ask"
+    : aiBypassDeleteApprovals
+      ? "bypass-everything"
+      : aiBypassCreateApprovals || aiBypassEditApprovals
+        ? "bypass-non-destructive"
+        : "normal";
   const approvalModeLabel =
-    approvalMode === "bypass-everything"
-      ? "AI mode: bypass everything"
-      : approvalMode === "bypass-write"
-        ? "AI mode: bypass edit and creation"
-        : "AI mode: normal";
+    approvalMode === "always-ask"
+      ? "AI mode: always ask"
+      : approvalMode === "bypass-everything"
+        ? "AI mode: bypass everything"
+        : approvalMode === "bypass-non-destructive"
+          ? "AI mode: bypass non-destructive"
+          : "AI mode: normal";
 
   const setApprovalMode = useCallback(
     async (mode: AIApprovalMode) => {
@@ -182,11 +183,13 @@ export function AIChatSurface({
       ) {
         return;
       }
-      setAIBypassCreateApprovals(mode !== "normal");
-      setAIBypassEditApprovals(mode !== "normal");
+      setAIAlwaysAskApprovals(mode === "always-ask");
+      setAIBypassCreateApprovals(mode === "bypass-non-destructive" || mode === "bypass-everything");
+      setAIBypassEditApprovals(mode === "bypass-non-destructive" || mode === "bypass-everything");
       setAIBypassDeleteApprovals(mode === "bypass-everything");
     },
     [
+      setAIAlwaysAskApprovals,
       aiBypassDeleteApprovals,
       setAIBypassCreateApprovals,
       setAIBypassDeleteApprovals,
@@ -395,7 +398,9 @@ export function AIChatSurface({
                     >
                       <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs text-foreground">{conversation.title}</span>
+                        <span className="block truncate text-xs text-foreground">
+                          {conversation.title}
+                        </span>
                         <span className="block truncate text-[11px] text-muted-foreground">
                           {conversation.messageCount} messages
                         </span>
@@ -466,7 +471,7 @@ export function AIChatSurface({
           <QuestionBlock toolCall={activeQuestion} onAnswer={answerQuestion} />
         </div>
       ) : (
-        <div className="shrink-0 border-t border-border relative">
+        <div className="relative shrink-0">
           <AIComposer
             textareaRef={textareaRef}
             input={input}
@@ -488,6 +493,7 @@ export function AIChatSurface({
             approvalMode={approvalMode}
             approvalModeLabel={approvalModeLabel}
             setApprovalMode={setApprovalMode}
+            surfaceClassName="border-x-0 border-b-0 focus-within:ring-0"
           />
         </div>
       )}
@@ -506,7 +512,9 @@ export function AISidePanel({ isMobile = false }: AISidePanelProps) {
   const [isResizing, setIsResizing] = useState(false);
 
   const handleClose = () => setAIPanelOpen(false);
-  const handleEnterLiteMode = () => {
+  const handleEnterLiteMode = async () => {
+    const confirmed = await confirmAILiteMode();
+    if (!confirmed) return;
     setAILiteMode(true);
     setAIPanelOpen(false);
     navigate("/");

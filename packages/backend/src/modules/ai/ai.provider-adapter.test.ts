@@ -297,16 +297,12 @@ describe('AI provider adapter', () => {
     }
     const create = vi.fn().mockResolvedValue(chatStream());
 
-    await collectEvents(
-      { chat: { completions: { create } } },
-      { ...BASE_CONFIG, endpointMode: 'chat_completions' },
-      [
-        { role: 'system', content: 'You are helpful.' },
-        { role: 'assistant', content: null, tool_calls: [] },
-        { role: 'tool', tool_call_id: 'call-missing', content: '{"ok":true}' },
-        { role: 'user', content: 'continue' },
-      ]
-    );
+    await collectEvents({ chat: { completions: { create } } }, { ...BASE_CONFIG, endpointMode: 'chat_completions' }, [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'assistant', content: null, tool_calls: [] },
+      { role: 'tool', tool_call_id: 'call-missing', content: '{"ok":true}' },
+      { role: 'user', content: 'continue' },
+    ]);
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({

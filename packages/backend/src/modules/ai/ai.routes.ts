@@ -175,16 +175,23 @@ aiRoutes.openapi({ ...listAiToolsRoute, middleware: requireScope('feat:ai:config
 aiRoutes.get('/sandbox/status', requireScope('ai:sandbox:use'), async (c) => {
   const service = container.resolve(AISandboxService);
   const status = service.status();
-  return c.json({ data: status });
+  return c.json({ data: { ...status, state: status.status } });
 });
 
 aiRoutes.get('/sandbox/jobs', requireScope('ai:sandbox:use'), async (c) => {
   const service = container.resolve(AISandboxService);
   const user = c.get('user')!;
   const activeOnly = c.req.query('activeOnly') === 'true';
+  const statusRaw = c.req.query('status');
+  const status =
+    statusRaw &&
+    ['queued', 'running', 'exited', 'killed', 'timeout', 'failed', 'revoked', 'expired'].includes(statusRaw)
+      ? statusRaw
+      : undefined;
   const limitRaw = Number(c.req.query('limit') ?? 50);
   const data = await service.listJobs(user, {
     activeOnly,
+    status,
     limit: Number.isFinite(limitRaw) ? limitRaw : 50,
   });
   return c.json({ data });

@@ -37,7 +37,13 @@ import type {
   UploadCertRequest,
   User,
 } from "@/types";
-import type { AIMessage, AISandboxJob, AISandboxOutput, AISandboxStatus, PageContext } from "@/types/ai";
+import type {
+  AIMessage,
+  AISandboxJob,
+  AISandboxOutput,
+  AISandboxStatus,
+  PageContext,
+} from "@/types/ai";
 import type { FileEntry } from "@/types/docker";
 import { withAuthApi } from "./api-auth";
 import { API_BASE, ApiClientBase } from "./api-base";
@@ -862,10 +868,13 @@ class ApiClient extends withLoggingApi(
     return res.data;
   }
 
-  async listAISandboxJobs(options: { activeOnly?: boolean; limit?: number } = {}): Promise<AISandboxJob[]> {
+  async listAISandboxJobs(
+    options: { activeOnly?: boolean; limit?: number; status?: AISandboxJob["status"] } = {}
+  ): Promise<AISandboxJob[]> {
     const params = new URLSearchParams();
     if (options.activeOnly !== undefined) params.set("activeOnly", String(options.activeOnly));
     if (options.limit !== undefined) params.set("limit", String(options.limit));
+    if (options.status !== undefined) params.set("status", options.status);
     const query = params.toString();
     const res = await this.request<{ data: AISandboxJob[] }>(
       `/ai/sandbox/jobs${query ? `?${query}` : ""}`
@@ -882,7 +891,9 @@ class ApiClient extends withLoggingApi(
 
   async getAISandboxJobOutput(id: string, tail = 200): Promise<AISandboxOutput> {
     const params = new URLSearchParams({ tail: String(tail) });
-    const res = await this.request<{ data: AISandboxOutput }>(`/ai/sandbox/jobs/${id}/output?${params}`);
+    const res = await this.request<{ data: AISandboxOutput }>(
+      `/ai/sandbox/jobs/${id}/output?${params}`
+    );
     return res.data;
   }
 

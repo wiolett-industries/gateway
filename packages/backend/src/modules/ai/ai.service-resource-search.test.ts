@@ -138,12 +138,10 @@ describe('AIService resource search tool', () => {
       }),
     };
     const dockerService = {
-      listContainers: vi
-        .fn()
-        .mockResolvedValue([
-          { Id: 'container-1', Name: '/api', Image: 'gateway/api:latest', State: 'running' },
-          { Id: 'container-2', Name: '/db', Image: 'postgres:16', State: 'exited' },
-        ]),
+      listContainers: vi.fn().mockResolvedValue([
+        { Id: 'container-1', Name: '/api', Image: 'gateway/api:latest', State: 'running' },
+        { Id: 'container-2', Name: '/db', Image: 'postgres:16', State: 'exited' },
+      ]),
     };
     const service = createService({ nodesService, dockerService });
 
@@ -154,10 +152,7 @@ describe('AIService resource search tool', () => {
     );
 
     expect(result.error).toBeUndefined();
-    expect(nodesService.list).toHaveBeenCalledWith(
-      { type: 'docker', page: 1, limit: 100 },
-      { allowedIds: ['node-1'] }
-    );
+    expect(nodesService.list).toHaveBeenCalledWith({ type: 'docker', page: 1, limit: 100 }, { allowedIds: ['node-1'] });
     expect(dockerService.listContainers).toHaveBeenCalledWith('node-1');
     expect((result.result as { results: Array<{ id: string; nodeId: string }> }).results).toEqual([
       expect.objectContaining({ type: 'docker_container', id: 'container-1', name: 'api', nodeId: 'node-1' }),

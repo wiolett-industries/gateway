@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   resolveSandboxPolicy,
-  sandboxScopesSatisfied,
   SANDBOX_HIGH_SCOPE,
   SANDBOX_MEDIUM_SCOPE,
   SANDBOX_USE_SCOPE,
+  sandboxScopesSatisfied,
 } from './ai.sandbox-policy.js';
 
 describe('sandbox policy', () => {
@@ -21,9 +21,9 @@ describe('sandbox policy', () => {
     expect(() => resolveSandboxPolicy([SANDBOX_USE_SCOPE], 'medium', 60)).toThrow(SANDBOX_MEDIUM_SCOPE);
     expect(() => resolveSandboxPolicy([SANDBOX_USE_SCOPE], 'high', 60)).toThrow(SANDBOX_HIGH_SCOPE);
 
-    expect(resolveSandboxPolicy([SANDBOX_USE_SCOPE, SANDBOX_MEDIUM_SCOPE], 'medium', undefined).effectiveTtlSeconds).toBe(
-      180
-    );
+    expect(
+      resolveSandboxPolicy([SANDBOX_USE_SCOPE, SANDBOX_MEDIUM_SCOPE], 'medium', undefined).effectiveTtlSeconds
+    ).toBe(180);
     expect(resolveSandboxPolicy([SANDBOX_USE_SCOPE, SANDBOX_HIGH_SCOPE], 'high', 2000).effectiveTtlSeconds).toBe(1200);
   });
 

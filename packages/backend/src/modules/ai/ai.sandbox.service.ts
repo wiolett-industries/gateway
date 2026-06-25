@@ -1,12 +1,17 @@
-import type { User } from '@/types.js';
+import type { SandboxJob } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
-import { hasSandboxManageAccess, resolveSandboxPolicy, sandboxScopesSatisfied } from './ai.sandbox-policy.js';
-import { normalizeSandboxRuntime } from './ai.sandbox-policy.js';
+import type { User } from '@/types.js';
+import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
+import type { AISandboxJobsService } from './ai.sandbox-jobs.service.js';
 import type { SandboxResourceTier } from './ai.sandbox-policy.js';
-import { AISandboxJobsService } from './ai.sandbox-jobs.service.js';
-import { AISandboxRunnerService } from './ai.sandbox-runner.service.js';
-import { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
+import {
+  hasSandboxManageAccess,
+  normalizeSandboxRuntime,
+  resolveSandboxPolicy,
+  sandboxScopesSatisfied,
+} from './ai.sandbox-policy.js';
+import type { AISandboxRunnerService } from './ai.sandbox-runner.service.js';
 
 const logger = createChildLogger('AISandboxService');
 const SANDBOX_RECONCILE_INTERVAL_MS = 60_000;
@@ -253,6 +258,7 @@ export class AISandboxService {
 
   async listJobs(user: User, input: { activeOnly?: boolean; status?: string; limit?: number } = {}) {
     const canManageAll = hasSandboxManageAccess(user.scopes);
+    await this.expireDueJobs({ userId: user.id, canManageAll });
     return this.jobs.list({
       userId: user.id,
       canManageAll,
@@ -293,15 +299,15 @@ export class AISandboxService {
   async reconcileActiveJobs() {
     const rows = await this.jobs.listActiveWithEffectiveScopes();
     const now = Date.now();
-    let timeout = 0;
+    let expired = 0;
     let revoked = 0;
     const unauthorizedByUser = new Map<string, { currentScopes: string[]; jobIds: string[] }>();
 
     for (const row of rows) {
       const expiresAt = row.job.expiresAt?.getTime();
       if (expiresAt !== undefined && expiresAt <= now) {
-        await this.jobs.markFinished(row.job.id, 'timeout').catch(() => {});
-        timeout += 1;
+        await this.expireJob(row.job);
+        expired += 1;
         continue;
       }
 
@@ -320,13 +326,34 @@ export class AISandboxService {
         });
       revoked += result.revoked;
       for (const jobId of group.jobIds) {
-        await this.jobs
-          .markFinished(jobId, 'revoked', { revocationReason: 'policy_reconciliation' })
-          .catch(() => {});
+        await this.jobs.markFinished(jobId, 'revoked', { revocationReason: 'policy_reconciliation' }).catch(() => {});
       }
     }
 
-    return { checked: rows.length, timeout, revoked };
+    return { checked: rows.length, expired, revoked };
+  }
+
+  private async expireDueJobs(input: { userId?: string; canManageAll?: boolean } = {}) {
+    const jobs = await this.jobs.listExpiredActive(input);
+    if (jobs.length === 0) return { expired: 0 };
+
+    let expired = 0;
+    for (const job of jobs) {
+      await this.expireJob(job);
+      expired += 1;
+    }
+    return { expired };
+  }
+
+  private async expireJob(job: SandboxJob) {
+    if (job.containerId) {
+      await this.runner.killProcess({ processId: job.containerId }).catch((error) => {
+        logger.warn('Failed to kill expired sandbox job', { jobId: job.id, containerId: job.containerId, error });
+      });
+    }
+    await this.jobs.markFinished(job.id, 'expired').catch((error) => {
+      logger.warn('Failed to mark sandbox job expired', { jobId: job.id, error });
+    });
   }
 
   private async resolveOwnedJob(user: User, processId: string) {

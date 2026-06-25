@@ -1,30 +1,30 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { createChildLogger } from '@/lib/logger.js';
 import type {
+  SandboxRunnerDownloadArtifactParams,
+  SandboxRunnerDownloadArtifactResult,
+  SandboxRunnerExecuteScriptParams,
   SandboxRunnerExecutionResult,
   SandboxRunnerFetchParams,
   SandboxRunnerFetchResult,
-  SandboxRunnerDownloadArtifactParams,
-  SandboxRunnerDownloadArtifactResult,
   SandboxRunnerHealth,
   SandboxRunnerKillResult,
+  SandboxRunnerProcessParams,
+  SandboxRunnerProcessResult,
   SandboxRunnerReadArtifactParams,
   SandboxRunnerReadArtifactResult,
   SandboxRunnerReadOutputParams,
   SandboxRunnerReadOutputResult,
   SandboxRunnerRequest,
   SandboxRunnerResponse,
+  SandboxRunnerRevokeUserParams,
   SandboxRunnerRunProcessParams,
-  SandboxRunnerExecuteScriptParams,
   SandboxRunnerSendArtifactParams,
   SandboxRunnerSendArtifactResult,
-  SandboxRunnerProcessResult,
-  SandboxRunnerProcessParams,
-  SandboxRunnerRevokeUserParams,
   SandboxRunnerWriteStdinParams,
   SandboxRunnerWriteStdinResult,
 } from './ai.sandbox-runner.protocol.js';
@@ -38,7 +38,9 @@ export class AISandboxRunnerService {
   private statusValue: SandboxRunnerStatus = 'stopped';
   private startPromise: Promise<void> | null = null;
 
-  constructor(private readonly socketPath = process.env.SANDBOX_RUNNER_SOCKET || `/tmp/gateway-sandbox-${process.pid}.sock`) {}
+  constructor(
+    private readonly socketPath = process.env.SANDBOX_RUNNER_SOCKET || `/tmp/gateway-sandbox-${process.pid}.sock`
+  ) {}
 
   get status() {
     return {
@@ -183,10 +185,13 @@ export class AISandboxRunnerService {
       const id = randomUUID();
       const socket = net.createConnection({ path: this.socketPath });
       let buffer = '';
-      const timeout = setTimeout(() => {
-        socket.destroy();
-        reject(new Error(`Sandbox runner call timed out: ${method}`));
-      }, 25 * 60 * 1000);
+      const timeout = setTimeout(
+        () => {
+          socket.destroy();
+          reject(new Error(`Sandbox runner call timed out: ${method}`));
+        },
+        25 * 60 * 1000
+      );
 
       socket.on('connect', () => {
         socket.write(`${JSON.stringify({ id, method, params } satisfies SandboxRunnerRequest)}\n`);

@@ -207,7 +207,7 @@ func (p *NginxPlugin) runLogStreamSession(ctx context.Context, conn *grpc.Client
 	// Track active tailers per hostId
 	tailers := make(map[string]context.CancelFunc)
 
-	for {
+	for ctx.Err() == nil {
 		ctrl, err := logStream.Recv()
 		if err != nil {
 			for _, cancel := range tailers {
@@ -345,5 +345,5 @@ func (p *NginxPlugin) runLogStreamSession(ctx context.Context, conn *grpc.Client
 		}
 	}
 
-	return nil
+	return ctx.Err()
 }

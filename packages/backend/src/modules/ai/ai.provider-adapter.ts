@@ -1,5 +1,5 @@
-import type OpenAI from 'openai';
 import { inspect } from 'node:util';
+import type OpenAI from 'openai';
 import type { AIConfig } from './ai.types.js';
 
 export interface NormalizedToolCall {
@@ -241,7 +241,10 @@ async function* streamResponsesModel({
 
   yield {
     type: 'model_response',
-    response: { content, toolCalls: Array.from(byOutputIndex.values()).filter((toolCall) => toolCall.id && toolCall.name) },
+    response: {
+      content,
+      toolCalls: Array.from(byOutputIndex.values()).filter((toolCall) => toolCall.id && toolCall.name),
+    },
   };
 }
 

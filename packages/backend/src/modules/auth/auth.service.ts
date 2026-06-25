@@ -80,12 +80,7 @@ export class AuthService {
   private emitUser(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('user.changed', { id, action });
   }
-  private emitPermissions(
-    userId: string,
-    scopes: string[],
-    groupId: string | null,
-    reason = 'permissions_changed'
-  ) {
+  private emitPermissions(userId: string, scopes: string[], groupId: string | null, reason = 'permissions_changed') {
     this.eventBus?.publish(`permissions.changed.${userId}`, { scopes, groupId });
     void this.sandboxService?.revokeUserAccess(userId, scopes, reason).catch((error) => {
       logger.warn('Failed to revoke sandbox jobs after permission change', { userId, reason, error });

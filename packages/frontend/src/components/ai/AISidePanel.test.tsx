@@ -1,14 +1,23 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useAuthStore } from "@/stores/auth";
+import { useConfirmDialog } from "@/components/common/ConfirmDialog";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAIStore } from "@/stores/ai";
+import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import { renderWithRouter } from "@/test/render";
 import type { AIMessage } from "@/types/ai";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { AILiteSidebar } from "./AILiteSidebar";
 import { AISidePanel } from "./AISidePanel";
+
+function renderAISidePanel() {
+  return renderWithRouter(
+    <TooltipProvider>
+      <AISidePanel />
+    </TooltipProvider>
+  );
+}
 
 function setScrollMetrics(node: HTMLElement, scrollHeight: number, clientHeight: number) {
   Object.defineProperty(node, "scrollHeight", {
@@ -42,6 +51,7 @@ describe("AISidePanel autoscroll", () => {
       });
       useUIStore.setState({ aiPanelOpen: false, aiLiteMode: false, sidebarOpen: true });
       useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false });
+      useConfirmDialog.getState().close();
     });
   });
 
@@ -56,7 +66,7 @@ describe("AISidePanel autoscroll", () => {
       useUIStore.setState({ aiPanelOpen: true });
     });
 
-    renderWithRouter(<AISidePanel />);
+    renderAISidePanel();
 
     const log = screen.getByRole("log", { name: "AI messages" });
     setScrollMetrics(log, 1000, 400);
@@ -93,7 +103,7 @@ describe("AISidePanel autoscroll", () => {
       useUIStore.setState({ aiPanelOpen: true });
     });
 
-    renderWithRouter(<AISidePanel />);
+    renderAISidePanel();
 
     const log = screen.getByRole("log", { name: "AI messages" });
     setScrollMetrics(log, 1000, 400);
@@ -119,7 +129,7 @@ describe("AISidePanel autoscroll", () => {
     await waitFor(() => expect(log.scrollTop).toBe(300));
   });
 
-  it("switches the side panel into persisted lite mode from the header action", () => {
+  it("prompts before switching the side panel into persisted lite mode", async () => {
     act(() => {
       useAIStore.setState({
         messages: [],
@@ -131,12 +141,21 @@ describe("AISidePanel autoscroll", () => {
       useUIStore.setState({ aiPanelOpen: true, aiLiteMode: false });
     });
 
-    renderWithRouter(<AISidePanel />);
+    renderAISidePanel();
 
     fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
 
-    expect(useUIStore.getState().aiLiteMode).toBe(true);
-    expect(useUIStore.getState().aiPanelOpen).toBe(false);
+    expect(useConfirmDialog.getState().open).toBe(true);
+    expect(useUIStore.getState().aiLiteMode).toBe(false);
+
+    act(() => {
+      useConfirmDialog.getState().onConfirm?.();
+    });
+
+    await waitFor(() => {
+      expect(useUIStore.getState().aiLiteMode).toBe(true);
+      expect(useUIStore.getState().aiPanelOpen).toBe(false);
+    });
   });
 
   it("renders lite sidebar conversations and wires load and delete actions", async () => {
@@ -187,6 +206,7 @@ describe("AISidePanel autoscroll", () => {
     fireEvent.click(screen.getByText("Recent chat"));
     expect(loadConversation).toHaveBeenCalledWith("conversation-1");
 
+    await user.hover(screen.getByText("Recent chat"));
     fireEvent.click(screen.getByRole("button", { name: "Delete Recent chat" }));
     expect(deleteConversation).toHaveBeenCalledWith("conversation-1");
 

@@ -33,11 +33,15 @@ interface UIState {
   setShowUpdateNotifications: (show: boolean) => void;
   showSystemCertificates: boolean;
   setShowSystemCertificates: (show: boolean) => void;
+  showAILiteModeCTA: boolean;
+  setShowAILiteModeCTA: (show: boolean) => void;
 
   // AI Approval Bypass
+  aiAlwaysAskApprovals: boolean;
   aiBypassCreateApprovals: boolean;
   aiBypassEditApprovals: boolean;
   aiBypassDeleteApprovals: boolean;
+  setAIAlwaysAskApprovals: (v: boolean) => void;
   setAIBypassCreateApprovals: (v: boolean) => void;
   setAIBypassEditApprovals: (v: boolean) => void;
   setAIBypassDeleteApprovals: (v: boolean) => void;
@@ -49,9 +53,11 @@ interface UIState {
   // AI Panel
   aiPanelOpen: boolean;
   aiLiteMode: boolean;
+  aiLiteModeIntroAccepted: boolean;
   pinnedAIConversationIds: string[];
   setAIPanelOpen: (open: boolean) => void;
   setAILiteMode: (enabled: boolean) => void;
+  setAILiteModeIntroAccepted: (accepted: boolean) => void;
   togglePinnedAIConversation: (conversationId: string) => void;
   toggleAIPanel: () => void;
   toggleAILiteMode: () => void;
@@ -97,11 +103,15 @@ export const useUIStore = create<UIState>()(
       setShowUpdateNotifications: (showUpdateNotifications) => set({ showUpdateNotifications }),
       showSystemCertificates: false,
       setShowSystemCertificates: (showSystemCertificates) => set({ showSystemCertificates }),
+      showAILiteModeCTA: true,
+      setShowAILiteModeCTA: (showAILiteModeCTA) => set({ showAILiteModeCTA }),
 
       // AI Approval Bypass
+      aiAlwaysAskApprovals: false,
       aiBypassCreateApprovals: false,
       aiBypassEditApprovals: false,
       aiBypassDeleteApprovals: false,
+      setAIAlwaysAskApprovals: (aiAlwaysAskApprovals) => set({ aiAlwaysAskApprovals }),
       setAIBypassCreateApprovals: (aiBypassCreateApprovals) => set({ aiBypassCreateApprovals }),
       setAIBypassEditApprovals: (aiBypassEditApprovals) => set({ aiBypassEditApprovals }),
       setAIBypassDeleteApprovals: (aiBypassDeleteApprovals) => set({ aiBypassDeleteApprovals }),
@@ -113,9 +123,11 @@ export const useUIStore = create<UIState>()(
       // AI Panel
       aiPanelOpen: false,
       aiLiteMode: false,
+      aiLiteModeIntroAccepted: false,
       pinnedAIConversationIds: [],
       setAIPanelOpen: (aiPanelOpen) => set({ aiPanelOpen }),
       setAILiteMode: (aiLiteMode) => set({ aiLiteMode }),
+      setAILiteModeIntroAccepted: (aiLiteModeIntroAccepted) => set({ aiLiteModeIntroAccepted }),
       togglePinnedAIConversation: (conversationId) =>
         set((state) => ({
           pinnedAIConversationIds: state.pinnedAIConversationIds.includes(conversationId)
@@ -146,8 +158,10 @@ export const useUIStore = create<UIState>()(
         sidebarCollapsed: state.sidebarCollapsed,
         showUpdateNotifications: state.showUpdateNotifications,
         showSystemCertificates: state.showSystemCertificates,
+        showAILiteModeCTA: state.showAILiteModeCTA,
         aiPanelOpen: state.aiPanelOpen,
         aiLiteMode: state.aiLiteMode,
+        aiLiteModeIntroAccepted: state.aiLiteModeIntroAccepted,
         pinnedAIConversationIds: state.pinnedAIConversationIds,
         aiBypassCreateApprovals: state.aiBypassCreateApprovals,
         aiBypassEditApprovals: state.aiBypassEditApprovals,

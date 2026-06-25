@@ -1,4 +1,4 @@
-import { Eye, RefreshCw, Trash2 } from "lucide-react";
+import { Eye, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AIToolAccessModal } from "@/components/ai/AIToolAccessModal";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import {
   Select,
   SelectContent,
@@ -82,20 +83,10 @@ function SandboxStatusBadge({ status }: { status?: AISandboxStatus | null }) {
   if (!status) return null;
   const state = status?.state ?? "unknown";
   const active = state === "running";
-  return (
-    <Badge variant={active ? "success" : "secondary"} className="uppercase">
-      {state}
-    </Badge>
-  );
+  return <Badge variant={active ? "success" : "secondary"}>{state}</Badge>;
 }
 
-function SandboxJobsModal({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+function SandboxJobsPanel() {
   const [jobs, setJobs] = useState<AISandboxJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [killingId, setKillingId] = useState<string | null>(null);
@@ -103,20 +94,26 @@ function SandboxJobsModal({
   const [outputText, setOutputText] = useState("");
   const [outputLoading, setOutputLoading] = useState(false);
 
-  const loadJobs = useCallback(async () => {
-    if (!open) return;
-    setLoading(true);
+  const loadJobs = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) setLoading(true);
     try {
-      setJobs(await api.listAISandboxJobs({ limit: 100 }));
+      setJobs(await api.listAISandboxJobs({ limit: 100, status: "running" }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load sandbox jobs");
     } finally {
-      setLoading(false);
+      if (!options.silent) setLoading(false);
     }
-  }, [open]);
+  }, []);
 
   useEffect(() => {
     loadJobs();
+  }, [loadJobs]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void loadJobs({ silent: true });
+    }, 5_000);
+    return () => window.clearInterval(interval);
   }, [loadJobs]);
 
   const killJob = async (job: AISandboxJob) => {
@@ -124,7 +121,7 @@ function SandboxJobsModal({
     try {
       await api.killAISandboxJob(job.id);
       toast.success("Sandbox job killed");
-      await loadJobs();
+      await loadJobs({ silent: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to kill sandbox job");
     } finally {
@@ -150,26 +147,36 @@ function SandboxJobsModal({
     {
       id: "job",
       header: "Job",
+      className: "w-[19rem]",
+      cellClassName: "w-[19rem] max-w-[19rem]",
       render: (job) => (
-        <div className="min-w-0">
-          <p className="truncate font-mono text-xs">{job.containerId ?? job.id}</p>
-          <p className="text-xs text-muted-foreground">{job.kind}</p>
+        <div className="min-w-0 max-w-full">
+          <p className="truncate font-mono text-xs" title={job.containerId ?? job.id}>
+            {job.containerId ?? job.id}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">{job.kind}</p>
         </div>
       ),
     },
     {
       id: "runtime",
       header: "Runtime",
+      className: "w-24",
+      cellClassName: "w-24 whitespace-nowrap",
       render: (job) => job.runtime,
     },
     {
       id: "tier",
       header: "Tier",
+      className: "w-24",
+      cellClassName: "w-24",
       render: (job) => <Badge variant="secondary">{job.resourceTier}</Badge>,
     },
     {
       id: "status",
       header: "Status",
+      className: "w-32",
+      cellClassName: "w-32",
       render: (job) => (
         <Badge variant={job.status === "running" ? "success" : "secondary"}>{job.status}</Badge>
       ),
@@ -177,17 +184,23 @@ function SandboxJobsModal({
     {
       id: "age",
       header: "Age",
+      className: "w-28",
+      cellClassName: "w-28 whitespace-nowrap",
       render: (job) => formatRelativeTime(job.createdAt),
     },
     {
       id: "expires",
       header: "Expires",
+      className: "w-24",
+      cellClassName: "w-24 whitespace-nowrap",
       render: (job) => formatExpires(job.expiresAt),
     },
     {
       id: "actions",
       header: "",
       align: "right",
+      className: "w-24",
+      cellClassName: "w-24",
       render: (job) => (
         <div className="flex justify-end gap-1">
           {job.containerId && job.status === "running" && (
@@ -222,29 +235,20 @@ function SandboxJobsModal({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-full overflow-x-hidden sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Agent Sandboxes</DialogTitle>
-          </DialogHeader>
-          <div className="border border-border">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <p className="text-sm text-muted-foreground">Running and recent sandbox jobs</p>
-              <Button variant="ghost" onClick={loadJobs} disabled={loading}>
-                <RefreshCw className="h-4 w-4" />
-                Refresh
-              </Button>
-            </div>
-            <SimpleTable
-              columns={columns}
-              rows={jobs}
-              getRowKey={(job) => job.id}
-              loading={loading}
-              emptyMessage="No sandbox jobs"
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PanelShell
+        title="Running Sandbox Jobs"
+        description="Active resource-capped Docker sandboxes launched by the assistant"
+        actions={<RefreshButton minDurationMs={1400} onClick={() => loadJobs({ silent: true })} />}
+      >
+        <SimpleTable
+          columns={columns}
+          rows={jobs}
+          getRowKey={(job) => job.id}
+          loading={loading}
+          emptyMessage="No running sandbox jobs"
+          tableClassName="table-fixed"
+        />
+      </PanelShell>
       <Dialog open={!!outputJob} onOpenChange={(nextOpen) => !nextOpen && setOutputJob(null)}>
         <DialogContent className="max-w-full overflow-x-hidden sm:max-w-3xl">
           <DialogHeader>
@@ -273,7 +277,6 @@ export function AIConfigSection() {
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiWebSearchKey, setAiWebSearchKey] = useState("");
   const [aiToolsModalOpen, setAiToolsModalOpen] = useState(false);
-  const [sandboxJobsOpen, setSandboxJobsOpen] = useState(false);
   const [sandboxStatus, setSandboxStatus] = useState<AISandboxStatus | null>(null);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiSavedConfig, setAiSavedConfig] = useState<AIConfigState | null>(
@@ -792,15 +795,14 @@ export function AIConfigSection() {
         </SettingsControlRow>
         <SettingsControlRow
           title="Runtime"
-          description="View active and recent resource-capped Docker sandboxes."
-          controlsClassName="flex items-center justify-end gap-2 sm:max-w-none"
+          description="Sandbox runner process status."
+          controlsClassName="flex justify-end justify-self-end !w-auto !min-w-0 !max-w-none"
         >
           <SandboxStatusBadge status={sandboxStatus} />
-          <Button variant="outline" onClick={() => setSandboxJobsOpen(true)}>
-            Agent Sandboxes
-          </Button>
         </SettingsControlRow>
       </PanelShell>
+
+      <SandboxJobsPanel />
 
       <AIToolAccessModal
         open={aiToolsModalOpen}
@@ -810,7 +812,6 @@ export function AIConfigSection() {
           setAiConfig((current) => (current ? { ...current, disabledTools } : current))
         }
       />
-      <SandboxJobsModal open={sandboxJobsOpen} onOpenChange={setSandboxJobsOpen} />
     </>
   );
 }

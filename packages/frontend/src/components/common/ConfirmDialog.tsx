@@ -14,12 +14,18 @@ interface ConfirmState {
   title: string;
   description: string;
   confirmLabel: string;
+  cancelLabel: string;
+  cancelVariant: "outline" | "ghost";
+  bodyDescription: boolean;
   variant: "default" | "destructive";
   onConfirm: (() => void) | null;
   show: (opts: {
     title: string;
     description: string;
     confirmLabel?: string;
+    cancelLabel?: string;
+    cancelVariant?: "outline" | "ghost";
+    bodyDescription?: boolean;
     variant?: "default" | "destructive";
     onConfirm: () => void;
   }) => void;
@@ -31,10 +37,32 @@ export const useConfirmDialog = create<ConfirmState>()((set) => ({
   title: "",
   description: "",
   confirmLabel: "Confirm",
+  cancelLabel: "Cancel",
+  cancelVariant: "outline",
+  bodyDescription: false,
   variant: "default",
   onConfirm: null,
-  show: ({ title, description, confirmLabel = "Confirm", variant = "destructive", onConfirm }) =>
-    set({ open: true, title, description, confirmLabel, variant, onConfirm }),
+  show: ({
+    title,
+    description,
+    confirmLabel = "Confirm",
+    cancelLabel = "Cancel",
+    cancelVariant = "outline",
+    bodyDescription = false,
+    variant = "destructive",
+    onConfirm,
+  }) =>
+    set({
+      open: true,
+      title,
+      description,
+      confirmLabel,
+      cancelLabel,
+      cancelVariant,
+      bodyDescription,
+      variant,
+      onConfirm,
+    }),
   close: () => set({ open: false, onConfirm: null }),
 }));
 
@@ -42,6 +70,9 @@ export function confirm(opts: {
   title: string;
   description: string;
   confirmLabel?: string;
+  cancelLabel?: string;
+  cancelVariant?: "outline" | "ghost";
+  bodyDescription?: boolean;
   variant?: "default" | "destructive";
 }): Promise<boolean> {
   return new Promise((resolve) => {
@@ -62,20 +93,38 @@ export function confirm(opts: {
 }
 
 export function ConfirmDialog() {
-  const { open, title, description, confirmLabel, variant, onConfirm, close } = useConfirmDialog();
+  const {
+    open,
+    title,
+    description,
+    confirmLabel,
+    cancelLabel,
+    cancelVariant,
+    bodyDescription,
+    variant,
+    onConfirm,
+    close,
+  } = useConfirmDialog();
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
       <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription className="break-words [overflow-wrap:anywhere]">
-            {description}
-          </DialogDescription>
+          {!bodyDescription && (
+            <DialogDescription className="break-words [overflow-wrap:anywhere]">
+              {description}
+            </DialogDescription>
+          )}
         </DialogHeader>
+        {bodyDescription && (
+          <p className="break-words text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+            {description}
+          </p>
+        )}
         <DialogFooter>
-          <Button variant="outline" onClick={close}>
-            Cancel
+          <Button variant={cancelVariant} onClick={close}>
+            {cancelLabel}
           </Button>
           <Button
             variant={variant === "destructive" ? "destructive" : "default"}

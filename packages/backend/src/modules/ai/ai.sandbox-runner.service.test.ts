@@ -1,10 +1,10 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { AISandboxRunnerService } from './ai.sandbox-runner.service.js';
 import type { SandboxRunnerJobPolicy } from './ai.sandbox-runner.protocol.js';
+import { AISandboxRunnerService } from './ai.sandbox-runner.service.js';
 
 function dockerAvailable(): boolean {
   try {

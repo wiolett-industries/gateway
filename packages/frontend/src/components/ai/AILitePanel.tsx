@@ -1,7 +1,4 @@
-import {
-  Minimize2,
-  Sparkles,
-} from "lucide-react";
+import { Minimize2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -9,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
 import type { PageContext } from "@/types/ai";
-import { AIComposer, type AIApprovalMode } from "./AIComposer";
+import { type AIApprovalMode, AIComposer } from "./AIComposer";
 import { AIMessage } from "./AIMessage";
 import { QuestionBlock } from "./AIToolCallBlock";
 import { QuickActionChips } from "./QuickActionChips";
@@ -55,7 +52,9 @@ function usePageContext(): PageContext {
   return { route, resourceType, resourceId };
 }
 
-function userMessagesAfterLastCompact(messages: ReturnType<typeof useAIStore.getState>["messages"]): number {
+function userMessagesAfterLastCompact(
+  messages: ReturnType<typeof useAIStore.getState>["messages"]
+): number {
   const lastCompactIndex = messages.reduce(
     (latest, message, index) => (message.compactMarker ? index : latest),
     -1
@@ -91,9 +90,11 @@ export function AILitePanel() {
   } = useAIStore();
   const {
     setAILiteMode,
+    aiAlwaysAskApprovals,
     aiBypassCreateApprovals,
     aiBypassEditApprovals,
     aiBypassDeleteApprovals,
+    setAIAlwaysAskApprovals,
     setAIBypassCreateApprovals,
     setAIBypassEditApprovals,
     setAIBypassDeleteApprovals,
@@ -110,17 +111,21 @@ export function AILitePanel() {
   const visibleSlashCommands = SLASH_COMMANDS.filter(
     (command) => command.name !== "compact" || canCompact
   );
-  const approvalMode: AIApprovalMode = aiBypassDeleteApprovals
-    ? "bypass-everything"
-    : aiBypassCreateApprovals || aiBypassEditApprovals
-      ? "bypass-write"
-      : "normal";
+  const approvalMode: AIApprovalMode = aiAlwaysAskApprovals
+    ? "always-ask"
+    : aiBypassDeleteApprovals
+      ? "bypass-everything"
+      : aiBypassCreateApprovals || aiBypassEditApprovals
+        ? "bypass-non-destructive"
+        : "normal";
   const approvalModeLabel =
-    approvalMode === "bypass-everything"
-      ? "AI mode: bypass everything"
-      : approvalMode === "bypass-write"
-        ? "AI mode: bypass edit and creation"
-        : "AI mode: normal";
+    approvalMode === "always-ask"
+      ? "AI mode: always ask"
+      : approvalMode === "bypass-everything"
+        ? "AI mode: bypass everything"
+        : approvalMode === "bypass-non-destructive"
+          ? "AI mode: bypass non-destructive"
+          : "AI mode: normal";
 
   const setApprovalMode = useCallback(
     async (mode: AIApprovalMode) => {
@@ -131,11 +136,13 @@ export function AILitePanel() {
       ) {
         return;
       }
-      setAIBypassCreateApprovals(mode !== "normal");
-      setAIBypassEditApprovals(mode !== "normal");
+      setAIAlwaysAskApprovals(mode === "always-ask");
+      setAIBypassCreateApprovals(mode === "bypass-non-destructive" || mode === "bypass-everything");
+      setAIBypassEditApprovals(mode === "bypass-non-destructive" || mode === "bypass-everything");
       setAIBypassDeleteApprovals(mode === "bypass-everything");
     },
     [
+      setAIAlwaysAskApprovals,
       aiBypassDeleteApprovals,
       setAIBypassCreateApprovals,
       setAIBypassDeleteApprovals,
@@ -317,12 +324,12 @@ export function AILitePanel() {
             <div className="mx-auto w-full max-w-3xl space-y-4 px-4 pb-8">
               {messages.map((msg) => (
                 <AIMessage
-                key={msg.id}
-                message={msg}
-                assistantMaxWidthClass="max-w-[90%]"
-                onApprove={approveTool}
-                onReject={rejectTool}
-                onAnswer={answerQuestion}
+                  key={msg.id}
+                  message={msg}
+                  assistantMaxWidthClass="max-w-[90%]"
+                  onApprove={approveTool}
+                  onReject={rejectTool}
+                  onAnswer={answerQuestion}
                 />
               ))}
             </div>

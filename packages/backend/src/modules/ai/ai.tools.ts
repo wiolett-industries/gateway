@@ -63,7 +63,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
         },
         reason: {
           type: 'string',
-          description: 'Short reason for waiting, for example container startup, image pull, DNS propagation, or log ingestion.',
+          description:
+            'Short reason for waiting, for example container startup, image pull, DNS propagation, or log ingestion.',
         },
       },
     },

@@ -1,36 +1,36 @@
-import fs from 'node:fs/promises';
+import { Buffer } from 'node:buffer';
+import { randomUUID } from 'node:crypto';
 import dns from 'node:dns/promises';
+import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { Buffer } from 'node:buffer';
-import { randomUUID } from 'node:crypto';
-import { DockerService, type DockerCreateContainerConfig } from '@/services/docker.service.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type {
   SandboxRunnerDownloadArtifactParams,
   SandboxRunnerDownloadArtifactResult,
+  SandboxRunnerExecuteScriptParams,
   SandboxRunnerExecutionResult,
   SandboxRunnerFetchParams,
   SandboxRunnerFetchResult,
   SandboxRunnerHealth,
   SandboxRunnerKillResult,
+  SandboxRunnerProcessParams,
+  SandboxRunnerProcessResult,
   SandboxRunnerReadArtifactParams,
   SandboxRunnerReadArtifactResult,
   SandboxRunnerReadOutputParams,
   SandboxRunnerReadOutputResult,
   SandboxRunnerRequest,
   SandboxRunnerResponse,
+  SandboxRunnerRevokeUserParams,
   SandboxRunnerRunProcessParams,
-  SandboxRunnerExecuteScriptParams,
   SandboxRunnerSendArtifactParams,
   SandboxRunnerSendArtifactResult,
-  SandboxRunnerProcessResult,
-  SandboxRunnerProcessParams,
-  SandboxRunnerRevokeUserParams,
   SandboxRunnerWriteStdinParams,
   SandboxRunnerWriteStdinResult,
 } from '@/modules/ai/ai.sandbox-runner.protocol.js';
+import { type DockerCreateContainerConfig, DockerService } from '@/services/docker.service.js';
 
 const logger = createChildLogger('SandboxRunner');
 const SOCKET_PATH = process.env.SANDBOX_RUNNER_SOCKET || '/tmp/gateway-sandbox-runner.sock';
@@ -47,11 +47,71 @@ const ARTIFACT_ROOT = '/workspace';
 
 const docker = new DockerService(DOCKER_SOCKET, '');
 const runningTimeouts = new Map<string, NodeJS.Timeout>();
+const imageEnsurePromises = new Map<string, Promise<string>>();
 
-function runtimeImage(runtime: string): string {
-  if (runtime === 'node') return 'node:22-alpine';
-  if (runtime === 'python') return 'python:3.12-alpine';
-  return 'alpine:3.20';
+interface RuntimeImageSpec {
+  upstreamImage: string;
+  upstreamTag: string;
+  internalRepo: string;
+  internalTag: string;
+}
+
+function runtimeImageSpec(runtime: string): RuntimeImageSpec {
+  if (runtime === 'node') {
+    return {
+      upstreamImage: 'node',
+      upstreamTag: '22-alpine',
+      internalRepo: 'gateway-sandbox-node',
+      internalTag: '22-alpine',
+    };
+  }
+  if (runtime === 'python') {
+    return {
+      upstreamImage: 'python',
+      upstreamTag: '3.12-alpine',
+      internalRepo: 'gateway-sandbox-python',
+      internalTag: '3.12-alpine',
+    };
+  }
+  return {
+    upstreamImage: 'alpine',
+    upstreamTag: '3.20',
+    internalRepo: 'gateway-sandbox-alpine',
+    internalTag: '3.20',
+  };
+}
+
+function imageRef(repo: string, tag: string): string {
+  return `${repo}:${tag}`;
+}
+
+async function ensureRuntimeImage(runtime: string): Promise<string> {
+  const spec = runtimeImageSpec(runtime);
+  const internalRef = imageRef(spec.internalRepo, spec.internalTag);
+  const existingPromise = imageEnsurePromises.get(internalRef);
+  if (existingPromise) return existingPromise;
+
+  const promise = (async () => {
+    if (await docker.imageExists(internalRef)) return internalRef;
+
+    const upstreamRef = imageRef(spec.upstreamImage, spec.upstreamTag);
+    const upstreamAlreadyExisted = await docker.imageExists(upstreamRef);
+    logger.info('Preparing sandbox runtime image', { runtime, upstreamRef, internalRef });
+    if (!upstreamAlreadyExisted) {
+      await docker.pullImage(spec.upstreamImage, spec.upstreamTag);
+    }
+    await docker.tagImage(upstreamRef, spec.internalRepo, spec.internalTag);
+    if (!upstreamAlreadyExisted) {
+      await docker.removeImageTag(upstreamRef).catch((error) => {
+        logger.warn('Failed to remove temporary sandbox upstream image tag', { upstreamRef, error });
+      });
+    }
+    return internalRef;
+  })().finally(() => {
+    imageEnsurePromises.delete(internalRef);
+  });
+  imageEnsurePromises.set(internalRef, promise);
+  return promise;
 }
 
 function runtimeShell(runtime: string, script: string): string[] {
@@ -86,7 +146,8 @@ function fallbackFilenameFromUrl(url: string): string {
 }
 
 function resolveArtifactPath(rawPath: unknown, fallbackFilename?: string) {
-  const input = typeof rawPath === 'string' && rawPath.trim() ? rawPath.trim() : `artifacts/${fallbackFilename ?? 'artifact.bin'}`;
+  const input =
+    typeof rawPath === 'string' && rawPath.trim() ? rawPath.trim() : `artifacts/${fallbackFilename ?? 'artifact.bin'}`;
   if (input.includes('\0')) throw new Error('artifact path must not contain null bytes');
   if (path.posix.isAbsolute(input)) throw new Error('artifact path must be relative to /workspace');
   const normalized = path.posix.normalize(input).replace(/^(\.\/)+/, '');
@@ -106,7 +167,10 @@ function isTextContentType(contentType: string | null): boolean {
   return /^(text\/|application\/(json|xml|javascript|x-javascript)|[^;]+\+json\b|[^;]+\+xml\b)/i.test(contentType);
 }
 
-async function readResponseBodyCapped(url: string, limitBytes: number): Promise<{
+async function readResponseBodyCapped(
+  url: string,
+  limitBytes: number
+): Promise<{
   status: number;
   contentType: string | null;
   buffer: Buffer;
@@ -204,7 +268,12 @@ function isBlockedNetworkAddress(address: string): boolean {
   );
 }
 
-function formatFetchedContent(url: string, status: number, contentType: string | null, buffer: Buffer): SandboxRunnerFetchResult {
+function formatFetchedContent(
+  url: string,
+  status: number,
+  contentType: string | null,
+  buffer: Buffer
+): SandboxRunnerFetchResult {
   if (isTextContentType(contentType)) {
     return {
       url,
@@ -226,7 +295,10 @@ function formatFetchedContent(url: string, status: number, contentType: string |
 }
 
 function writeOctal(header: Buffer, value: number, offset: number, length: number): void {
-  const text = value.toString(8).padStart(length - 1, '0').slice(-(length - 1));
+  const text = value
+    .toString(8)
+    .padStart(length - 1, '0')
+    .slice(-(length - 1));
   header.write(`${text}\0`, offset, length, 'ascii');
 }
 
@@ -268,14 +340,14 @@ function sandboxLabels(policy: SandboxRunnerExecuteScriptParams['policy'], expir
   };
 }
 
-function containerConfig(
+async function containerConfig(
   policy: SandboxRunnerExecuteScriptParams['policy'],
   command: string[],
   options: { openStdin?: boolean } = {}
-): DockerCreateContainerConfig {
+): Promise<DockerCreateContainerConfig> {
   const expiresAt = new Date(Date.now() + policy.ttlSeconds * 1000);
   return {
-    Image: runtimeImage(policy.runtime),
+    Image: await ensureRuntimeImage(policy.runtime),
     Cmd: command,
     Labels: sandboxLabels(policy, expiresAt),
     User: '65534:65534',
@@ -313,9 +385,15 @@ function containerConfig(
 
 function scheduleKill(containerId: string, ttlSeconds: number): void {
   const timeout = setTimeout(() => {
-    docker.killContainer(containerId).catch((error) => {
-      logger.warn('Failed to kill expired sandbox container', { containerId, error });
-    });
+    runningTimeouts.delete(containerId);
+    docker
+      .killContainer(containerId)
+      .catch((error) => {
+        logger.warn('Failed to kill expired sandbox container', { containerId, error });
+      })
+      .finally(() => {
+        docker.removeContainer(containerId).catch(() => {});
+      });
   }, ttlSeconds * 1000);
   timeout.unref();
   runningTimeouts.set(containerId, timeout);
@@ -328,18 +406,20 @@ function clearKill(containerId: string): void {
 }
 
 async function executeScript(params: SandboxRunnerExecuteScriptParams): Promise<SandboxRunnerExecutionResult> {
-  const config = containerConfig(params.policy, runtimeShell(params.policy.runtime, params.script));
+  const config = await containerConfig(params.policy, runtimeShell(params.policy.runtime, params.script));
   const containerId = await docker.createContainer(config);
   scheduleKill(containerId, params.policy.ttlSeconds);
 
   let timedOut = false;
   try {
     await docker.startContainer(containerId);
-    const exitCode = await docker.waitContainer(containerId, params.policy.ttlSeconds * 1000 + 10_000).catch(async (error) => {
-      timedOut = true;
-      await docker.killContainer(containerId).catch(() => {});
-      throw error;
-    });
+    const exitCode = await docker
+      .waitContainer(containerId, params.policy.ttlSeconds * 1000 + 10_000)
+      .catch(async (error) => {
+        timedOut = true;
+        await docker.killContainer(containerId).catch(() => {});
+        throw error;
+      });
     const output = truncateOutput(await docker.getContainerLogs(containerId));
     return {
       jobId: params.policy.jobId,
@@ -356,7 +436,9 @@ async function executeScript(params: SandboxRunnerExecuteScriptParams): Promise<
 }
 
 async function runProcess(params: SandboxRunnerRunProcessParams): Promise<SandboxRunnerProcessResult> {
-  const containerId = await docker.createContainer(containerConfig(params.policy, params.command, { openStdin: true }));
+  const containerId = await docker.createContainer(
+    await containerConfig(params.policy, params.command, { openStdin: true })
+  );
   await docker.startContainer(containerId);
   scheduleKill(containerId, params.policy.ttlSeconds);
   return {
@@ -374,7 +456,9 @@ async function fetchUrl(params: SandboxRunnerFetchParams): Promise<SandboxRunner
   return formatFetchedContent(url, status, contentType, buffer);
 }
 
-async function downloadArtifact(params: SandboxRunnerDownloadArtifactParams): Promise<SandboxRunnerDownloadArtifactResult> {
+async function downloadArtifact(
+  params: SandboxRunnerDownloadArtifactParams
+): Promise<SandboxRunnerDownloadArtifactResult> {
   const url = String(params.url ?? '').trim();
   if (!url) throw new Error('url is required');
   const fallbackFilename = fallbackFilenameFromUrl(url);
@@ -404,7 +488,8 @@ async function readArtifactBytes(
   maxBytes: number
 ): Promise<{ path: string; totalBytes: number; offset: number; bytes: Buffer; eof: boolean }> {
   const artifactPath = resolveArtifactPath(rawPath);
-  const offset = typeof offsetInput === 'number' && Number.isFinite(offsetInput) ? Math.max(0, Math.floor(offsetInput)) : 0;
+  const offset =
+    typeof offsetInput === 'number' && Number.isFinite(offsetInput) ? Math.max(0, Math.floor(offsetInput)) : 0;
   const requestedLength =
     typeof lengthInput === 'number' && Number.isFinite(lengthInput)
       ? Math.max(1, Math.floor(lengthInput))
@@ -421,7 +506,8 @@ async function readArtifactBytes(
   const result = await docker.execInContainer(processId, ['sh', '-lc', script]);
   if (result.exitCode !== 0) throw new Error(`artifact read failed: ${result.output}`);
   const separator = result.output.indexOf('\n');
-  if (separator === -1 || !result.output.startsWith('SIZE:')) throw new Error('artifact read returned malformed output');
+  if (separator === -1 || !result.output.startsWith('SIZE:'))
+    throw new Error('artifact read returned malformed output');
   const totalBytes = Number(result.output.slice(5, separator).trim());
   const encoded = result.output.slice(separator + 1).replace(/\s+/g, '');
   const bytes = Buffer.from(encoded, 'base64');
@@ -436,7 +522,13 @@ async function readArtifactBytes(
 
 async function readArtifact(params: SandboxRunnerReadArtifactParams): Promise<SandboxRunnerReadArtifactResult> {
   const encoding = params.encoding === 'base64' ? 'base64' : 'utf8';
-  const result = await readArtifactBytes(params.processId, params.path, params.offset, params.length, READ_ARTIFACT_LIMIT_BYTES);
+  const result = await readArtifactBytes(
+    params.processId,
+    params.path,
+    params.offset,
+    params.length,
+    READ_ARTIFACT_LIMIT_BYTES
+  );
   return {
     processId: params.processId,
     path: result.path,
@@ -452,7 +544,13 @@ async function readArtifact(params: SandboxRunnerReadArtifactParams): Promise<Sa
 }
 
 async function sendArtifact(params: SandboxRunnerSendArtifactParams): Promise<SandboxRunnerSendArtifactResult> {
-  const result = await readArtifactBytes(params.processId, params.path, 0, SEND_ARTIFACT_LIMIT_BYTES + 1, SEND_ARTIFACT_LIMIT_BYTES + 1);
+  const result = await readArtifactBytes(
+    params.processId,
+    params.path,
+    0,
+    SEND_ARTIFACT_LIMIT_BYTES + 1,
+    SEND_ARTIFACT_LIMIT_BYTES + 1
+  );
   if (result.totalBytes > SEND_ARTIFACT_LIMIT_BYTES || result.bytes.byteLength > SEND_ARTIFACT_LIMIT_BYTES) {
     throw new Error(`artifact is limited to ${SEND_ARTIFACT_LIMIT_BYTES} bytes for chat delivery`);
   }
@@ -486,11 +584,7 @@ async function writeProcessStdin(params: SandboxRunnerWriteStdinParams): Promise
   }
 
   const encoded = payload.toString('base64');
-  await docker.execInContainer(params.processId, [
-    'sh',
-    '-lc',
-    `printf '%s' '${encoded}' | base64 -d > /proc/1/fd/0`,
-  ]);
+  await docker.execInContainer(params.processId, ['sh', '-lc', `printf '%s' '${encoded}' | base64 -d > /proc/1/fd/0`]);
 
   return {
     processId: params.processId,

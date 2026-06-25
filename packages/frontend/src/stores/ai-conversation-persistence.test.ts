@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   compactConversation,
-  saveConversation,
   listConversations,
+  saveConversation,
 } from "@/services/ai-conversations";
-import { useAuthStore } from "@/stores/auth";
 import { resetAIStateForAuthChange, useAIStore } from "@/stores/ai";
+import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import type { WSServerMessage } from "@/types/ai";
 
@@ -59,6 +59,7 @@ describe("AI conversation persistence", () => {
     resetAIStateForAuthChange();
     useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false });
     useUIStore.setState({
+      aiAlwaysAskApprovals: false,
       aiBypassCreateApprovals: false,
       aiBypassEditApprovals: false,
       aiBypassDeleteApprovals: false,
@@ -136,9 +137,7 @@ describe("AI conversation persistence", () => {
 
     useAIStore.getState().sendMessage("pull redis image");
     await vi.waitFor(() =>
-      expect(socket.send).toHaveBeenCalledWith(
-        expect.stringContaining('"type":"chat"')
-      )
+      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
     );
 
     socket.emit({
@@ -149,9 +148,7 @@ describe("AI conversation persistence", () => {
       arguments: { nodeId: "node-1", imageRef: "redis:latest" },
     });
 
-    expect(socket.send).toHaveBeenCalledWith(
-      expect.stringContaining('"type":"tool_approval"')
-    );
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
     expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
   });
 
@@ -189,10 +186,46 @@ describe("AI conversation persistence", () => {
       arguments: { operation: "browse_rows", databaseId: "db-1", schema: "public", table: "users" },
     });
 
-    expect(socket.send).toHaveBeenCalledWith(
-      expect.stringContaining('"type":"tool_approval"')
-    );
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
     expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
+  });
+
+  it("does not auto-approve read-only tools in always ask mode", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User One",
+        groupName: "admin",
+        scopes: ["feat:ai:use"],
+        isBlocked: false,
+      } as any,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    useUIStore.setState({ aiAlwaysAskApprovals: true });
+
+    const connectPromise = useAIStore.getState().connect();
+    const socket = MockWebSocket.instances[0];
+    socket.emit({ type: "auth_ok" });
+    await connectPromise;
+
+    useAIStore.getState().sendMessage("list containers");
+    await vi.waitFor(() =>
+      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
+    );
+    socket.send.mockClear();
+
+    socket.emit({
+      type: "tool_approval_required",
+      requestId: "request-1",
+      id: "tool-read",
+      name: "find_resource",
+      arguments: { query: "redis", types: ["docker_container"] },
+    });
+
+    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
   });
 
   it("auto-approves Postgres data writes in bypass create/edit mode", async () => {
@@ -234,9 +267,60 @@ describe("AI conversation persistence", () => {
       arguments: { operation: "insert_row", databaseId: "db-1", schema: "public", table: "users" },
     });
 
-    expect(socket.send).toHaveBeenCalledWith(
-      expect.stringContaining('"type":"tool_approval"')
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
+  });
+
+  it("only auto-approves sandbox execution in bypass everything mode", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User One",
+        groupName: "admin",
+        scopes: ["feat:ai:use"],
+        isBlocked: false,
+      } as any,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    useUIStore.setState({
+      aiBypassCreateApprovals: true,
+      aiBypassEditApprovals: true,
+      aiBypassDeleteApprovals: false,
+    });
+
+    const connectPromise = useAIStore.getState().connect();
+    const socket = MockWebSocket.instances[0];
+    socket.emit({ type: "auth_ok" });
+    await connectPromise;
+
+    useAIStore.getState().sendMessage("run script");
+    await vi.waitFor(() =>
+      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
     );
+    socket.send.mockClear();
+
+    socket.emit({
+      type: "tool_approval_required",
+      requestId: "request-1",
+      id: "sandbox-1",
+      name: "execute_script",
+      arguments: { script: "echo hi" },
+    });
+    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
+
+    useUIStore.setState({ aiBypassDeleteApprovals: true });
+    socket.emit({
+      type: "tool_approval_required",
+      requestId: "request-1",
+      id: "sandbox-2",
+      name: "execute_script",
+      arguments: { script: "echo hi" },
+    });
+
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
     expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
   });
 
@@ -274,8 +358,6 @@ describe("AI conversation persistence", () => {
       arguments: { question: "Which node?" },
     });
 
-    expect(socket.send).not.toHaveBeenCalledWith(
-      expect.stringContaining('"type":"tool_approval"')
-    );
+    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
   });
 });

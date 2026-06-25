@@ -273,6 +273,32 @@ export class DockerService {
     logger.info('Image reference pulled successfully', { imageRef });
   }
 
+  async imageExists(imageRef: string): Promise<boolean> {
+    const res = await this.request('GET', `${API_VERSION}/images/${encodeURIComponent(imageRef)}/json`);
+    if (res.statusCode === 200) return true;
+    if (res.statusCode === 404) return false;
+    throw new Error(`Docker image inspect failed (${res.statusCode}): ${res.body}`);
+  }
+
+  async tagImage(sourceRef: string, targetRepo: string, targetTag: string): Promise<void> {
+    const res = await this.request(
+      'POST',
+      `${API_VERSION}/images/${encodeURIComponent(sourceRef)}/tag?repo=${encodeURIComponent(targetRepo)}&tag=${encodeURIComponent(targetTag)}`
+    );
+    if (res.statusCode !== 201) {
+      throw new Error(`Docker image tag failed (${res.statusCode}): ${res.body}`);
+    }
+  }
+
+  async removeImageTag(imageRef: string): Promise<void> {
+    const res = await this.request(
+      'DELETE',
+      `${API_VERSION}/images/${encodeURIComponent(imageRef)}?force=false&noprune=true`
+    );
+    if (res.statusCode === 200 || res.statusCode === 202 || res.statusCode === 404) return;
+    throw new Error(`Docker image tag remove failed (${res.statusCode}): ${res.body}`);
+  }
+
   /**
    * Inspect the container this app is running in.
    * Uses HOSTNAME env var which Docker sets to the short container ID.
@@ -356,7 +382,10 @@ export class DockerService {
     }
   }
 
-  async getContainerLogs(id: string, options: { stdout?: boolean; stderr?: boolean; tail?: number } = {}): Promise<string> {
+  async getContainerLogs(
+    id: string,
+    options: { stdout?: boolean; stderr?: boolean; tail?: number } = {}
+  ): Promise<string> {
     const params = new URLSearchParams({
       stdout: String(options.stdout ?? true),
       stderr: String(options.stderr ?? true),

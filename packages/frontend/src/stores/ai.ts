@@ -1,11 +1,11 @@
 import { create } from "zustand";
 import {
+  type AIConversationSummary,
   compactConversation,
   deleteConversation,
   getConversation,
   listConversations,
   saveConversation,
-  type AIConversationSummary,
 } from "@/services/ai-conversations";
 import { AIWebSocketClient } from "@/services/ai-websocket";
 import { api } from "@/services/api";
@@ -19,8 +19,8 @@ import { useProxyStore } from "@/stores/proxy";
 import { useSSLStore } from "@/stores/ssl";
 import { useUIStore } from "@/stores/ui";
 import type {
-  AIMessage,
   AIConfig,
+  AIMessage,
   AIToolCall,
   ChatMessage,
   PageContext,
@@ -132,6 +132,45 @@ const DELETE_OPERATIONS = new Set([
   "delete_column",
   "delete_key",
 ]);
+const READ_TOOL_NAMES = new Set([
+  "discover_tools",
+  "fetch",
+  "find_resource",
+  "get_current_context",
+  "internal_documentation",
+  "list_sandbox_jobs",
+  "read_artifact",
+  "read_process_output",
+  "wait",
+  "web_search",
+]);
+const CREATE_TOOL_NAMES = new Set([
+  "duplicate_docker_container",
+  "link_internal_cert",
+  "send_artifact",
+]);
+const EDIT_TOOL_NAMES = new Set([
+  "deploy_docker_deployment",
+  "download_artifact",
+  "execute_postgres_sql",
+  "execute_redis_command",
+  "kill_docker_deployment",
+  "move_hosts_to_folder",
+  "rename_docker_container",
+  "rename_node",
+  "rollback_docker_deployment",
+  "set_redis_key",
+  "switch_docker_deployment_slot",
+  "test_webhook",
+  "toggle_proxy_raw_mode",
+]);
+const DELETE_TOOL_NAMES = new Set([
+  "execute_script",
+  "kill_process",
+  "prune_docker_images",
+  "run_process",
+  "write_process_stdin",
+]);
 
 function getOperationActionType(operation: string): ToolActionType {
   if (READ_OPERATIONS.has(operation)) return "read";
@@ -142,48 +181,28 @@ function getOperationActionType(operation: string): ToolActionType {
 }
 
 function getToolActionType(toolName: string, args?: Record<string, unknown>): ToolActionType {
+  if (toolName === "ask_question") return "other";
   const operation = typeof args?.operation === "string" ? args.operation : "";
   if (toolName.startsWith("manage_") && operation) {
     return getOperationActionType(operation);
   }
+  if (READ_TOOL_NAMES.has(toolName)) return "read";
+  if (CREATE_TOOL_NAMES.has(toolName)) return "create";
+  if (EDIT_TOOL_NAMES.has(toolName)) return "edit";
+  if (DELETE_TOOL_NAMES.has(toolName)) return "delete";
   if (
     toolName.startsWith("list_") ||
     toolName.startsWith("get_") ||
     toolName.startsWith("query_") ||
-    toolName.startsWith("browse_") ||
-    toolName === "discover_tools" ||
-    toolName === "get_current_context" ||
-    toolName === "wait" ||
-    toolName === "find_resource" ||
-    toolName === "internal_documentation" ||
-    toolName === "web_search"
+    toolName.startsWith("browse_")
   ) {
     return "read";
   }
   if (toolName === "pull_docker_image") return "create";
-  if (toolName === "prune_docker_images") return "delete";
-  if (
-    toolName === "execute_postgres_sql" ||
-    toolName === "set_redis_key" ||
-    toolName === "execute_redis_command" ||
-    toolName === "kill_docker_deployment" ||
-    toolName === "deploy_docker_deployment" ||
-    toolName === "switch_docker_deployment_slot" ||
-    toolName === "rollback_docker_deployment" ||
-    toolName === "rename_docker_container" ||
-    toolName === "test_webhook" ||
-    toolName === "rename_node" ||
-    toolName === "toggle_proxy_raw_mode" ||
-    toolName === "move_hosts_to_folder"
-  ) {
-    return "edit";
-  }
-  if (toolName === "duplicate_docker_container") return "create";
   if (
     toolName.startsWith("create_") ||
     toolName.startsWith("issue_") ||
-    toolName.startsWith("request_") ||
-    toolName === "link_internal_cert"
+    toolName.startsWith("request_")
   )
     return "create";
   if (
@@ -195,11 +214,12 @@ function getToolActionType(toolName: string, args?: Record<string, unknown>): To
   )
     return "edit";
   if (toolName.startsWith("delete_") || toolName.startsWith("remove_")) return "delete";
-  return "other";
+  return "edit";
 }
 
 function shouldAutoApprove(toolName: string, args?: Record<string, unknown>): boolean {
   const ui = useUIStore.getState();
+  if (ui.aiAlwaysAskApprovals) return false;
   const action = getToolActionType(toolName, args);
   if (action === "read") return true;
   if (action === "create" && ui.aiBypassCreateApprovals) return true;
@@ -294,13 +314,11 @@ function compactToolResultForModel(toolName: string, value: unknown): unknown {
   if (value == null) return value;
   if (toolName === "get_docker_container_logs")
     return compactLogLikeResult(value, "Docker container logs");
-  if (
-    toolName === "send_artifact" &&
-    typeof value === "object" &&
-    value !== null
-  ) {
-    const { artifactId, filename, mediaType, sizeBytes, sourcePath, downloadUrl } =
-      value as Record<string, unknown>;
+  if (toolName === "send_artifact" && typeof value === "object" && value !== null) {
+    const { artifactId, filename, mediaType, sizeBytes, sourcePath, downloadUrl } = value as Record<
+      string,
+      unknown
+    >;
     return { artifactId, filename, mediaType, sizeBytes, sourcePath, downloadUrl };
   }
   if (
@@ -308,7 +326,7 @@ function compactToolResultForModel(toolName: string, value: unknown): unknown {
     typeof value === "object" &&
     value !== null &&
     typeof (value as { content?: unknown }).content === "string" &&
-    ((value as { content: string }).content.length > 4000)
+    (value as { content: string }).content.length > 4000
   ) {
     const content = (value as { content: string }).content;
     return {
@@ -581,7 +599,11 @@ export const useAIStore = create<AIState>()((set, get) => ({
       handleWSMessage(msg, set, get);
     });
     wsClient.onStatusChange((connected) => {
-      set({ isConnected: connected, isConnecting: false, connectionError: connected ? null : get().connectionError });
+      set({
+        isConnected: connected,
+        isConnecting: false,
+        connectionError: connected ? null : get().connectionError,
+      });
       if (!connected) set({ isStreaming: false });
     });
     wsClient.onConnectionError((message) => {
@@ -593,7 +615,9 @@ export const useAIStore = create<AIState>()((set, get) => ({
       set((state) => ({
         isConnecting: false,
         isConnected: false,
-        connectionError: state.connectionError ?? (useAuthStore.getState().isLoading ? null : "AI connection failed"),
+        connectionError:
+          state.connectionError ??
+          (useAuthStore.getState().isLoading ? null : "AI connection failed"),
       }));
     }
     return ok;
@@ -865,7 +889,10 @@ export const useAIStore = create<AIState>()((set, get) => ({
         const conversation = state.activeConversationId
           ? await compactConversation(state.activeConversationId, messages, state.lastContext)
           : await saveConversation(
-              state.savedName ?? titleFromContent(messages.find((m) => m.role === "user")?.content ?? "New conversation"),
+              state.savedName ??
+                titleFromContent(
+                  messages.find((m) => m.role === "user")?.content ?? "New conversation"
+                ),
               messages,
               state.lastContext
             );

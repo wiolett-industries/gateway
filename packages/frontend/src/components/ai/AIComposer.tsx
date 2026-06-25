@@ -1,18 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  Check,
-  ChevronDown,
-  Send,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
-  Square,
-} from "lucide-react";
+import { Check, ChevronDown, Send, Shield, ShieldAlert, ShieldCheck, Square } from "lucide-react";
 import type { ChangeEvent, ElementType, KeyboardEvent, RefObject } from "react";
 import { useEffect, useState } from "react";
-import { cn } from "@/lib/utils";
-import { getAIContextUsage, type AIContextUsage } from "@/stores/ai";
-import type { AIMessage as AIMessageType } from "@/types/ai";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,8 +10,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { type AIContextUsage, getAIContextUsage } from "@/stores/ai";
+import type { AIMessage as AIMessageType } from "@/types/ai";
 
-export type AIApprovalMode = "normal" | "bypass-write" | "bypass-everything";
+export type AIApprovalMode =
+  | "always-ask"
+  | "normal"
+  | "bypass-non-destructive"
+  | "bypass-everything";
 
 export interface AISlashCommand {
   name: string;
@@ -48,6 +44,7 @@ interface AIComposerProps {
   setApprovalMode: (mode: AIApprovalMode) => void | Promise<void>;
   maxRows?: number;
   className?: string;
+  surfaceClassName?: string;
   showDisclaimer?: boolean;
 }
 
@@ -55,10 +52,11 @@ const APPROVAL_MODE_META: Record<
   AIApprovalMode,
   { label: string; menuLabel: string; icon: ElementType }
 > = {
+  "always-ask": { label: "Always ask", menuLabel: "Always ask", icon: Shield },
   normal: { label: "Normal", menuLabel: "Normal", icon: Shield },
-  "bypass-write": {
-    label: "Bypass edit and creation",
-    menuLabel: "Bypass edit and creation",
+  "bypass-non-destructive": {
+    label: "Bypass non-destructive",
+    menuLabel: "Bypass non-destructive",
     icon: ShieldCheck,
   },
   "bypass-everything": {
@@ -151,6 +149,7 @@ export function AIComposer({
   approvalModeLabel,
   setApprovalMode,
   className,
+  surfaceClassName,
   showDisclaimer = false,
 }: AIComposerProps) {
   const modeMeta = APPROVAL_MODE_META[approvalMode];
@@ -206,7 +205,8 @@ export function AIComposer({
       <div
         className={cn(
           "flex flex-col border bg-muted/30 transition-colors",
-          textareaFocused ? "border-ring ring-1 ring-inset ring-ring" : "border-border"
+          textareaFocused ? "border-ring ring-1 ring-inset ring-ring" : "border-border",
+          surfaceClassName
         )}
       >
         <Textarea

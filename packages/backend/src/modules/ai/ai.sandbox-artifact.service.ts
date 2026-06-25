@@ -1,6 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import type { Env } from '@/config/env.js';
 import { AppError } from '@/middleware/error-handler.js';
 
@@ -77,7 +77,9 @@ export class AISandboxArtifactService {
     return { metadata, filePath };
   }
 
-  async cleanOldArtifacts(retentionDays = this.retentionDays): Promise<{ itemsCleaned: number; spaceFreedBytes: number }> {
+  async cleanOldArtifacts(
+    retentionDays = this.retentionDays
+  ): Promise<{ itemsCleaned: number; spaceFreedBytes: number }> {
     await fs.mkdir(this.rootDir, { recursive: true, mode: 0o700 });
     const entries = await fs.readdir(this.rootDir).catch(() => []);
     const threshold = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
@@ -98,7 +100,10 @@ export class AISandboxArtifactService {
       if (createdAt > threshold) continue;
 
       const filePath = this.filePath(id);
-      const size = await fs.stat(filePath).then((stat) => stat.size).catch(() => 0);
+      const size = await fs
+        .stat(filePath)
+        .then((stat) => stat.size)
+        .catch(() => 0);
       await fs.unlink(filePath).catch(() => {});
       await fs.unlink(metaPath).catch(() => {});
       itemsCleaned += 1;

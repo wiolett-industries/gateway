@@ -82,7 +82,8 @@ interface AIToolCallBlockProps {
 
 export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlockProps) {
   const [expanded, setExpanded] = useState(false);
-  const safeToolCall = toolCall && typeof toolCall === "object" ? toolCall : ({} as Partial<AIToolCall>);
+  const safeToolCall =
+    toolCall && typeof toolCall === "object" ? toolCall : ({} as Partial<AIToolCall>);
   const toolName =
     typeof safeToolCall.name === "string" && safeToolCall.name ? safeToolCall.name : "unknown_tool";
   const toolArguments =
@@ -93,7 +94,11 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
       : {};
   const toolStatus = safeToolCall.status ?? "failed";
   const Icon =
-    toolStatus === "running" ? Loader2 : toolStatus === "failed" ? X : CATEGORY_ICONS[toolName] || ShieldCheck;
+    toolStatus === "running"
+      ? Loader2
+      : toolStatus === "failed"
+        ? X
+        : CATEGORY_ICONS[toolName] || ShieldCheck;
 
   const statusIcon = () => {
     switch (toolStatus) {
@@ -140,9 +145,7 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
                 : "opacity-70"
           }`}
         />
-        <span className={`truncate ${isSkipped ? "text-muted-foreground" : ""}`}>
-          {toolLabel}
-        </span>
+        <span className={`truncate ${isSkipped ? "text-muted-foreground" : ""}`}>{toolLabel}</span>
         {hasContent &&
           (expanded ? (
             <ChevronDown className="-ml-1 h-3 w-3 shrink-0 opacity-70 transition-opacity" />
@@ -206,7 +209,9 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
               >
                 <Download className="h-3.5 w-3.5" />
                 <span className="font-medium">{artifactResult.filename}</span>
-                <span className="text-muted-foreground">{formatBytes(artifactResult.sizeBytes)}</span>
+                <span className="text-muted-foreground">
+                  {formatBytes(artifactResult.sizeBytes)}
+                </span>
               </a>
             </div>
           )}
@@ -218,7 +223,11 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
             </pre>
           )}
           {hasError && (
-            <p className="border border-border px-2.5 py-1.5 text-destructive">
+            <p
+              className={`border border-border px-2.5 py-1.5 text-destructive ${
+                hasArgs || hasResult ? "border-t-0" : ""
+              }`}
+            >
               {safeToolCall.error}
             </p>
           )}
@@ -233,9 +242,9 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
   );
 }
 
-function parseArtifactResult(value: unknown):
-  | { filename: string; sizeBytes: number; downloadUrl: string }
-  | null {
+function parseArtifactResult(
+  value: unknown
+): { filename: string; sizeBytes: number; downloadUrl: string } | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   if (
@@ -267,7 +276,8 @@ export function QuestionBlock({
   onAnswer?: (id: string, answer: string) => void;
 }) {
   const [answerText, setAnswerText] = useState("");
-  const safeToolCall = toolCall && typeof toolCall === "object" ? toolCall : ({} as Partial<AIToolCall>);
+  const safeToolCall =
+    toolCall && typeof toolCall === "object" ? toolCall : ({} as Partial<AIToolCall>);
   const args = (
     safeToolCall.arguments &&
     typeof safeToolCall.arguments === "object" &&

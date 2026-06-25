@@ -6,6 +6,7 @@ import {
   Bell,
   Box,
   Database,
+  Expand,
   FileText,
   GitBranch,
   Globe,
@@ -27,6 +28,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AIButton } from "@/components/ai/AIButton";
+import { confirmAILiteMode } from "@/components/ai/confirm-lite-mode";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +48,7 @@ import { deriveAllowedResourceIdsByScope } from "@/lib/scope-utils";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
+import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
@@ -181,10 +184,18 @@ export function SidebarContent({
   const location = useLocation();
   const navigate = useNavigate();
   const { user, hasScope, hasAnyScope, hasScopedAccess, logout } = useAuthStore();
-  const { sidebarOpen, toggleSidebar, setCommandPaletteOpen: openPalette } = useUIStore();
+  const {
+    sidebarOpen,
+    toggleSidebar,
+    setAIPanelOpen,
+    setAILiteMode,
+    setCommandPaletteOpen: openPalette,
+  } = useUIStore();
 
+  const aiEnabled = useAIStore((s) => s.isEnabled);
   const updateAvailable = useUpdateStore((s) => s.status?.updateAvailable ?? false);
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
+  const showAILiteModeCTA = useUIStore((s) => s.showAILiteModeCTA);
   const sidebarPinnedIds = usePinnedNodesStore((s) => s.sidebarNodeIds);
   const pinnedRefreshTick = usePinnedNodesStore((s) => s.refreshTick);
   const [pinnedNodes, setPinnedNodes] = useState<Node[]>([]);
@@ -427,6 +438,16 @@ export function SidebarContent({
       ) ||
       hasResourceScopedSchemaView);
   const canAccessAuthorities = hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate");
+  const canUseAI = hasScope(AI_SCOPE) && aiEnabled !== false;
+
+  const handleTryLiteMode = useCallback(async () => {
+    const confirmed = await confirmAILiteMode();
+    if (!confirmed) return;
+    setAILiteMode(true);
+    setAIPanelOpen(false);
+    navigate("/");
+    onNavigate?.();
+  }, [navigate, onNavigate, setAIPanelOpen, setAILiteMode]);
 
   useEffect(() => {
     api
@@ -570,6 +591,22 @@ export function SidebarContent({
             <div className="flex-1" />
 
             {hasScope(AI_SCOPE) && <AIButton iconOnly />}
+
+            {canUseAI && showAILiteModeCTA && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 bg-sidebar-accent text-sidebar-accent-foreground/80 hover:bg-muted hover:text-sidebar-accent-foreground"
+                    onClick={handleTryLiteMode}
+                  >
+                    <Expand className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Switch to lite mode</TooltipContent>
+              </Tooltip>
+            )}
 
             {updateAvailable && hasScope("admin:update") && showUpdateNotifications && (
               <Tooltip>
@@ -877,6 +914,22 @@ export function SidebarContent({
 
             <Separator />
 
+            {canUseAI && showAILiteModeCTA && (
+              <>
+                <div className="px-2 py-2">
+                  <button
+                    type="button"
+                    onClick={handleTryLiteMode}
+                    className="flex w-full items-center gap-2 bg-sidebar-accent px-3 py-2 text-left text-sm font-medium text-sidebar-accent-foreground/80 transition-colors hover:bg-muted hover:text-sidebar-accent-foreground"
+                  >
+                    <Expand className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Switch to lite mode</span>
+                  </button>
+                </div>
+                <Separator />
+              </>
+            )}
+
             {/* Update notification */}
             {updateAvailable && hasScope("admin:update") && showUpdateNotifications && (
               <>
@@ -884,7 +937,7 @@ export function SidebarContent({
                   <Link
                     to="/settings/gateway"
                     onClick={onNavigate}
-                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium transition-colors"
                     style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                   >
                     <ArrowUpCircle className="h-4 w-4 shrink-0" />
