@@ -9,7 +9,7 @@ import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { authenticateWSConnection, createWSHandlers } from './ai.ws.js';
-import { AIRunService, aiConversationChangedChannel } from './ai-run.service.js';
+import { AIRunService, aiUserConversationsChangedChannel } from './ai-run.service.js';
 
 const USER: User = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -270,7 +270,7 @@ describe('AI websocket backend runtime commands', () => {
       JSON.stringify({ type: 'conversation.snapshot', conversationId: 'conversation-1', snapshot })
     );
 
-    container.resolve(EventBusService).publish(aiConversationChangedChannel(USER.id, 'conversation-1'), {
+    container.resolve(EventBusService).publish(aiUserConversationsChangedChannel(USER.id), {
       userId: USER.id,
       conversationId: 'conversation-1',
     });

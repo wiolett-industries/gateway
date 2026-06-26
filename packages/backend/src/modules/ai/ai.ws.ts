@@ -10,7 +10,7 @@ import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 import { AISettingsService } from './ai.settings.service.js';
 import type { WSClientMessage, WSServerMessage } from './ai.types.js';
-import { AIRunService, aiConversationChangedChannel } from './ai-run.service.js';
+import { AIRunService, aiUserConversationsChangedChannel } from './ai-run.service.js';
 
 const logger = createChildLogger('AI-WebSocket');
 const RATE_LIMIT_PIPELINE_RESULT_COUNT = 4;
@@ -21,7 +21,7 @@ interface WSConnectionState {
   user: User | null;
   sessionId: string | null;
   authenticated: boolean;
-  subscriptions: Map<string, () => void>;
+  runtimeUnsubscribe: (() => void) | null;
   keepaliveInterval: ReturnType<typeof setInterval> | null;
 }
 
@@ -94,44 +94,31 @@ async function sendConversationSnapshot(ws: WSContext, userId: string, conversat
   return snapshot;
 }
 
-function subscribeToConversation(
-  ws: WSContext,
-  state: WSConnectionState,
-  userId: string,
-  conversationId: string
-): void {
-  if (state.subscriptions.has(conversationId)) return;
+function subscribeToUserRuntime(ws: WSContext, state: WSConnectionState, userId: string): void {
+  if (state.runtimeUnsubscribe) return;
   const eventBus = container.resolve(EventBusService);
-  const unsubscribe = eventBus.subscribe(aiConversationChangedChannel(userId, conversationId), (payload) => {
+  state.runtimeUnsubscribe = eventBus.subscribe(aiUserConversationsChangedChannel(userId), (payload) => {
     const event = payload as { userId?: string; conversationId?: string; invalidatedStores?: string[] };
-    if (event.userId !== userId || event.conversationId !== conversationId) return;
+    if (event.userId !== userId || typeof event.conversationId !== 'string') return;
     if (event.invalidatedStores?.length) {
       send(ws, {
         type: 'stores.invalidated',
-        conversationId,
+        conversationId: event.conversationId,
         stores: event.invalidatedStores,
       });
     }
-    void sendConversationSnapshot(ws, userId, conversationId).catch((error) => {
+    void sendConversationSnapshot(ws, userId, event.conversationId).catch((error) => {
       logger.warn('Failed to send AI conversation snapshot from event', {
-        conversationId,
+        conversationId: event.conversationId,
         error: error instanceof Error ? error.message : String(error),
       });
     });
   });
-  state.subscriptions.set(conversationId, unsubscribe);
 }
 
-function unsubscribeFromConversation(state: WSConnectionState, conversationId: string): void {
-  const unsubscribe = state.subscriptions.get(conversationId);
-  if (!unsubscribe) return;
-  unsubscribe();
-  state.subscriptions.delete(conversationId);
-}
-
-function unsubscribeFromAllConversations(state: WSConnectionState): void {
-  for (const unsubscribe of state.subscriptions.values()) unsubscribe();
-  state.subscriptions.clear();
+function unsubscribeFromUserRuntime(state: WSConnectionState): void {
+  state.runtimeUnsubscribe?.();
+  state.runtimeUnsubscribe = null;
 }
 
 async function authenticateFromSession(sessionId: string): Promise<User | null> {
@@ -213,7 +200,7 @@ export function createWSHandlers() {
         user: null,
         sessionId: null,
         authenticated: false,
-        subscriptions: new Map(),
+        runtimeUnsubscribe: null,
         keepaliveInterval: null,
       };
 
@@ -276,7 +263,6 @@ export function createWSHandlers() {
 
       if (msg.type === 'conversation.subscribe') {
         try {
-          subscribeToConversation(ws, state, user.id, msg.conversationId);
           send(ws, {
             type: 'command.ack',
             commandType: msg.type,
@@ -291,14 +277,12 @@ export function createWSHandlers() {
       }
 
       if (msg.type === 'conversation.unsubscribe') {
-        unsubscribeFromConversation(state, msg.conversationId);
         send(ws, { type: 'command.ack', commandType: msg.type, conversationId: msg.conversationId });
         return;
       }
 
       if (msg.type === 'conversation.sync') {
         try {
-          subscribeToConversation(ws, state, user.id, msg.conversationId);
           await sendConversationSnapshot(ws, user.id, msg.conversationId);
           send(ws, {
             type: 'command.ack',
@@ -341,7 +325,6 @@ export function createWSHandlers() {
             clientCommandId: msg.clientCommandId,
             lastContext: msg.context ? { ...msg.context } : null,
           });
-          subscribeToConversation(ws, state, user.id, result.conversationId);
 
           send(ws, {
             type: 'command.ack',
@@ -487,7 +470,7 @@ export function createWSHandlers() {
     onClose(_event: unknown, ws: WSContext) {
       const state = wsStates.get(ws);
       if (state) {
-        unsubscribeFromAllConversations(state);
+        unsubscribeFromUserRuntime(state);
         if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
         wsStates.delete(ws);
       }
@@ -497,7 +480,7 @@ export function createWSHandlers() {
       logger.error('WebSocket error');
       const state = wsStates.get(ws);
       if (state) {
-        unsubscribeFromAllConversations(state);
+        unsubscribeFromUserRuntime(state);
         if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
         wsStates.delete(ws);
       }
@@ -539,6 +522,7 @@ export async function authenticateWSConnection(ws: WSContext, sessionId: string)
   state.user = user;
   state.sessionId = sessionId;
   state.authenticated = true;
+  subscribeToUserRuntime(ws, state, user.id);
   send(ws, { type: 'auth_ok', userId: user.id });
   return true;
 }

@@ -21,8 +21,8 @@ import { AIRunExecutor } from './ai-run-executor.js';
 
 const ACTIVE_RUN_STATUSES: AIRunStatus[] = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'];
 
-export function aiConversationChangedChannel(userId: string, conversationId: string): string {
-  return `ai.conversation.changed.${userId}.${conversationId}`;
+export function aiUserConversationsChangedChannel(userId: string): string {
+  return `ai.conversations.changed.${userId}`;
 }
 
 export interface AIConversationChangedEvent {
@@ -283,7 +283,7 @@ export class AIRunService {
       })
       .where(
         and(
-          eq(aiRunToolCalls.id, input.toolCallId),
+          toolCallIdentityWhere(input.toolCallId),
           eq(aiRunToolCalls.runId, input.runId),
           eq(aiRunToolCalls.conversationId, input.conversationId),
           eq(aiRunToolCalls.status, 'pending_approval')
@@ -347,7 +347,7 @@ export class AIRunService {
       })
       .where(
         and(
-          or(eq(aiRunQuestions.id, input.questionId), eq(aiRunQuestions.toolCallId, input.questionId)),
+          questionIdentityWhere(input.questionId),
           eq(aiRunQuestions.runId, input.runId),
           eq(aiRunQuestions.conversationId, input.conversationId),
           eq(aiRunQuestions.status, 'pending')
@@ -561,7 +561,7 @@ export class AIRunService {
   }
 
   private async getToolCall(toolCallId: string): Promise<AIRunToolCall | null> {
-    const rows = await this.db.select().from(aiRunToolCalls).where(eq(aiRunToolCalls.id, toolCallId)).limit(1);
+    const rows = await this.db.select().from(aiRunToolCalls).where(toolCallIdentityWhere(toolCallId)).limit(1);
     return rows[0] ?? null;
   }
 
@@ -571,7 +571,7 @@ export class AIRunService {
       .from(aiRunQuestions)
       .where(
         and(
-          or(eq(aiRunQuestions.id, questionId), eq(aiRunQuestions.toolCallId, questionId)),
+          questionIdentityWhere(questionId),
           eq(aiRunQuestions.runId, runId),
           eq(aiRunQuestions.conversationId, conversationId)
         )
@@ -597,15 +597,32 @@ export class AIRunService {
   }
 
   private publishConversationChanged(userId: string, conversationId: string, invalidatedStores?: string[]): void {
-    this.eventBus?.publish(aiConversationChangedChannel(userId, conversationId), {
+    const event = {
       userId,
       conversationId,
       ...(invalidatedStores?.length ? { invalidatedStores } : {}),
-    } satisfies AIConversationChangedEvent);
+    } satisfies AIConversationChangedEvent;
+    this.eventBus?.publish(aiUserConversationsChangedChannel(userId), event);
   }
 }
 
 type DbLike = Pick<DrizzleClient, 'select' | 'insert' | 'update'>;
+
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function toolCallIdentityWhere(value: string) {
+  return isUuidLike(value)
+    ? or(eq(aiRunToolCalls.id, value), eq(aiRunToolCalls.toolCallId, value))
+    : eq(aiRunToolCalls.toolCallId, value);
+}
+
+function questionIdentityWhere(value: string) {
+  return isUuidLike(value)
+    ? or(eq(aiRunQuestions.id, value), eq(aiRunQuestions.toolCallId, value))
+    : eq(aiRunQuestions.toolCallId, value);
+}
 
 function normalizeConversationTitle(title: string): string {
   const normalized = title.trim().replace(/\s+/g, ' ');

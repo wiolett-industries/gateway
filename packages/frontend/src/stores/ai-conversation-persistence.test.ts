@@ -447,7 +447,7 @@ describe("AI backend runtime store", () => {
     });
     expect(useAIStore.getState().messages[0].toolCalls).toEqual([
       expect.objectContaining({
-        id: "approval-1",
+        id: "tool-1",
         name: "pull_docker_image",
         status: "awaiting_approval",
       }),
@@ -704,7 +704,7 @@ describe("AI backend runtime store", () => {
       id: "run-1:runtime",
       role: "assistant",
       isStreaming: true,
-      toolCalls: [expect.objectContaining({ id: "approval-1" })],
+      toolCalls: [expect.objectContaining({ id: "tool-1" })],
     });
   });
 
@@ -750,7 +750,7 @@ describe("AI backend runtime store", () => {
     useAIStore.setState({
       activeConversationId: "conversation-1",
       activeRunId: "run-1",
-      pendingApprovalToolCallId: "approval-1",
+      pendingApprovalToolCallId: "tool-1",
       messages: [
         {
           id: "message-1",
@@ -758,7 +758,7 @@ describe("AI backend runtime store", () => {
           content: "",
           toolCalls: [
             {
-              id: "approval-1",
+              id: "tool-1",
               name: "pull_docker_image",
               arguments: { imageRef: "redis:latest" },
               status: "awaiting_approval",
@@ -768,7 +768,7 @@ describe("AI backend runtime store", () => {
       ],
     });
 
-    useAIStore.getState().approveTool("approval-1");
+    useAIStore.getState().approveTool("tool-1");
 
     expect(sentPayloads(socket)).toEqual(
       expect.arrayContaining([
@@ -776,7 +776,7 @@ describe("AI backend runtime store", () => {
           type: "approval.decide",
           conversationId: "conversation-1",
           runId: "run-1",
-          approvalId: "approval-1",
+          approvalId: "tool-1",
           decision: "approved",
         }),
       ])

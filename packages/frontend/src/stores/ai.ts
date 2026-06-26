@@ -900,7 +900,7 @@ function projectConversationSnapshot(snapshot: AIConversationRuntimeSnapshot): P
     activeRunId: snapshot.runtime.activeRun?.id ?? null,
     lastContext: snapshot.conversation.lastContext,
     pendingApprovalToolCallId:
-      snapshot.runtime.pendingApprovals[0]?.id ?? pendingQuestions[0]?.id ?? null,
+      snapshot.runtime.pendingApprovals[0]?.toolCallId ?? pendingQuestions[0]?.toolCallId ?? null,
     isStreaming: isActiveRunStatus(snapshot.runtime.activeRun?.status),
   };
 }
@@ -1004,7 +1004,7 @@ function normalizeToolCallStatus(value: unknown): AIToolCall["status"] {
 
 function runtimeToolCallToUI(toolCall: AIRunToolCall): AIToolCall {
   return {
-    id: toolCall.id,
+    id: toolCall.toolCallId,
     name: toolCall.toolName,
     arguments: toolCall.toolArgs,
     status: runtimeToolStatusToUI(toolCall.status),
