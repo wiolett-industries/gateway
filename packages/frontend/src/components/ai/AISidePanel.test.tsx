@@ -158,6 +158,35 @@ describe("AISidePanel autoscroll", () => {
     });
   });
 
+  it("allows sending an empty new chat while another chat is running in the background", async () => {
+    const user = userEvent.setup();
+    const sendMessage = vi.fn();
+
+    act(() => {
+      useAIStore.setState({
+        messages: [],
+        isConnected: true,
+        isStreaming: true,
+        retryAfter: null,
+        activeConversationId: "background-conversation",
+        activeRunId: "background-run",
+        connect: vi.fn().mockResolvedValue(true),
+        sendMessage,
+      });
+      useUIStore.setState({ aiPanelOpen: true, aiLiteMode: false });
+    });
+
+    renderAISidePanel();
+
+    const composer = screen.getByPlaceholderText("Ask anything... (/ commands)");
+    await user.type(composer, "start another check");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(sendMessage).toHaveBeenCalledWith("start another check", expect.any(Object), [], {
+      startNewConversation: true,
+    });
+  });
+
   it("renders lite sidebar conversations and wires load and delete actions", async () => {
     const user = userEvent.setup();
     const fetchRecentConversations = vi.fn();

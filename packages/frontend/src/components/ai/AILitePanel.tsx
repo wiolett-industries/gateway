@@ -129,6 +129,8 @@ export function AILitePanel() {
   const context = usePageContext();
   const approvalModeLabel = formatAIApprovalModeLabel(approvalMode);
   const conversationBlock = getConversationBlock(messages);
+  const isNewConversationDraft = messages.length === 0;
+  const currentConversationStreaming = !isNewConversationDraft && isStreaming;
 
   const setApprovalMode = useCallback(
     async (mode: AIApprovalMode) => {
@@ -242,7 +244,7 @@ export function AILitePanel() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if ((!text && attachments.length === 0) || isStreaming) return;
+    if ((!text && attachments.length === 0) || currentConversationStreaming) return;
 
     if (attachments.length === 0 && text.startsWith("/")) {
       const handled = await handleSlashCommand(text);
@@ -264,7 +266,9 @@ export function AILitePanel() {
       setAttachments([]);
       setSlashResults([]);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
-      sendMessage(text, context, uploadedAttachments);
+      sendMessage(text, context, uploadedAttachments, {
+        startNewConversation: isNewConversationDraft,
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to attach image");
     } finally {
@@ -274,9 +278,10 @@ export function AILitePanel() {
     activeConversationId,
     attachments,
     context,
+    currentConversationStreaming,
     handleSlashCommand,
     input,
-    isStreaming,
+    isNewConversationDraft,
     sendMessage,
     setAttachments,
     setInput,
@@ -296,7 +301,7 @@ export function AILitePanel() {
       }
       if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
         e.preventDefault();
-        if (isStreaming) return;
+        if (currentConversationStreaming) return;
         const cmd = slashResults[slashIndex];
         void handleSlashCommand(`/${cmd.name}`);
         setInput("");
@@ -422,7 +427,9 @@ export function AILitePanel() {
                   onReject={rejectTool}
                   onAnswer={answerQuestion}
                   onEditUserMessage={
-                    !isStreaming && !activeRunId ? handleEditUserMessage : undefined
+                    !currentConversationStreaming && !activeRunId
+                      ? handleEditUserMessage
+                      : undefined
                   }
                 />
               ))}
@@ -482,7 +489,7 @@ export function AILitePanel() {
             slashResults={slashResults}
             slashIndex={slashIndex}
             messages={messages}
-            isStreaming={isStreaming}
+            isStreaming={currentConversationStreaming}
             isConnected={isConnected}
             retryAfter={retryAfter}
             approvalMode={approvalMode}

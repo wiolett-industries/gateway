@@ -167,6 +167,32 @@ describe("AI backend runtime store", () => {
     expect(useAIStore.getState().sidebarActiveConversationId).toBeNull();
   });
 
+  it("allows starting a new conversation while a previous run is still streaming", async () => {
+    const socket = await connectAI();
+
+    useAIStore.setState({
+      messages: [],
+      activeConversationId: "old-conversation",
+      sidebarActiveConversationId: null,
+      activeRunId: "old-run",
+      isStreaming: true,
+      savedName: "Old conversation",
+      lastContext: null,
+    });
+
+    useAIStore.getState().sendMessage("Start a separate chat", undefined, [], {
+      startNewConversation: true,
+    });
+
+    const payload = sentPayloads(socket).find((item) => item.type === "conversation.send_message");
+    expect(payload).toMatchObject({
+      content: "Start a separate chat",
+    });
+    expect(payload).not.toHaveProperty("conversationId", "old-conversation");
+    expect(useAIStore.getState().activeConversationId).toBeNull();
+    expect(useAIStore.getState().activeRunId).toBeNull();
+  });
+
   it("does not reselect a stale conversation load after starting a new chat", async () => {
     const socket = await connectAI();
     let resolveConversation: (value: Awaited<ReturnType<typeof getConversation>>) => void =

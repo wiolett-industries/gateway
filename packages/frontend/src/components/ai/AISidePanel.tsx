@@ -204,6 +204,8 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
   const { aiApprovalMode: approvalMode } = useUIStore();
   const approvalModeLabel = formatAIApprovalModeLabel(approvalMode);
   const conversationBlock = getConversationBlock(messages);
+  const isNewConversationDraft = messages.length === 0;
+  const currentConversationStreaming = !isNewConversationDraft && isStreaming;
 
   const setApprovalMode = useCallback(
     async (mode: AIApprovalMode) => {
@@ -324,7 +326,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text && attachments.length === 0) return;
-    if (isStreaming) return;
+    if (currentConversationStreaming) return;
 
     if (attachments.length === 0 && text.startsWith("/")) {
       const handled = await handleSlashCommand(text);
@@ -346,7 +348,9 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
       setAttachments([]);
       setSlashResults([]);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
-      sendMessage(text, context, uploadedAttachments);
+      sendMessage(text, context, uploadedAttachments, {
+        startNewConversation: isNewConversationDraft,
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to attach image");
     } finally {
@@ -356,9 +360,10 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     activeConversationId,
     attachments,
     context,
+    currentConversationStreaming,
     handleSlashCommand,
     input,
-    isStreaming,
+    isNewConversationDraft,
     sendMessage,
     setAttachments,
     setInput,
@@ -379,7 +384,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
       }
       if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
         e.preventDefault();
-        if (isStreaming) return;
+        if (currentConversationStreaming) return;
         const cmd = slashResults[slashIndex];
         handleSlashCommand(`/${cmd.name}`);
         setInput("");
@@ -394,7 +399,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!isStreaming) handleSend();
+      if (!currentConversationStreaming) handleSend();
     }
   };
 
@@ -574,7 +579,9 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
                 onApprove={approveTool}
                 onReject={rejectTool}
                 onAnswer={answerQuestion}
-                onEditUserMessage={!isStreaming && !activeRunId ? handleEditUserMessage : undefined}
+                onEditUserMessage={
+                  !currentConversationStreaming && !activeRunId ? handleEditUserMessage : undefined
+                }
               />
             ))}
             <div className="pb-4" />
@@ -626,7 +633,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
             slashResults={slashResults}
             slashIndex={slashIndex}
             messages={messages}
-            isStreaming={isStreaming}
+            isStreaming={currentConversationStreaming}
             isConnected={isConnected}
             retryAfter={retryAfter}
             approvalMode={approvalMode}

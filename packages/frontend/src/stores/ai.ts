@@ -453,7 +453,8 @@ export const useAIStore = create<AIState>()((set, get) => ({
   ) => {
     const state = get();
     const baseMessages = options.startNewConversation ? [] : state.messages;
-    if (state.isStreaming || getConversationBlock(baseMessages)) return;
+    if ((!options.startNewConversation && state.isStreaming) || getConversationBlock(baseMessages))
+      return;
     if (options.startNewConversation && state.activeConversationId) {
       wsClient?.send({
         type: "conversation.unsubscribe",
