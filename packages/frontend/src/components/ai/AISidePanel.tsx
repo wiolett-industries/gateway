@@ -506,9 +506,9 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
           onScroll={updateStickToBottom}
         >
           <div className="space-y-3">
-            {messages.map((msg) => (
+            {messages.map((msg, index) => (
               <AIMessage
-                key={msg.id}
+                key={msg.id || `${msg.role}-${index}`}
                 message={msg}
                 onApprove={approveTool}
                 onReject={rejectTool}

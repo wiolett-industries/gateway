@@ -40,6 +40,21 @@ function artifactToolCall(): AIToolCall {
 }
 
 describe("AIMessage tool call groups", () => {
+  it("does not crash when a restored user message has no generated id timestamp", () => {
+    render(
+      <AIMessage
+        message={
+          {
+            role: "user",
+            content: "Show health summary",
+          } as AIMessageType
+        }
+      />
+    );
+
+    expect(screen.getByText("Show health summary")).toBeInTheDocument();
+  });
+
   it("keeps an expanded completed tool group open when a new tool call appears", () => {
     const { rerender } = render(
       <AIMessage message={message([toolCall("tool-1"), toolCall("tool-2")])} />

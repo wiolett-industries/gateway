@@ -268,7 +268,8 @@ function formatMessageRelativeTime(message: AIMessageType): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function timestampFromGeneratedId(id: string): string | null {
+function timestampFromGeneratedId(id: string | undefined): string | null {
+  if (!id) return null;
   const timestamp = Number(id.split("-")[0]);
   if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
   return new Date(timestamp).toISOString();

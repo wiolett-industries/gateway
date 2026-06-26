@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listConversations } from "@/services/ai-conversations";
+import { getConversation, listConversations } from "@/services/ai-conversations";
 import { resetAIStateForAuthChange, useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -156,6 +156,56 @@ describe("AI backend runtime store", () => {
     });
     expect(payload).not.toHaveProperty("conversationId", "old-conversation");
     expect(useAIStore.getState().activeConversationId).toBeNull();
+  });
+
+  it("normalizes restored conversations before they reach message renderers", async () => {
+    const socket = await connectAI();
+    vi.mocked(getConversation).mockResolvedValueOnce({
+      id: "conversation-1",
+      title: "Restored chat",
+      messages: [
+        {
+          role: "assistant",
+          content: "Still working",
+          toolCalls: [
+            {
+              name: "find_resource",
+              arguments: { query: "certificates" },
+              status: "completed",
+            },
+          ],
+        },
+      ] as any,
+      lastContext: null,
+      updatedAt: "2026-06-26T10:00:00.000Z",
+      status: "active",
+      blockReason: null,
+    });
+
+    await useAIStore.getState().loadConversation("conversation-1");
+
+    expect(sentPayloads(socket)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "conversation.subscribe",
+          conversationId: "conversation-1",
+        }),
+      ])
+    );
+    expect(useAIStore.getState().messages).toEqual([
+      expect.objectContaining({
+        id: "conversation-1:message:0",
+        role: "assistant",
+        content: "Still working",
+        toolCalls: [
+          expect.objectContaining({
+            id: "conversation-1:message:0:tool:0",
+            name: "find_resource",
+            status: "completed",
+          }),
+        ],
+      }),
+    ]);
   });
 
   it("projects backend runtime snapshots into messages and pending approval state", async () => {

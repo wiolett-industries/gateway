@@ -617,7 +617,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       });
       const conversation = await getConversation(conversationId);
       set({
-        messages: conversation.messages,
+        messages: normalizeConversationMessages(conversation.messages, conversation.id),
         savedName: conversation.title,
         activeConversationId: conversation.id,
         activeRunId: null,
@@ -834,12 +834,16 @@ function projectConversationSnapshot(snapshot: AIConversationRuntimeSnapshot): P
 }
 
 function normalizeSnapshotMessages(snapshot: AIConversationRuntimeSnapshot): AIMessage[] {
-  return snapshot.messages
-    .map((message, index) => normalizeSnapshotMessage(message, snapshot.conversation.id, index))
+  return normalizeConversationMessages(snapshot.messages, snapshot.conversation.id);
+}
+
+function normalizeConversationMessages(messages: unknown[], conversationId: string): AIMessage[] {
+  return messages
+    .map((message, index) => normalizeConversationMessage(message, conversationId, index))
     .filter((message): message is AIMessage => message !== null);
 }
 
-function normalizeSnapshotMessage(
+function normalizeConversationMessage(
   value: unknown,
   conversationId: string,
   index: number
@@ -848,17 +852,75 @@ function normalizeSnapshotMessage(
   const message = value as Record<string, unknown>;
   const role = message.role;
   if (role !== "user" && role !== "assistant") return null;
+  const id =
+    typeof message.id === "string" && message.id.length > 0
+      ? message.id
+      : `${conversationId}:message:${index}`;
   return {
-    id: typeof message.id === "string" ? message.id : `${conversationId}:${index}`,
+    id,
     role,
     content: typeof message.content === "string" ? message.content : "",
     attachments: Array.isArray(message.attachments)
       ? (message.attachments as AIMessage["attachments"])
       : undefined,
-    createdAt: typeof message.createdAt === "string" ? message.createdAt : undefined,
-    toolCalls: Array.isArray(message.toolCalls) ? (message.toolCalls as AIToolCall[]) : undefined,
+    createdAt:
+      typeof message.createdAt === "string" && message.createdAt.length > 0
+        ? message.createdAt
+        : undefined,
+    toolCalls: Array.isArray(message.toolCalls)
+      ? normalizeMessageToolCalls(message.toolCalls, id)
+      : undefined,
     isStreaming: false,
   };
+}
+
+function normalizeMessageToolCalls(value: unknown[], messageId: string): AIToolCall[] {
+  return value
+    .map((toolCall, index) => normalizeMessageToolCall(toolCall, messageId, index))
+    .filter((toolCall): toolCall is AIToolCall => toolCall !== null);
+}
+
+function normalizeMessageToolCall(
+  value: unknown,
+  messageId: string,
+  index: number
+): AIToolCall | null {
+  if (!value || typeof value !== "object") return null;
+  const toolCall = value as Record<string, unknown>;
+  const id =
+    typeof toolCall.id === "string" && toolCall.id.length > 0
+      ? toolCall.id
+      : `${messageId}:tool:${index}`;
+  const name =
+    typeof toolCall.name === "string" && toolCall.name.length > 0 ? toolCall.name : "tool";
+  return {
+    id,
+    name,
+    arguments:
+      toolCall.arguments &&
+      typeof toolCall.arguments === "object" &&
+      !Array.isArray(toolCall.arguments)
+        ? (toolCall.arguments as Record<string, unknown>)
+        : {},
+    status: normalizeToolCallStatus(toolCall.status),
+    assistantMessageId:
+      typeof toolCall.assistantMessageId === "string" ? toolCall.assistantMessageId : undefined,
+    result: toolCall.result,
+    error: typeof toolCall.error === "string" ? toolCall.error : undefined,
+  };
+}
+
+function normalizeToolCallStatus(value: unknown): AIToolCall["status"] {
+  if (
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "awaiting_approval" ||
+    value === "rejected"
+  ) {
+    return value;
+  }
+  return "completed";
 }
 
 function runtimeToolCallToUI(toolCall: AIRunToolCall): AIToolCall {

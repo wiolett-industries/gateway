@@ -390,9 +390,9 @@ export function AILitePanel() {
             onScroll={updateStickToBottom}
           >
             <div className="mx-auto w-full max-w-3xl space-y-4 px-4 pb-8">
-              {messages.map((msg) => (
+              {messages.map((msg, index) => (
                 <AIMessage
-                  key={msg.id}
+                  key={msg.id || `${msg.role}-${index}`}
                   message={msg}
                   assistantMaxWidthClass="max-w-[90%]"
                   onApprove={approveTool}
