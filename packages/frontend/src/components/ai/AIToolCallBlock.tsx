@@ -109,7 +109,7 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
       case "failed":
         return null;
       case "awaiting_approval":
-        return <div className="h-3.5 w-3.5 bg-yellow-500 animate-pulse" />;
+        return null;
       case "rejected":
         return <X className="h-3.5 w-3.5 text-muted-foreground" />;
     }

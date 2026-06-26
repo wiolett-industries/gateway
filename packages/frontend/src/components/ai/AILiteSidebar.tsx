@@ -1,5 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  CircleAlert,
+  Loader2,
   Lock,
   LogOut,
   MessageSquare,
@@ -360,6 +362,16 @@ function ConversationMenuItem({
   onDelete: () => void;
 }) {
   const [isHovered, setIsHovered] = useState(false);
+  const StatusIcon = getConversationStatusIcon(conversation);
+  const statusIconClassName = cn(
+    "h-4 w-4 shrink-0",
+    conversation.activeRunStatus === "queued" || conversation.activeRunStatus === "running"
+      ? "animate-spin text-primary"
+      : conversation.activeRunStatus === "waiting_for_approval" ||
+          conversation.activeRunStatus === "waiting_for_answer"
+        ? "text-yellow-600 dark:text-yellow-400"
+        : ""
+  );
 
   return (
     <div
@@ -377,11 +389,7 @@ function ConversationMenuItem({
         className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden px-3 py-2 pr-1 text-left text-sm"
         onClick={onLoad}
       >
-        {conversation.status === "active" ? (
-          <MessageSquare className="h-4 w-4 shrink-0" />
-        ) : (
-          <Lock className="h-4 w-4 shrink-0" />
-        )}
+        <StatusIcon className={statusIconClassName} />
         <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
       </button>
       <motion.div
@@ -440,6 +448,19 @@ function ConversationMenuItem({
       </motion.div>
     </div>
   );
+}
+
+function getConversationStatusIcon(conversation: AIConversationSummary) {
+  switch (conversation.activeRunStatus) {
+    case "queued":
+    case "running":
+      return Loader2;
+    case "waiting_for_approval":
+    case "waiting_for_answer":
+      return CircleAlert;
+    default:
+      return conversation.status === "active" ? MessageSquare : Lock;
+  }
 }
 
 function AccountDropdownContent({

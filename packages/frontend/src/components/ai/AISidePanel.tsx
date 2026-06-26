@@ -1,5 +1,14 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Expand, Lock, MessageSquare, Sparkles, Trash2, X } from "lucide-react";
+import {
+  CircleAlert,
+  Expand,
+  Loader2,
+  Lock,
+  MessageSquare,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -18,7 +27,9 @@ import type {
   AIComposerAttachment,
   AIComposerLocalImageAttachment,
   AIConfig,
+  AIConversationStatus,
   AIMessageAttachment,
+  AIRunStatus,
   PageContext,
 } from "@/types/ai";
 import { AIComposer } from "./AIComposer";
@@ -130,6 +141,22 @@ function formatConversationDate(value: string): string {
     return `${Math.floor(diffMinutes / 60)} h ago`;
   }
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function getConversationStatusIcon(conversation: {
+  activeRunStatus?: AIRunStatus | null;
+  status: AIConversationStatus;
+}) {
+  switch (conversation.activeRunStatus) {
+    case "queued":
+    case "running":
+      return Loader2;
+    case "waiting_for_approval":
+    case "waiting_for_answer":
+      return CircleAlert;
+    default:
+      return conversation.status === "active" ? MessageSquare : Lock;
+  }
 }
 
 interface AIChatSurfaceProps {
@@ -489,11 +516,22 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
                       className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
                       onClick={() => void loadConversation(conversation.id)}
                     >
-                      {conversation.status === "active" ? (
-                        <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
+                      {(() => {
+                        const StatusIcon = getConversationStatusIcon(conversation);
+                        return (
+                          <StatusIcon
+                            className={`h-4 w-4 shrink-0 text-muted-foreground ${
+                              conversation.activeRunStatus === "queued" ||
+                              conversation.activeRunStatus === "running"
+                                ? "animate-spin text-primary"
+                                : conversation.activeRunStatus === "waiting_for_approval" ||
+                                    conversation.activeRunStatus === "waiting_for_answer"
+                                  ? "text-yellow-600 dark:text-yellow-400"
+                                  : ""
+                            }`}
+                          />
+                        );
+                      })()}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs text-foreground">
                           {conversation.title}

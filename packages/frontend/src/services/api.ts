@@ -40,6 +40,7 @@ import type {
 import type {
   AIMessage,
   AIMessageAttachment,
+  AIRunStatus,
   AISandboxArtifact,
   AISandboxJob,
   AISandboxOutput,
@@ -781,6 +782,7 @@ class ApiClient extends withLoggingApi(
       messageCount: number;
       status: "active" | "ended" | "context_blocked";
       blockReason: string | null;
+      activeRunStatus: AIRunStatus | null;
     }>
   > {
     const res = await this.request<{
@@ -792,6 +794,7 @@ class ApiClient extends withLoggingApi(
         messageCount: number;
         status: "active" | "ended" | "context_blocked";
         blockReason: string | null;
+        activeRunStatus: AIRunStatus | null;
       }>;
     }>("/ai/conversations");
     return res.data;
@@ -805,6 +808,7 @@ class ApiClient extends withLoggingApi(
     messageCount: number;
     status: "active" | "ended" | "context_blocked";
     blockReason: string | null;
+    activeRunStatus: AIRunStatus | null;
     messages: AIMessage[];
     lastContext: PageContext | null;
     discoveredToolsets: string[];
@@ -819,6 +823,7 @@ class ApiClient extends withLoggingApi(
         messageCount: number;
         status: "active" | "ended" | "context_blocked";
         blockReason: string | null;
+        activeRunStatus: AIRunStatus | null;
         messages: AIMessage[];
         lastContext: PageContext | null;
         discoveredToolsets: string[];
@@ -845,6 +850,7 @@ class ApiClient extends withLoggingApi(
       messageCount: number;
       status: "active" | "ended" | "context_blocked";
       blockReason: string | null;
+      activeRunStatus: AIRunStatus | null;
       messages: AIMessage[];
       lastContext: PageContext | null;
       discoveredToolsets: string[];
@@ -862,6 +868,7 @@ class ApiClient extends withLoggingApi(
           messageCount: number;
           status: "active" | "ended" | "context_blocked";
           blockReason: string | null;
+          activeRunStatus: AIRunStatus | null;
           messages: AIMessage[];
           lastContext: PageContext | null;
           discoveredToolsets: string[];

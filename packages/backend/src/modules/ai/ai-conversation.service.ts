@@ -1,6 +1,13 @@
 import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import { aiConversationMessages, aiConversations, aiRunQuestions, aiRuns, aiRunToolCalls } from '@/db/schema/index.js';
+import {
+  type AIRunStatus,
+  aiConversationMessages,
+  aiConversations,
+  aiRunQuestions,
+  aiRuns,
+  aiRunToolCalls,
+} from '@/db/schema/index.js';
 import type { AISandboxService } from './ai.sandbox.service.js';
 import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
 import type { AIConversationStatus, PageContext } from './ai.types.js';
@@ -16,6 +23,7 @@ export interface AIConversationSummary {
   messageCount: number;
   status: AIConversationStatus;
   blockReason: string | null;
+  activeRunStatus: AIRunStatus | null;
 }
 
 export interface AIConversationDetail extends AIConversationSummary {
@@ -54,7 +62,25 @@ export class AIConversationService {
       .where(eq(aiConversations.userId, userId))
       .orderBy(desc(aiConversations.updatedAt));
 
-    const messagesByRow = await Promise.all(rows.map((row) => this.loadMessages(row.id)));
+    const [messagesByRow, activeRuns] = await Promise.all([
+      Promise.all(rows.map((row) => this.loadMessages(row.id))),
+      rows.length > 0
+        ? this.db
+            .select()
+            .from(aiRuns)
+            .where(
+              and(
+                eq(aiRuns.userId, userId),
+                inArray(
+                  aiRuns.conversationId,
+                  rows.map((row) => row.id)
+                ),
+                inArray(aiRuns.status, ACTIVE_RUN_STATUSES)
+              )
+            )
+        : Promise.resolve([]),
+    ]);
+    const activeRunStatusByConversation = new Map(activeRuns.map((run) => [run.conversationId, run.status]));
     return rows.map((row, index) => ({
       id: row.id,
       title: row.title,
@@ -62,13 +88,23 @@ export class AIConversationService {
       updatedAt: row.updatedAt,
       messageCount: countVisibleMessages(messagesByRow[index]),
       ...deriveConversationStatus(messagesByRow[index]),
+      activeRunStatus: activeRunStatusByConversation.get(row.id) ?? null,
     }));
   }
 
   async getConversation(userId: string, conversationId: string): Promise<AIConversationDetail | null> {
     const row = await this.getOwnedConversation(userId, conversationId);
     if (!row) return null;
-    const messages = await this.loadMessages(row.id);
+    const [messages, activeRuns] = await Promise.all([
+      this.loadMessages(row.id),
+      this.db
+        .select()
+        .from(aiRuns)
+        .where(
+          and(eq(aiRuns.userId, userId), eq(aiRuns.conversationId, row.id), inArray(aiRuns.status, ACTIVE_RUN_STATUSES))
+        )
+        .limit(1),
+    ]);
     return {
       id: row.id,
       title: row.title,
@@ -76,6 +112,7 @@ export class AIConversationService {
       updatedAt: row.updatedAt,
       messageCount: countVisibleMessages(messages),
       ...deriveConversationStatus(messages),
+      activeRunStatus: activeRuns[0]?.status ?? null,
       messages,
       lastContext: row.lastContext,
       discoveredToolsets: row.discoveredToolsets,

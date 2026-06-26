@@ -187,6 +187,7 @@ describe("AISidePanel autoscroll", () => {
             messageCount: 3,
             status: "active",
             blockReason: null,
+            activeRunStatus: null,
           },
         ],
         isLoadingRecentConversations: false,

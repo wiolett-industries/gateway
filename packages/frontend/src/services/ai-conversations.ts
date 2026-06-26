@@ -1,4 +1,4 @@
-import type { AIConversationStatus, AIMessage, PageContext } from "@/types/ai";
+import type { AIConversationStatus, AIMessage, AIRunStatus, PageContext } from "@/types/ai";
 import { api } from "./api";
 
 export interface SavedAIConversation {
@@ -9,6 +9,7 @@ export interface SavedAIConversation {
   updatedAt: string;
   status: AIConversationStatus;
   blockReason: string | null;
+  activeRunStatus: AIRunStatus | null;
 }
 
 export interface AIConversationSummary {
@@ -18,6 +19,7 @@ export interface AIConversationSummary {
   messageCount: number;
   status: AIConversationStatus;
   blockReason: string | null;
+  activeRunStatus: AIRunStatus | null;
 }
 
 export async function getConversation(id: string): Promise<SavedAIConversation> {
@@ -30,6 +32,7 @@ export async function getConversation(id: string): Promise<SavedAIConversation> 
     updatedAt: conversation.updatedAt,
     status: conversation.status,
     blockReason: conversation.blockReason,
+    activeRunStatus: conversation.activeRunStatus,
   };
 }
 
@@ -42,6 +45,7 @@ export async function listConversations(limit?: number): Promise<AIConversationS
     messageCount: conversation.messageCount,
     status: conversation.status,
     blockReason: conversation.blockReason,
+    activeRunStatus: conversation.activeRunStatus,
   }));
 }
 
@@ -64,6 +68,7 @@ export async function rollbackConversationToMessage(
       updatedAt: result.conversation.updatedAt,
       status: result.conversation.status,
       blockReason: result.conversation.blockReason,
+      activeRunStatus: result.conversation.activeRunStatus,
     },
   };
 }

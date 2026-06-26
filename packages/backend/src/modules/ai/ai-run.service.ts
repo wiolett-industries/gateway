@@ -565,11 +565,7 @@ export class AIRunService {
     return rows[0] ?? null;
   }
 
-  private async getQuestion(
-    questionId: string,
-    runId: string,
-    conversationId: string
-  ): Promise<AIRunQuestion | null> {
+  private async getQuestion(questionId: string, runId: string, conversationId: string): Promise<AIRunQuestion | null> {
     const rows = await this.db
       .select()
       .from(aiRunQuestions)

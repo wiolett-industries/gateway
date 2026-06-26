@@ -109,6 +109,7 @@ describe("AI backend runtime store", () => {
           messageCount: 1,
           status: "active",
           blockReason: null,
+          activeRunStatus: null,
         },
       ],
       isLoadingRecentConversations: false,
@@ -133,6 +134,7 @@ describe("AI backend runtime store", () => {
       messageCount: index + 1,
       status: "active" as const,
       blockReason: null,
+      activeRunStatus: null,
     }));
 
     resolveList(conversations);
@@ -185,6 +187,7 @@ describe("AI backend runtime store", () => {
       updatedAt: "2026-06-26T10:00:00.000Z",
       status: "active",
       blockReason: null,
+      activeRunStatus: null,
     });
 
     await useAIStore.getState().loadConversation("conversation-1");
@@ -232,6 +235,7 @@ describe("AI backend runtime store", () => {
         updatedAt: "2026-06-26T10:00:00.000Z",
         status: "active",
         blockReason: null,
+        activeRunStatus: null,
       },
     });
 
