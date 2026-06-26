@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getConversation, listConversations } from "@/services/ai-conversations";
+import {
+  getConversation,
+  listConversations,
+  rollbackConversationToMessage,
+} from "@/services/ai-conversations";
 import { resetAIStateForAuthChange, useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -9,6 +13,7 @@ vi.mock("@/services/ai-conversations", () => ({
   listConversations: vi.fn(async () => []),
   getConversation: vi.fn(),
   deleteConversation: vi.fn(),
+  rollbackConversationToMessage: vi.fn(),
 }));
 
 class MockWebSocket {
@@ -206,6 +211,43 @@ describe("AI backend runtime store", () => {
         ],
       }),
     ]);
+  });
+
+  it("rolls a backend conversation back to an edited user message", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: "conversation-1",
+      messages: [
+        { id: "user-1", role: "user", content: "old prompt" },
+        { id: "assistant-1", role: "assistant", content: "old answer" },
+      ],
+    });
+    vi.mocked(rollbackConversationToMessage).mockResolvedValueOnce({
+      message: { id: "user-1", role: "user", content: "old prompt" },
+      conversation: {
+        id: "conversation-1",
+        title: "Editable chat",
+        messages: [],
+        lastContext: null,
+        updatedAt: "2026-06-26T10:00:00.000Z",
+        status: "active",
+        blockReason: null,
+      },
+    });
+
+    const message = await useAIStore.getState().rollbackToMessage("user-1");
+
+    expect(rollbackConversationToMessage).toHaveBeenCalledWith("conversation-1", "user-1");
+    expect(message).toEqual({ id: "user-1", role: "user", content: "old prompt" });
+    expect(useAIStore.getState().messages).toEqual([]);
+    expect(sentPayloads(socket)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "conversation.sync",
+          conversationId: "conversation-1",
+        }),
+      ])
+    );
   });
 
   it("projects backend runtime snapshots into messages and pending approval state", async () => {

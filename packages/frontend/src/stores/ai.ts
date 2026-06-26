@@ -4,6 +4,7 @@ import {
   deleteConversation,
   getConversation,
   listConversations,
+  rollbackConversationToMessage,
 } from "@/services/ai-conversations";
 import { AIWebSocketClient } from "@/services/ai-websocket";
 import { api } from "@/services/api";
@@ -257,6 +258,7 @@ interface AIState {
   fetchRecentConversations: () => Promise<void>;
   loadConversation: (conversationId: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
+  rollbackToMessage: (messageId: string) => Promise<AIMessage | null>;
   setEnabled: (enabled: boolean) => void;
   handleSlashCommand: (input: string) => Promise<boolean>;
   setMessages: (messages: AIMessage[]) => void;
@@ -674,6 +676,31 @@ export const useAIStore = create<AIState>()((set, get) => ({
       };
       set((state) => ({ messages: [...state.messages, localMsg] }));
     }
+  },
+
+  rollbackToMessage: async (messageId: string) => {
+    const state = get();
+    if (!state.activeConversationId || state.isStreaming || state.activeRunId) return null;
+    const existing = state.messages.find((message) => message.id === messageId);
+    if (!existing || existing.role !== "user") return null;
+
+    const result = await rollbackConversationToMessage(state.activeConversationId, messageId);
+    const messages = normalizeConversationMessages(
+      result.conversation.messages,
+      result.conversation.id
+    );
+    set({
+      messages,
+      savedName: result.conversation.title,
+      activeConversationId: result.conversation.id,
+      activeRunId: null,
+      lastContext: result.conversation.lastContext,
+      pendingApprovalToolCallId: null,
+      isStreaming: false,
+    });
+    wsClient?.send({ type: "conversation.sync", conversationId: result.conversation.id });
+    void get().fetchRecentConversations();
+    return result.message;
   },
 
   setEnabled: (enabled: boolean) => {

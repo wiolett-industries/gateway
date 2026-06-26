@@ -48,3 +48,22 @@ export async function listConversations(limit?: number): Promise<AIConversationS
 export async function deleteConversation(id: string): Promise<void> {
   await api.deleteAIConversation(id);
 }
+
+export async function rollbackConversationToMessage(
+  id: string,
+  messageId: string
+): Promise<{ message: AIMessage; conversation: SavedAIConversation }> {
+  const result = await api.rollbackAIConversationToMessage(id, messageId);
+  return {
+    message: result.message,
+    conversation: {
+      id: result.conversation.id,
+      title: result.conversation.title,
+      messages: result.conversation.messages,
+      lastContext: result.conversation.lastContext,
+      updatedAt: result.conversation.updatedAt,
+      status: result.conversation.status,
+      blockReason: result.conversation.blockReason,
+    },
+  };
+}

@@ -1,11 +1,12 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import { aiConversationMessages, aiConversations } from '@/db/schema/index.js';
+import { aiConversationMessages, aiConversations, aiRunQuestions, aiRuns, aiRunToolCalls } from '@/db/schema/index.js';
 import type { AISandboxService } from './ai.sandbox.service.js';
 import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
 import type { AIConversationStatus, PageContext } from './ai.types.js';
 
 const RETAIN_FULL_TOOL_OUTPUT_COUNT = 10;
+const ACTIVE_RUN_STATUSES = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'] as const;
 
 export interface AIConversationSummary {
   id: string;
@@ -226,6 +227,74 @@ export class AIConversationService {
       .where(eq(aiConversations.id, existing.id));
 
     return this.getConversation(userId, conversationId);
+  }
+
+  async rollbackToMessage(
+    userId: string,
+    conversationId: string,
+    messageId: string
+  ): Promise<{ message: unknown; conversation: AIConversationDetail } | null> {
+    const existing = await this.getOwnedConversation(userId, conversationId);
+    if (!existing) return null;
+
+    const [activeRun] = await this.db
+      .select({ id: aiRuns.id })
+      .from(aiRuns)
+      .where(and(eq(aiRuns.conversationId, conversationId), inArray(aiRuns.status, [...ACTIVE_RUN_STATUSES])))
+      .limit(1);
+    if (activeRun) throw new Error('Conversation already has an active AI run');
+
+    const [target] = await this.db
+      .select({
+        id: aiConversationMessages.id,
+        sequence: aiConversationMessages.sequence,
+        role: aiConversationMessages.role,
+        uiMessage: aiConversationMessages.uiMessage,
+      })
+      .from(aiConversationMessages)
+      .where(and(eq(aiConversationMessages.conversationId, conversationId), eq(aiConversationMessages.id, messageId)))
+      .limit(1);
+
+    if (!target || target.role !== 'user') return null;
+
+    await this.db.transaction(async (tx) => {
+      const deletedMessages = await tx
+        .select({ id: aiConversationMessages.id })
+        .from(aiConversationMessages)
+        .where(
+          and(
+            eq(aiConversationMessages.conversationId, conversationId),
+            gte(aiConversationMessages.sequence, target.sequence)
+          )
+        );
+      const deletedMessageIds = deletedMessages.map((message) => message.id);
+
+      const deletedRuns =
+        deletedMessageIds.length > 0
+          ? await tx
+              .select({ id: aiRuns.id })
+              .from(aiRuns)
+              .where(and(eq(aiRuns.conversationId, conversationId), inArray(aiRuns.activeMessageId, deletedMessageIds)))
+          : [];
+      const deletedRunIds = deletedRuns.map((run) => run.id);
+
+      if (deletedRunIds.length > 0) {
+        await tx.delete(aiRunQuestions).where(inArray(aiRunQuestions.runId, deletedRunIds));
+        await tx.delete(aiRunToolCalls).where(inArray(aiRunToolCalls.runId, deletedRunIds));
+        await tx.delete(aiRuns).where(inArray(aiRuns.id, deletedRunIds));
+      }
+      if (deletedMessageIds.length > 0) {
+        await tx.delete(aiConversationMessages).where(inArray(aiConversationMessages.id, deletedMessageIds));
+      }
+      await tx
+        .update(aiConversations)
+        .set({ checkpoint: null, updatedAt: new Date() })
+        .where(eq(aiConversations.id, conversationId));
+    });
+
+    const conversation = await this.getConversation(userId, conversationId);
+    if (!conversation) return null;
+    return { message: target.uiMessage, conversation };
   }
 
   async deleteConversation(userId: string, conversationId: string): Promise<boolean> {

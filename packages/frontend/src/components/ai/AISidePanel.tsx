@@ -149,6 +149,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     isLoadingRecentConversations,
     retryAfter,
     activeConversationId,
+    activeRunId,
     sendMessage,
     approveTool,
     rejectTool,
@@ -159,6 +160,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     fetchRecentConversations,
     loadConversation,
     deleteConversation,
+    rollbackToMessage,
     connect,
   } = useAIStore();
 
@@ -373,6 +375,27 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     sendMessage(prompt, context, [], { startNewConversation: messages.length === 0 });
   };
 
+  const handleEditUserMessage = useCallback(
+    async (messageId: string, content: string, nextAttachments: AIMessageAttachment[]) => {
+      try {
+        const message = await rollbackToMessage(messageId);
+        if (!message) return;
+        setInput(content);
+        setAttachments(nextAttachments);
+        setSlashResults([]);
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          if (!textarea) return;
+          textarea.focus();
+          autoResizeTextarea(textarea);
+        });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to edit message");
+      }
+    },
+    [rollbackToMessage, setAttachments, setInput]
+  );
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setInput(val);
@@ -513,6 +536,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
                 onApprove={approveTool}
                 onReject={rejectTool}
                 onAnswer={answerQuestion}
+                onEditUserMessage={!isStreaming && !activeRunId ? handleEditUserMessage : undefined}
               />
             ))}
             <div className="pb-4" />

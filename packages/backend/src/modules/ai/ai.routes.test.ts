@@ -160,4 +160,40 @@ describe('AI routes session-only authentication', () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ code: 'NOT_FOUND', message: 'Conversation not found' });
   });
+
+  it('rolls conversations back to an owned user message', async () => {
+    registerServices();
+    const rollbackToMessage = vi.fn().mockResolvedValue({
+      message: { id: 'message-1', role: 'user', content: 'hello' },
+      conversation: {
+        id: 'conversation-1',
+        title: 'debug session',
+        createdAt: new Date('2026-06-24T09:00:00Z'),
+        updatedAt: new Date('2026-06-24T09:01:00Z'),
+        messageCount: 0,
+        messages: [],
+        lastContext: null,
+        discoveredToolsets: [],
+        checkpoint: null,
+      },
+    });
+    container.registerInstance(AIConversationService, {
+      rollbackToMessage,
+    } as unknown as AIConversationService);
+
+    const response = await createApp().request('/api/ai/conversations/conversation-1/rollback', {
+      method: 'POST',
+      headers: { Cookie: 'session_id=session-1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageId: 'message-1' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(rollbackToMessage).toHaveBeenCalledWith(USER.id, 'conversation-1', 'message-1');
+    expect(await response.json()).toMatchObject({
+      data: {
+        message: { id: 'message-1', role: 'user', content: 'hello' },
+        conversation: { id: 'conversation-1', messages: [] },
+      },
+    });
+  });
 });

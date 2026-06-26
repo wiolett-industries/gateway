@@ -832,6 +832,49 @@ class ApiClient extends withLoggingApi(
     await this.request(`/ai/conversations/${id}`, { method: "DELETE" });
   }
 
+  async rollbackAIConversationToMessage(
+    id: string,
+    messageId: string
+  ): Promise<{
+    message: AIMessage;
+    conversation: {
+      id: string;
+      title: string;
+      createdAt: string;
+      updatedAt: string;
+      messageCount: number;
+      status: "active" | "ended" | "context_blocked";
+      blockReason: string | null;
+      messages: AIMessage[];
+      lastContext: PageContext | null;
+      discoveredToolsets: string[];
+      checkpoint: Record<string, unknown> | null;
+    };
+  }> {
+    const res = await this.request<{
+      data: {
+        message: AIMessage;
+        conversation: {
+          id: string;
+          title: string;
+          createdAt: string;
+          updatedAt: string;
+          messageCount: number;
+          status: "active" | "ended" | "context_blocked";
+          blockReason: string | null;
+          messages: AIMessage[];
+          lastContext: PageContext | null;
+          discoveredToolsets: string[];
+          checkpoint: Record<string, unknown> | null;
+        };
+      };
+    }>(`/ai/conversations/${id}/rollback`, {
+      method: "POST",
+      body: JSON.stringify({ messageId }),
+    });
+    return res.data;
+  }
+
   async getAISandboxStatus(): Promise<AISandboxStatus> {
     const res = await this.request<{ data: AISandboxStatus }>("/ai/sandbox/status");
     return res.data;

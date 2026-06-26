@@ -104,6 +104,7 @@ export function AILitePanel() {
     connectionError,
     retryAfter,
     activeConversationId,
+    activeRunId,
     sendMessage,
     approveTool,
     rejectTool,
@@ -111,6 +112,7 @@ export function AILitePanel() {
     stopStreaming,
     clearMessages,
     handleSlashCommand,
+    rollbackToMessage,
     connect,
   } = useAIStore();
   const { setAILiteMode, aiApprovalMode: approvalMode } = useUIStore();
@@ -327,6 +329,27 @@ export function AILitePanel() {
     }
   };
 
+  const handleEditUserMessage = useCallback(
+    async (messageId: string, content: string, nextAttachments: AIMessageAttachment[]) => {
+      try {
+        const message = await rollbackToMessage(messageId);
+        if (!message) return;
+        setInput(content);
+        setAttachments(nextAttachments);
+        setSlashResults([]);
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          if (!textarea) return;
+          textarea.focus();
+          autoResizeTextarea(textarea);
+        });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to edit message");
+      }
+    },
+    [rollbackToMessage, setAttachments, setInput]
+  );
+
   const handleQuickAction = (prompt: string) => {
     sendMessage(prompt, context, [], { startNewConversation: messages.length === 0 });
   };
@@ -398,6 +421,9 @@ export function AILitePanel() {
                   onApprove={approveTool}
                   onReject={rejectTool}
                   onAnswer={answerQuestion}
+                  onEditUserMessage={
+                    !isStreaming && !activeRunId ? handleEditUserMessage : undefined
+                  }
                 />
               ))}
             </div>

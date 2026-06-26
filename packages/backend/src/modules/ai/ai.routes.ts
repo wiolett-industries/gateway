@@ -91,6 +91,18 @@ aiRoutes.delete('/conversations/:id', requireScope('feat:ai:use'), async (c) => 
   return c.json({ data: { deleted: true } });
 });
 
+aiRoutes.post('/conversations/:id/rollback', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AIConversationService);
+  const user = c.get('user')!;
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const messageId = typeof body.messageId === 'string' ? body.messageId : '';
+  if (!messageId) return c.json({ code: 'VALIDATION_ERROR', message: 'messageId is required' }, 400);
+
+  const result = await service.rollbackToMessage(user.id, c.req.param('id'), messageId);
+  if (!result) return c.json({ code: 'NOT_FOUND', message: 'Conversation message not found' }, 404);
+  return c.json({ data: result });
+});
+
 // GET /api/ai/config — full config for admin display (admin only)
 aiRoutes.openapi({ ...getAiConfigRoute, middleware: requireScope('feat:ai:configure') }, async (c) => {
   const settingsService = container.resolve(AISettingsService);
