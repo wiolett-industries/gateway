@@ -152,7 +152,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'search_chats',
     description:
-      "Search the user's previous AI chats using deterministic raw-history retrieval. Use this when the user refers to prior work, older decisions, previous bugs, commands, errors, files, projects, or missing context. Returns conversation-level results with message-level snippets; use read_chat_slice for exact source details.",
+      "Search the user's previous AI chats using deterministic raw-history retrieval. Use this when the user refers to prior work, older decisions, previous bugs, commands, errors, files, projects, or missing context. Returns other chats only and excludes the current chat automatically. Returns conversation-level results with message-level snippets; use read_chat_slice for exact source details.",
     parameters: {
       type: 'object',
       properties: {

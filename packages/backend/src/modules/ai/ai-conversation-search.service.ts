@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, or, type SQL, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, or, type SQL, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import {
   aiConversationFolders,
@@ -212,7 +212,11 @@ export class AIConversationSearchService {
     const scope = await this.resolveScope(userId, currentConversation?.id ?? null, input.scope);
     const normalizedQuery = normalizeSearchText(query);
     const tokens = normalizedQuery.tokens;
-    const scopeConditions = [eq(aiConversationSearchDocuments.userId, userId), ...scopeToConditions(scope)];
+    const scopeConditions = [
+      eq(aiConversationSearchDocuments.userId, userId),
+      ...scopeToConditions(scope),
+      ...(currentConversation ? [ne(aiConversationSearchDocuments.conversationId, currentConversation.id)] : []),
+    ];
     const collected = new Map<string, ScoredDocumentRow>();
     const appliedStrategies: string[] = [];
 
