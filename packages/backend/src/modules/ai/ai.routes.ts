@@ -3,13 +3,12 @@ import { Readable } from 'node:stream';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { canUseAI } from '@/lib/permissions.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { aiStatusRoute, getAiConfigRoute, listAiToolsRoute, updateAiConfigRoute } from './ai.openapi.js';
 import { AISandboxService } from './ai.sandbox.service.js';
 import { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
-import { AIConfigUpdateSchema, SaveAIConversationSchema, UpdateAIConversationSchema } from './ai.schemas.js';
+import { AIConfigUpdateSchema } from './ai.schemas.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS } from './ai.tools.js';
 import { AIConversationService } from './ai-conversation.service.js';
@@ -84,46 +83,12 @@ aiRoutes.get('/conversations/:id', requireScope('feat:ai:use'), async (c) => {
   return c.json({ data });
 });
 
-aiRoutes.post('/conversations', requireScope('feat:ai:use'), async (c) => {
-  const user = c.get('user')!;
-  if (!canUseAI(user.scopes)) return c.json({ code: 'AI_NOT_ALLOWED', message: 'AI assistant is not allowed' }, 403);
-
-  const body = SaveAIConversationSchema.safeParse(await c.req.json());
-  if (!body.success) {
-    return c.json({ code: 'VALIDATION_ERROR', message: body.error.message }, 400);
-  }
-
-  const service = container.resolve(AIConversationService);
-  const data = await service.saveConversation(user.id, body.data);
-  return c.json({ data });
-});
-
-aiRoutes.put('/conversations/:id', requireScope('feat:ai:use'), async (c) => {
-  const body = UpdateAIConversationSchema.safeParse(await c.req.json());
-  if (!body.success) {
-    return c.json({ code: 'VALIDATION_ERROR', message: body.error.message }, 400);
-  }
-
-  const service = container.resolve(AIConversationService);
-  const user = c.get('user')!;
-  const data = await service.updateConversation(user.id, c.req.param('id'), body.data);
-  if (!data) return c.json({ code: 'NOT_FOUND', message: 'Conversation not found' }, 404);
-  return c.json({ data });
-});
-
 aiRoutes.delete('/conversations/:id', requireScope('feat:ai:use'), async (c) => {
   const service = container.resolve(AIConversationService);
   const user = c.get('user')!;
   const deleted = await service.deleteConversation(user.id, c.req.param('id'));
   if (!deleted) return c.json({ code: 'NOT_FOUND', message: 'Conversation not found' }, 404);
   return c.json({ data: { deleted: true } });
-});
-
-aiRoutes.delete('/conversations/by-title/:title', requireScope('feat:ai:use'), async (c) => {
-  const service = container.resolve(AIConversationService);
-  const user = c.get('user')!;
-  const deleted = await service.deleteConversationByTitle(user.id, decodeURIComponent(c.req.param('title')));
-  return c.json({ data: { deleted } });
 });
 
 // GET /api/ai/config — full config for admin display (admin only)

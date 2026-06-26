@@ -5,14 +5,12 @@ import type { AIConversationBlock } from "@/stores/ai";
 interface AIConversationBlockedBlockProps {
   block: AIConversationBlock;
   onNewChat: () => void;
-  onClearOldContext: () => void;
   showTopBorder?: boolean;
 }
 
 export function AIConversationBlockedBlock({
   block,
   onNewChat,
-  onClearOldContext,
   showTopBorder = true,
 }: AIConversationBlockedBlockProps) {
   const isContextBlocked = block.status === "context_blocked";
@@ -35,11 +33,6 @@ export function AIConversationBlockedBlock({
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
           <Button onClick={onNewChat}>New chat</Button>
-          {isContextBlocked && (
-            <Button variant="ghost" onClick={onClearOldContext}>
-              Clear oldest context
-            </Button>
-          )}
         </div>
       </div>
     </div>

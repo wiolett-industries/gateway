@@ -828,64 +828,8 @@ class ApiClient extends withLoggingApi(
     return res.data;
   }
 
-  async saveAIConversation(
-    title: string,
-    messages: AIMessage[],
-    lastContext?: PageContext | null,
-    options: { createNew?: boolean } = {}
-  ) {
-    const res = await this.request<{
-      data: {
-        id: string;
-        title: string;
-        updatedAt: string;
-        status: "active" | "ended" | "context_blocked";
-        blockReason: string | null;
-        messages: AIMessage[];
-        lastContext: PageContext | null;
-      };
-    }>("/ai/conversations", {
-      method: "POST",
-      body: JSON.stringify({ title, messages, lastContext, createNew: options.createNew }),
-    });
-    return res.data;
-  }
-
-  async updateAIConversation(
-    id: string,
-    patch: {
-      title?: string;
-      messages?: AIMessage[];
-      lastContext?: PageContext | null;
-    }
-  ) {
-    const res = await this.request<{
-      data: {
-        id: string;
-        title: string;
-        updatedAt: string;
-        status: "active" | "ended" | "context_blocked";
-        blockReason: string | null;
-        messages: AIMessage[];
-        lastContext: PageContext | null;
-      };
-    }>(`/ai/conversations/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(patch),
-    });
-    return res.data;
-  }
-
   async deleteAIConversation(id: string): Promise<void> {
     await this.request(`/ai/conversations/${id}`, { method: "DELETE" });
-  }
-
-  async deleteAIConversationByTitle(title: string): Promise<boolean> {
-    const res = await this.request<{ data: { deleted: boolean } }>(
-      `/ai/conversations/by-title/${encodeURIComponent(title)}`,
-      { method: "DELETE" }
-    );
-    return res.data.deleted;
   }
 
   async getAISandboxStatus(): Promise<AISandboxStatus> {

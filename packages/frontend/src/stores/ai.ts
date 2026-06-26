@@ -1,11 +1,9 @@
 import { create } from "zustand";
 import {
   type AIConversationSummary,
-  compactConversation,
   deleteConversation,
   getConversation,
   listConversations,
-  saveConversation,
 } from "@/services/ai-conversations";
 import { AIWebSocketClient } from "@/services/ai-websocket";
 import { api } from "@/services/api";
@@ -20,12 +18,13 @@ import { useSSLStore } from "@/stores/ssl";
 import { useUIStore } from "@/stores/ui";
 import type {
   AIConfig,
+  AIConversationRuntimeSnapshot,
   AIConversationStatus,
   AIMessage,
+  AIRunToolCall,
   AIToolCall,
   ChatMessage,
   PageContext,
-  ToolActionType,
   WSServerMessage,
 } from "@/types/ai";
 
@@ -65,284 +64,6 @@ async function resolveContextSettings(): Promise<{
     source: "fallback",
     reasoningEffort: DEFAULT_REASONING_EFFORT,
   };
-}
-
-const CREATE_OPERATIONS = new Set([
-  "create",
-  "clone",
-  "upload",
-  "issue_from_csr",
-  "insert_row",
-  "add_column",
-  "create_secret",
-  "create_update",
-  "activate",
-  "mkdir",
-  "upload_init",
-]);
-const READ_OPERATIONS = new Set([
-  "list",
-  "read",
-  "get",
-  "get_config",
-  "get_gateway_release_notes",
-  "get_gateway_status",
-  "get_history",
-  "get_stats",
-  "check",
-  "check_daemon_updates",
-  "check_gateway",
-  "search",
-  "facets",
-  "metadata",
-  "preview",
-  "health_history",
-  "list_schemas",
-  "list_tables",
-  "table_metadata",
-  "browse_rows",
-  "scan_keys",
-  "get_key",
-  "get_env",
-  "list_files",
-  "list_daemon_updates",
-  "read_file",
-  "list_secrets",
-  "get_webhook",
-  "get_health_check",
-  "chain",
-  "export",
-  "reveal_credentials",
-  "test",
-  "test_direct",
-]);
-const EDIT_OPERATIONS = new Set([
-  "update",
-  "update_config",
-  "update_daemon",
-  "update_scopes",
-  "run",
-  "renew",
-  "verify_dns",
-  "check_dns",
-  "connect",
-  "disconnect",
-  "resolve",
-  "promote",
-  "write_file",
-  "update_env",
-  "update_secret",
-  "upsert_webhook",
-  "regenerate_webhook_token",
-  "upsert_health_check",
-  "test_health_check",
-  "perform_gateway_update",
-  "update_row",
-  "update_column_type",
-  "set_key",
-  "expire_key",
-  "execute_command",
-  "move",
-  "move_folder",
-  "move_resources",
-  "reorder_folders",
-  "reorder_resources",
-  "upload_abort",
-  "upload_chunk",
-  "upload_complete",
-  "write",
-]);
-const DELETE_OPERATIONS = new Set([
-  "delete",
-  "delete_by_title",
-  "clear",
-  "delete_secret",
-  "delete_webhook",
-  "delete_row",
-  "delete_column",
-  "delete_key",
-  "revoke",
-]);
-const READ_TOOL_NAMES = new Set([
-  "discover_tools",
-  "fetch",
-  "find_resource",
-  "get_ai_settings",
-  "get_current_context",
-  "get_gateway_settings",
-  "get_license_status",
-  "get_sandbox_runtime_status",
-  "internal_documentation",
-  "list_ai_tools",
-  "list_sandbox_jobs",
-  "read_artifact",
-  "read_process_output",
-  "wait",
-  "web_search",
-]);
-const CREATE_TOOL_NAMES = new Set([
-  "duplicate_docker_container",
-  "link_internal_cert",
-  "send_artifact",
-]);
-const EDIT_TOOL_NAMES = new Set([
-  "deploy_docker_deployment",
-  "download_artifact",
-  "execute_postgres_sql",
-  "execute_redis_command",
-  "kill_docker_deployment",
-  "move_hosts_to_folder",
-  "rename_docker_container",
-  "rename_node",
-  "rollback_docker_deployment",
-  "set_user_blocked",
-  "set_redis_key",
-  "switch_docker_deployment_slot",
-  "test_webhook",
-  "toggle_proxy_raw_mode",
-  "update_ai_settings",
-  "update_gateway_settings",
-]);
-const DELETE_TOOL_NAMES = new Set([
-  "execute_script",
-  "kill_process",
-  "prune_docker_images",
-  "run_process",
-  "write_process_stdin",
-]);
-
-function getOperationActionType(operation: string): ToolActionType {
-  if (READ_OPERATIONS.has(operation)) return "read";
-  if (CREATE_OPERATIONS.has(operation)) return "create";
-  if (EDIT_OPERATIONS.has(operation)) return "edit";
-  if (DELETE_OPERATIONS.has(operation)) return "delete";
-  return "other";
-}
-
-function getToolActionType(toolName: string, args?: Record<string, unknown>): ToolActionType {
-  if (toolName === "ask_question") return "other";
-  const operation = typeof args?.operation === "string" ? args.operation : "";
-  if (toolName.startsWith("manage_") && operation) {
-    return getOperationActionType(operation);
-  }
-  if (READ_TOOL_NAMES.has(toolName)) return "read";
-  if (CREATE_TOOL_NAMES.has(toolName)) return "create";
-  if (EDIT_TOOL_NAMES.has(toolName)) return "edit";
-  if (DELETE_TOOL_NAMES.has(toolName)) return "delete";
-  if (
-    toolName.startsWith("list_") ||
-    toolName.startsWith("get_") ||
-    toolName.startsWith("query_") ||
-    toolName.startsWith("browse_")
-  ) {
-    return "read";
-  }
-  if (toolName === "pull_docker_image") return "create";
-  if (
-    toolName.startsWith("create_") ||
-    toolName.startsWith("issue_") ||
-    toolName.startsWith("request_")
-  )
-    return "create";
-  if (
-    toolName.startsWith("update_") ||
-    toolName.startsWith("revoke_") ||
-    toolName.startsWith("start_") ||
-    toolName.startsWith("stop_") ||
-    toolName.startsWith("restart_")
-  )
-    return "edit";
-  if (toolName.startsWith("delete_") || toolName.startsWith("remove_")) return "delete";
-  return "edit";
-}
-
-function shouldAutoApprove(toolName: string, args?: Record<string, unknown>): boolean {
-  const ui = useUIStore.getState();
-  if (ui.aiAlwaysAskApprovals) return false;
-  const action = getToolActionType(toolName, args);
-  if (action === "read") return true;
-  if (action === "create" && ui.aiBypassCreateApprovals) return true;
-  if (action === "edit" && ui.aiBypassEditApprovals) return true;
-  if (action === "delete" && ui.aiBypassDeleteApprovals) return true;
-  return false;
-}
-
-function invalidateStore(storeName: string): void {
-  switch (storeName) {
-    case "ca":
-      api.invalidateCache("req:/api/cas");
-      api.invalidateCache("cas:list:");
-      api.invalidateCache("req:/api/monitoring/dashboard");
-      api.invalidateCache("dashboard:stats:");
-      useCAStore.getState().fetchCAs();
-      break;
-    case "certificates":
-      api.invalidateCache("req:/api/certificates");
-      api.invalidateCache("certificates:list:");
-      api.invalidateCache("req:/api/monitoring/dashboard");
-      api.invalidateCache("dashboard:stats:");
-      useCertificatesStore.getState().fetchCertificates();
-      break;
-    case "ssl":
-      api.invalidateCache("req:/api/ssl-certificates");
-      api.invalidateCache("ssl:list:");
-      api.invalidateCache("req:/api/monitoring/dashboard");
-      api.invalidateCache("dashboard:stats:");
-      useSSLStore.getState().fetchCertificates();
-      break;
-    case "proxy":
-      api.invalidateCache("req:/api/proxy-hosts");
-      api.invalidateCache("req:/api/proxy-host-folders/grouped");
-      api.invalidateCache("proxy:grouped");
-      api.invalidateCache("req:/api/domains");
-      api.invalidateCache("domains:list");
-      api.invalidateCache("req:/api/monitoring/dashboard");
-      api.invalidateCache("req:/api/monitoring/health-status");
-      api.invalidateCache("dashboard:stats:");
-      api.invalidateCache("dashboard:health");
-      useProxyStore.getState().fetchProxyHosts();
-      useFolderStore.getState().fetchGroupedHosts();
-      break;
-    case "templates":
-      api.invalidateCache("req:/api/templates");
-      api.invalidateCache("templates");
-      break;
-    case "domains":
-      api.invalidateCache("req:/api/domains");
-      api.invalidateCache("domains");
-      break;
-    case "accessLists":
-      api.invalidateCache("req:/api/access-lists");
-      api.invalidateCache("access-lists:list");
-      break;
-    case "nodes":
-      api.invalidateCache("req:/api/nodes");
-      api.invalidateCache("req:/api/monitoring/dashboard");
-      api.invalidateCache("dashboard:stats:");
-      useNodesStore.getState().fetchNodes();
-      break;
-    case "groups":
-      api.invalidateCache("req:/api/admin/groups");
-      api.invalidateCache("req:/api/admin/users");
-      api.invalidateCache("admin:users");
-      break;
-    case "users":
-      api.invalidateCache("req:/api/admin/users");
-      api.invalidateCache("admin:users");
-      break;
-    case "containers":
-      useDockerStore.getState().invalidate("containers");
-      break;
-    case "images":
-      useDockerStore.getState().invalidate("images");
-      break;
-    case "volumes":
-      useDockerStore.getState().invalidate("volumes");
-      break;
-    case "networks":
-      useDockerStore.getState().invalidate("networks");
-      break;
-  }
 }
 
 function generateId(): string {
@@ -425,6 +146,84 @@ function compactLogText(value: string, label: string): unknown {
   };
 }
 
+function invalidateStore(storeName: string): void {
+  switch (storeName) {
+    case "ca":
+      api.invalidateCache("req:/api/cas");
+      api.invalidateCache("cas:list:");
+      api.invalidateCache("req:/api/monitoring/dashboard");
+      api.invalidateCache("dashboard:stats:");
+      useCAStore.getState().fetchCAs();
+      break;
+    case "certificates":
+      api.invalidateCache("req:/api/certificates");
+      api.invalidateCache("certificates:list:");
+      api.invalidateCache("req:/api/monitoring/dashboard");
+      api.invalidateCache("dashboard:stats:");
+      useCertificatesStore.getState().fetchCertificates();
+      break;
+    case "ssl":
+      api.invalidateCache("req:/api/ssl-certificates");
+      api.invalidateCache("ssl:list:");
+      api.invalidateCache("req:/api/monitoring/dashboard");
+      api.invalidateCache("dashboard:stats:");
+      useSSLStore.getState().fetchCertificates();
+      break;
+    case "proxy":
+      api.invalidateCache("req:/api/proxy-hosts");
+      api.invalidateCache("req:/api/proxy-host-folders/grouped");
+      api.invalidateCache("proxy:grouped");
+      api.invalidateCache("req:/api/domains");
+      api.invalidateCache("domains:list");
+      api.invalidateCache("req:/api/monitoring/dashboard");
+      api.invalidateCache("req:/api/monitoring/health-status");
+      api.invalidateCache("dashboard:stats:");
+      api.invalidateCache("dashboard:health");
+      useProxyStore.getState().fetchProxyHosts();
+      useFolderStore.getState().fetchGroupedHosts();
+      break;
+    case "templates":
+      api.invalidateCache("req:/api/templates");
+      api.invalidateCache("templates");
+      break;
+    case "domains":
+      api.invalidateCache("req:/api/domains");
+      api.invalidateCache("domains");
+      break;
+    case "accessLists":
+      api.invalidateCache("req:/api/access-lists");
+      api.invalidateCache("access-lists:list");
+      break;
+    case "nodes":
+      api.invalidateCache("req:/api/nodes");
+      api.invalidateCache("req:/api/monitoring/dashboard");
+      api.invalidateCache("dashboard:stats:");
+      useNodesStore.getState().fetchNodes();
+      break;
+    case "groups":
+      api.invalidateCache("req:/api/admin/groups");
+      api.invalidateCache("req:/api/admin/users");
+      api.invalidateCache("admin:users");
+      break;
+    case "users":
+      api.invalidateCache("req:/api/admin/users");
+      api.invalidateCache("admin:users");
+      break;
+    case "containers":
+      useDockerStore.getState().invalidate("containers");
+      break;
+    case "images":
+      useDockerStore.getState().invalidate("images");
+      break;
+    case "volumes":
+      useDockerStore.getState().invalidate("volumes");
+      break;
+    case "networks":
+      useDockerStore.getState().invalidate("networks");
+      break;
+  }
+}
+
 interface AIState {
   messages: AIMessage[];
   recentConversations: AIConversationSummary[];
@@ -437,6 +236,7 @@ interface AIState {
   retryAfter: number | null;
   savedName: string | null;
   activeConversationId: string | null;
+  activeRunId: string | null;
   lastContext: PageContext | null;
   pendingApprovalToolCallId: string | null;
 
@@ -457,29 +257,12 @@ interface AIState {
   fetchRecentConversations: () => Promise<void>;
   loadConversation: (conversationId: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
-  clearOldestConversationContext: () => void;
-  rollbackToMessage: (messageId: string) => AIMessage | null;
   setEnabled: (enabled: boolean) => void;
   handleSlashCommand: (input: string) => Promise<boolean>;
   setMessages: (messages: AIMessage[]) => void;
 }
 
 let wsClient: AIWebSocketClient | null = null;
-let currentRequestId: string | null = null;
-let retryTimer: ReturnType<typeof setInterval> | null = null;
-
-function titleFromContent(content: string): string {
-  const title = content.trim().replace(/\s+/g, " ").slice(0, 48);
-  return title || "New conversation";
-}
-
-function userMessagesAfterLastCompact(messages: AIMessage[]): number {
-  const lastCompactIndex = messages.reduce(
-    (latest, message, index) => (message.compactMarker ? index : latest),
-    -1
-  );
-  return messages.slice(lastCompactIndex + 1).filter((message) => message.role === "user").length;
-}
 
 export interface AIConversationBlock {
   status: Exclude<AIConversationStatus, "active">;
@@ -497,70 +280,6 @@ export function getConversationBlock(messages: AIMessage[]): AIConversationBlock
     }
   }
   return null;
-}
-
-function createConversationStatusMarker(
-  status: Exclude<AIConversationStatus, "active">,
-  reason: string
-): AIMessage {
-  return {
-    id: generateId(),
-    role: "assistant",
-    content: "",
-    createdAt: nowIso(),
-    conversationStatus: status,
-    blockReason: reason,
-  };
-}
-
-async function ensureActiveConversation(
-  content: string,
-  messages: AIMessage[],
-  context?: PageContext,
-  options: { createNew?: boolean } = {}
-): Promise<string | null> {
-  const state = useAIStore.getState();
-  if (state.activeConversationId) return state.activeConversationId;
-
-  const title = state.savedName ?? titleFromContent(content);
-  try {
-    const saved = await saveConversation(
-      title,
-      messages.filter((message) => !message.localOnly),
-      context ?? state.lastContext,
-      { createNew: options.createNew }
-    );
-    useAIStore.setState({
-      activeConversationId: saved.id,
-      savedName: saved.title,
-      lastContext: saved.lastContext ?? context ?? state.lastContext,
-    });
-    void useAIStore.getState().fetchRecentConversations();
-    return saved.id;
-  } catch {
-    return null;
-  }
-}
-
-async function persistActiveConversationSnapshot(): Promise<void> {
-  const state = useAIStore.getState();
-  const conversationId = state.activeConversationId;
-  if (!conversationId) return;
-
-  const messages = state.messages.filter((message) => !message.localOnly);
-
-  try {
-    const saved = await compactConversation(conversationId, messages, state.lastContext);
-    if (useAIStore.getState().activeConversationId === conversationId) {
-      useAIStore.setState({
-        savedName: saved.title,
-        lastContext: saved.lastContext,
-      });
-    }
-    void useAIStore.getState().fetchRecentConversations();
-  } catch {
-    // Keep the live chat intact; a later message or explicit compact can retry persistence.
-  }
 }
 
 function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
@@ -655,6 +374,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
   retryAfter: null,
   savedName: null,
   activeConversationId: null,
+  activeRunId: null,
   lastContext: null,
   pendingApprovalToolCallId: null,
 
@@ -691,6 +411,10 @@ export const useAIStore = create<AIState>()((set, get) => ({
         isConnecting: false,
         connectionError: connected ? null : get().connectionError,
       });
+      const activeConversationId = get().activeConversationId;
+      if (connected && activeConversationId) {
+        wsClient?.send({ type: "conversation.subscribe", conversationId: activeConversationId });
+      }
       if (!connected) set({ isStreaming: false });
     });
     wsClient.onConnectionError((message) => {
@@ -722,58 +446,48 @@ export const useAIStore = create<AIState>()((set, get) => ({
     attachments: AIMessage["attachments"] = [],
     options: SendMessageOptions = {}
   ) => {
-    const { messages } = get();
-    const baseMessages = options.startNewConversation ? [] : messages;
-    if (getConversationBlock(baseMessages)) return;
-
-    const userMsg: AIMessage = {
-      id: generateId(),
-      role: "user",
-      content,
-      attachments,
-      createdAt: nowIso(),
-    };
-
-    const assistantMsg: AIMessage = {
-      id: generateId(),
-      role: "assistant",
-      content: "",
-      createdAt: nowIso(),
-      isStreaming: true,
-    };
+    const state = get();
+    const baseMessages = options.startNewConversation ? [] : state.messages;
+    if (state.isStreaming || getConversationBlock(baseMessages)) return;
+    if (options.startNewConversation && state.activeConversationId) {
+      wsClient?.send({
+        type: "conversation.unsubscribe",
+        conversationId: state.activeConversationId,
+      });
+    }
 
     set({
-      messages: [...baseMessages, userMsg, assistantMsg],
       isStreaming: true,
       lastContext: context ?? null,
-      ...(options.startNewConversation ? { savedName: null, activeConversationId: null } : {}),
+      pendingApprovalToolCallId: null,
+      ...(options.startNewConversation
+        ? { messages: [], savedName: null, activeConversationId: null, activeRunId: null }
+        : {}),
     });
 
-    const requestId = generateId();
-    currentRequestId = requestId;
-
-    const chatMessages = buildChatMessages([...baseMessages, userMsg]);
-
-    void ensureActiveConversation(content, [...baseMessages, userMsg], context, {
-      createNew: options.startNewConversation,
-    }).then((conversationId) => {
-      wsClient?.send({
-        type: "chat",
-        requestId,
-        messages: chatMessages,
-        context,
-        conversationId: conversationId ?? undefined,
-      });
+    const clientCommandId = generateId();
+    wsClient?.send({
+      type: "conversation.send_message",
+      clientCommandId,
+      content,
+      attachments,
+      context,
+      conversationId: options.startNewConversation
+        ? undefined
+        : (state.activeConversationId ?? undefined),
     });
   },
 
   approveTool: (toolCallId: string) => {
-    if (!currentRequestId) return;
+    const state = get();
+    if (!state.activeConversationId || !state.activeRunId) return;
     wsClient?.send({
-      type: "tool_approval",
-      requestId: currentRequestId,
-      toolCallId,
-      approved: true,
+      type: "approval.decide",
+      conversationId: state.activeConversationId,
+      runId: state.activeRunId,
+      approvalId: toolCallId,
+      decision: "approved",
+      clientCommandId: generateId(),
     });
 
     // Update tool status
@@ -788,12 +502,15 @@ export const useAIStore = create<AIState>()((set, get) => ({
   },
 
   rejectTool: (toolCallId: string) => {
-    if (!currentRequestId) return;
+    const state = get();
+    if (!state.activeConversationId || !state.activeRunId) return;
     wsClient?.send({
-      type: "tool_approval",
-      requestId: currentRequestId,
-      toolCallId,
-      approved: false,
+      type: "approval.decide",
+      conversationId: state.activeConversationId,
+      runId: state.activeRunId,
+      approvalId: toolCallId,
+      decision: "rejected",
+      clientCommandId: generateId(),
     });
 
     set((state) => ({
@@ -807,11 +524,10 @@ export const useAIStore = create<AIState>()((set, get) => ({
   },
 
   answerQuestion: (toolCallId: string, answer: string) => {
-    if (!currentRequestId) return;
+    const state = get();
+    if (!state.activeConversationId || !state.activeRunId) return;
 
-    // Mark this question as answered + promote next question to awaiting_approval
     set((state) => {
-      let promoted = false;
       return {
         messages: state.messages.map((msg) => ({
           ...msg,
@@ -819,52 +535,32 @@ export const useAIStore = create<AIState>()((set, get) => ({
             if (tc.id === toolCallId) {
               return { ...tc, status: "completed" as const, result: { answer } };
             }
-            // Promote the next running ask_question to awaiting_approval
-            if (!promoted && tc.name === "ask_question" && tc.status === "running") {
-              promoted = true;
-              return { ...tc, status: "awaiting_approval" as const };
-            }
             return tc;
           }),
         })),
       };
     });
 
-    // Check if there are more unanswered questions in the same batch
-    // (questions that are still "running" — not yet promoted/answered)
-    const { messages: msgs } = get();
-    const msg = msgs.find((m) => m.toolCalls?.some((tc) => tc.id === toolCallId));
-    const pendingQuestions =
-      msg?.toolCalls?.filter(
-        (tc) =>
-          tc.name === "ask_question" &&
-          (tc.status === "running" || tc.status === "awaiting_approval")
-      ) || [];
-
-    if (pendingQuestions.length === 0) {
-      // All questions in this batch answered — send all answers
-      const allQuestions = msg?.toolCalls?.filter((tc) => tc.name === "ask_question") || [];
-      const answers: Record<string, string> = {};
-      for (const tc of allQuestions) {
-        const ans = (tc.result as { answer?: string })?.answer;
-        if (ans) answers[tc.id] = ans;
-      }
-      // Use the toolCallId that the backend is actually pending on
-      const backendPendingId = get().pendingApprovalToolCallId || toolCallId;
-      wsClient?.send({
-        type: "tool_approval",
-        requestId: currentRequestId,
-        toolCallId: backendPendingId,
-        approved: true,
-        answers,
-      });
-      set({ pendingApprovalToolCallId: null });
-    }
+    wsClient?.send({
+      type: "question.answer",
+      conversationId: state.activeConversationId,
+      runId: state.activeRunId,
+      questionId: toolCallId,
+      answer,
+      clientCommandId: generateId(),
+    });
+    set({ pendingApprovalToolCallId: null });
   },
 
   stopStreaming: () => {
-    if (currentRequestId) {
-      wsClient?.send({ type: "cancel", requestId: currentRequestId });
+    const state = get();
+    if (state.activeConversationId && state.activeRunId) {
+      wsClient?.send({
+        type: "run.stop",
+        conversationId: state.activeConversationId,
+        runId: state.activeRunId,
+        clientCommandId: generateId(),
+      });
     }
     set((state) => ({
       isStreaming: false,
@@ -875,30 +571,18 @@ export const useAIStore = create<AIState>()((set, get) => ({
   },
 
   clearMessages: () => {
-    set({ messages: [], savedName: null, activeConversationId: null, lastContext: null });
-    void get().fetchRecentConversations();
-  },
-
-  clearOldestConversationContext: () => {
-    const state = get();
-    const persistedMessages = state.messages.filter(
-      (message) => !message.localOnly && !message.conversationStatus
-    );
-    if (persistedMessages.length === 0) {
-      set({ messages: [], savedName: null, activeConversationId: null, lastContext: null });
-      return;
+    const activeConversationId = get().activeConversationId;
+    if (activeConversationId) {
+      wsClient?.send({ type: "conversation.unsubscribe", conversationId: activeConversationId });
     }
-    const dropCount = Math.max(1, Math.floor(persistedMessages.length * 0.4));
-    const compactMarker: AIMessage = {
-      id: generateId(),
-      role: "assistant",
-      content: "Oldest context was cleared. You can continue this chat.",
-      createdAt: nowIso(),
-      localOnly: true,
-      compactMarker: true,
-    };
-    set({ messages: [...persistedMessages.slice(dropCount), compactMarker] });
-    void persistActiveConversationSnapshot();
+    set({
+      messages: [],
+      savedName: null,
+      activeConversationId: null,
+      activeRunId: null,
+      lastContext: null,
+    });
+    void get().fetchRecentConversations();
   },
 
   fetchRecentConversations: async () => {
@@ -916,13 +600,30 @@ export const useAIStore = create<AIState>()((set, get) => ({
 
   loadConversation: async (conversationId: string) => {
     try {
+      const previousConversationId = get().activeConversationId;
+      if (previousConversationId && previousConversationId !== conversationId) {
+        wsClient?.send({
+          type: "conversation.unsubscribe",
+          conversationId: previousConversationId,
+        });
+      }
+      set({
+        messages: [],
+        savedName: null,
+        activeConversationId: conversationId,
+        activeRunId: null,
+        lastContext: null,
+        pendingApprovalToolCallId: null,
+      });
       const conversation = await getConversation(conversationId);
       set({
         messages: conversation.messages,
         savedName: conversation.title,
         activeConversationId: conversation.id,
+        activeRunId: null,
         lastContext: conversation.lastContext,
       });
+      wsClient?.send({ type: "conversation.subscribe", conversationId });
     } catch {
       const localMsg: AIMessage = {
         id: generateId(),
@@ -931,19 +632,35 @@ export const useAIStore = create<AIState>()((set, get) => ({
         createdAt: nowIso(),
         localOnly: true,
       };
-      set((state) => ({ messages: [...state.messages, localMsg] }));
+      set({
+        messages: [localMsg],
+        savedName: null,
+        activeConversationId: null,
+        activeRunId: null,
+        lastContext: null,
+        pendingApprovalToolCallId: null,
+      });
     }
   },
 
   deleteConversation: async (conversationId: string) => {
     try {
       await deleteConversation(conversationId);
+      if (get().activeConversationId === conversationId) {
+        wsClient?.send({ type: "conversation.unsubscribe", conversationId });
+      }
       set((state) => ({
         recentConversations: state.recentConversations.filter(
           (conversation) => conversation.id !== conversationId
         ),
         ...(state.activeConversationId === conversationId
-          ? { messages: [], savedName: null, activeConversationId: null, lastContext: null }
+          ? {
+              messages: [],
+              savedName: null,
+              activeConversationId: null,
+              activeRunId: null,
+              lastContext: null,
+            }
           : {}),
       }));
       void get().fetchRecentConversations();
@@ -967,33 +684,23 @@ export const useAIStore = create<AIState>()((set, get) => ({
     set({ messages });
   },
 
-  rollbackToMessage: (messageId: string) => {
-    const state = get();
-    const index = state.messages.findIndex((message) => message.id === messageId);
-    const message = index >= 0 ? state.messages[index] : null;
-    if (!message || message.role !== "user") return null;
-
-    if (currentRequestId) {
-      wsClient?.send({ type: "cancel", requestId: currentRequestId });
-      currentRequestId = null;
-    }
-
-    set({
-      messages: state.messages.slice(0, index),
-      isStreaming: false,
-      pendingApprovalToolCallId: null,
-    });
-    void persistActiveConversationSnapshot();
-    return message;
-  },
-
   handleSlashCommand: async (input: string): Promise<boolean> => {
     if (get().isStreaming) return true;
     const parts = input.trim().split(/\s+/);
     const cmd = parts[0]?.toLowerCase();
 
     if (cmd === "/clear" || cmd === "/new") {
-      set({ messages: [], savedName: null, activeConversationId: null, lastContext: null });
+      const activeConversationId = get().activeConversationId;
+      if (activeConversationId) {
+        wsClient?.send({ type: "conversation.unsubscribe", conversationId: activeConversationId });
+      }
+      set({
+        messages: [],
+        savedName: null,
+        activeConversationId: null,
+        activeRunId: null,
+        lastContext: null,
+      });
       void get().fetchRecentConversations();
       return true;
     }
@@ -1015,71 +722,11 @@ export const useAIStore = create<AIState>()((set, get) => ({
       return true;
     }
 
-    if (cmd === "/compact") {
-      const state = get();
-      if (userMessagesAfterLastCompact(state.messages) <= 3) return true;
-      const messages = state.messages.filter((m) => !m.localOnly);
-      if (messages.length === 0) {
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: "Nothing to compact yet.",
-          createdAt: nowIso(),
-          localOnly: true,
-        };
-        set((current) => ({ messages: [...current.messages, localMsg] }));
-        return true;
-      }
-
-      try {
-        const conversation = state.activeConversationId
-          ? await compactConversation(state.activeConversationId, messages, state.lastContext)
-          : await saveConversation(
-              state.savedName ??
-                titleFromContent(
-                  messages.find((m) => m.role === "user")?.content ?? "New conversation"
-                ),
-              messages,
-              state.lastContext
-            );
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: `Compacted **${conversation.title}**. Full tool outputs are kept for the latest 10 tool calls.`,
-          createdAt: nowIso(),
-          localOnly: true,
-          compactMarker: true,
-        };
-        set({
-          messages: [...conversation.messages, localMsg],
-          savedName: conversation.title,
-          activeConversationId: conversation.id,
-          lastContext: conversation.lastContext,
-        });
-        void get().fetchRecentConversations();
-      } catch {
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: "Failed to compact conversation.",
-          createdAt: nowIso(),
-          localOnly: true,
-        };
-        set((current) => ({ messages: [...current.messages, localMsg] }));
-      }
-      return true;
-    }
-
     return false;
   },
 }));
 
 export function resetAIStateForAuthChange() {
-  if (retryTimer) {
-    clearInterval(retryTimer);
-    retryTimer = null;
-  }
-  currentRequestId = null;
   wsClient?.disconnect();
   wsClient = null;
   useAIStore.setState({
@@ -1093,6 +740,7 @@ export function resetAIStateForAuthChange() {
     retryAfter: null,
     savedName: null,
     activeConversationId: null,
+    activeRunId: null,
     lastContext: null,
     pendingApprovalToolCallId: null,
   });
@@ -1104,201 +752,224 @@ function handleWSMessage(
   get: () => AIState
 ) {
   switch (msg.type) {
-    case "text_delta":
+    case "command.ack":
+      set({
+        ...(msg.conversationId ? { activeConversationId: msg.conversationId } : {}),
+        ...(msg.runId ? { activeRunId: msg.runId } : {}),
+      });
+      break;
+
+    case "command.error":
       set((state) => ({
-        messages: appendTextDeltaToStreamingAssistant(state.messages, msg.content),
-      }));
-      break;
-
-    case "tool_call_start": {
-      const toolCall: AIToolCall = {
-        id: msg.id,
-        name: msg.name,
-        arguments: msg.arguments,
-        status: "running",
-      };
-      set((state) => ({
-        messages: appendToolCallToStreamingAssistant(state.messages, toolCall),
-      }));
-      break;
-    }
-
-    case "tool_approval_required":
-      if (shouldAutoApprove(msg.name, msg.arguments)) {
-        if (currentRequestId) {
-          wsClient?.send({
-            type: "tool_approval",
-            requestId: currentRequestId,
-            toolCallId: msg.id,
-            approved: true,
-          });
-        }
-      } else {
-        set((state) => ({
-          pendingApprovalToolCallId: msg.id,
-          messages: state.messages.map((m) =>
-            m.isStreaming && m.role === "assistant"
-              ? {
-                  ...m,
-                  toolCalls: (m.toolCalls || []).map((tc) =>
-                    tc.id === msg.id ? { ...tc, status: "awaiting_approval" as const } : tc
-                  ),
-                }
-              : m
-          ),
-        }));
-      }
-      break;
-
-    case "tool_result":
-      set((state) => ({
-        messages: state.messages.map((m) =>
-          m.role === "assistant" && m.toolCalls?.some((tc) => tc.id === msg.id)
-            ? {
-                ...m,
-                toolCalls: m.toolCalls!.map((tc) =>
-                  tc.id === msg.id
-                    ? {
-                        ...tc,
-                        status: msg.error ? ("failed" as const) : ("completed" as const),
-                        result: msg.result,
-                        error: msg.error,
-                      }
-                    : tc
-                ),
-              }
-            : m
-        ),
-      }));
-      break;
-
-    case "invalidate_stores":
-      for (const store of msg.stores) {
-        invalidateStore(store);
-      }
-      break;
-
-    case "conversation_ended":
-      set((state) => ({
-        messages: [...state.messages, createConversationStatusMarker("ended", msg.reason)],
-      }));
-      break;
-
-    case "context_blocked":
-      set((state) => ({
+        isStreaming: false,
         messages: [
           ...state.messages,
-          createConversationStatusMarker("context_blocked", msg.reason),
+          {
+            id: generateId(),
+            role: "assistant",
+            content: `**Error:** ${msg.message}`,
+            createdAt: nowIso(),
+            localOnly: true,
+          },
         ],
       }));
       break;
 
-    case "done": {
-      set((state) => ({
-        isStreaming: false,
-        messages: state.messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)),
-      }));
-      void persistActiveConversationSnapshot();
-      currentRequestId = null;
-      break;
-    }
-
-    case "error":
-      set((state) => ({
-        messages: state.messages.map((m) =>
-          m.isStreaming && m.role === "assistant"
-            ? { ...m, content: `${m.content + (m.content ? "\n\n" : "")}**Error:** ${msg.message}` }
-            : m
-        ),
-      }));
+    case "conversation.snapshot":
+      if (get().activeConversationId !== msg.conversationId) return;
+      set(projectConversationSnapshot(msg.snapshot));
+      void get().fetchRecentConversations();
       break;
 
-    case "rate_limited":
-      set({ retryAfter: msg.retryAfter });
-      if (retryTimer) clearInterval(retryTimer);
-      retryTimer = setInterval(() => {
-        const current = get().retryAfter;
-        if (current && current > 1) {
-          set({ retryAfter: current - 1 });
-        } else {
-          set({ retryAfter: null });
-          if (retryTimer) clearInterval(retryTimer);
-          retryTimer = null;
-        }
-      }, 1000);
+    case "run.status_changed":
+      if (get().activeConversationId !== msg.conversationId) return;
+      set({
+        activeRunId: msg.run?.id ?? null,
+        isStreaming: isActiveRunStatus(msg.run?.status),
+      });
+      break;
+
+    case "stores.invalidated":
+      for (const storeName of msg.stores) invalidateStore(storeName);
+      break;
+
+    case "approval.updated":
+    case "question.answered":
       break;
   }
 }
 
-function appendTextDeltaToStreamingAssistant(messages: AIMessage[], content: string): AIMessage[] {
-  const lastStreamingIndex = findLastStreamingAssistantIndex(messages);
-  if (lastStreamingIndex === -1) {
-    return [
-      ...messages,
-      {
-        id: generateId(),
-        role: "assistant",
-        content,
-        createdAt: nowIso(),
-        isStreaming: true,
-      },
-    ];
-  }
-
-  return messages.map((message, index) =>
-    index === lastStreamingIndex ? { ...message, content: message.content + content } : message
+function projectConversationSnapshot(snapshot: AIConversationRuntimeSnapshot): Partial<AIState> {
+  const runtimeToolCalls = snapshot.runtime.toolCalls.map(runtimeToolCallToUI);
+  const pendingQuestions =
+    snapshot.runtime.pendingQuestions.length > 0
+      ? snapshot.runtime.pendingQuestions
+      : snapshot.runtime.pendingQuestion
+        ? [snapshot.runtime.pendingQuestion]
+        : [];
+  const pendingQuestionToolCalls = pendingQuestions.map((question) => ({
+    id: question.id,
+    name: "ask_question",
+    arguments: { question: question.question },
+    status: "awaiting_approval" as const,
+    result: question.answer ? { answer: question.answer } : undefined,
+  }));
+  const messages = attachRuntimeToolCallsToMessages(
+    normalizeSnapshotMessages(snapshot),
+    [...runtimeToolCalls, ...pendingQuestionToolCalls],
+    Boolean(snapshot.runtime.activeRun),
+    snapshot.runtime.activeRun?.id ?? null
   );
+
+  return {
+    messages,
+    savedName: snapshot.conversation.title,
+    activeConversationId: snapshot.conversation.id,
+    activeRunId: snapshot.runtime.activeRun?.id ?? null,
+    lastContext: snapshot.conversation.lastContext,
+    pendingApprovalToolCallId:
+      snapshot.runtime.pendingApprovals[0]?.id ?? pendingQuestions[0]?.id ?? null,
+    isStreaming: isActiveRunStatus(snapshot.runtime.activeRun?.status),
+  };
 }
 
-function appendToolCallToStreamingAssistant(
+function normalizeSnapshotMessages(snapshot: AIConversationRuntimeSnapshot): AIMessage[] {
+  return snapshot.messages
+    .map((message, index) => normalizeSnapshotMessage(message, snapshot.conversation.id, index))
+    .filter((message): message is AIMessage => message !== null);
+}
+
+function normalizeSnapshotMessage(
+  value: unknown,
+  conversationId: string,
+  index: number
+): AIMessage | null {
+  if (!value || typeof value !== "object") return null;
+  const message = value as Record<string, unknown>;
+  const role = message.role;
+  if (role !== "user" && role !== "assistant") return null;
+  return {
+    id: typeof message.id === "string" ? message.id : `${conversationId}:${index}`,
+    role,
+    content: typeof message.content === "string" ? message.content : "",
+    attachments: Array.isArray(message.attachments)
+      ? (message.attachments as AIMessage["attachments"])
+      : undefined,
+    createdAt: typeof message.createdAt === "string" ? message.createdAt : undefined,
+    toolCalls: Array.isArray(message.toolCalls) ? (message.toolCalls as AIToolCall[]) : undefined,
+    isStreaming: false,
+  };
+}
+
+function runtimeToolCallToUI(toolCall: AIRunToolCall): AIToolCall {
+  return {
+    id: toolCall.id,
+    name: toolCall.toolName,
+    arguments: toolCall.toolArgs,
+    status: runtimeToolStatusToUI(toolCall.status),
+    assistantMessageId: toolCall.assistantMessageId,
+    result: toolCall.result ?? undefined,
+    error: toolCall.error ?? undefined,
+  };
+}
+
+function runtimeToolStatusToUI(status: AIRunToolCall["status"]): AIToolCall["status"] {
+  if (status === "pending_approval") return "awaiting_approval";
+  if (status === "approved" || status === "running" || status === "created") return "running";
+  if (status === "rejected") return "rejected";
+  if (status === "failed" || status === "stopped") return "failed";
+  return "completed";
+}
+
+function attachRuntimeToolCallsToMessages(
   messages: AIMessage[],
-  toolCall: AIToolCall
+  toolCalls: AIToolCall[],
+  active: boolean,
+  activeRunId: string | null
 ): AIMessage[] {
-  const lastStreamingIndex = findLastStreamingAssistantIndex(messages);
-  if (lastStreamingIndex === -1) {
-    return [
-      ...messages,
-      {
-        id: generateId(),
-        role: "assistant",
-        content: "",
-        createdAt: nowIso(),
-        isStreaming: true,
-        toolCalls: [toolCall],
-      },
-    ];
+  if (toolCalls.length === 0 && !active) return messages;
+  const nextMessages = [...messages];
+  const unassignedToolCalls: AIToolCall[] = [];
+
+  for (const toolCall of toolCalls) {
+    if (!toolCall.assistantMessageId) {
+      unassignedToolCalls.push(toolCall);
+      continue;
+    }
+    const targetIndex = nextMessages.findIndex(
+      (message) => message.id === toolCall.assistantMessageId
+    );
+    if (targetIndex === -1 || nextMessages[targetIndex].role !== "assistant") {
+      unassignedToolCalls.push(toolCall);
+      continue;
+    }
+    nextMessages[targetIndex] = {
+      ...nextMessages[targetIndex],
+      toolCalls: mergeToolCalls(nextMessages[targetIndex].toolCalls ?? [], [toolCall]),
+    };
   }
 
-  const current = messages[lastStreamingIndex];
-  if (current.content.length > 0) {
-    return [
-      ...messages.slice(0, lastStreamingIndex),
-      { ...current, isStreaming: false },
-      ...messages.slice(lastStreamingIndex + 1),
-      {
-        id: generateId(),
-        role: "assistant",
-        content: "",
-        createdAt: nowIso(),
-        isStreaming: true,
-        toolCalls: [toolCall],
-      },
-    ];
+  let targetIndex =
+    active && activeRunId ? findActiveRuntimeAssistantIndex(nextMessages, activeRunId) : -1;
+  if (targetIndex === -1 && active && activeRunId) {
+    nextMessages.push({
+      id: `${activeRunId}:runtime`,
+      role: "assistant",
+      content: "",
+      createdAt: nowIso(),
+      isStreaming: active,
+    });
+    targetIndex = nextMessages.length - 1;
+  }
+  if (targetIndex === -1) {
+    targetIndex = findLastAssistantIndex(nextMessages);
+  }
+  if (targetIndex === -1) {
+    nextMessages.push({
+      id: activeRunId ? `${activeRunId}:runtime` : generateId(),
+      role: "assistant",
+      content: "",
+      createdAt: nowIso(),
+      isStreaming: active,
+    });
+    targetIndex = nextMessages.length - 1;
   }
 
-  return messages.map((message, index) =>
-    index === lastStreamingIndex
-      ? { ...message, toolCalls: [...(message.toolCalls || []), toolCall] }
-      : message
+  nextMessages[targetIndex] = {
+    ...nextMessages[targetIndex],
+    isStreaming: active,
+    toolCalls: mergeToolCalls(nextMessages[targetIndex].toolCalls ?? [], unassignedToolCalls),
+  };
+  return nextMessages;
+}
+
+function findActiveRuntimeAssistantIndex(messages: AIMessage[], activeRunId: string): number {
+  const runtimeIds = new Set([`${activeRunId}:draft`, `${activeRunId}:runtime`]);
+  return messages.findIndex(
+    (message) => message.role === "assistant" && runtimeIds.has(message.id)
   );
 }
 
-function findLastStreamingAssistantIndex(messages: AIMessage[]): number {
+function mergeToolCalls(existing: AIToolCall[], incoming: AIToolCall[]): AIToolCall[] {
+  const byId = new Map(existing.map((toolCall) => [toolCall.id, toolCall]));
+  for (const toolCall of incoming) byId.set(toolCall.id, { ...byId.get(toolCall.id), ...toolCall });
+  return [...byId.values()];
+}
+
+function findLastAssistantIndex(messages: AIMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === "assistant" && message.isStreaming) return index;
+    if (messages[index].role === "assistant") return index;
   }
   return -1;
+}
+
+function isActiveRunStatus(status: string | null | undefined): boolean {
+  return (
+    status === "queued" ||
+    status === "running" ||
+    status === "waiting_for_approval" ||
+    status === "waiting_for_answer"
+  );
 }
 
 // Auto-manage WS lifecycle based on visible AI surfaces.

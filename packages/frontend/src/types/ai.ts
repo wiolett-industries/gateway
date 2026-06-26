@@ -1,12 +1,11 @@
 // ── AI Tool Call ──
 
-export type ToolActionType = "read" | "create" | "edit" | "delete" | "other";
-
 export interface AIToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
   status: "running" | "completed" | "failed" | "awaiting_approval" | "rejected";
+  assistantMessageId?: string | null;
   result?: unknown;
   error?: string;
 }
@@ -166,60 +165,167 @@ export interface AIComposerLocalImageAttachment {
 
 export type AIComposerAttachment = AIMessageAttachment | AIComposerLocalImageAttachment;
 
+// ── Backend-owned AI Runtime ──
+
+export type AIRunStatus =
+  | "queued"
+  | "running"
+  | "waiting_for_approval"
+  | "waiting_for_answer"
+  | "completed"
+  | "failed"
+  | "stopped";
+
+export interface AIRun {
+  id: string;
+  conversationId: string;
+  userId: string;
+  status: AIRunStatus;
+  activeMessageId: string | null;
+  clientCommandId: string;
+  assistantDraftContent: string | null;
+  error: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  stoppedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AIRunToolCallStatus =
+  | "created"
+  | "pending_approval"
+  | "approved"
+  | "rejected"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stopped";
+
+export interface AIRunToolCall {
+  id: string;
+  runId: string;
+  conversationId: string;
+  assistantMessageId: string | null;
+  toolCallId: string;
+  toolName: string;
+  toolArgs: Record<string, unknown>;
+  classification: string;
+  approvalPolicy: string;
+  requiredScopes: string[];
+  status: AIRunToolCallStatus;
+  decision: "approved" | "rejected" | null;
+  result: unknown | null;
+  error: string | null;
+}
+
+export interface AIRunQuestion {
+  id: string;
+  runId: string;
+  conversationId: string;
+  toolCallId: string;
+  question: string;
+  status: "pending" | "answered" | "stopped";
+  answer: string | null;
+}
+
+export interface AIRuntimeSnapshot {
+  activeRun: AIRun | null;
+  pendingApprovals: AIRunToolCall[];
+  pendingQuestion: AIRunQuestion | null;
+  pendingQuestions: AIRunQuestion[];
+  toolCalls: AIRunToolCall[];
+}
+
+export interface AIConversationRuntimeSnapshot {
+  conversation: {
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    lastContext: PageContext | null;
+    discoveredToolsets: string[];
+    checkpoint: Record<string, unknown> | null;
+  };
+  messages: unknown[];
+  runtime: AIRuntimeSnapshot;
+}
+
 // ── WebSocket Messages ──
 
 export type WSClientMessage =
+  | { type: "conversation.subscribe"; conversationId: string; clientCommandId?: string }
+  | { type: "conversation.unsubscribe"; conversationId: string }
+  | { type: "conversation.sync"; conversationId: string; clientCommandId?: string }
   | {
-      type: "chat";
-      requestId: string;
-      messages: ChatMessage[];
+      type: "conversation.send_message";
+      clientCommandId: string;
+      conversationId?: string;
+      content: string;
+      attachments?: AIMessageAttachment[];
       context?: PageContext;
-      conversationId?: string;
+    }
+  | { type: "run.stop"; conversationId: string; runId: string; clientCommandId: string }
+  | {
+      type: "approval.decide";
+      conversationId: string;
+      runId: string;
+      approvalId: string;
+      decision: "approved" | "rejected";
+      clientCommandId: string;
     }
   | {
-      type: "tool_approval";
-      requestId: string;
-      toolCallId: string;
-      approved: boolean;
-      conversationId?: string;
-      answer?: string;
-      answers?: Record<string, string>;
+      type: "question.answer";
+      conversationId: string;
+      runId: string;
+      questionId: string;
+      answer: string;
+      clientCommandId: string;
     }
-  | { type: "cancel"; requestId: string }
   | { type: "ping" };
 
 export type WSServerMessage =
   | { type: "auth_ok"; userId: string }
   | { type: "auth_error"; message: string }
-  | { type: "text_delta"; requestId: string; content: string }
   | {
-      type: "tool_call_start";
-      requestId: string;
-      id: string;
-      name: string;
-      arguments: Record<string, unknown>;
+      type: "command.ack";
+      commandType: WSClientMessage["type"];
+      clientCommandId?: string;
+      conversationId?: string;
+      runId?: string;
+      duplicate?: boolean;
     }
   | {
-      type: "tool_approval_required";
-      requestId: string;
-      id: string;
-      name: string;
-      arguments: Record<string, unknown>;
+      type: "command.error";
+      commandType?: WSClientMessage["type"] | string;
+      clientCommandId?: string;
+      conversationId?: string;
+      runId?: string;
+      code: string;
+      message: string;
+      statusCode?: number;
     }
   | {
-      type: "tool_result";
-      requestId: string;
-      id: string;
-      name: string;
-      result: unknown;
-      error?: string;
+      type: "conversation.snapshot";
+      conversationId: string;
+      snapshot: AIConversationRuntimeSnapshot;
     }
-  | { type: "invalidate_stores"; requestId: string; stores: string[] }
-  | { type: "conversation_ended"; requestId: string; reason: string }
-  | { type: "context_blocked"; requestId: string; reason: string }
-  | { type: "done"; requestId: string }
-  | { type: "error"; requestId: string; message: string; code?: string }
-  | { type: "rate_limited"; retryAfter: number }
+  | { type: "run.status_changed"; conversationId: string; run: AIRun | null }
+  | { type: "stores.invalidated"; conversationId: string; stores: string[] }
+  | {
+      type: "approval.updated";
+      conversationId: string;
+      runId: string;
+      approval: AIRunToolCall;
+      duplicate: boolean;
+    }
+  | {
+      type: "question.answered";
+      conversationId: string;
+      runId: string;
+      question: AIRunQuestion;
+      duplicate: boolean;
+    }
   | { type: "pong" };
 
 // ── Tool definition (from admin API) ──

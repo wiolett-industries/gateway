@@ -123,16 +123,18 @@ export function AIMessage({
         </div>
         <div className="absolute right-0 top-full z-10 mt-1 flex items-center gap-1 text-xs text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100">
           <span className="whitespace-nowrap">{formatMessageRelativeTime(message)}</span>
-          <button
-            type="button"
-            onClick={() =>
-              onEditUserMessage?.(message.id, displayContent, message.attachments ?? [])
-            }
-            className="flex h-5 w-5 items-center justify-center transition-colors hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
-            aria-label="Edit message"
-          >
-            <SquarePen className="h-3.5 w-3.5" />
-          </button>
+          {onEditUserMessage && (
+            <button
+              type="button"
+              onClick={() =>
+                onEditUserMessage(message.id, displayContent, message.attachments ?? [])
+              }
+              className="flex h-5 w-5 items-center justify-center transition-colors hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
+              aria-label="Edit message"
+            >
+              <SquarePen className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
     );

@@ -36,7 +36,6 @@ const BOTTOM_SCROLL_THRESHOLD = 48;
 const SLASH_COMMANDS = [
   { name: "new", description: "Start new conversation" },
   { name: "clear", description: "Clear conversation" },
-  { name: "compact", description: "Compact saved context" },
   { name: "context", description: "Show token usage" },
 ];
 
@@ -96,16 +95,6 @@ function usePageContext(): PageContext {
   return { route, resourceType, resourceId };
 }
 
-function userMessagesAfterLastCompact(
-  messages: ReturnType<typeof useAIStore.getState>["messages"]
-): number {
-  const lastCompactIndex = messages.reduce(
-    (latest, message, index) => (message.compactMarker ? index : latest),
-    -1
-  );
-  return messages.slice(lastCompactIndex + 1).filter((message) => message.role === "user").length;
-}
-
 export function AILitePanel() {
   const {
     messages,
@@ -121,8 +110,6 @@ export function AILitePanel() {
     answerQuestion,
     stopStreaming,
     clearMessages,
-    clearOldestConversationContext,
-    rollbackToMessage,
     handleSlashCommand,
     connect,
   } = useAIStore();
@@ -138,10 +125,6 @@ export function AILitePanel() {
   const shouldStickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const context = usePageContext();
-  const canCompact = userMessagesAfterLastCompact(messages) > 3;
-  const visibleSlashCommands = SLASH_COMMANDS.filter(
-    (command) => command.name !== "compact" || canCompact
-  );
   const approvalModeLabel = formatAIApprovalModeLabel(approvalMode);
   const conversationBlock = getConversationBlock(messages);
 
@@ -337,29 +320,12 @@ export function AILitePanel() {
 
     if (val.startsWith("/") && !val.includes(" ")) {
       const query = val.slice(1).toLowerCase();
-      setSlashResults(visibleSlashCommands.filter((command) => command.name.startsWith(query)));
+      setSlashResults(SLASH_COMMANDS.filter((command) => command.name.startsWith(query)));
       setSlashIndex(0);
     } else {
       setSlashResults([]);
     }
   };
-
-  const handleEditUserMessage = useCallback(
-    (messageId: string, content: string, nextAttachments: AIMessageAttachment[]) => {
-      const message = rollbackToMessage(messageId);
-      if (!message) return;
-      setInput(content);
-      setAttachments(nextAttachments);
-      setSlashResults([]);
-      requestAnimationFrame(() => {
-        const textarea = textareaRef.current;
-        if (!textarea) return;
-        textarea.focus();
-        autoResizeTextarea(textarea);
-      });
-    },
-    [rollbackToMessage, setAttachments, setInput]
-  );
 
   const handleQuickAction = (prompt: string) => {
     sendMessage(prompt, context, [], { startNewConversation: messages.length === 0 });
@@ -432,7 +398,6 @@ export function AILitePanel() {
                   onApprove={approveTool}
                   onReject={rejectTool}
                   onAnswer={answerQuestion}
-                  onEditUserMessage={handleEditUserMessage}
                 />
               ))}
             </div>
@@ -469,7 +434,6 @@ export function AILitePanel() {
             <AIConversationBlockedBlock
               block={conversationBlock}
               onNewChat={clearMessages}
-              onClearOldContext={clearOldestConversationContext}
               showTopBorder={false}
             />
           </div>

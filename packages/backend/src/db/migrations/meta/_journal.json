@@ -295,6 +295,20 @@
       "when": 1782568800000,
       "tag": "0041_user_ai_approval_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1782655200000,
+      "tag": "0042_ai_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1782741600000,
+      "tag": "0043_ai_run_user_command_idempotency",
+      "breakpoints": true
     }
   ]
 }

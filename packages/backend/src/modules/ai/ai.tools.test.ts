@@ -382,6 +382,7 @@ describe('AI tool scope filtering', () => {
       'create_docker_container',
       'list_docker_containers',
       'get_docker_container',
+      'execute_docker_container_console_command',
       'list_docker_deployments',
       'get_docker_deployment',
       'start_docker_deployment',

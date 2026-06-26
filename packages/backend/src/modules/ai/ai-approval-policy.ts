@@ -1,0 +1,60 @@
+import type { AIToolApprovalClass, AIToolApprovalPolicy } from '@/db/schema/index.js';
+import type { User } from '@/types.js';
+import { AI_TOOLS } from './ai.tools.js';
+
+export type AIApprovalMode = NonNullable<User['aiApprovalMode']>;
+
+const SYSTEM_NEVER_ASK_TOOLS = new Set([
+  'ask_question',
+  'discover_tools',
+  'internal_documentation',
+  'get_current_context',
+  'wait',
+]);
+
+const READ_PREFIXES = /^(list|get|inspect|query|find|read|test)_/;
+const CREATE_PREFIXES = /^(create|send|request|issue|link)_/;
+const UPDATE_PREFIXES = /^(update|manage|start|stop|restart|pull|run|scan|write|move|toggle|rename|set)_/;
+const DELETE_PREFIXES = /^(delete|remove|revoke|clear|kill)_/;
+const EXECUTE_PREFIXES = /^(execute)_/;
+
+export interface AIToolApprovalDecision {
+  classification: AIToolApprovalClass;
+  approvalPolicy: AIToolApprovalPolicy;
+  requiresApproval: boolean;
+}
+
+export function classifyAIToolForApproval(toolName: string): AIToolApprovalClass {
+  if (SYSTEM_NEVER_ASK_TOOLS.has(toolName)) return 'system-never-ask';
+  if (EXECUTE_PREFIXES.test(toolName)) return 'execute';
+  if (DELETE_PREFIXES.test(toolName)) return 'delete';
+  if (CREATE_PREFIXES.test(toolName)) return 'create';
+  if (UPDATE_PREFIXES.test(toolName)) return 'update';
+  if (READ_PREFIXES.test(toolName)) return 'read';
+
+  const tool = AI_TOOLS.find((candidate) => candidate.name === toolName);
+  return tool?.destructive ? 'destructive' : 'read';
+}
+
+export function getAIToolApprovalDecision(toolName: string, mode: AIApprovalMode | undefined): AIToolApprovalDecision {
+  const classification = classifyAIToolForApproval(toolName);
+  if (classification === 'system-never-ask') {
+    return { classification, approvalPolicy: 'system_skipped', requiresApproval: false };
+  }
+
+  const approvalMode = mode ?? 'normal';
+  const requiresApproval =
+    approvalMode === 'always-ask'
+      ? true
+      : approvalMode === 'normal'
+        ? classification !== 'read'
+        : approvalMode === 'bypass-non-destructive'
+          ? classification === 'delete' || classification === 'destructive' || classification === 'execute'
+          : false;
+
+  return {
+    classification,
+    approvalPolicy: requiresApproval ? 'requires_approval' : 'auto_approved',
+    requiresApproval,
+  };
+}

@@ -4,36 +4,24 @@ import { container, TOKENS } from '@/container.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { canUseAI } from '@/lib/permissions.js';
 import { withRateLimitRedisTimeout } from '@/lib/rate-limit-timeout.js';
+import { AppError } from '@/middleware/error-handler.js';
+import { EventBusService } from '@/services/event-bus.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
-import { AIService } from './ai.service.js';
 import { AISettingsService } from './ai.settings.service.js';
-import type { PageContext, WSClientMessage, WSServerMessage } from './ai.types.js';
-import { AIConversationService } from './ai-conversation.service.js';
+import type { WSClientMessage, WSServerMessage } from './ai.types.js';
+import { AIRunService, aiConversationChangedChannel } from './ai-run.service.js';
 
 const logger = createChildLogger('AI-WebSocket');
 const RATE_LIMIT_PIPELINE_RESULT_COUNT = 4;
 
 type RedisClient = ReturnType<typeof import('@/services/cache.service.js').createRedisClient>;
 
-interface PendingApproval {
-  toolCallId: string;
-  toolName: string;
-  toolArgs: Record<string, unknown>;
-  messages: Record<string, unknown>[];
-  pageContext?: PageContext;
-  conversationId?: string;
-  allQuestions?: Array<{ id: string; args: Record<string, unknown> }>;
-  queuedApprovals?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
-}
-
 interface WSConnectionState {
   user: User | null;
   sessionId: string | null;
   authenticated: boolean;
-  currentAbortController: AbortController | null;
-  currentRequestId: string | null;
-  pendingApproval: PendingApproval | null;
+  subscriptions: Map<string, () => void>;
   keepaliveInterval: ReturnType<typeof setInterval> | null;
 }
 
@@ -45,21 +33,105 @@ function send(ws: WSContext, msg: WSServerMessage): void {
   }
 }
 
-async function persistConversationContext(
-  userId: string,
-  conversationId: string,
-  pageContext: PageContext
-): Promise<void> {
-  try {
-    await container.resolve(AIConversationService).updateRuntimeState(userId, conversationId, {
-      lastContext: pageContext,
+function sendCommandError(
+  ws: WSContext,
+  msg: WSClientMessage,
+  error: unknown,
+  fallbackMessage = 'Command failed'
+): void {
+  if (error instanceof AppError) {
+    send(ws, {
+      type: 'command.error',
+      commandType: msg.type,
+      clientCommandId: getClientCommandId(msg),
+      conversationId: getConversationId(msg),
+      runId: getRunId(msg),
+      code: error.code,
+      message: error.message,
+      statusCode: error.statusCode,
     });
-  } catch (error) {
-    logger.warn('Failed to persist AI conversation page context', {
-      conversationId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    return;
   }
+
+  logger.error('AI websocket command failed', {
+    commandType: msg.type,
+    error: error instanceof Error ? error.message : String(error),
+  });
+  send(ws, {
+    type: 'command.error',
+    commandType: msg.type,
+    clientCommandId: getClientCommandId(msg),
+    conversationId: getConversationId(msg),
+    runId: getRunId(msg),
+    code: 'AI_COMMAND_FAILED',
+    message: error instanceof Error ? error.message : fallbackMessage,
+    statusCode: 500,
+  });
+}
+
+function getClientCommandId(msg: WSClientMessage): string | undefined {
+  return 'clientCommandId' in msg ? msg.clientCommandId : undefined;
+}
+
+function getConversationId(msg: WSClientMessage): string | undefined {
+  return 'conversationId' in msg ? msg.conversationId : undefined;
+}
+
+function getRunId(msg: WSClientMessage): string | undefined {
+  return 'runId' in msg ? msg.runId : undefined;
+}
+
+function titleFromContent(content: string): string {
+  const title = content.trim().replace(/\s+/g, ' ');
+  return title ? title.slice(0, 80) : 'New chat';
+}
+
+async function sendConversationSnapshot(ws: WSContext, userId: string, conversationId: string) {
+  const runService = container.resolve(AIRunService);
+  const snapshot = await runService.getConversationSnapshot(userId, conversationId);
+  if (!snapshot) throw new AppError(404, 'AI_CONVERSATION_NOT_FOUND', 'AI conversation not found');
+  send(ws, { type: 'conversation.snapshot', conversationId, snapshot });
+  return snapshot;
+}
+
+function subscribeToConversation(
+  ws: WSContext,
+  state: WSConnectionState,
+  userId: string,
+  conversationId: string
+): void {
+  if (state.subscriptions.has(conversationId)) return;
+  const eventBus = container.resolve(EventBusService);
+  const unsubscribe = eventBus.subscribe(aiConversationChangedChannel(userId, conversationId), (payload) => {
+    const event = payload as { userId?: string; conversationId?: string; invalidatedStores?: string[] };
+    if (event.userId !== userId || event.conversationId !== conversationId) return;
+    if (event.invalidatedStores?.length) {
+      send(ws, {
+        type: 'stores.invalidated',
+        conversationId,
+        stores: event.invalidatedStores,
+      });
+    }
+    void sendConversationSnapshot(ws, userId, conversationId).catch((error) => {
+      logger.warn('Failed to send AI conversation snapshot from event', {
+        conversationId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  });
+  state.subscriptions.set(conversationId, unsubscribe);
+}
+
+function unsubscribeFromConversation(state: WSConnectionState, conversationId: string): void {
+  const unsubscribe = state.subscriptions.get(conversationId);
+  if (!unsubscribe) return;
+  unsubscribe();
+  state.subscriptions.delete(conversationId);
+}
+
+function unsubscribeFromAllConversations(state: WSConnectionState): void {
+  for (const unsubscribe of state.subscriptions.values()) unsubscribe();
+  state.subscriptions.clear();
 }
 
 async function authenticateFromSession(sessionId: string): Promise<User | null> {
@@ -141,9 +213,7 @@ export function createWSHandlers() {
         user: null,
         sessionId: null,
         authenticated: false,
-        currentAbortController: null,
-        currentRequestId: null,
-        pendingApproval: null,
+        subscriptions: new Map(),
         keepaliveInterval: null,
       };
 
@@ -162,13 +232,15 @@ export function createWSHandlers() {
       const state = wsStates.get(ws);
       if (!state) return;
 
+      let raw: Record<string, unknown>;
       let msg: WSClientMessage;
       try {
-        const raw = JSON.parse(typeof event.data === 'string' ? event.data : String(event.data));
-        if (!raw || typeof raw !== 'object' || typeof raw.type !== 'string') {
+        const parsed = JSON.parse(typeof event.data === 'string' ? event.data : String(event.data));
+        if (!parsed || typeof parsed !== 'object' || typeof parsed.type !== 'string') {
           send(ws, { type: 'error', requestId: '', message: 'Invalid message format' });
           return;
         }
+        raw = parsed as Record<string, unknown>;
         msg = raw as WSClientMessage;
       } catch {
         send(ws, { type: 'error', requestId: '', message: 'Invalid JSON' });
@@ -202,159 +274,220 @@ export function createWSHandlers() {
 
       const user = state.user!;
 
-      if (msg.type === 'cancel') {
-        if (state.currentAbortController) {
-          state.currentAbortController.abort();
-          state.currentAbortController = null;
-        }
-        state.pendingApproval = null;
-        send(ws, { type: 'done', requestId: msg.requestId });
-        return;
-      }
-
-      if (msg.type === 'tool_approval') {
-        const pending = state.pendingApproval;
-        logger.info('Tool approval received', {
-          msgToolCallId: msg.toolCallId,
-          pendingToolCallId: pending?.toolCallId,
-          pendingToolName: pending?.toolName,
-        });
-        if (!pending || pending.toolCallId !== msg.toolCallId) {
-          send(ws, { type: 'error', requestId: msg.requestId, message: 'No pending approval for this tool call' });
-          return;
-        }
-
-        state.pendingApproval = null;
-        const aiService = container.resolve(AIService);
-        const abortController = new AbortController();
-        state.currentAbortController = abortController;
-
+      if (msg.type === 'conversation.subscribe') {
         try {
-          const generator = aiService.resumeAfterApproval(
-            user,
-            pending.toolCallId,
-            pending.toolName,
-            pending.toolArgs,
-            msg.approved,
-            pending.messages,
-            pending.pageContext,
-            abortController.signal,
-            msg.requestId,
-            (msg as any).answer,
-            (msg as any).answers,
-            pending.queuedApprovals,
-            pending.conversationId
-          );
-
-          for await (const evt of generator) {
-            if (evt.type === 'tool_approval_required') {
-              const approvalEvt = evt as any;
-              state.pendingApproval = {
-                toolCallId: approvalEvt.id,
-                toolName: approvalEvt.name,
-                toolArgs: approvalEvt.arguments,
-                messages: approvalEvt._pendingMessages || pending.messages,
-                pageContext: pending.pageContext,
-                conversationId: pending.conversationId,
-                allQuestions: approvalEvt._allQuestions,
-                queuedApprovals: approvalEvt._queuedApprovals,
-              };
-              const { _pendingMessages, _allQuestions, _queuedApprovals, ...clientEvt } = approvalEvt;
-              send(ws, clientEvt);
-            } else {
-              send(ws, evt);
-            }
-          }
-        } catch (err) {
-          if (!(err instanceof Error && err.name === 'AbortError')) {
-            send(ws, {
-              type: 'error',
-              requestId: msg.requestId,
-              message: err instanceof Error ? err.message : 'Error',
-            });
-            send(ws, { type: 'done', requestId: msg.requestId });
-          }
-        } finally {
-          state.currentAbortController = null;
+          subscribeToConversation(ws, state, user.id, msg.conversationId);
+          send(ws, {
+            type: 'command.ack',
+            commandType: msg.type,
+            clientCommandId: msg.clientCommandId,
+            conversationId: msg.conversationId,
+          });
+          await sendConversationSnapshot(ws, user.id, msg.conversationId);
+        } catch (error) {
+          sendCommandError(ws, msg, error, 'Failed to subscribe to conversation');
         }
         return;
       }
 
-      if (msg.type === 'chat') {
-        const rateCheck = await checkRateLimit(user.id);
-        if (!rateCheck.allowed) {
-          if (rateCheck.unavailable) {
-            send(ws, {
-              type: 'error',
-              requestId: msg.requestId,
-              code: 'RATE_LIMIT_UNAVAILABLE',
-              message: 'Gateway is temporarily unavailable',
-            });
-            send(ws, { type: 'done', requestId: msg.requestId });
-            return;
-          }
-          send(ws, { type: 'rate_limited', retryAfter: rateCheck.retryAfter });
-          return;
-        }
+      if (msg.type === 'conversation.unsubscribe') {
+        unsubscribeFromConversation(state, msg.conversationId);
+        send(ws, { type: 'command.ack', commandType: msg.type, conversationId: msg.conversationId });
+        return;
+      }
 
-        const aiService = container.resolve(AIService);
-        const abortController = new AbortController();
-        state.currentAbortController = abortController;
-        state.currentRequestId = msg.requestId;
-        if (msg.conversationId && msg.context) {
-          await persistConversationContext(user.id, msg.conversationId, msg.context);
-        }
-
+      if (msg.type === 'conversation.sync') {
         try {
-          const generator = aiService.streamChat(
-            user,
-            msg.messages,
-            msg.context,
-            abortController.signal,
-            msg.requestId,
-            msg.conversationId
-          );
-
-          for await (const evt of generator) {
-            if (evt.type === 'tool_approval_required') {
-              const approvalEvt = evt as any;
-              state.pendingApproval = {
-                toolCallId: approvalEvt.id,
-                toolName: approvalEvt.name,
-                toolArgs: approvalEvt.arguments,
-                messages: approvalEvt._pendingMessages || [],
-                pageContext: msg.context,
-                conversationId: msg.conversationId,
-                allQuestions: approvalEvt._allQuestions,
-                queuedApprovals: approvalEvt._queuedApprovals,
-              };
-              const { _pendingMessages, _allQuestions, _queuedApprovals, ...clientEvt } = approvalEvt;
-              send(ws, clientEvt);
-            } else {
-              send(ws, evt);
-            }
-          }
-        } catch (err) {
-          if (!(err instanceof Error && err.name === 'AbortError')) {
-            send(ws, {
-              type: 'error',
-              requestId: msg.requestId,
-              message: err instanceof Error ? err.message : 'Error',
-            });
-            send(ws, { type: 'done', requestId: msg.requestId });
-          }
-        } finally {
-          state.currentAbortController = null;
-          state.currentRequestId = null;
+          subscribeToConversation(ws, state, user.id, msg.conversationId);
+          await sendConversationSnapshot(ws, user.id, msg.conversationId);
+          send(ws, {
+            type: 'command.ack',
+            commandType: msg.type,
+            clientCommandId: msg.clientCommandId,
+            conversationId: msg.conversationId,
+          });
+        } catch (error) {
+          sendCommandError(ws, msg, error, 'Failed to sync conversation');
         }
         return;
       }
+
+      if (msg.type === 'conversation.send_message') {
+        try {
+          const content = msg.content.trim();
+          if (!content) throw new AppError(400, 'AI_MESSAGE_REQUIRED', 'Message content is required');
+
+          const rateCheck = await checkRateLimit(user.id);
+          if (!rateCheck.allowed) {
+            const code = rateCheck.unavailable ? 'RATE_LIMIT_UNAVAILABLE' : 'RATE_LIMITED';
+            throw new AppError(
+              rateCheck.unavailable ? 503 : 429,
+              code,
+              rateCheck.unavailable ? 'Gateway is temporarily unavailable' : 'AI rate limit exceeded',
+              rateCheck.unavailable ? undefined : { retryAfter: rateCheck.retryAfter }
+            );
+          }
+
+          const runService = container.resolve(AIRunService);
+          const result = await runService.startUserRun({
+            conversationId: msg.conversationId ?? null,
+            userId: user.id,
+            title: titleFromContent(content),
+            userMessage: {
+              role: 'user',
+              content,
+              ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
+            },
+            clientCommandId: msg.clientCommandId,
+            lastContext: msg.context ? { ...msg.context } : null,
+          });
+          subscribeToConversation(ws, state, user.id, result.conversationId);
+
+          send(ws, {
+            type: 'command.ack',
+            commandType: msg.type,
+            clientCommandId: msg.clientCommandId,
+            conversationId: result.conversationId,
+            runId: result.run.id,
+            duplicate: result.duplicate,
+          });
+          const snapshot = await sendConversationSnapshot(ws, user.id, result.conversationId);
+          send(ws, {
+            type: 'run.status_changed',
+            conversationId: result.conversationId,
+            run: snapshot.runtime.activeRun,
+          });
+          if (!result.duplicate) {
+            runService.startRunExecution(user, result.run.id);
+          }
+        } catch (error) {
+          sendCommandError(ws, msg, error, 'Failed to send AI message');
+        }
+        return;
+      }
+
+      if (msg.type === 'run.stop') {
+        try {
+          const runService = container.resolve(AIRunService);
+          const result = await runService.stopRun({
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            userId: user.id,
+          });
+          send(ws, {
+            type: 'command.ack',
+            commandType: msg.type,
+            clientCommandId: msg.clientCommandId,
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            duplicate: result.duplicate,
+          });
+          send(ws, { type: 'run.status_changed', conversationId: msg.conversationId, run: result.run });
+          await sendConversationSnapshot(ws, user.id, msg.conversationId);
+        } catch (error) {
+          sendCommandError(ws, msg, error, 'Failed to stop AI run');
+        }
+        return;
+      }
+
+      if (msg.type === 'approval.decide') {
+        try {
+          const runService = container.resolve(AIRunService);
+          const result = await runService.decideToolCall({
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            toolCallId: msg.approvalId,
+            userId: user.id,
+            clientCommandId: msg.clientCommandId,
+            decision: msg.decision,
+          });
+          send(ws, {
+            type: 'command.ack',
+            commandType: msg.type,
+            clientCommandId: msg.clientCommandId,
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            duplicate: result.duplicate,
+          });
+          send(ws, {
+            type: 'approval.updated',
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            approval: result.toolCall,
+            duplicate: result.duplicate,
+          });
+          await sendConversationSnapshot(ws, user.id, msg.conversationId);
+          if (!result.duplicate) {
+            runService.startApprovalContinuation(user, {
+              conversationId: msg.conversationId,
+              runId: msg.runId,
+              toolCall: result.toolCall,
+              approved: msg.decision === 'approved',
+            });
+          }
+        } catch (error) {
+          sendCommandError(ws, msg, error, 'Failed to decide AI tool approval');
+        }
+        return;
+      }
+
+      if (msg.type === 'question.answer') {
+        try {
+          const runService = container.resolve(AIRunService);
+          const result = await runService.answerQuestion({
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            questionId: msg.questionId,
+            userId: user.id,
+            clientCommandId: msg.clientCommandId,
+            answer: msg.answer,
+          });
+          send(ws, {
+            type: 'command.ack',
+            commandType: msg.type,
+            clientCommandId: msg.clientCommandId,
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            duplicate: result.duplicate,
+          });
+          send(ws, {
+            type: 'question.answered',
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            question: result.question,
+            duplicate: result.duplicate,
+          });
+          await sendConversationSnapshot(ws, user.id, msg.conversationId);
+          if (!result.duplicate && result.remainingPendingQuestions.length === 0) {
+            runService.startQuestionContinuation(user, {
+              conversationId: msg.conversationId,
+              runId: msg.runId,
+              question: result.question,
+            });
+          }
+        } catch (error) {
+          sendCommandError(ws, msg, error, 'Failed to answer AI question');
+        }
+        return;
+      }
+
+      send(ws, {
+        type: 'command.error',
+        commandType: raw.type as string,
+        clientCommandId:
+          typeof raw.clientCommandId === 'string' ? raw.clientCommandId : (raw.requestId as string | undefined),
+        conversationId: typeof raw.conversationId === 'string' ? raw.conversationId : undefined,
+        runId: typeof raw.runId === 'string' ? raw.runId : undefined,
+        code: 'AI_UNKNOWN_COMMAND',
+        message: 'Unknown AI websocket command',
+        statusCode: 400,
+      });
     },
 
     onClose(_event: unknown, ws: WSContext) {
       const state = wsStates.get(ws);
       if (state) {
-        if (state.currentAbortController) state.currentAbortController.abort();
+        unsubscribeFromAllConversations(state);
         if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
         wsStates.delete(ws);
       }
@@ -364,7 +497,7 @@ export function createWSHandlers() {
       logger.error('WebSocket error');
       const state = wsStates.get(ws);
       if (state) {
-        if (state.currentAbortController) state.currentAbortController.abort();
+        unsubscribeFromAllConversations(state);
         if (state.keepaliveInterval) clearInterval(state.keepaliveInterval);
         wsStates.delete(ws);
       }

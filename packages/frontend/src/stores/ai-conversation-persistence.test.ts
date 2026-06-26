@@ -1,29 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  compactConversation,
-  listConversations,
-  saveConversation,
-} from "@/services/ai-conversations";
+import { listConversations } from "@/services/ai-conversations";
 import { resetAIStateForAuthChange, useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import type { WSServerMessage } from "@/types/ai";
 
 vi.mock("@/services/ai-conversations", () => ({
-  saveConversation: vi.fn(async (_title, messages, lastContext) => ({
-    id: "conversation-1",
-    title: "hello",
-    messages,
-    lastContext: lastContext ?? null,
-    updatedAt: new Date().toISOString(),
-  })),
-  compactConversation: vi.fn(async (id, messages, lastContext) => ({
-    id,
-    title: "hello",
-    messages,
-    lastContext: lastContext ?? null,
-    updatedAt: new Date().toISOString(),
-  })),
   listConversations: vi.fn(async () => []),
   getConversation: vi.fn(),
   deleteConversation: vi.fn(),
@@ -54,75 +36,65 @@ class MockWebSocket {
   }
 }
 
-describe("AI conversation persistence", () => {
+function setAuthenticatedUser() {
+  useAuthStore.setState({
+    user: {
+      id: "user-1",
+      email: "user@example.com",
+      name: "User One",
+      groupName: "admin",
+      scopes: ["feat:ai:use"],
+      isBlocked: false,
+    } as any,
+    isAuthenticated: true,
+    isLoading: false,
+  });
+}
+
+async function connectAI() {
+  vi.stubGlobal("WebSocket", MockWebSocket);
+  setAuthenticatedUser();
+
+  const connectPromise = useAIStore.getState().connect();
+  const socket = MockWebSocket.instances[0];
+  socket.emit({ type: "auth_ok" });
+  await connectPromise;
+  return socket;
+}
+
+function sentPayloads(socket: MockWebSocket): Array<Record<string, unknown>> {
+  return vi.mocked(socket.send).mock.calls.map(([payload]) => JSON.parse(String(payload)));
+}
+
+describe("AI backend runtime store", () => {
   afterEach(() => {
     resetAIStateForAuthChange();
     useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false });
     useUIStore.setState({
-      aiAlwaysAskApprovals: false,
-      aiBypassCreateApprovals: false,
-      aiBypassEditApprovals: false,
-      aiBypassDeleteApprovals: false,
+      aiApprovalMode: "normal",
     });
     MockWebSocket.instances = [];
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
-  it("saves the final assistant answer when streaming completes", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
+  it("sends user turns through the backend-owned runtime socket command", async () => {
+    const socket = await connectAI();
 
     useAIStore.getState().sendMessage("hello");
-    await vi.waitFor(() => expect(saveConversation).toHaveBeenCalled());
 
-    socket.emit({ type: "text_delta", requestId: "request-1", content: "final answer" });
-    socket.emit({ type: "done", requestId: "request-1" });
-
-    await vi.waitFor(() => expect(compactConversation).toHaveBeenCalled());
-    const [, savedMessages] = vi.mocked(compactConversation).mock.calls.at(-1)!;
-    expect(savedMessages).toEqual(
+    expect(sentPayloads(socket)).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ role: "user", content: "hello" }),
         expect.objectContaining({
-          role: "assistant",
-          content: "final answer",
-          isStreaming: false,
+          type: "conversation.send_message",
+          content: "hello",
         }),
       ])
     );
-    expect(listConversations).toHaveBeenCalled();
   });
 
   it("refreshes all recent conversations without blanking an existing sidebar list", async () => {
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
+    setAuthenticatedUser();
     useAIStore.setState({
       recentConversations: [
         {
@@ -164,25 +136,8 @@ describe("AI conversation persistence", () => {
     expect(useAIStore.getState().recentConversations).toHaveLength(6);
   });
 
-  it("starts an empty quick action in a new conversation instead of replacing the previous chat", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
+  it("starts an empty quick action in a new backend conversation instead of replacing the previous chat", async () => {
+    const socket = await connectAI();
 
     useAIStore.setState({
       messages: [],
@@ -195,495 +150,239 @@ describe("AI conversation persistence", () => {
       startNewConversation: true,
     });
 
-    await vi.waitFor(() => expect(saveConversation).toHaveBeenCalled());
-    expect(saveConversation).toHaveBeenCalledWith(
-      "Give me an overview of the system status",
-      expect.any(Array),
-      null,
-      { createNew: true }
-    );
-    expect(useAIStore.getState().activeConversationId).toBe("conversation-1");
-
-    await vi.waitFor(() =>
-      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
-    );
-    const chatPayload = JSON.parse(
-      vi
-        .mocked(socket.send)
-        .mock.calls.find(([payload]) => String(payload).includes('"type":"chat"'))?.[0] as string
-    );
-    expect(chatPayload.conversationId).toBe("conversation-1");
-    expect(chatPayload.conversationId).not.toBe("old-conversation");
+    const payload = sentPayloads(socket).find((item) => item.type === "conversation.send_message");
+    expect(payload).toMatchObject({
+      content: "Give me an overview of the system status",
+    });
+    expect(payload).not.toHaveProperty("conversationId", "old-conversation");
+    expect(useAIStore.getState().activeConversationId).toBeNull();
   });
 
-  it("keeps multi-step assistant text and tool calls in streaming order", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
+  it("projects backend runtime snapshots into messages and pending approval state", async () => {
+    const socket = await connectAI();
 
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
-
-    useAIStore.getState().sendMessage("do a multi-step task");
-    await vi.waitFor(() => expect(saveConversation).toHaveBeenCalled());
-
-    socket.emit({ type: "text_delta", requestId: "request-1", content: "first text" });
     socket.emit({
-      type: "tool_call_start",
-      requestId: "request-1",
-      id: "tool-1",
-      name: "find_resource",
-      arguments: { query: "redis" },
+      type: "command.ack",
+      commandType: "conversation.send_message",
+      clientCommandId: "command-1",
+      conversationId: "conversation-1",
+      runId: "run-1",
     });
-    socket.emit({
-      type: "tool_result",
-      requestId: "request-1",
-      id: "tool-1",
-      name: "find_resource",
-      result: { ok: true },
-    });
-    socket.emit({ type: "text_delta", requestId: "request-1", content: "second text" });
-    socket.emit({
-      type: "tool_call_start",
-      requestId: "request-1",
-      id: "tool-2",
-      name: "read_process_output",
-      arguments: { processId: "process-1" },
-    });
-    socket.emit({
-      type: "tool_result",
-      requestId: "request-1",
-      id: "tool-2",
-      name: "read_process_output",
-      result: { output: "done" },
-    });
-    socket.emit({ type: "text_delta", requestId: "request-1", content: "final text" });
 
-    const assistantMessages = useAIStore
-      .getState()
-      .messages.filter((message) => message.role === "assistant");
-
-    expect(assistantMessages).toMatchObject([
-      {
-        content: "first text",
-        isStreaming: false,
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [{ id: "message-1", role: "assistant", content: "Checking..." }],
+        runtime: {
+          activeRun: {
+            id: "run-1",
+            conversationId: "conversation-1",
+            userId: "user-1",
+            status: "waiting_for_approval",
+            activeMessageId: "message-1",
+            clientCommandId: "command-1",
+            assistantDraftContent: null,
+            error: null,
+            startedAt: "2026-06-26T10:00:00.000Z",
+            completedAt: null,
+            stoppedAt: null,
+            createdAt: "2026-06-26T10:00:00.000Z",
+            updatedAt: "2026-06-26T10:00:01.000Z",
+          },
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [
+            {
+              id: "approval-1",
+              runId: "run-1",
+              conversationId: "conversation-1",
+              assistantMessageId: "message-1",
+              toolCallId: "tool-1",
+              toolName: "pull_docker_image",
+              toolArgs: { imageRef: "redis:latest" },
+              classification: "create",
+              approvalPolicy: "normal",
+              requiredScopes: [],
+              status: "pending_approval",
+              decision: null,
+              result: null,
+              error: null,
+            },
+          ],
+        },
       },
-      {
-        content: "second text",
-        isStreaming: false,
-        toolCalls: [expect.objectContaining({ id: "tool-1", status: "completed" })],
-      },
-      {
-        content: "final text",
-        isStreaming: true,
-        toolCalls: [expect.objectContaining({ id: "tool-2", status: "completed" })],
-      },
+    });
+
+    expect(useAIStore.getState()).toMatchObject({
+      activeConversationId: "conversation-1",
+      activeRunId: "run-1",
+      pendingApprovalToolCallId: null,
+      isStreaming: true,
+    });
+    expect(useAIStore.getState().messages[0].toolCalls).toEqual([
+      expect.objectContaining({
+        id: "approval-1",
+        name: "pull_docker_image",
+        status: "awaiting_approval",
+      }),
     ]);
   });
 
-  it("auto-approves Docker image pulls in bypass create/edit mode", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-    useUIStore.setState({
-      aiBypassCreateApprovals: true,
-      aiBypassEditApprovals: true,
-      aiBypassDeleteApprovals: false,
-    });
-
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
-
-    useAIStore.getState().sendMessage("pull redis image");
-    await vi.waitFor(() =>
-      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
-    );
+  it("renders tool-only active turns in a runtime placeholder instead of the previous assistant reply", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
 
     socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "tool-1",
-      name: "pull_docker_image",
-      arguments: { nodeId: "node-1", imageRef: "redis:latest" },
-    });
-
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
-  });
-
-  it("auto-approves read-only umbrella tool operations without bypass mode", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
-
-    useAIStore.getState().sendMessage("browse rows");
-    await vi.waitFor(() =>
-      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
-    );
-    socket.send.mockClear();
-
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "tool-read",
-      name: "manage_postgres_data",
-      arguments: { operation: "browse_rows", databaseId: "db-1", schema: "public", table: "users" },
-    });
-
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
-  });
-
-  it("classifies node file operations by operation safety", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
-
-    useAIStore.getState().sendMessage("inspect node files");
-    await vi.waitFor(() =>
-      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
-    );
-    socket.send.mockClear();
-
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "node-file-read",
-      name: "manage_node_file",
-      arguments: { operation: "read", nodeId: "node-1", path: "/etc/hosts" },
-    });
-
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
-    socket.send.mockClear();
-
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "node-file-write-normal",
-      name: "manage_node_file",
-      arguments: { operation: "write", nodeId: "node-1", path: "/tmp/test", content: "hello" },
-    });
-
-    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-
-    useUIStore.setState({ aiBypassEditApprovals: true });
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "node-file-write-bypass",
-      name: "manage_node_file",
-      arguments: { operation: "write", nodeId: "node-1", path: "/tmp/test", content: "hello" },
-    });
-
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
-    socket.send.mockClear();
-
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "node-file-delete-normal",
-      name: "manage_node_file",
-      arguments: { operation: "delete", nodeId: "node-1", path: "/tmp/test" },
-    });
-
-    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-
-    useUIStore.setState({ aiBypassDeleteApprovals: true });
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "node-file-delete-bypass",
-      name: "manage_node_file",
-      arguments: { operation: "delete", nodeId: "node-1", path: "/tmp/test" },
-    });
-
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
-  });
-
-  it("classifies folder mutations as edit operations for bypass mode", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
-
-    useAIStore.getState().sendMessage("move folder items");
-    await vi.waitFor(() =>
-      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
-    );
-    socket.send.mockClear();
-
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "folder-move-normal",
-      name: "manage_resource_folder",
-      arguments: {
-        operation: "move_resources",
-        resourceType: "domains",
-        folderId: "folder-1",
-        resourceIds: ["domain-1"],
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [
+          { id: "assistant-old", role: "assistant", content: "Previous answer" },
+          { id: "user-new", role: "user", content: "Pull redis" },
+        ],
+        runtime: {
+          activeRun: {
+            id: "run-1",
+            conversationId: "conversation-1",
+            userId: "user-1",
+            status: "waiting_for_approval",
+            activeMessageId: "user-new",
+            clientCommandId: "command-1",
+            assistantDraftContent: null,
+            error: null,
+            startedAt: "2026-06-26T10:00:00.000Z",
+            completedAt: null,
+            stoppedAt: null,
+            createdAt: "2026-06-26T10:00:00.000Z",
+            updatedAt: "2026-06-26T10:00:01.000Z",
+          },
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [
+            {
+              id: "approval-1",
+              runId: "run-1",
+              conversationId: "conversation-1",
+              assistantMessageId: null,
+              toolCallId: "tool-1",
+              toolName: "pull_docker_image",
+              toolArgs: { imageRef: "redis:latest" },
+              classification: "create",
+              approvalPolicy: "normal",
+              requiredScopes: [],
+              status: "pending_approval",
+              decision: null,
+              result: null,
+              error: null,
+            },
+          ],
+        },
       },
     });
 
-    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
+    const { messages } = useAIStore.getState();
+    expect(messages.find((message) => message.id === "assistant-old")?.toolCalls).toBeUndefined();
+    expect(messages.at(-1)).toMatchObject({
+      id: "run-1:runtime",
+      role: "assistant",
+      isStreaming: true,
+      toolCalls: [expect.objectContaining({ id: "approval-1" })],
+    });
+  });
 
-    useUIStore.setState({ aiBypassEditApprovals: true });
+  it("ignores stale snapshots after the active conversation changes", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: "conversation-new",
+      messages: [{ id: "new-user", role: "user", content: "New chat" }],
+    });
+
     socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "folder-move-bypass",
-      name: "manage_resource_folder",
-      arguments: {
-        operation: "move_resources",
-        resourceType: "domains",
-        folderId: "folder-1",
-        resourceIds: ["domain-1"],
+      type: "conversation.snapshot",
+      conversationId: "conversation-old",
+      snapshot: {
+        conversation: {
+          id: "conversation-old",
+          title: "Old chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [{ id: "old-assistant", role: "assistant", content: "Old answer" }],
+        runtime: {
+          activeRun: null,
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [],
+        },
       },
     });
 
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
+    expect(useAIStore.getState().activeConversationId).toBe("conversation-new");
+    expect(useAIStore.getState().messages).toEqual([
+      { id: "new-user", role: "user", content: "New chat" },
+    ]);
   });
 
-  it("does not auto-approve read-only tools in always ask mode", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
+  it("sends approval decisions idempotently to the backend runtime", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: "conversation-1",
+      activeRunId: "run-1",
+      pendingApprovalToolCallId: "approval-1",
+      messages: [
+        {
+          id: "message-1",
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "approval-1",
+              name: "pull_docker_image",
+              arguments: { imageRef: "redis:latest" },
+              status: "awaiting_approval",
+            },
+          ],
+        },
+      ],
     });
-    useUIStore.setState({ aiAlwaysAskApprovals: true });
 
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
+    useAIStore.getState().approveTool("approval-1");
 
-    useAIStore.getState().sendMessage("list containers");
-    await vi.waitFor(() =>
-      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
+    expect(sentPayloads(socket)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "approval.decide",
+          conversationId: "conversation-1",
+          runId: "run-1",
+          approvalId: "approval-1",
+          decision: "approved",
+        }),
+      ])
     );
-    socket.send.mockClear();
-
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "tool-read",
-      name: "find_resource",
-      arguments: { query: "redis", types: ["docker_container"] },
-    });
-
-    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-  });
-
-  it("auto-approves Postgres data writes in bypass create/edit mode", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-    useUIStore.setState({
-      aiBypassCreateApprovals: true,
-      aiBypassEditApprovals: true,
-      aiBypassDeleteApprovals: false,
-    });
-
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
-
-    useAIStore.getState().sendMessage("insert row");
-    await vi.waitFor(() =>
-      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
-    );
-    socket.send.mockClear();
-
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "tool-write",
-      name: "manage_postgres_data",
-      arguments: { operation: "insert_row", databaseId: "db-1", schema: "public", table: "users" },
-    });
-
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
-  });
-
-  it("only auto-approves sandbox execution in bypass everything mode", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-    useUIStore.setState({
-      aiBypassCreateApprovals: true,
-      aiBypassEditApprovals: true,
-      aiBypassDeleteApprovals: false,
-    });
-
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
-
-    useAIStore.getState().sendMessage("run script");
-    await vi.waitFor(() =>
-      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
-    );
-    socket.send.mockClear();
-
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "sandbox-1",
-      name: "execute_script",
-      arguments: { script: "echo hi" },
-    });
-    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-
-    useUIStore.setState({ aiBypassDeleteApprovals: true });
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "sandbox-2",
-      name: "execute_script",
-      arguments: { script: "echo hi" },
-    });
-
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
-    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"approved":true'));
-  });
-
-  it("does not auto-approve interaction questions", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "User One",
-        groupName: "admin",
-        scopes: ["feat:ai:use"],
-        isBlocked: false,
-      } as any,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-
-    const connectPromise = useAIStore.getState().connect();
-    const socket = MockWebSocket.instances[0];
-    socket.emit({ type: "auth_ok" });
-    await connectPromise;
-
-    useAIStore.getState().sendMessage("ask a question");
-    await vi.waitFor(() =>
-      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
-    );
-    socket.send.mockClear();
-
-    socket.emit({
-      type: "tool_approval_required",
-      requestId: "request-1",
-      id: "question-1",
-      name: "ask_question",
-      arguments: { question: "Which node?" },
-    });
-
-    expect(socket.send).not.toHaveBeenCalledWith(expect.stringContaining('"type":"tool_approval"'));
   });
 });

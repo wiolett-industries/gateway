@@ -115,19 +115,8 @@ function usePageContext(): PageContext {
 const SLASH_COMMANDS = [
   { name: "new", description: "Start new conversation" },
   { name: "clear", description: "Clear conversation" },
-  { name: "compact", description: "Compact saved context" },
   { name: "context", description: "Show token usage" },
 ];
-
-function userMessagesAfterLastCompact(
-  messages: ReturnType<typeof useAIStore.getState>["messages"]
-): number {
-  const lastCompactIndex = messages.reduce(
-    (latest, message, index) => (message.compactMarker ? index : latest),
-    -1
-  );
-  return messages.slice(lastCompactIndex + 1).filter((message) => message.role === "user").length;
-}
 
 function formatConversationDate(value: string): string {
   const date = new Date(value);
@@ -166,8 +155,6 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     answerQuestion,
     stopStreaming,
     clearMessages,
-    clearOldestConversationContext,
-    rollbackToMessage,
     handleSlashCommand,
     fetchRecentConversations,
     loadConversation,
@@ -186,10 +173,6 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const context = usePageContext();
   const { aiApprovalMode: approvalMode } = useUIStore();
-  const canCompact = userMessagesAfterLastCompact(messages) > 3;
-  const visibleSlashCommands = SLASH_COMMANDS.filter(
-    (command) => command.name !== "compact" || canCompact
-  );
   const approvalModeLabel = formatAIApprovalModeLabel(approvalMode);
   const conversationBlock = getConversationBlock(messages);
 
@@ -398,30 +381,13 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     // Slash command detection
     if (val.startsWith("/") && !val.includes(" ")) {
       const query = val.slice(1).toLowerCase();
-      const matches = visibleSlashCommands.filter((c) => c.name.startsWith(query));
+      const matches = SLASH_COMMANDS.filter((c) => c.name.startsWith(query));
       setSlashResults(matches);
       setSlashIndex(0);
     } else {
       setSlashResults([]);
     }
   };
-
-  const handleEditUserMessage = useCallback(
-    (messageId: string, content: string, nextAttachments: AIMessageAttachment[]) => {
-      const message = rollbackToMessage(messageId);
-      if (!message) return;
-      setInput(content);
-      setAttachments(nextAttachments);
-      setSlashResults([]);
-      requestAnimationFrame(() => {
-        const textarea = textareaRef.current;
-        if (!textarea) return;
-        textarea.focus();
-        autoResizeTextarea(textarea);
-      });
-    },
-    [rollbackToMessage, setAttachments, setInput]
-  );
 
   // Find next unanswered question and count progress
   const { activeQuestion, questionIndex, questionsTotal } = (() => {
@@ -547,7 +513,6 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
                 onApprove={approveTool}
                 onReject={rejectTool}
                 onAnswer={answerQuestion}
-                onEditUserMessage={handleEditUserMessage}
               />
             ))}
             <div className="pb-4" />
@@ -580,11 +545,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
           <QuestionBlock toolCall={activeQuestion} onAnswer={answerQuestion} />
         </div>
       ) : conversationBlock ? (
-        <AIConversationBlockedBlock
-          block={conversationBlock}
-          onNewChat={clearMessages}
-          onClearOldContext={clearOldestConversationContext}
-        />
+        <AIConversationBlockedBlock block={conversationBlock} onNewChat={clearMessages} />
       ) : (
         <div className="relative shrink-0">
           <AIComposer

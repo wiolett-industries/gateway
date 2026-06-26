@@ -42,33 +42,6 @@ export const ChatRequestSchema = z.object({
   context: PageContextSchema.optional(),
 });
 
-export const AIConversationMessageSchema = z
-  .object({
-    id: z.string(),
-    role: z.enum(['user', 'assistant']),
-    content: z.string(),
-    toolCalls: z.array(z.unknown()).optional(),
-    isStreaming: z.boolean().optional(),
-    localOnly: z.boolean().optional(),
-    rawToolCalls: z.array(z.unknown()).optional(),
-  })
-  .passthrough();
-
-export const SaveAIConversationSchema = z.object({
-  title: z.string().trim().min(1).max(255),
-  messages: z.array(AIConversationMessageSchema),
-  lastContext: PageContextSchema.nullable().optional(),
-  createNew: z.boolean().optional(),
-});
-
-export const UpdateAIConversationSchema = z.object({
-  title: z.string().trim().min(1).max(255).optional(),
-  messages: z.array(AIConversationMessageSchema).optional(),
-  lastContext: PageContextSchema.nullable().optional(),
-  discoveredToolsets: z.array(z.string().trim().min(1).max(100)).optional(),
-  checkpoint: z.record(z.string(), z.unknown()).nullable().optional(),
-});
-
 export const AIConfigUpdateSchema = z.object({
   enabled: z.boolean().optional(),
   providerUrl: z.union([z.string().url(), z.literal('')]).optional(),
@@ -90,9 +63,4 @@ export const AIConfigUpdateSchema = z.object({
   webSearchBaseUrl: z.union([z.string().url(), z.literal('')]).optional(),
   sandboxEnabled: z.boolean().optional(),
   sandboxDefaultTier: z.enum(['low', 'medium', 'high']).optional(),
-});
-
-export const ToolApprovalSchema = z.object({
-  toolCallId: z.string(),
-  approved: z.boolean(),
 });

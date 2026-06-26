@@ -75,7 +75,7 @@ import {
 import type { AISettingsService } from './ai.settings.service.js';
 import { manageStatusPageTool } from './ai.status-page-tools.js';
 import { buildAISystemPrompt } from './ai.system-prompt.js';
-import { AI_TOOLS, getOpenAITools, isDestructiveTool, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
+import { AI_TOOLS, getOpenAITools, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
 import type {
   AIMessageAttachment,
   ChatMessage,
@@ -85,6 +85,7 @@ import type {
   WSServerMessage,
 } from './ai.types.js';
 import { executeWebSearch } from './ai.web-search.js';
+import { getAIToolApprovalDecision } from './ai-approval-policy.js';
 import { AIConversationService } from './ai-conversation.service.js';
 
 const logger = createChildLogger('AIService');
@@ -1405,17 +1406,17 @@ export class AIService {
         return { ...tc, parsedArgs };
       });
 
-      // Separate questions, destructive approvals, and immediate read-only tools.
+      // Separate questions, tools that require approval, and immediate tools.
       const questionTools: typeof parsedToolCalls = [];
-      const destructiveTools: typeof parsedToolCalls = [];
+      const approvalTools: typeof parsedToolCalls = [];
 
       for (const tc of parsedToolCalls) {
         if (tc.name === 'ask_question') {
           questionTools.push(tc);
           continue;
         }
-        if (isDestructiveTool(tc.name)) {
-          destructiveTools.push(tc);
+        if (getAIToolApprovalDecision(tc.name, user.aiApprovalMode).requiresApproval) {
+          approvalTools.push(tc);
           continue;
         }
 
@@ -1472,22 +1473,22 @@ export class AIService {
         return;
       }
 
-      // Destructive tool pause. Queue later destructive calls instead of returning fake "skipped" tool results.
-      if (destructiveTools.length > 0) {
-        const [destructiveTool, ...queued] = destructiveTools;
+      // Approval pause. Queue later approval-gated calls instead of returning fake "skipped" tool results.
+      if (approvalTools.length > 0) {
+        const [approvalTool, ...queued] = approvalTools;
         yield {
           type: 'tool_call_start',
           requestId,
-          id: destructiveTool.id,
-          name: destructiveTool.name,
-          arguments: destructiveTool.parsedArgs,
+          id: approvalTool.id,
+          name: approvalTool.name,
+          arguments: approvalTool.parsedArgs,
         };
         yield {
           type: 'tool_approval_required',
           requestId,
-          id: destructiveTool.id,
-          name: destructiveTool.name,
-          arguments: destructiveTool.parsedArgs,
+          id: approvalTool.id,
+          name: approvalTool.name,
+          arguments: approvalTool.parsedArgs,
           _pendingMessages: messages,
           _queuedApprovals: queued.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.parsedArgs })),
         } as any;
@@ -1676,15 +1677,15 @@ export class AIService {
       });
 
       const questionTools2: typeof parsedToolCalls = [];
-      const destructiveTools2: typeof parsedToolCalls = [];
+      const approvalTools2: typeof parsedToolCalls = [];
 
       for (const tc of parsedToolCalls) {
         if (tc.name === 'ask_question') {
           questionTools2.push(tc);
           continue;
         }
-        if (isDestructiveTool(tc.name)) {
-          destructiveTools2.push(tc);
+        if (getAIToolApprovalDecision(tc.name, user.aiApprovalMode).requiresApproval) {
+          approvalTools2.push(tc);
           continue;
         }
 
@@ -1738,21 +1739,21 @@ export class AIService {
         return;
       }
 
-      if (destructiveTools2.length > 0) {
-        const [destructiveTool2, ...queued] = destructiveTools2;
+      if (approvalTools2.length > 0) {
+        const [approvalTool2, ...queued] = approvalTools2;
         yield {
           type: 'tool_call_start',
           requestId,
-          id: destructiveTool2.id,
-          name: destructiveTool2.name,
-          arguments: destructiveTool2.parsedArgs,
+          id: approvalTool2.id,
+          name: approvalTool2.name,
+          arguments: approvalTool2.parsedArgs,
         };
         yield {
           type: 'tool_approval_required',
           requestId,
-          id: destructiveTool2.id,
-          name: destructiveTool2.name,
-          arguments: destructiveTool2.parsedArgs,
+          id: approvalTool2.id,
+          name: approvalTool2.name,
+          arguments: approvalTool2.parsedArgs,
           _pendingMessages: messages,
           _queuedApprovals: queued.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.parsedArgs })),
         } as any;

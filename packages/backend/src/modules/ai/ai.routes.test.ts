@@ -115,9 +115,9 @@ describe('AI routes session-only authentication', () => {
     });
   });
 
-  it('stores and restores conversations for the authenticated user', async () => {
+  it('loads conversations for the authenticated user', async () => {
     registerServices();
-    const saveConversation = vi.fn().mockResolvedValue({
+    const getConversation = vi.fn().mockResolvedValue({
       id: 'conversation-1',
       title: 'debug session',
       createdAt: new Date('2026-06-24T09:00:00Z'),
@@ -129,23 +129,15 @@ describe('AI routes session-only authentication', () => {
       checkpoint: null,
     });
     container.registerInstance(AIConversationService, {
-      saveConversation,
+      getConversation,
     } as unknown as AIConversationService);
 
-    const response = await createApp().request('/api/ai/conversations', {
-      method: 'POST',
-      headers: { Cookie: 'session_id=session-1', 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: 'debug session',
-        messages: [{ id: 'message-1', role: 'user', content: 'hello' }],
-      }),
+    const response = await createApp().request('/api/ai/conversations/conversation-1', {
+      headers: { Cookie: 'session_id=session-1' },
     });
 
     expect(response.status).toBe(200);
-    expect(saveConversation).toHaveBeenCalledWith(USER.id, {
-      title: 'debug session',
-      messages: [{ id: 'message-1', role: 'user', content: 'hello' }],
-    });
+    expect(getConversation).toHaveBeenCalledWith(USER.id, 'conversation-1');
     expect(await response.json()).toMatchObject({
       data: {
         id: 'conversation-1',

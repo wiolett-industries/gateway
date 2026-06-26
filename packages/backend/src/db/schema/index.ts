@@ -1,6 +1,7 @@
 export * from './access-lists.js';
 export * from './admin-user-folders.js';
 export * from './ai-conversations.js';
+export * from './ai-runtime.js';
 export * from './alerts.js';
 export * from './api-tokens.js';
 export * from './audit-log.js';

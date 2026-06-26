@@ -20,48 +20,6 @@ export interface AIConversationSummary {
   blockReason: string | null;
 }
 
-export async function saveConversation(
-  name: string,
-  messages: AIMessage[],
-  lastContext?: PageContext | null,
-  options: { createNew?: boolean } = {}
-): Promise<SavedAIConversation> {
-  const saved = await api.saveAIConversation(name, messages, lastContext, options);
-  return {
-    id: saved.id,
-    title: saved.title,
-    messages: saved.messages,
-    lastContext: saved.lastContext ?? null,
-    updatedAt: saved.updatedAt,
-    status: saved.status,
-    blockReason: saved.blockReason,
-  };
-}
-
-export async function compactConversation(
-  id: string,
-  messages: AIMessage[],
-  lastContext?: PageContext | null
-): Promise<SavedAIConversation> {
-  const saved = await api.updateAIConversation(id, { messages, lastContext });
-  return {
-    id: saved.id,
-    title: saved.title,
-    messages: saved.messages,
-    lastContext: saved.lastContext ?? null,
-    updatedAt: saved.updatedAt,
-    status: saved.status,
-    blockReason: saved.blockReason,
-  };
-}
-
-export async function restoreConversation(name: string): Promise<SavedAIConversation | null> {
-  const conversations = await api.listAIConversations();
-  const match = conversations.find((conversation) => conversation.title === name);
-  if (!match) return null;
-  return getConversation(match.id);
-}
-
 export async function getConversation(id: string): Promise<SavedAIConversation> {
   const conversation = await api.getAIConversation(id);
   return {
@@ -85,10 +43,6 @@ export async function listConversations(limit?: number): Promise<AIConversationS
     status: conversation.status,
     blockReason: conversation.blockReason,
   }));
-}
-
-export async function dropConversation(name: string): Promise<void> {
-  await api.deleteAIConversationByTitle(name);
 }
 
 export async function deleteConversation(id: string): Promise<void> {

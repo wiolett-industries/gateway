@@ -7,13 +7,6 @@ export type AIApprovalMode =
   | "bypass-non-destructive"
   | "bypass-everything";
 
-export interface AIApprovalFlags {
-  aiAlwaysAskApprovals: boolean;
-  aiBypassCreateApprovals: boolean;
-  aiBypassEditApprovals: boolean;
-  aiBypassDeleteApprovals: boolean;
-}
-
 export const AI_APPROVAL_MODES: AIApprovalMode[] = [
   "always-ask",
   "normal",
@@ -50,22 +43,6 @@ export const AI_APPROVAL_MODE_META: Record<
     icon: ShieldAlert,
   },
 };
-
-export function flagsToAIApprovalMode(flags: AIApprovalFlags): AIApprovalMode {
-  if (flags.aiAlwaysAskApprovals) return "always-ask";
-  if (flags.aiBypassDeleteApprovals) return "bypass-everything";
-  if (flags.aiBypassCreateApprovals || flags.aiBypassEditApprovals) return "bypass-non-destructive";
-  return "normal";
-}
-
-export function aiApprovalModeToFlags(mode: AIApprovalMode): AIApprovalFlags {
-  return {
-    aiAlwaysAskApprovals: mode === "always-ask",
-    aiBypassCreateApprovals: mode === "bypass-non-destructive" || mode === "bypass-everything",
-    aiBypassEditApprovals: mode === "bypass-non-destructive" || mode === "bypass-everything",
-    aiBypassDeleteApprovals: mode === "bypass-everything",
-  };
-}
 
 export function formatAIApprovalModeLabel(mode: AIApprovalMode): string {
   return `AI mode: ${AI_APPROVAL_MODE_META[mode].menuLabel.toLowerCase()}`;

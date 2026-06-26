@@ -64,40 +64,6 @@ describe("api client contract", () => {
     expect(lastJsonBody(fetchMock)).toEqual({ accessListId: null });
   });
 
-  it("serializes force-create AI conversations", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          data: {
-            id: "conversation-1",
-            title: "System overview (2)",
-            updatedAt: "2026-06-26T00:00:00.000Z",
-            status: "active",
-            blockReason: null,
-            messages: [],
-            lastContext: null,
-          },
-        })
-      );
-
-    await expect(
-      api.saveAIConversation("System overview", [], null, { createNew: true })
-    ).resolves.toMatchObject({
-      id: "conversation-1",
-      title: "System overview (2)",
-    });
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/ai/conversations");
-    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "POST" });
-    expect(lastJsonBody(fetchMock)).toEqual({
-      title: "System overview",
-      messages: [],
-      lastContext: null,
-      createNew: true,
-    });
-  });
-
   it("reads and updates user AI preferences through the auth preferences endpoint", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")

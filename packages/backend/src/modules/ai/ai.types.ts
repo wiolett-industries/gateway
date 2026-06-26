@@ -1,3 +1,5 @@
+import type { AIConversationRuntimeSnapshot } from './ai-run.service.js';
+
 // ── AI Configuration (stored in settings table) ──
 
 export type WebSearchProvider = 'tavily' | 'brave' | 'serper' | 'searxng' | 'exa';
@@ -82,17 +84,34 @@ export type AIConversationStatus = 'active' | 'ended' | 'context_blocked';
 // ── WebSocket Protocol ──
 
 export type WSClientMessage =
-  | { type: 'chat'; requestId: string; messages: ChatMessage[]; context?: PageContext; conversationId?: string }
+  | { type: 'conversation.subscribe'; conversationId: string; clientCommandId?: string }
+  | { type: 'conversation.unsubscribe'; conversationId: string }
+  | { type: 'conversation.sync'; conversationId: string; clientCommandId?: string }
   | {
-      type: 'tool_approval';
-      requestId: string;
-      toolCallId: string;
-      approved: boolean;
+      type: 'conversation.send_message';
+      clientCommandId: string;
       conversationId?: string;
-      answer?: string;
-      answers?: Record<string, string>;
+      content: string;
+      attachments?: AIMessageAttachment[];
+      context?: PageContext;
     }
-  | { type: 'cancel'; requestId: string }
+  | { type: 'run.stop'; conversationId: string; runId: string; clientCommandId: string }
+  | {
+      type: 'approval.decide';
+      conversationId: string;
+      runId: string;
+      approvalId: string;
+      decision: 'approved' | 'rejected';
+      clientCommandId: string;
+    }
+  | {
+      type: 'question.answer';
+      conversationId: string;
+      runId: string;
+      questionId: string;
+      answer: string;
+      clientCommandId: string;
+    }
   | { type: 'ping' };
 
 export type WSServerMessage =
@@ -108,6 +127,41 @@ export type WSServerMessage =
   | { type: 'done'; requestId: string }
   | { type: 'error'; requestId: string; message: string; code?: string }
   | { type: 'rate_limited'; retryAfter: number }
+  | {
+      type: 'command.ack';
+      commandType: WSClientMessage['type'];
+      clientCommandId?: string;
+      conversationId?: string;
+      runId?: string;
+      duplicate?: boolean;
+    }
+  | {
+      type: 'command.error';
+      commandType?: WSClientMessage['type'] | string;
+      clientCommandId?: string;
+      conversationId?: string;
+      runId?: string;
+      code: string;
+      message: string;
+      statusCode?: number;
+    }
+  | { type: 'conversation.snapshot'; conversationId: string; snapshot: AIConversationRuntimeSnapshot }
+  | { type: 'run.status_changed'; conversationId: string; run: AIConversationRuntimeSnapshot['runtime']['activeRun'] }
+  | { type: 'stores.invalidated'; conversationId: string; stores: string[] }
+  | {
+      type: 'approval.updated';
+      conversationId: string;
+      runId: string;
+      approval: AIConversationRuntimeSnapshot['runtime']['toolCalls'][number];
+      duplicate: boolean;
+    }
+  | {
+      type: 'question.answered';
+      conversationId: string;
+      runId: string;
+      question: NonNullable<AIConversationRuntimeSnapshot['runtime']['pendingQuestion']>;
+      duplicate: boolean;
+    }
   | { type: 'pong' };
 
 // ── AI Question (ask_question tool) ──

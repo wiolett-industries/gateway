@@ -295,8 +295,10 @@ To use it:
 Operational notes:
 
 - No data is sent to an AI provider until an admin enables the assistant.
-- Tool calls are permission-gated.
-- Destructive operations require approval unless an admin configures bypass rules.
+- Chat execution is backend-owned. Closing the AI panel or reconnecting the browser does not make an active assistant run depend on that WebSocket connection.
+- Saved conversation history is loaded over REST, while active chat turns, approvals, questions, stops, and live snapshots use the AI WebSocket.
+- Tool calls are permission-gated and scopes are checked by the backend before execution.
+- Destructive operations require approval unless the user's AI approval mode allows the backend to auto-approve that class of tool.
 - AI-initiated actions are flagged in audit logs.
 - The assistant can use Gateway-specific context from its knowledge base.
 

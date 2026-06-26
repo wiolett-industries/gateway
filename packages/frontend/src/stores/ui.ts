@@ -1,11 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import {
-  type AIApprovalMode,
-  aiApprovalModeToFlags,
-  flagsToAIApprovalMode,
-  isAIApprovalMode,
-} from "@/lib/ai-approval-mode";
+import { type AIApprovalMode, isAIApprovalMode } from "@/lib/ai-approval-mode";
 
 type Theme = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";
@@ -42,16 +37,8 @@ interface UIState {
   showAILiteModeCTA: boolean;
   setShowAILiteModeCTA: (show: boolean) => void;
 
-  // AI Approval Bypass
-  aiAlwaysAskApprovals: boolean;
-  aiBypassCreateApprovals: boolean;
-  aiBypassEditApprovals: boolean;
-  aiBypassDeleteApprovals: boolean;
+  // AI Approval Mode
   aiApprovalMode: AIApprovalMode;
-  setAIAlwaysAskApprovals: (v: boolean) => void;
-  setAIBypassCreateApprovals: (v: boolean) => void;
-  setAIBypassEditApprovals: (v: boolean) => void;
-  setAIBypassDeleteApprovals: (v: boolean) => void;
   setAIApprovalMode: (mode: AIApprovalMode) => void;
   hydrateAIApprovalMode: (mode: AIApprovalMode) => void;
 
@@ -115,43 +102,10 @@ export const useUIStore = create<UIState>()(
       showAILiteModeCTA: true,
       setShowAILiteModeCTA: (showAILiteModeCTA) => set({ showAILiteModeCTA }),
 
-      // AI Approval Bypass
-      aiAlwaysAskApprovals: false,
-      aiBypassCreateApprovals: false,
-      aiBypassEditApprovals: false,
-      aiBypassDeleteApprovals: false,
+      // AI Approval Mode
       aiApprovalMode: "normal",
-      setAIAlwaysAskApprovals: (aiAlwaysAskApprovals) =>
-        set((state) => ({
-          aiAlwaysAskApprovals,
-          aiApprovalMode: flagsToAIApprovalMode({ ...state, aiAlwaysAskApprovals }),
-        })),
-      setAIBypassCreateApprovals: (aiBypassCreateApprovals) =>
-        set((state) => ({
-          aiBypassCreateApprovals,
-          aiApprovalMode: flagsToAIApprovalMode({ ...state, aiBypassCreateApprovals }),
-        })),
-      setAIBypassEditApprovals: (aiBypassEditApprovals) =>
-        set((state) => ({
-          aiBypassEditApprovals,
-          aiApprovalMode: flagsToAIApprovalMode({ ...state, aiBypassEditApprovals }),
-        })),
-      setAIBypassDeleteApprovals: (aiBypassDeleteApprovals) =>
-        set((state) => ({
-          aiBypassDeleteApprovals,
-          aiApprovalMode: flagsToAIApprovalMode({ ...state, aiBypassDeleteApprovals }),
-        })),
-      hydrateAIApprovalMode: (aiApprovalMode) =>
-        set({
-          aiApprovalMode,
-          ...aiApprovalModeToFlags(aiApprovalMode),
-        }),
-      setAIApprovalMode: (aiApprovalMode) => {
-        set({
-          aiApprovalMode,
-          ...aiApprovalModeToFlags(aiApprovalMode),
-        });
-      },
+      hydrateAIApprovalMode: (aiApprovalMode) => set({ aiApprovalMode }),
+      setAIApprovalMode: (aiApprovalMode) => set({ aiApprovalMode }),
 
       // Command palette
       commandPaletteOpen: false,
@@ -201,24 +155,24 @@ export const useUIStore = create<UIState>()(
         aiLiteModeIntroAccepted: state.aiLiteModeIntroAccepted,
         pinnedAIConversationIds: state.pinnedAIConversationIds,
         aiApprovalMode: state.aiApprovalMode,
-        aiAlwaysAskApprovals: state.aiAlwaysAskApprovals,
-        aiBypassCreateApprovals: state.aiBypassCreateApprovals,
-        aiBypassEditApprovals: state.aiBypassEditApprovals,
-        aiBypassDeleteApprovals: state.aiBypassDeleteApprovals,
         recentPages: state.recentPages,
       }),
       migrate: (persisted) => {
-        const state = persisted as Partial<UIState> | undefined;
+        const state = persisted as (Partial<UIState> & Record<string, unknown>) | undefined;
         if (!state) return persisted;
-        if (isAIApprovalMode(state.aiApprovalMode)) return persisted;
         return {
-          ...state,
-          aiApprovalMode: flagsToAIApprovalMode({
-            aiAlwaysAskApprovals: !!state.aiAlwaysAskApprovals,
-            aiBypassCreateApprovals: !!state.aiBypassCreateApprovals,
-            aiBypassEditApprovals: !!state.aiBypassEditApprovals,
-            aiBypassDeleteApprovals: !!state.aiBypassDeleteApprovals,
-          }),
+          theme: state.theme,
+          sidebarOpen: state.sidebarOpen,
+          sidebarCollapsed: state.sidebarCollapsed,
+          showUpdateNotifications: state.showUpdateNotifications,
+          showSystemCertificates: state.showSystemCertificates,
+          showAILiteModeCTA: state.showAILiteModeCTA,
+          aiPanelOpen: state.aiPanelOpen,
+          aiLiteMode: state.aiLiteMode,
+          aiLiteModeIntroAccepted: state.aiLiteModeIntroAccepted,
+          pinnedAIConversationIds: state.pinnedAIConversationIds,
+          aiApprovalMode: isAIApprovalMode(state.aiApprovalMode) ? state.aiApprovalMode : "normal",
+          recentPages: state.recentPages,
         };
       },
     }
