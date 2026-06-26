@@ -214,7 +214,9 @@ describe("AISidePanel autoscroll", () => {
           {
             id: "conversation-1",
             title: "Recent chat",
+            createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            lastUserMessageAt: new Date().toISOString(),
             messageCount: 3,
             status: "active",
             blockReason: null,
@@ -270,7 +272,9 @@ describe("AISidePanel autoscroll", () => {
           {
             id: "conversation-1",
             title: "Recent chat",
+            createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            lastUserMessageAt: new Date().toISOString(),
             messageCount: 3,
             status: "active",
             blockReason: null,
@@ -320,7 +324,9 @@ describe("AISidePanel autoscroll", () => {
           {
             id: "conversation-1",
             title: "Recent chat",
+            createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            lastUserMessageAt: new Date().toISOString(),
             messageCount: 3,
             status: "active",
             blockReason: null,

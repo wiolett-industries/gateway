@@ -451,7 +451,7 @@ function ConversationMenuItem({
               transition={{ duration: 0.12, ease: "easeOut" }}
               className="text-xs text-muted-foreground"
             >
-              {formatConversationDate(conversation.updatedAt)}
+              {formatConversationDate(conversation.lastUserMessageAt ?? conversation.createdAt)}
             </motion.span>
           )}
         </AnimatePresence>

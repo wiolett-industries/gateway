@@ -546,7 +546,9 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
                         </span>
                       </span>
                       <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {formatConversationDate(conversation.updatedAt)}
+                        {formatConversationDate(
+                          conversation.lastUserMessageAt ?? conversation.createdAt
+                        )}
                       </span>
                     </button>
                     <button

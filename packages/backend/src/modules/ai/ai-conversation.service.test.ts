@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeConversationMessagesForStorage } from './ai-conversation.service.js';
+import {
+  sanitizeConversationMessagesForStorage,
+  sortConversationSummariesByLastUserMessage,
+} from './ai-conversation.service.js';
 
 function toolCall(index: number) {
   return {
@@ -44,5 +47,29 @@ describe('AIConversationService storage sanitization', () => {
     expect(sanitized.toolCalls[2].result).toBe('raw output 3');
     expect(sanitized.toolCalls[11].result).toBe('raw output 12');
     expect(sanitized.toolCalls[12].result).toEqual({ answer: 'yes' });
+  });
+});
+
+describe('AIConversationService conversation ordering', () => {
+  it('sorts conversations by the latest user message time', () => {
+    const olderUserMessageWithNewerAssistantUpdate = {
+      id: 'older-user-message',
+      createdAt: new Date('2026-06-26T09:00:00.000Z'),
+      updatedAt: new Date('2026-06-26T12:00:00.000Z'),
+      lastUserMessageAt: new Date('2026-06-26T09:30:00.000Z'),
+    };
+    const newerUserMessageWithOlderAssistantUpdate = {
+      id: 'newer-user-message',
+      createdAt: new Date('2026-06-26T08:00:00.000Z'),
+      updatedAt: new Date('2026-06-26T10:00:00.000Z'),
+      lastUserMessageAt: new Date('2026-06-26T10:30:00.000Z'),
+    };
+
+    expect(
+      sortConversationSummariesByLastUserMessage([
+        olderUserMessageWithNewerAssistantUpdate,
+        newerUserMessageWithOlderAssistantUpdate,
+      ]).map((conversation) => conversation.id)
+    ).toEqual(['newer-user-message', 'older-user-message']);
   });
 });

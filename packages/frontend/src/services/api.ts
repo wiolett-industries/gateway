@@ -779,6 +779,7 @@ class ApiClient extends withLoggingApi(
       title: string;
       createdAt: string;
       updatedAt: string;
+      lastUserMessageAt: string | null;
       messageCount: number;
       status: "active" | "ended" | "context_blocked";
       blockReason: string | null;
@@ -791,6 +792,7 @@ class ApiClient extends withLoggingApi(
         title: string;
         createdAt: string;
         updatedAt: string;
+        lastUserMessageAt: string | null;
         messageCount: number;
         status: "active" | "ended" | "context_blocked";
         blockReason: string | null;
@@ -805,6 +807,7 @@ class ApiClient extends withLoggingApi(
     title: string;
     createdAt: string;
     updatedAt: string;
+    lastUserMessageAt: string | null;
     messageCount: number;
     status: "active" | "ended" | "context_blocked";
     blockReason: string | null;
@@ -820,6 +823,7 @@ class ApiClient extends withLoggingApi(
         title: string;
         createdAt: string;
         updatedAt: string;
+        lastUserMessageAt: string | null;
         messageCount: number;
         status: "active" | "ended" | "context_blocked";
         blockReason: string | null;
@@ -847,6 +851,7 @@ class ApiClient extends withLoggingApi(
       title: string;
       createdAt: string;
       updatedAt: string;
+      lastUserMessageAt: string | null;
       messageCount: number;
       status: "active" | "ended" | "context_blocked";
       blockReason: string | null;
@@ -865,6 +870,7 @@ class ApiClient extends withLoggingApi(
           title: string;
           createdAt: string;
           updatedAt: string;
+          lastUserMessageAt: string | null;
           messageCount: number;
           status: "active" | "ended" | "context_blocked";
           blockReason: string | null;

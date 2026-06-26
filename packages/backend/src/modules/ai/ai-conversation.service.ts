@@ -15,11 +15,18 @@ import type { AIConversationStatus, PageContext } from './ai.types.js';
 const RETAIN_FULL_TOOL_OUTPUT_COUNT = 10;
 const ACTIVE_RUN_STATUSES = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'] as const;
 
+interface LoadedConversationMessage {
+  role: string;
+  uiMessage: Record<string, unknown>;
+  createdAt: Date;
+}
+
 export interface AIConversationSummary {
   id: string;
   title: string;
   createdAt: Date;
   updatedAt: Date;
+  lastUserMessageAt: Date | null;
   messageCount: number;
   status: AIConversationStatus;
   blockReason: string | null;
@@ -60,10 +67,10 @@ export class AIConversationService {
       .select()
       .from(aiConversations)
       .where(eq(aiConversations.userId, userId))
-      .orderBy(desc(aiConversations.updatedAt));
+      .orderBy(desc(aiConversations.createdAt));
 
-    const [messagesByRow, activeRuns] = await Promise.all([
-      Promise.all(rows.map((row) => this.loadMessages(row.id))),
+    const [messageRowsByRow, activeRuns] = await Promise.all([
+      Promise.all(rows.map((row) => this.loadMessageRows(row.id))),
       rows.length > 0
         ? this.db
             .select()
@@ -81,22 +88,29 @@ export class AIConversationService {
         : Promise.resolve([]),
     ]);
     const activeRunStatusByConversation = new Map(activeRuns.map((run) => [run.conversationId, run.status]));
-    return rows.map((row, index) => ({
-      id: row.id,
-      title: row.title,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      messageCount: countVisibleMessages(messagesByRow[index]),
-      ...deriveConversationStatus(messagesByRow[index]),
-      activeRunStatus: activeRunStatusByConversation.get(row.id) ?? null,
-    }));
+    return sortConversationSummariesByLastUserMessage(
+      rows.map((row, index) => {
+        const messageRows = messageRowsByRow[index];
+        const messages = messageRows.map((message) => message.uiMessage);
+        return {
+          id: row.id,
+          title: row.title,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          lastUserMessageAt: getLastUserMessageAt(messageRows),
+          messageCount: countVisibleMessages(messages),
+          ...deriveConversationStatus(messages),
+          activeRunStatus: activeRunStatusByConversation.get(row.id) ?? null,
+        };
+      })
+    );
   }
 
   async getConversation(userId: string, conversationId: string): Promise<AIConversationDetail | null> {
     const row = await this.getOwnedConversation(userId, conversationId);
     if (!row) return null;
-    const [messages, activeRuns] = await Promise.all([
-      this.loadMessages(row.id),
+    const [messageRows, activeRuns] = await Promise.all([
+      this.loadMessageRows(row.id),
       this.db
         .select()
         .from(aiRuns)
@@ -105,11 +119,13 @@ export class AIConversationService {
         )
         .limit(1),
     ]);
+    const messages = messageRows.map((message) => message.uiMessage);
     return {
       id: row.id,
       title: row.title,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      lastUserMessageAt: getLastUserMessageAt(messageRows),
       messageCount: countVisibleMessages(messages),
       ...deriveConversationStatus(messages),
       activeRunStatus: activeRuns[0]?.status ?? null,
@@ -364,13 +380,17 @@ export class AIConversationService {
     });
   }
 
-  private async loadMessages(conversationId: string): Promise<unknown[]> {
+  private async loadMessageRows(conversationId: string): Promise<LoadedConversationMessage[]> {
     const rows = await this.db
-      .select()
+      .select({
+        role: aiConversationMessages.role,
+        uiMessage: aiConversationMessages.uiMessage,
+        createdAt: aiConversationMessages.createdAt,
+      })
       .from(aiConversationMessages)
       .where(eq(aiConversationMessages.conversationId, conversationId))
       .orderBy(asc(aiConversationMessages.sequence));
-    return rows.map((row) => row.uiMessage);
+    return rows;
   }
 
   private async cleanupConversationResources(userId: string, conversationId: string): Promise<void> {
@@ -519,6 +539,24 @@ function extractToolResults(toolCalls: unknown[] | null): unknown {
     if (!toolCall || typeof toolCall !== 'object') return null;
     const record = toolCall as Record<string, unknown>;
     return { id: record.id, name: record.name, result: record.result, error: record.error };
+  });
+}
+
+function getLastUserMessageAt(messages: LoadedConversationMessage[]): Date | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user') return message.createdAt;
+  }
+  return null;
+}
+
+export function sortConversationSummariesByLastUserMessage<
+  T extends { createdAt: Date; lastUserMessageAt: Date | null },
+>(conversations: T[]): T[] {
+  return [...conversations].sort((left, right) => {
+    const rightTime = (right.lastUserMessageAt ?? right.createdAt).getTime();
+    const leftTime = (left.lastUserMessageAt ?? left.createdAt).getTime();
+    return rightTime - leftTime;
   });
 }
 

@@ -6,7 +6,9 @@ export interface SavedAIConversation {
   title: string;
   messages: AIMessage[];
   lastContext: PageContext | null;
+  createdAt: string;
   updatedAt: string;
+  lastUserMessageAt: string | null;
   status: AIConversationStatus;
   blockReason: string | null;
   activeRunStatus: AIRunStatus | null;
@@ -15,7 +17,9 @@ export interface SavedAIConversation {
 export interface AIConversationSummary {
   id: string;
   title: string;
+  createdAt: string;
   updatedAt: string;
+  lastUserMessageAt: string | null;
   messageCount: number;
   status: AIConversationStatus;
   blockReason: string | null;
@@ -29,7 +33,9 @@ export async function getConversation(id: string): Promise<SavedAIConversation> 
     title: conversation.title,
     messages: conversation.messages,
     lastContext: conversation.lastContext,
+    createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
+    lastUserMessageAt: conversation.lastUserMessageAt,
     status: conversation.status,
     blockReason: conversation.blockReason,
     activeRunStatus: conversation.activeRunStatus,
@@ -41,7 +47,9 @@ export async function listConversations(limit?: number): Promise<AIConversationS
   return conversations.slice(0, limit).map((conversation) => ({
     id: conversation.id,
     title: conversation.title,
+    createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
+    lastUserMessageAt: conversation.lastUserMessageAt,
     messageCount: conversation.messageCount,
     status: conversation.status,
     blockReason: conversation.blockReason,
@@ -65,7 +73,9 @@ export async function rollbackConversationToMessage(
       title: result.conversation.title,
       messages: result.conversation.messages,
       lastContext: result.conversation.lastContext,
+      createdAt: result.conversation.createdAt,
       updatedAt: result.conversation.updatedAt,
+      lastUserMessageAt: result.conversation.lastUserMessageAt,
       status: result.conversation.status,
       blockReason: result.conversation.blockReason,
       activeRunStatus: result.conversation.activeRunStatus,
