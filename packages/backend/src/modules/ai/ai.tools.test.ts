@@ -32,7 +32,7 @@ function sandboxToolNamesForScopes(scopes: string[], sandboxEnabled: boolean): s
 describe('AI tool scope filtering', () => {
   it('keeps core registry ordering, uniqueness, and invalidation contracts stable', () => {
     expect(new Set(AI_TOOLS.map((tool) => tool.name)).size).toBe(AI_TOOLS.length);
-    expect(AI_TOOLS.slice(0, 77).map((tool) => tool.name)).toEqual([
+    expect(AI_TOOLS.slice(0, 78).map((tool) => tool.name)).toEqual([
       'discover_tools',
       'get_current_context',
       'wait',
@@ -78,6 +78,7 @@ describe('AI tool scope filtering', () => {
       'manage_access_list',
       'list_nodes',
       'get_node',
+      'execute_node_console_command',
       'create_node',
       'rename_node',
       'delete_node',
@@ -128,6 +129,7 @@ describe('AI tool scope filtering', () => {
     expect(isDestructiveTool('get_proxy_host')).toBe(false);
     expect(isDestructiveTool('manage_ca')).toBe(true);
     expect(isDestructiveTool('create_proxy_folder')).toBe(true);
+    expect(isDestructiveTool('execute_node_console_command')).toBe(true);
   });
 
   it('requires approval metadata for every store-invalidating tool', () => {
@@ -172,6 +174,8 @@ describe('AI tool scope filtering', () => {
     );
     expect(toolNames(['proxy:raw:read:proxy-1'])).toContain('get_proxy_rendered_config');
     expect(toolNames(['proxy:raw:read:proxy-1'])).not.toContain('update_proxy_raw_config');
+    expect(toolNames(['nodes:details'])).not.toContain('execute_node_console_command');
+    expect(toolNames(['nodes:console'])).toContain('execute_node_console_command');
   });
 
   it('requires direct database view before advertising database query tools', () => {
@@ -442,6 +446,9 @@ describe('AI tool scope filtering', () => {
     expect(dockerToolNamesForScopes(['docker:images:view'])).toEqual(['list_docker_images']);
     expect(dockerToolNamesForScopes(['docker:volumes:view'])).toEqual(['list_docker_volumes']);
     expect(dockerToolNamesForScopes(['docker:networks:view'])).toEqual(['list_docker_networks']);
+    expect(dockerToolNamesForScopes(['docker:containers:console:node-1'])).toContain(
+      'execute_docker_container_console_command'
+    );
     expect(AI_TOOLS.find((tool) => tool.name === 'create_docker_container')?.invalidateStores).toEqual(['containers']);
     expect(AI_TOOLS.find((tool) => tool.name === 'deploy_docker_deployment')?.invalidateStores).toEqual([
       'containers',
@@ -449,6 +456,7 @@ describe('AI tool scope filtering', () => {
     ]);
     expect(isDestructiveTool('list_docker_containers')).toBe(false);
     expect(isDestructiveTool('create_docker_container')).toBe(true);
+    expect(isDestructiveTool('execute_docker_container_console_command')).toBe(true);
     expect(isDestructiveTool('manage_docker_task')).toBe(false);
   });
 

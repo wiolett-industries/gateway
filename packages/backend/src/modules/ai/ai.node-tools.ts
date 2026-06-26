@@ -9,11 +9,13 @@ import {
 import type { NodesService } from '@/modules/nodes/nodes.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { User } from '@/types.js';
+import { inspectConsoleCommand, parseConsoleCommandResult } from './ai.console-safety.js';
 import { agentPage, agentPageLimit, allowedResourceIdsForScopes } from './ai.service-helpers.js';
 
 export const NODE_TOOL_NAMES = new Set([
   'list_nodes',
   'get_node',
+  'execute_node_console_command',
   'create_node',
   'rename_node',
   'delete_node',
@@ -72,6 +74,8 @@ export async function executeNodeTool(
     }
     case 'get_node':
       return context.nodesService.get(a.nodeId);
+    case 'execute_node_console_command':
+      return executeNodeConsoleCommand(context, user, a);
     case 'create_node':
       return context.nodesService.create(
         { hostname: a.hostname, type: a.type || 'nginx', displayName: a.displayName },
@@ -89,6 +93,34 @@ export async function executeNodeTool(
     default:
       throw new Error(`Unsupported node tool: ${toolName}`);
   }
+}
+
+async function executeNodeConsoleCommand(context: NodeToolContext, user: User, args: Record<string, unknown>) {
+  const nodeId = String(args.nodeId || '');
+  if (!nodeId) throw new Error('nodeId is required');
+  assertNodeConsoleScope(user, nodeId);
+
+  const safety = inspectConsoleCommand(args.command as string[]);
+  if (safety.blocked) {
+    throw new Error(safety.reason ?? 'Console command is blocked');
+  }
+
+  const result = await getRequiredDispatchService(context).sendNodeExecCommand(
+    nodeId,
+    'run',
+    { command: safety.normalizedCommand },
+    35000
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Node console command failed');
+  }
+  const output = parseConsoleCommandResult(result.detail);
+  return {
+    nodeId,
+    command: safety.normalizedCommand,
+    risky: safety.risky,
+    ...output,
+  };
 }
 
 async function executeNodeConfigTool(context: NodeToolContext, user: User, args: Record<string, unknown>) {
@@ -236,6 +268,12 @@ function assertNodeConfigScope(user: User, scope: 'nodes:config:view' | 'nodes:c
 function assertNodeFileScope(user: User, scope: 'nodes:files:read' | 'nodes:files:write', nodeId: string) {
   if (!hasScopeForResource(user.scopes, scope, nodeId)) {
     throw new Error(`Missing required scope: ${scope}:${nodeId}`);
+  }
+}
+
+function assertNodeConsoleScope(user: User, nodeId: string) {
+  if (!hasScopeForResource(user.scopes, 'nodes:console', nodeId)) {
+    throw new Error(`Missing required scope: nodes:console:${nodeId}`);
   }
 }
 

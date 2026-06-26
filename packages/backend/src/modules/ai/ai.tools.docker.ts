@@ -96,6 +96,29 @@ export const DOCKER_AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: [],
   },
   {
+    name: 'execute_docker_container_console_command',
+    description:
+      'Run a one-shot command inside a Docker container console. This is destructive by policy even for read-looking commands. Use command as argv, for example ["sh","-lc","pwd && ls -la"]. Clearly dangerous commands are blocked; commands with risky patterns require explicit user approval.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Docker node ID' },
+        containerId: { type: 'string', description: 'Container ID' },
+        command: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Command argv to execute. Use ["sh","-lc","..."] for shell syntax.',
+        },
+        user: { type: 'string', description: 'Optional container user for docker exec.' },
+      },
+      required: ['nodeId', 'containerId', 'command'],
+    },
+    destructive: true,
+    category: 'Docker',
+    requiredScope: 'docker:containers:console',
+    invalidateStores: ['containers'],
+  },
+  {
     name: 'list_docker_deployments',
     description:
       'List blue/green Docker deployments on a specific node. Use this before acting on managed deployment containers; deployment rows include activeSlot, slots, routes, status, and health.',

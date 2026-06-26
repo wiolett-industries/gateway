@@ -76,6 +76,18 @@ describe('MCP tool scope filtering', () => {
     expect(toolNames(['nodes:files:read', 'nodes:files:write'])).not.toContain('manage_node_file');
   });
 
+  it('exposes console tools only when their opt-in console scopes are delegated', () => {
+    expect(toolNames(['nodes:details'])).not.toContain('execute_node_console_command');
+    expect(toolNames(['nodes:console'])).toContain('execute_node_console_command');
+    expect(toolByName(['nodes:console'], 'execute_node_console_command')?.destructive).toBe(true);
+
+    expect(toolNames(['docker:containers:view'])).not.toContain('execute_docker_container_console_command');
+    expect(toolNames(['docker:containers:console:node-1'])).toContain('execute_docker_container_console_command');
+    expect(
+      toolByName(['docker:containers:console:node-1'], 'execute_docker_container_console_command')?.destructive
+    ).toBe(true);
+  });
+
   it('never exposes browser-session-only current-user tools through MCP', () => {
     expect(toolNames(['feat:ai:use'])).not.toEqual(
       expect.arrayContaining(['manage_ai_conversation', 'manage_oauth_authorization', 'manage_api_token'])

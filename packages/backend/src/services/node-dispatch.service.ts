@@ -311,12 +311,17 @@ export class NodeDispatchService {
       rows?: number;
       cols?: number;
       user?: string;
-    } = {}
+    } = {},
+    timeoutMs?: number
   ): Promise<CommandResult> {
     await this.assertNodeMutable(nodeId);
-    return this.registry.sendCommand(nodeId, {
-      dockerExec: { action, ...options } as any,
-    });
+    return this.registry.sendCommand(
+      nodeId,
+      {
+        dockerExec: { action, ...options } as any,
+      },
+      timeoutMs
+    );
   }
 
   async sendNodeExecCommand(
@@ -327,12 +332,17 @@ export class NodeDispatchService {
       tty?: boolean;
       rows?: number;
       cols?: number;
-    } = {}
+    } = {},
+    timeoutMs?: number
   ): Promise<CommandResult> {
     await this.assertNodeMutable(nodeId);
-    return this.registry.sendCommand(nodeId, {
-      nodeExec: { action, ...options } as any,
-    });
+    return this.registry.sendCommand(
+      nodeId,
+      {
+        nodeExec: { action, ...options } as any,
+      },
+      timeoutMs
+    );
   }
 
   async sendNodeFileCommand(

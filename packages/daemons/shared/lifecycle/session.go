@@ -268,6 +268,18 @@ func handleNodeExec(ctx context.Context, mgr *exec.Manager, cmd *pb.GatewayComma
 	result := &pb.CommandResult{CommandId: cmd.CommandId, Success: true}
 
 	switch nodeExec.GetAction() {
+	case "run":
+		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		commandResult, err := exec.RunCommand(runCtx, nodeExec.GetCommand(), consoleUser, 128*1024)
+		detailJSON, _ := json.Marshal(commandResult)
+		result.Detail = string(detailJSON)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return result
+		}
+
 	case "create":
 		shell := ""
 		if cmds := nodeExec.GetCommand(); len(cmds) > 0 {

@@ -889,10 +889,15 @@ func isDockerMultiplexedStream(raw []byte) bool {
 // execInContainerBytes runs a command inside a container and returns stdout as raw bytes.
 // Returns an error if the command exits with a non-zero status.
 func execInContainerBytes(ctx context.Context, c *Client, containerID string, cmd []string, maxRead int64) ([]byte, error) {
+	return execInContainerBytesAsUser(ctx, c, containerID, cmd, "", maxRead)
+}
+
+func execInContainerBytesAsUser(ctx context.Context, c *Client, containerID string, cmd []string, user string, maxRead int64) ([]byte, error) {
 	createResult, err := c.cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{
 		Cmd:          cmd,
 		AttachStdout: true,
 		AttachStderr: true,
+		User:         user,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("exec create: %w", err)

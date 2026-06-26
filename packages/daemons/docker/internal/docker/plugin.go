@@ -1068,16 +1068,41 @@ func (p *DockerPlugin) handleConfigPush(cmd *pb.DockerConfigPushCommand, result 
 
 // handleExecCommand dispatches exec session actions (create, resize, detach).
 func (p *DockerPlugin) handleExecCommand(cmd *pb.DockerExecCommand, result *pb.CommandResult) {
-	if p.execMgr == nil {
-		result.Success = false
-		result.Error = "exec manager not initialized (no active session)"
-		return
-	}
-
 	ctx := context.Background()
 
 	switch cmd.Action {
+	case "run":
+		if cmd.ContainerId == "" {
+			result.Success = false
+			result.Error = "container_id is required for exec run"
+			return
+		}
+		if len(cmd.Command) == 0 {
+			result.Success = false
+			result.Error = "command is required for exec run"
+			return
+		}
+		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		stdout, err := execInContainerBytesAsUser(runCtx, p.client, cmd.ContainerId, cmd.Command, cmd.User, 128*1024)
+		if err != nil {
+			result.Success = false
+			result.Error = fmt.Sprintf("exec run: %v", err)
+			return
+		}
+		resp := map[string]interface{}{
+			"stdout":   string(stdout),
+			"exitCode": 0,
+		}
+		data, _ := json.Marshal(resp)
+		result.Detail = string(data)
+
 	case "create":
+		if p.execMgr == nil {
+			result.Success = false
+			result.Error = "exec manager not initialized (no active session)"
+			return
+		}
 		if cmd.ContainerId == "" {
 			result.Success = false
 			result.Error = "container_id is required for exec create"
@@ -1110,6 +1135,11 @@ func (p *DockerPlugin) handleExecCommand(cmd *pb.DockerExecCommand, result *pb.C
 		result.Detail = string(data)
 
 	case "resize":
+		if p.execMgr == nil {
+			result.Success = false
+			result.Error = "exec manager not initialized (no active session)"
+			return
+		}
 		if cmd.ContainerId == "" {
 			result.Success = false
 			result.Error = "container_id (exec_id) is required for resize"

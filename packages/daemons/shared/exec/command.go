@@ -1,0 +1,97 @@
+package exec
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"os"
+	osexec "os/exec"
+	"os/user"
+	"syscall"
+)
+
+type CommandResult struct {
+	Stdout    string `json:"stdout"`
+	Stderr    string `json:"stderr,omitempty"`
+	ExitCode  int    `json:"exitCode"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+type limitedBuffer struct {
+	buf       bytes.Buffer
+	limit     int64
+	written   int64
+	truncated bool
+}
+
+func (w *limitedBuffer) Write(p []byte) (int, error) {
+	w.written += int64(len(p))
+	if int64(w.buf.Len()) >= w.limit {
+		w.truncated = true
+		return len(p), nil
+	}
+	remaining := int(w.limit - int64(w.buf.Len()))
+	if len(p) > remaining {
+		w.buf.Write(p[:remaining])
+		w.truncated = true
+		return len(p), nil
+	}
+	w.buf.Write(p)
+	return len(p), nil
+}
+
+func (w *limitedBuffer) String() string {
+	return w.buf.String()
+}
+
+func (w *limitedBuffer) Truncated() bool {
+	return w.truncated || w.written > w.limit
+}
+
+// RunCommand executes a bounded one-shot command on the host OS.
+// runAsUser is an optional OS username; empty means run as daemon's user.
+func RunCommand(ctx context.Context, command []string, runAsUser string, maxOutputBytes int64) (CommandResult, error) {
+	if len(command) == 0 {
+		return CommandResult{}, fmt.Errorf("command is required")
+	}
+	if maxOutputBytes <= 0 {
+		maxOutputBytes = 128 * 1024
+	}
+
+	cmd := osexec.CommandContext(ctx, command[0], command[1:]...)
+	cmd.Env = os.Environ()
+
+	if runAsUser != "" {
+		cred, credErr := lookupUserCredential(runAsUser)
+		if credErr != nil {
+			return CommandResult{}, fmt.Errorf("cannot run as user %q: %w", runAsUser, credErr)
+		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
+		if u, lookupErr := user.Lookup(runAsUser); lookupErr == nil && u != nil {
+			cmd.Dir = u.HomeDir
+			cmd.Env = append(cmd.Env, "HOME="+u.HomeDir, "USER="+runAsUser)
+		}
+	}
+
+	stdout := &limitedBuffer{limit: maxOutputBytes}
+	stderr := &limitedBuffer{limit: maxOutputBytes}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
+	err := cmd.Run()
+	exitCode := 0
+	if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
+
+	result := CommandResult{
+		Stdout:    stdout.String(),
+		Stderr:    stderr.String(),
+		ExitCode:  exitCode,
+		Truncated: stdout.Truncated() || stderr.Truncated(),
+	}
+	if err != nil {
+		return result, err
+	}
+	return result, nil
+}

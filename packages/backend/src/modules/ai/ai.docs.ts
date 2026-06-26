@@ -18,6 +18,7 @@ Gateway AI starts conversations with a small base tool surface. Domain-specific 
 
 ## Tool Discovery
 - If the needed operation is not available, call discover_tools first.
+- Use internal_documentation before Gateway-specific workflows, tool argument details, permission-sensitive operations, and recently added capabilities. Do not answer those from general intuition.
 - Use discover_tools({ category: "Logging" }) before managing logging environments/schemas/logs.
 - Use discover_tools({ category: "Docker" }) before managing Docker containers/images/volumes/networks.
 - Use discover_tools({ query: "certificate" }) when you know the task but not the category.
@@ -395,6 +396,7 @@ The node status changes from **pending** to **online** in the Nodes list once th
 ## Assistant Tools
 - list_nodes: list daemon nodes visible to the current user.
 - get_node: inspect one node.
+- execute_node_console_command: run one argv-style command on a node console. Use { nodeId, command: ["sh","-lc","..."] }. This is destructive, requires nodes:console, is available to MCP only when that OAuth scope is explicitly granted, and catastrophic patterns such as rm -rf / are blocked.
 - create_node, rename_node, delete_node: manage node records.
 - manage_node_config: read/update/test nginx node config. Use { operation: "read"|"update"|"test", nodeId, content? }. read requires nodes:config:view:<nodeId>; update/test require nodes:config:edit:<nodeId>. This tool is browser-session-only and is not available to MCP tokens.
 - manage_node_file: manage node filesystem paths. This tool is browser-session-only and is not available to MCP tokens.
@@ -420,6 +422,9 @@ All node types support an interactive console — a PTY shell session on the hos
 - Supports popout window, reconnection with output replay, and terminal resize.
 - Shell auto-detected from \`/etc/shells\` (prefers bash > zsh > ash > sh).
 - Can be configured to run as a specific OS user via \`console.user\` in daemon config.
+- The assistant has a separate one-shot \`execute_node_console_command\` tool for command execution when regular Gateway read/manage tools cannot answer the request. Prefer argv commands such as \`["sh","-lc","systemctl status nginx"]\`.
+- Treat every console command as destructive: risky commands require explicit approval and obviously host-breaking commands are blocked before reaching the daemon.
+- Use console tools for host-level inspection or repair only after identifying the exact node with get_current_context or find_resource. Do not guess node IDs from chat text.
 
 ## System Information
 Daemons report hardware/OS info on registration:
@@ -524,6 +529,8 @@ Long-running operations (stop, restart, kill, recreate, update) create tasks vis
 
 ## Console & Files
 - Console: interactive terminal (exec) into running containers via xterm.js WebSocket
+- Assistant console command: \`execute_docker_container_console_command({ nodeId, containerId, command: ["sh","-lc","..."], user? })\` runs one command in a container when ordinary Docker tools do not cover the needed inspection or repair. It requires \`docker:containers:console\`, is destructive, is available to MCP only when that OAuth scope is explicitly granted, and blocks catastrophic patterns such as \`rm -rf /\`.
+- Before using container console, resolve the current container through get_current_context or find_resource. Container IDs can change after recreate, so re-check by name when a command reports "No such container".
 - File browser: navigate filesystem, view/edit files inside containers
 
 ## Key Notes

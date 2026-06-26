@@ -14,7 +14,9 @@ import {
   DockerDeploymentDeploySchema,
   DockerDeploymentSwitchSchema,
 } from '@/modules/docker/docker-deployment.schemas.js';
+import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { User } from '@/types.js';
+import { inspectConsoleCommand, parseConsoleCommandResult } from './ai.console-safety.js';
 import {
   compactAgentList,
   compactDockerContainerForAgent,
@@ -34,6 +36,7 @@ export const DOCKER_TOOL_NAMES = new Set([
   'create_docker_container',
   'list_docker_containers',
   'get_docker_container',
+  'execute_docker_container_console_command',
   'list_docker_deployments',
   'get_docker_deployment',
   'start_docker_deployment',
@@ -109,6 +112,8 @@ export async function executeDockerTool(
     }
     case 'get_docker_container':
       return context.dockerService.inspectContainer(a.nodeId, a.containerId);
+    case 'execute_docker_container_console_command':
+      return executeDockerContainerConsoleCommand(context, user, args);
     case 'list_docker_deployments': {
       const { DockerDeploymentService } = await import('@/modules/docker/docker-deployment.service.js');
       const deployments = await container.resolve(DockerDeploymentService).listSummary(a.nodeId);
@@ -289,6 +294,45 @@ export async function executeDockerTool(
     default:
       throw new Error(`Unsupported Docker tool: ${toolName}`);
   }
+}
+
+async function executeDockerContainerConsoleCommand(
+  context: DockerToolContext,
+  user: User,
+  args: Record<string, unknown>
+) {
+  const nodeId = String(args.nodeId || '');
+  const containerId = String(args.containerId || '');
+  if (!nodeId) throw new Error('nodeId is required');
+  if (!containerId) throw new Error('containerId is required');
+  context.ensureToolScopeForResource(user, 'docker:containers:console', nodeId);
+
+  const safety = inspectConsoleCommand(args.command as string[]);
+  if (safety.blocked) {
+    throw new Error(safety.reason ?? 'Console command is blocked');
+  }
+
+  const result = await container.resolve(NodeDispatchService).sendDockerExecCommand(
+    nodeId,
+    'run',
+    {
+      containerId,
+      command: safety.normalizedCommand,
+      user: typeof args.user === 'string' ? args.user : undefined,
+    },
+    35000
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Docker console command failed');
+  }
+  const output = parseConsoleCommandResult(result.detail);
+  return {
+    nodeId,
+    containerId,
+    command: safety.normalizedCommand,
+    risky: safety.risky,
+    ...output,
+  };
 }
 
 async function manageDockerRegistry(context: DockerToolContext, user: User, args: Record<string, unknown>) {

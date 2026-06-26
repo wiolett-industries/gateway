@@ -729,6 +729,27 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: [],
   },
   {
+    name: 'execute_node_console_command',
+    description:
+      'Run a one-shot command on a daemon node console. This is destructive by policy even for read-looking commands. Use command as argv, for example ["sh","-lc","systemctl status nginx --no-pager"]. Clearly dangerous commands are blocked; commands with risky patterns require explicit user approval.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Node UUID' },
+        command: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Command argv to execute. Use ["sh","-lc","..."] for shell syntax.',
+        },
+      },
+      required: ['nodeId', 'command'],
+    },
+    destructive: true,
+    category: 'Nodes',
+    requiredScope: 'nodes:console',
+    invalidateStores: ['nodes'],
+  },
+  {
     name: 'create_node',
     description:
       'Create a new daemon node and generate an enrollment token. IMPORTANT: The response contains enrollmentToken and gatewayCertSha256 — you MUST display both to the user and include --gateway-cert-sha256 in setup commands (curl/wget). The token is one-time-use and cannot be retrieved again.',
