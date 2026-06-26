@@ -23,9 +23,10 @@ export interface AIConversationSummary {
 export async function saveConversation(
   name: string,
   messages: AIMessage[],
-  lastContext?: PageContext | null
+  lastContext?: PageContext | null,
+  options: { createNew?: boolean } = {}
 ): Promise<SavedAIConversation> {
-  const saved = await api.saveAIConversation(name, messages, lastContext);
+  const saved = await api.saveAIConversation(name, messages, lastContext, options);
   return {
     id: saved.id,
     title: saved.title,

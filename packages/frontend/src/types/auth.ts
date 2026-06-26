@@ -1,3 +1,5 @@
+import type { AIApprovalMode } from "@/lib/ai-approval-mode";
+
 // User
 export interface User {
   id: string;
@@ -9,6 +11,7 @@ export interface User {
   groupName: string;
   scopes: string[];
   isBlocked: boolean;
+  aiApprovalMode?: AIApprovalMode;
   folderId?: string | null;
   sortOrder?: number;
 }

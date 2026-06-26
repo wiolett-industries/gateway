@@ -1,16 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  Check,
-  ChevronDown,
-  Plus,
-  Send,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
-  Square,
-  X,
-} from "lucide-react";
-import type { ChangeEvent, ElementType, KeyboardEvent, RefObject } from "react";
+import { Check, ChevronDown, Plus, Send, Square, X } from "lucide-react";
+import type { ChangeEvent, KeyboardEvent, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -21,16 +11,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  AI_APPROVAL_MODE_META,
+  AI_APPROVAL_MODES,
+  type AIApprovalMode,
+} from "@/lib/ai-approval-mode";
 import { cn } from "@/lib/utils";
 import { type AIContextUsage, getAIContextUsage } from "@/stores/ai";
 import type { AIComposerAttachment, AIMessage as AIMessageType } from "@/types/ai";
 import { getComposerAttachmentId, getComposerAttachmentPreviewUrl } from "./useAIComposerDraft";
-
-export type AIApprovalMode =
-  | "always-ask"
-  | "normal"
-  | "bypass-non-destructive"
-  | "bypass-everything";
 
 export interface AISlashCommand {
   name: string;
@@ -65,24 +54,6 @@ interface AIComposerProps {
   surfaceClassName?: string;
   showDisclaimer?: boolean;
 }
-
-const APPROVAL_MODE_META: Record<
-  AIApprovalMode,
-  { label: string; menuLabel: string; icon: ElementType }
-> = {
-  "always-ask": { label: "Always ask", menuLabel: "Always ask", icon: Shield },
-  normal: { label: "Normal", menuLabel: "Normal", icon: Shield },
-  "bypass-non-destructive": {
-    label: "Bypass non-destructive",
-    menuLabel: "Bypass non-destructive",
-    icon: ShieldCheck,
-  },
-  "bypass-everything": {
-    label: "Full access",
-    menuLabel: "Bypass everything",
-    icon: ShieldAlert,
-  },
-};
 
 const MAX_IMAGE_ATTACHMENTS = 3;
 
@@ -178,7 +149,7 @@ export function AIComposer({
   surfaceClassName,
   showDisclaimer = false,
 }: AIComposerProps) {
-  const modeMeta = APPROVAL_MODE_META[approvalMode];
+  const modeMeta = AI_APPROVAL_MODE_META[approvalMode];
   const ModeIcon = modeMeta.icon;
   const disabled = !isConnected || !!retryAfter;
   const [usage, setUsage] = useState<AIContextUsage | null>(null);
@@ -323,8 +294,8 @@ export function AIComposer({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" side="top" className="w-60">
-              {(Object.keys(APPROVAL_MODE_META) as AIApprovalMode[]).map((mode) => {
-                const item = APPROVAL_MODE_META[mode];
+              {AI_APPROVAL_MODES.map((mode) => {
+                const item = AI_APPROVAL_MODE_META[mode];
                 const ItemIcon = item.icon;
                 return (
                   <DropdownMenuItem key={mode} onClick={() => void setApprovalMode(mode)}>

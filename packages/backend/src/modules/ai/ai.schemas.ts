@@ -58,6 +58,7 @@ export const SaveAIConversationSchema = z.object({
   title: z.string().trim().min(1).max(255),
   messages: z.array(AIConversationMessageSchema),
   lastContext: PageContextSchema.nullable().optional(),
+  createNew: z.boolean().optional(),
 });
 
 export const UpdateAIConversationSchema = z.object({

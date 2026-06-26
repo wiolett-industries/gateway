@@ -2,8 +2,12 @@ import { Minimize2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
+import { type AIApprovalMode, formatAIApprovalModeLabel } from "@/lib/ai-approval-mode";
+import {
+  confirmBypassEverythingMode,
+  updateAIApprovalModeOptimistically,
+} from "@/lib/ai-user-preferences";
 import { api } from "@/services/api";
 import { getConversationBlock, useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
@@ -14,7 +18,7 @@ import type {
   AIMessageAttachment,
   PageContext,
 } from "@/types/ai";
-import { type AIApprovalMode, AIComposer } from "./AIComposer";
+import { AIComposer } from "./AIComposer";
 import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
 import { AIMessage } from "./AIMessage";
 import { QuestionBlock } from "./AIToolCallBlock";
@@ -102,16 +106,6 @@ function userMessagesAfterLastCompact(
   return messages.slice(lastCompactIndex + 1).filter((message) => message.role === "user").length;
 }
 
-async function confirmBypassEverythingMode(): Promise<boolean> {
-  return confirm({
-    title: "Enable AI bypass delete approvals?",
-    description:
-      "The AI assistant will create, modify, and delete resources without asking for your confirmation.",
-    confirmLabel: "Enable",
-    variant: "destructive",
-  });
-}
-
 export function AILitePanel() {
   const {
     messages,
@@ -132,17 +126,7 @@ export function AILitePanel() {
     handleSlashCommand,
     connect,
   } = useAIStore();
-  const {
-    setAILiteMode,
-    aiAlwaysAskApprovals,
-    aiBypassCreateApprovals,
-    aiBypassEditApprovals,
-    aiBypassDeleteApprovals,
-    setAIAlwaysAskApprovals,
-    setAIBypassCreateApprovals,
-    setAIBypassEditApprovals,
-    setAIBypassDeleteApprovals,
-  } = useUIStore();
+  const { setAILiteMode, aiApprovalMode: approvalMode } = useUIStore();
 
   const [input, setInput] = useAIComposerDraft(activeConversationId);
   const [attachments, setAttachments] = useAIComposerAttachmentsDraft(activeConversationId);
@@ -158,44 +142,25 @@ export function AILitePanel() {
   const visibleSlashCommands = SLASH_COMMANDS.filter(
     (command) => command.name !== "compact" || canCompact
   );
-  const approvalMode: AIApprovalMode = aiAlwaysAskApprovals
-    ? "always-ask"
-    : aiBypassDeleteApprovals
-      ? "bypass-everything"
-      : aiBypassCreateApprovals || aiBypassEditApprovals
-        ? "bypass-non-destructive"
-        : "normal";
-  const approvalModeLabel =
-    approvalMode === "always-ask"
-      ? "AI mode: always ask"
-      : approvalMode === "bypass-everything"
-        ? "AI mode: bypass everything"
-        : approvalMode === "bypass-non-destructive"
-          ? "AI mode: bypass non-destructive"
-          : "AI mode: normal";
+  const approvalModeLabel = formatAIApprovalModeLabel(approvalMode);
   const conversationBlock = getConversationBlock(messages);
 
   const setApprovalMode = useCallback(
     async (mode: AIApprovalMode) => {
       if (
         mode === "bypass-everything" &&
-        !aiBypassDeleteApprovals &&
+        approvalMode !== "bypass-everything" &&
         !(await confirmBypassEverythingMode())
       ) {
         return;
       }
-      setAIAlwaysAskApprovals(mode === "always-ask");
-      setAIBypassCreateApprovals(mode === "bypass-non-destructive" || mode === "bypass-everything");
-      setAIBypassEditApprovals(mode === "bypass-non-destructive" || mode === "bypass-everything");
-      setAIBypassDeleteApprovals(mode === "bypass-everything");
+      try {
+        await updateAIApprovalModeOptimistically(mode, approvalMode);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to update AI mode");
+      }
     },
-    [
-      setAIAlwaysAskApprovals,
-      aiBypassDeleteApprovals,
-      setAIBypassCreateApprovals,
-      setAIBypassDeleteApprovals,
-      setAIBypassEditApprovals,
-    ]
+    [approvalMode]
   );
 
   useEffect(() => {
@@ -397,7 +362,7 @@ export function AILitePanel() {
   );
 
   const handleQuickAction = (prompt: string) => {
-    sendMessage(prompt, context);
+    sendMessage(prompt, context, [], { startNewConversation: messages.length === 0 });
   };
 
   const { activeQuestion, questionIndex, questionsTotal } = (() => {

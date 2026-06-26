@@ -22,6 +22,8 @@ const PKCE_STATE_PREFIX = 'oidc:pkce:';
 const PRECREATED_SUBJECT_PREFIX = 'manual:';
 const SYSTEM_SUBJECT_PREFIX = 'system:';
 const GATEWAY_SYSTEM_OIDC_SUBJECT = 'system:gateway-setup';
+export const AI_APPROVAL_MODES = ['always-ask', 'normal', 'bypass-non-destructive', 'bypass-everything'] as const;
+export type AIApprovalMode = (typeof AI_APPROVAL_MODES)[number];
 
 export interface NormalizedOidcClaims {
   oidcSubject: string;
@@ -408,6 +410,7 @@ export class AuthService {
       groupName: effective.groupName,
       scopes: effective.scopes,
       isBlocked: dbUser.isBlocked,
+      aiApprovalMode: dbUser.aiApprovalMode,
     };
   }
 
@@ -439,6 +442,36 @@ export class AuthService {
     return dbUser ? this.mapDbUserToUser(dbUser) : null;
   }
 
+  async getUserPreferences(userId: string): Promise<{ aiApprovalMode: AIApprovalMode } | null> {
+    const dbUser = await this.db.query.users.findFirst({
+      columns: { aiApprovalMode: true },
+      where: eq(users.id, userId),
+    });
+
+    return dbUser ? { aiApprovalMode: dbUser.aiApprovalMode } : null;
+  }
+
+  async updateUserPreferences(
+    userId: string,
+    input: { aiApprovalMode: AIApprovalMode }
+  ): Promise<{ aiApprovalMode: AIApprovalMode }> {
+    const [updated] = await this.db
+      .update(users)
+      .set({
+        aiApprovalMode: input.aiApprovalMode,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning({ aiApprovalMode: users.aiApprovalMode });
+
+    if (!updated) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+    }
+
+    this.emitUser(userId, 'updated');
+    return updated;
+  }
+
   async listUsers(): Promise<User[]> {
     const allUsers = await this.db.query.users.findMany({
       orderBy: (users, { asc }) => [asc(users.sortOrder), asc(users.createdAt)],
@@ -458,6 +491,7 @@ export class AuthService {
         groupName: effective.groupName,
         scopes: effective.scopes,
         isBlocked: u.isBlocked,
+        aiApprovalMode: u.aiApprovalMode,
         folderId: u.folderId,
         sortOrder: u.sortOrder,
       };

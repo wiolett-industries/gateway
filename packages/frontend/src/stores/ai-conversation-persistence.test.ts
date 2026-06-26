@@ -110,6 +110,112 @@ describe("AI conversation persistence", () => {
     expect(listConversations).toHaveBeenCalled();
   });
 
+  it("refreshes all recent conversations without blanking an existing sidebar list", async () => {
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User One",
+        groupName: "admin",
+        scopes: ["feat:ai:use"],
+        isBlocked: false,
+      } as any,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    useAIStore.setState({
+      recentConversations: [
+        {
+          id: "existing-conversation",
+          title: "Existing",
+          updatedAt: new Date().toISOString(),
+          messageCount: 1,
+          status: "active",
+          blockReason: null,
+        },
+      ],
+      isLoadingRecentConversations: false,
+    });
+
+    let resolveList: (value: Awaited<ReturnType<typeof listConversations>>) => void = () => {};
+    vi.mocked(listConversations).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveList = resolve;
+        })
+    );
+
+    const fetchPromise = useAIStore.getState().fetchRecentConversations();
+    expect(useAIStore.getState().isLoadingRecentConversations).toBe(false);
+    expect(listConversations).toHaveBeenCalledWith();
+
+    const conversations = Array.from({ length: 6 }, (_, index) => ({
+      id: `conversation-${index + 1}`,
+      title: `Conversation ${index + 1}`,
+      updatedAt: new Date(2026, 0, index + 1).toISOString(),
+      messageCount: index + 1,
+      status: "active" as const,
+      blockReason: null,
+    }));
+
+    resolveList(conversations);
+    await fetchPromise;
+
+    expect(useAIStore.getState().recentConversations).toHaveLength(6);
+  });
+
+  it("starts an empty quick action in a new conversation instead of replacing the previous chat", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User One",
+        groupName: "admin",
+        scopes: ["feat:ai:use"],
+        isBlocked: false,
+      } as any,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    const connectPromise = useAIStore.getState().connect();
+    const socket = MockWebSocket.instances[0];
+    socket.emit({ type: "auth_ok" });
+    await connectPromise;
+
+    useAIStore.setState({
+      messages: [],
+      activeConversationId: "old-conversation",
+      savedName: "Old conversation",
+      lastContext: null,
+    });
+
+    useAIStore.getState().sendMessage("Give me an overview of the system status", undefined, [], {
+      startNewConversation: true,
+    });
+
+    await vi.waitFor(() => expect(saveConversation).toHaveBeenCalled());
+    expect(saveConversation).toHaveBeenCalledWith(
+      "Give me an overview of the system status",
+      expect.any(Array),
+      null,
+      { createNew: true }
+    );
+    expect(useAIStore.getState().activeConversationId).toBe("conversation-1");
+
+    await vi.waitFor(() =>
+      expect(socket.send).toHaveBeenCalledWith(expect.stringContaining('"type":"chat"'))
+    );
+    const chatPayload = JSON.parse(
+      vi
+        .mocked(socket.send)
+        .mock.calls.find(([payload]) => String(payload).includes('"type":"chat"'))?.[0] as string
+    );
+    expect(chatPayload.conversationId).toBe("conversation-1");
+    expect(chatPayload.conversationId).not.toBe("old-conversation");
+  });
+
   it("keeps multi-step assistant text and tool calls in streaming order", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
     useAuthStore.setState({

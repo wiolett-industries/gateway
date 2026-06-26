@@ -20,9 +20,7 @@ export function AIConversationBlockedBlock({
   return (
     <div
       className={
-        showTopBorder
-          ? "border-t border-border bg-muted/40 px-3 py-3"
-          : "bg-muted/40 px-3 py-3"
+        showTopBorder ? "border-t border-border bg-muted/40 px-3 py-3" : "bg-muted/40 px-3 py-3"
       }
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

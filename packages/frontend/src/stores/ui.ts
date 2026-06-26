@@ -1,5 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import {
+  type AIApprovalMode,
+  aiApprovalModeToFlags,
+  flagsToAIApprovalMode,
+  isAIApprovalMode,
+} from "@/lib/ai-approval-mode";
 
 type Theme = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";
@@ -41,10 +47,13 @@ interface UIState {
   aiBypassCreateApprovals: boolean;
   aiBypassEditApprovals: boolean;
   aiBypassDeleteApprovals: boolean;
+  aiApprovalMode: AIApprovalMode;
   setAIAlwaysAskApprovals: (v: boolean) => void;
   setAIBypassCreateApprovals: (v: boolean) => void;
   setAIBypassEditApprovals: (v: boolean) => void;
   setAIBypassDeleteApprovals: (v: boolean) => void;
+  setAIApprovalMode: (mode: AIApprovalMode) => void;
+  hydrateAIApprovalMode: (mode: AIApprovalMode) => void;
 
   // Command palette
   commandPaletteOpen: boolean;
@@ -111,10 +120,38 @@ export const useUIStore = create<UIState>()(
       aiBypassCreateApprovals: false,
       aiBypassEditApprovals: false,
       aiBypassDeleteApprovals: false,
-      setAIAlwaysAskApprovals: (aiAlwaysAskApprovals) => set({ aiAlwaysAskApprovals }),
-      setAIBypassCreateApprovals: (aiBypassCreateApprovals) => set({ aiBypassCreateApprovals }),
-      setAIBypassEditApprovals: (aiBypassEditApprovals) => set({ aiBypassEditApprovals }),
-      setAIBypassDeleteApprovals: (aiBypassDeleteApprovals) => set({ aiBypassDeleteApprovals }),
+      aiApprovalMode: "normal",
+      setAIAlwaysAskApprovals: (aiAlwaysAskApprovals) =>
+        set((state) => ({
+          aiAlwaysAskApprovals,
+          aiApprovalMode: flagsToAIApprovalMode({ ...state, aiAlwaysAskApprovals }),
+        })),
+      setAIBypassCreateApprovals: (aiBypassCreateApprovals) =>
+        set((state) => ({
+          aiBypassCreateApprovals,
+          aiApprovalMode: flagsToAIApprovalMode({ ...state, aiBypassCreateApprovals }),
+        })),
+      setAIBypassEditApprovals: (aiBypassEditApprovals) =>
+        set((state) => ({
+          aiBypassEditApprovals,
+          aiApprovalMode: flagsToAIApprovalMode({ ...state, aiBypassEditApprovals }),
+        })),
+      setAIBypassDeleteApprovals: (aiBypassDeleteApprovals) =>
+        set((state) => ({
+          aiBypassDeleteApprovals,
+          aiApprovalMode: flagsToAIApprovalMode({ ...state, aiBypassDeleteApprovals }),
+        })),
+      hydrateAIApprovalMode: (aiApprovalMode) =>
+        set({
+          aiApprovalMode,
+          ...aiApprovalModeToFlags(aiApprovalMode),
+        }),
+      setAIApprovalMode: (aiApprovalMode) => {
+        set({
+          aiApprovalMode,
+          ...aiApprovalModeToFlags(aiApprovalMode),
+        });
+      },
 
       // Command palette
       commandPaletteOpen: false,
@@ -163,11 +200,27 @@ export const useUIStore = create<UIState>()(
         aiLiteMode: state.aiLiteMode,
         aiLiteModeIntroAccepted: state.aiLiteModeIntroAccepted,
         pinnedAIConversationIds: state.pinnedAIConversationIds,
+        aiApprovalMode: state.aiApprovalMode,
+        aiAlwaysAskApprovals: state.aiAlwaysAskApprovals,
         aiBypassCreateApprovals: state.aiBypassCreateApprovals,
         aiBypassEditApprovals: state.aiBypassEditApprovals,
         aiBypassDeleteApprovals: state.aiBypassDeleteApprovals,
         recentPages: state.recentPages,
       }),
+      migrate: (persisted) => {
+        const state = persisted as Partial<UIState> | undefined;
+        if (!state) return persisted;
+        if (isAIApprovalMode(state.aiApprovalMode)) return persisted;
+        return {
+          ...state,
+          aiApprovalMode: flagsToAIApprovalMode({
+            aiAlwaysAskApprovals: !!state.aiAlwaysAskApprovals,
+            aiBypassCreateApprovals: !!state.aiBypassCreateApprovals,
+            aiBypassEditApprovals: !!state.aiBypassEditApprovals,
+            aiBypassDeleteApprovals: !!state.aiBypassDeleteApprovals,
+          }),
+        };
+      },
     }
   )
 );

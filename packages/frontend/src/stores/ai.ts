@@ -446,7 +446,8 @@ interface AIState {
   sendMessage: (
     content: string,
     context?: PageContext,
-    attachments?: AIMessage["attachments"]
+    attachments?: AIMessage["attachments"],
+    options?: SendMessageOptions
   ) => void;
   approveTool: (toolCallId: string) => void;
   rejectTool: (toolCallId: string) => void;
@@ -515,7 +516,8 @@ function createConversationStatusMarker(
 async function ensureActiveConversation(
   content: string,
   messages: AIMessage[],
-  context?: PageContext
+  context?: PageContext,
+  options: { createNew?: boolean } = {}
 ): Promise<string | null> {
   const state = useAIStore.getState();
   if (state.activeConversationId) return state.activeConversationId;
@@ -525,7 +527,8 @@ async function ensureActiveConversation(
     const saved = await saveConversation(
       title,
       messages.filter((message) => !message.localOnly),
-      context ?? state.lastContext
+      context ?? state.lastContext,
+      { createNew: options.createNew }
     );
     useAIStore.setState({
       activeConversationId: saved.id,
@@ -614,6 +617,10 @@ export interface AIContextUsage {
   overheadTokens: number;
   source: "settings" | "fallback";
   reasoningEffort: AIConfig["reasoningEffort"];
+}
+
+interface SendMessageOptions {
+  startNewConversation?: boolean;
 }
 
 export async function getAIContextUsage(messages: AIMessage[]): Promise<AIContextUsage> {
@@ -712,10 +719,12 @@ export const useAIStore = create<AIState>()((set, get) => ({
   sendMessage: (
     content: string,
     context?: PageContext,
-    attachments: AIMessage["attachments"] = []
+    attachments: AIMessage["attachments"] = [],
+    options: SendMessageOptions = {}
   ) => {
     const { messages } = get();
-    if (getConversationBlock(messages)) return;
+    const baseMessages = options.startNewConversation ? [] : messages;
+    if (getConversationBlock(baseMessages)) return;
 
     const userMsg: AIMessage = {
       id: generateId(),
@@ -734,27 +743,28 @@ export const useAIStore = create<AIState>()((set, get) => ({
     };
 
     set({
-      messages: [...messages, userMsg, assistantMsg],
+      messages: [...baseMessages, userMsg, assistantMsg],
       isStreaming: true,
       lastContext: context ?? null,
+      ...(options.startNewConversation ? { savedName: null, activeConversationId: null } : {}),
     });
 
     const requestId = generateId();
     currentRequestId = requestId;
 
-    const chatMessages = buildChatMessages([...messages, userMsg]);
+    const chatMessages = buildChatMessages([...baseMessages, userMsg]);
 
-    void ensureActiveConversation(content, [...messages, userMsg], context).then(
-      (conversationId) => {
-        wsClient?.send({
-          type: "chat",
-          requestId,
-          messages: chatMessages,
-          context,
-          conversationId: conversationId ?? undefined,
-        });
-      }
-    );
+    void ensureActiveConversation(content, [...baseMessages, userMsg], context, {
+      createNew: options.startNewConversation,
+    }).then((conversationId) => {
+      wsClient?.send({
+        type: "chat",
+        requestId,
+        messages: chatMessages,
+        context,
+        conversationId: conversationId ?? undefined,
+      });
+    });
   },
 
   approveTool: (toolCallId: string) => {
@@ -893,9 +903,11 @@ export const useAIStore = create<AIState>()((set, get) => ({
 
   fetchRecentConversations: async () => {
     if (!useAuthStore.getState().user) return;
-    set({ isLoadingRecentConversations: true });
+    set((state) => ({
+      isLoadingRecentConversations: state.recentConversations.length === 0,
+    }));
     try {
-      const conversations = await listConversations(5);
+      const conversations = await listConversations();
       set({ recentConversations: conversations, isLoadingRecentConversations: false });
     } catch {
       set({ isLoadingRecentConversations: false });

@@ -64,6 +64,7 @@ export async function resolveLiveUser(db: DrizzleClient, userId: string): Promis
     groupName,
     scopes,
     isBlocked: dbUser.isBlocked,
+    aiApprovalMode: dbUser.aiApprovalMode,
   };
 }
 

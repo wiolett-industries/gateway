@@ -28,6 +28,7 @@ export interface SaveAIConversationInput {
   title: string;
   messages: unknown[];
   lastContext?: PageContext | Record<string, unknown> | null;
+  createNew?: boolean;
 }
 
 export interface AIConversationRuntimeStateInput {
@@ -92,14 +93,20 @@ export class AIConversationService {
   }
 
   async saveConversation(userId: string, input: SaveAIConversationInput): Promise<AIConversationDetail> {
-    const title = normalizeTitle(input.title);
+    let title = normalizeTitle(input.title);
     const now = new Date();
     const lastContext = normalizeContext(input.lastContext);
     const messages = sanitizeConversationMessagesForStorage(input.messages);
 
-    const existing = await this.db.query.aiConversations.findFirst({
-      where: and(eq(aiConversations.userId, userId), eq(aiConversations.title, title)),
-    });
+    if (input.createNew) {
+      title = await this.resolveUniqueTitle(userId, title);
+    }
+
+    const existing = input.createNew
+      ? null
+      : await this.db.query.aiConversations.findFirst({
+          where: and(eq(aiConversations.userId, userId), eq(aiConversations.title, title)),
+        });
 
     let conversationId = existing?.id;
     await this.db.transaction(async (tx) => {
@@ -134,6 +141,19 @@ export class AIConversationService {
     const saved = await this.getConversation(userId, conversationId!);
     if (!saved) throw new Error('Failed to save conversation');
     return saved;
+  }
+
+  private async resolveUniqueTitle(userId: string, title: string): Promise<string> {
+    let candidate = title;
+    for (let copy = 2; ; copy += 1) {
+      const existing = await this.db.query.aiConversations.findFirst({
+        where: and(eq(aiConversations.userId, userId), eq(aiConversations.title, candidate)),
+      });
+      if (!existing) return candidate;
+
+      const suffix = ` (${copy})`;
+      candidate = `${title.slice(0, 255 - suffix.length)}${suffix}`;
+    }
   }
 
   async updateConversation(

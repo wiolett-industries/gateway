@@ -3,10 +3,14 @@ import { Expand, Lock, MessageSquare, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { type AIApprovalMode, formatAIApprovalModeLabel } from "@/lib/ai-approval-mode";
+import {
+  confirmBypassEverythingMode,
+  updateAIApprovalModeOptimistically,
+} from "@/lib/ai-user-preferences";
 import { api } from "@/services/api";
 import { getConversationBlock, useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
@@ -17,7 +21,7 @@ import type {
   AIMessageAttachment,
   PageContext,
 } from "@/types/ai";
-import { type AIApprovalMode, AIComposer } from "./AIComposer";
+import { AIComposer } from "./AIComposer";
 import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
 import { AIMessage } from "./AIMessage";
 import { QuestionBlock } from "./AIToolCallBlock";
@@ -139,16 +143,6 @@ function formatConversationDate(value: string): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-async function confirmBypassEverythingMode(): Promise<boolean> {
-  return confirm({
-    title: "Enable AI bypass delete approvals?",
-    description:
-      "The AI assistant will create, modify, and delete resources without asking for your confirmation.",
-    confirmLabel: "Enable",
-    variant: "destructive",
-  });
-}
-
 interface AIChatSurfaceProps {
   active?: boolean;
   onClose?: () => void;
@@ -191,58 +185,30 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
   const shouldStickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const context = usePageContext();
-  const {
-    aiAlwaysAskApprovals,
-    aiBypassCreateApprovals,
-    aiBypassEditApprovals,
-    aiBypassDeleteApprovals,
-    setAIAlwaysAskApprovals,
-    setAIBypassCreateApprovals,
-    setAIBypassEditApprovals,
-    setAIBypassDeleteApprovals,
-  } = useUIStore();
+  const { aiApprovalMode: approvalMode } = useUIStore();
   const canCompact = userMessagesAfterLastCompact(messages) > 3;
   const visibleSlashCommands = SLASH_COMMANDS.filter(
     (command) => command.name !== "compact" || canCompact
   );
-  const approvalMode: AIApprovalMode = aiAlwaysAskApprovals
-    ? "always-ask"
-    : aiBypassDeleteApprovals
-      ? "bypass-everything"
-      : aiBypassCreateApprovals || aiBypassEditApprovals
-        ? "bypass-non-destructive"
-        : "normal";
-  const approvalModeLabel =
-    approvalMode === "always-ask"
-      ? "AI mode: always ask"
-      : approvalMode === "bypass-everything"
-        ? "AI mode: bypass everything"
-        : approvalMode === "bypass-non-destructive"
-          ? "AI mode: bypass non-destructive"
-          : "AI mode: normal";
+  const approvalModeLabel = formatAIApprovalModeLabel(approvalMode);
   const conversationBlock = getConversationBlock(messages);
 
   const setApprovalMode = useCallback(
     async (mode: AIApprovalMode) => {
       if (
         mode === "bypass-everything" &&
-        !aiBypassDeleteApprovals &&
+        approvalMode !== "bypass-everything" &&
         !(await confirmBypassEverythingMode())
       ) {
         return;
       }
-      setAIAlwaysAskApprovals(mode === "always-ask");
-      setAIBypassCreateApprovals(mode === "bypass-non-destructive" || mode === "bypass-everything");
-      setAIBypassEditApprovals(mode === "bypass-non-destructive" || mode === "bypass-everything");
-      setAIBypassDeleteApprovals(mode === "bypass-everything");
+      try {
+        await updateAIApprovalModeOptimistically(mode, approvalMode);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to update AI mode");
+      }
     },
-    [
-      setAIAlwaysAskApprovals,
-      aiBypassDeleteApprovals,
-      setAIBypassCreateApprovals,
-      setAIBypassDeleteApprovals,
-      setAIBypassEditApprovals,
-    ]
+    [approvalMode]
   );
 
   useEffect(() => {
@@ -421,7 +387,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
   };
 
   const handleQuickAction = (prompt: string) => {
-    sendMessage(prompt, context);
+    sendMessage(prompt, context, [], { startNewConversation: messages.length === 0 });
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -521,7 +487,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
               <div className="border-b border-border px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
                 Recent
               </div>
-              {isLoadingRecentConversations ? (
+              {isLoadingRecentConversations && recentConversations.length === 0 ? (
                 <div className="px-3 py-3 text-xs text-muted-foreground">Loading...</div>
               ) : (
                 recentConversations.map((conversation) => (

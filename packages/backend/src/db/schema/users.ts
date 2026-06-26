@@ -25,6 +25,10 @@ export const users = pgTable(
       .notNull()
       .references((): AnyPgColumn => permissionGroups.id),
     isBlocked: boolean('is_blocked').notNull().default(false),
+    aiApprovalMode: varchar('ai_approval_mode', { length: 32 })
+      .$type<'always-ask' | 'normal' | 'bypass-non-destructive' | 'bypass-everything'>()
+      .notNull()
+      .default('normal'),
     folderId: uuid('folder_id').references((): AnyPgColumn => adminUserFolders.id, { onDelete: 'set null' }),
     sortOrder: integer('sort_order').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

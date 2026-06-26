@@ -49,6 +49,7 @@ import { eventStream } from "@/services/event-stream";
 import { APP_STATUS_STORAGE_KEY, useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
 import { useSystemConfigStore } from "@/stores/system-config";
+import { useUIStore } from "@/stores/ui";
 
 /** Helper to wrap a page element with a scope guard */
 function scoped(scope: string, element: React.ReactElement) {
@@ -418,6 +419,7 @@ function RealtimeBridge() {
   const canListNodes = useAuthStore((s) => s.hasScopedAccess("nodes:details"));
   const setGatewayUpdatingActive = useAppStatusStore((s) => s.setGatewayUpdatingActive);
   const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
+  const hydrateAIApprovalMode = useUIStore((s) => s.hydrateAIApprovalMode);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -426,6 +428,20 @@ function RealtimeBridge() {
     }
     return;
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    void api
+      .getUserPreferences()
+      .then((preferences) => {
+        if (!cancelled) hydrateAIApprovalMode(preferences.aiApprovalMode);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateAIApprovalMode, user?.id]);
 
   // Live permission updates: refresh the local user (and thus scopes) whenever
   // the server says this user's permissions changed.

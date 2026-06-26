@@ -828,7 +828,12 @@ class ApiClient extends withLoggingApi(
     return res.data;
   }
 
-  async saveAIConversation(title: string, messages: AIMessage[], lastContext?: PageContext | null) {
+  async saveAIConversation(
+    title: string,
+    messages: AIMessage[],
+    lastContext?: PageContext | null,
+    options: { createNew?: boolean } = {}
+  ) {
     const res = await this.request<{
       data: {
         id: string;
@@ -841,7 +846,7 @@ class ApiClient extends withLoggingApi(
       };
     }>("/ai/conversations", {
       method: "POST",
-      body: JSON.stringify({ title, messages, lastContext }),
+      body: JSON.stringify({ title, messages, lastContext, createNew: options.createNew }),
     });
     return res.data;
   }

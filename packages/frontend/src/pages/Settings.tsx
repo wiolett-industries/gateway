@@ -1,14 +1,39 @@
-import { Bot, Moon, ServerCog, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  Moon,
+  ServerCog,
+  SlidersHorizontal,
+  Sparkles,
+  Sun,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { confirm } from "@/components/common/ConfirmDialog";
+import { toast } from "sonner";
 import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AI_APPROVAL_MODE_META,
+  AI_APPROVAL_MODES,
+  type AIApprovalMode,
+} from "@/lib/ai-approval-mode";
+import {
+  confirmBypassEverythingMode,
+  updateAIApprovalModeOptimistically,
+} from "@/lib/ai-user-preferences";
 import { deriveAllowedResourceIdsByScope, scopeMatches } from "@/lib/scope-utils";
 import { getInitials } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -45,12 +70,7 @@ export function Settings() {
     setShowSystemCertificates,
     showAILiteModeCTA,
     setShowAILiteModeCTA,
-    aiBypassCreateApprovals,
-    setAIBypassCreateApprovals,
-    aiBypassEditApprovals,
-    setAIBypassEditApprovals,
-    aiBypassDeleteApprovals,
-    setAIBypassDeleteApprovals,
+    aiApprovalMode,
   } = useUIStore();
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
@@ -202,6 +222,23 @@ export function Settings() {
     api.invalidateCache("dashboard:stats:");
   };
 
+  const handleAIApprovalModeChange = async (mode: AIApprovalMode) => {
+    if (mode === aiApprovalMode) return;
+    if (
+      mode === "bypass-everything" &&
+      aiApprovalMode !== "bypass-everything" &&
+      !(await confirmBypassEverythingMode())
+    ) {
+      return;
+    }
+
+    try {
+      await updateAIApprovalModeOptimistically(mode, aiApprovalMode);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update AI mode");
+    }
+  };
+
   const handleTabChange = (value: string) => {
     navigate(value === "preferences" ? "/settings" : `/settings/${value}`);
   };
@@ -327,28 +364,10 @@ export function Settings() {
                     </div>
                   )}
                   {canUseAI && (
-                    <>
-                      <AIBypassRow
-                        label="AI: bypass create approvals"
-                        description="Allow AI to create resources without confirmation"
-                        checked={aiBypassCreateApprovals}
-                        onChange={setAIBypassCreateApprovals}
-                      />
-                      <AIBypassRow
-                        label="AI: bypass edit approvals"
-                        description="Allow AI to modify resources without confirmation"
-                        checked={aiBypassEditApprovals}
-                        onChange={setAIBypassEditApprovals}
-                        dangerous
-                      />
-                      <AIBypassRow
-                        label="AI: bypass delete approvals"
-                        description="Allow AI to delete resources without confirmation"
-                        checked={aiBypassDeleteApprovals}
-                        onChange={setAIBypassDeleteApprovals}
-                        dangerous
-                      />
-                    </>
+                    <AIApprovalModeRow
+                      value={aiApprovalMode}
+                      onChange={handleAIApprovalModeChange}
+                    />
                   )}
                 </div>
               </PanelShell>
@@ -431,40 +450,53 @@ export function Settings() {
   );
 }
 
-function AIBypassRow({
-  label,
-  description,
-  checked,
+function AIApprovalModeRow({
+  value,
   onChange,
-  dangerous,
 }: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  dangerous?: boolean;
+  value: AIApprovalMode;
+  onChange: (mode: AIApprovalMode) => void | Promise<void>;
 }) {
-  const handleChange = async (v: boolean) => {
-    if (v && dangerous) {
-      const ok = await confirm({
-        title: `Enable ${label.toLowerCase().replace("ai: ", "")}?`,
-        description:
-          "This may be dangerous. The AI assistant will perform these actions without asking for your confirmation.",
-        confirmLabel: "Enable",
-        variant: "destructive",
-      });
-      if (!ok) return;
-    }
-    onChange(v);
-  };
+  const current = AI_APPROVAL_MODE_META[value];
+  const CurrentIcon = current.icon;
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <div>
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">AI approval mode</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{current.description}</p>
       </div>
-      <Switch checked={checked} onChange={handleChange} />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="w-full justify-between sm:w-[250px]">
+            <span className="flex min-w-0 items-center gap-2">
+              <CurrentIcon className="h-4 w-4 shrink-0" />
+              <span className="truncate">{current.menuLabel}</span>
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-[min(22rem,calc(100vw-2rem))]">
+          {AI_APPROVAL_MODES.map((mode) => {
+            const item = AI_APPROVAL_MODE_META[mode];
+            const Icon = item.icon;
+            return (
+              <DropdownMenuItem
+                key={mode}
+                className="items-start gap-3"
+                onSelect={() => void onChange(mode)}
+              >
+                <Icon className="mt-0.5 h-4 w-4" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{item.menuLabel}</span>
+                  <span className="block text-xs text-muted-foreground">{item.description}</span>
+                </span>
+                {value === mode && <Check className="mt-0.5 h-4 w-4" />}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

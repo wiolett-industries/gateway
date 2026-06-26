@@ -10,6 +10,7 @@ export interface User {
   groupName: string;
   scopes: string[];
   isBlocked: boolean;
+  aiApprovalMode?: 'always-ask' | 'normal' | 'bypass-non-destructive' | 'bypass-everything';
   folderId?: string | null;
   sortOrder?: number;
 }
