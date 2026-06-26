@@ -331,6 +331,53 @@ describe("AI backend runtime store", () => {
     ]);
   });
 
+  it("orders restored snapshot messages by backend sequence", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [
+          {
+            id: "assistant-1",
+            sequence: 1,
+            role: "assistant",
+            content: "Answer",
+          },
+          {
+            id: "user-1",
+            sequence: 0,
+            role: "user",
+            content: "Question",
+          },
+        ],
+        runtime: {
+          activeRun: null,
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [],
+        },
+      },
+    });
+
+    expect(useAIStore.getState().messages.map((message) => message.id)).toEqual([
+      "user-1",
+      "assistant-1",
+    ]);
+  });
+
   it("renders tool-only active turns in a runtime placeholder instead of the previous assistant reply", async () => {
     const socket = await connectAI();
     useAIStore.setState({ activeConversationId: "conversation-1" });

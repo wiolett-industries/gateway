@@ -18,6 +18,7 @@ export interface AIMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  sequence?: number;
   attachments?: AIMessageAttachment[];
   createdAt?: string;
   toolCalls?: AIToolCall[];

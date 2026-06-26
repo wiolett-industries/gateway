@@ -865,9 +865,11 @@ function normalizeSnapshotMessages(snapshot: AIConversationRuntimeSnapshot): AIM
 }
 
 function normalizeConversationMessages(messages: unknown[], conversationId: string): AIMessage[] {
-  return messages
-    .map((message, index) => normalizeConversationMessage(message, conversationId, index))
-    .filter((message): message is AIMessage => message !== null);
+  return sortMessagesBySequence(
+    messages
+      .map((message, index) => normalizeConversationMessage(message, conversationId, index))
+      .filter((message): message is AIMessage => message !== null)
+  );
 }
 
 function normalizeConversationMessage(
@@ -887,6 +889,7 @@ function normalizeConversationMessage(
     id,
     role,
     content: typeof message.content === "string" ? message.content : "",
+    sequence: typeof message.sequence === "number" ? message.sequence : index,
     attachments: Array.isArray(message.attachments)
       ? (message.attachments as AIMessage["attachments"])
       : undefined,
@@ -1001,10 +1004,12 @@ function attachRuntimeToolCallsToMessages(
   let targetIndex =
     active && activeRunId ? findActiveRuntimeAssistantIndex(nextMessages, activeRunId) : -1;
   if (targetIndex === -1 && active && activeRunId) {
+    const sequence = nextMessageSequence(nextMessages);
     nextMessages.push({
       id: `${activeRunId}:runtime`,
       role: "assistant",
       content: "",
+      sequence,
       createdAt: nowIso(),
       isStreaming: active,
     });
@@ -1014,10 +1019,12 @@ function attachRuntimeToolCallsToMessages(
     targetIndex = findLastAssistantIndex(nextMessages);
   }
   if (targetIndex === -1) {
+    const sequence = nextMessageSequence(nextMessages);
     nextMessages.push({
       id: activeRunId ? `${activeRunId}:runtime` : generateId(),
       role: "assistant",
       content: "",
+      sequence,
       createdAt: nowIso(),
       isStreaming: active,
     });
@@ -1029,7 +1036,7 @@ function attachRuntimeToolCallsToMessages(
     isStreaming: active,
     toolCalls: mergeToolCalls(nextMessages[targetIndex].toolCalls ?? [], unassignedToolCalls),
   };
-  return nextMessages;
+  return sortMessagesBySequence(nextMessages);
 }
 
 function findActiveRuntimeAssistantIndex(messages: AIMessage[], activeRunId: string): number {
@@ -1050,6 +1057,26 @@ function findLastAssistantIndex(messages: AIMessage[]): number {
     if (messages[index].role === "assistant") return index;
   }
   return -1;
+}
+
+function nextMessageSequence(messages: AIMessage[]): number {
+  return (
+    messages.reduce(
+      (max, message, index) =>
+        Math.max(max, typeof message.sequence === "number" ? message.sequence : index),
+      -1
+    ) + 1
+  );
+}
+
+function sortMessagesBySequence(messages: AIMessage[]): AIMessage[] {
+  return [...messages].sort((left, right) => {
+    const leftSequence = typeof left.sequence === "number" ? left.sequence : messages.indexOf(left);
+    const rightSequence =
+      typeof right.sequence === "number" ? right.sequence : messages.indexOf(right);
+    if (leftSequence !== rightSequence) return leftSequence - rightSequence;
+    return messages.indexOf(left) - messages.indexOf(right);
+  });
 }
 
 function isActiveRunStatus(status: string | null | undefined): boolean {

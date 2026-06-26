@@ -518,6 +518,7 @@ export class AIRunService {
       this.db
         .select({
           id: aiConversationMessages.id,
+          sequence: aiConversationMessages.sequence,
           uiMessage: aiConversationMessages.uiMessage,
           createdAt: aiConversationMessages.createdAt,
         })
@@ -538,7 +539,9 @@ export class AIRunService {
         checkpoint: conversation.checkpoint,
       },
       messages: withAssistantDraftMessage(
-        messages.map((message) => toSnapshotMessage(message.id, message.uiMessage, message.createdAt)),
+        messages.map((message) =>
+          toSnapshotMessage(message.id, message.sequence, message.uiMessage, message.createdAt)
+        ),
         runtime.activeRun
       ),
       runtime,
@@ -714,13 +717,14 @@ function toConversationMessage(conversationId: string, message: Record<string, u
   };
 }
 
-function toSnapshotMessage(id: string, uiMessage: unknown, createdAt: Date): Record<string, unknown> {
+function toSnapshotMessage(id: string, sequence: number, uiMessage: unknown, createdAt: Date): Record<string, unknown> {
   if (!uiMessage || typeof uiMessage !== 'object' || Array.isArray(uiMessage)) {
-    return { id, content: String(uiMessage ?? ''), createdAt: createdAt.toISOString() };
+    return { id, sequence, content: String(uiMessage ?? ''), createdAt: createdAt.toISOString() };
   }
   return {
     ...(uiMessage as Record<string, unknown>),
     id,
+    sequence,
     createdAt: createdAt.toISOString(),
   };
 }
@@ -731,10 +735,16 @@ function withAssistantDraftMessage(
 ): Record<string, unknown>[] {
   const content = activeRun?.assistantDraftContent;
   if (!content) return messages;
+  const sequence =
+    messages.reduce(
+      (max, message, index) => Math.max(max, typeof message.sequence === 'number' ? message.sequence : index),
+      -1
+    ) + 1;
   return [
     ...messages,
     {
       id: `${activeRun.id}:draft`,
+      sequence,
       role: 'assistant',
       content,
       createdAt: activeRun.updatedAt.toISOString(),
