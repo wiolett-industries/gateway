@@ -17,10 +17,12 @@ function createService({
   config = {},
   caService = {},
   monitoringService = {},
+  conversationSearchService,
 }: {
   config?: Record<string, unknown>;
   caService?: Record<string, unknown>;
   monitoringService?: Record<string, unknown>;
+  conversationSearchService?: Record<string, unknown>;
 }) {
   return new AIService(
     { getConfig: vi.fn().mockResolvedValue(config) } as never,
@@ -38,7 +40,14 @@ function createService({
     {} as never,
     {} as never,
     {} as never,
-    {} as never
+    {} as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    conversationSearchService as never
   );
 }
 
@@ -91,6 +100,53 @@ describe('AIService system prompt', () => {
     expect(prompt).toContain('Use get_current_context');
     expect(prompt).toContain('Use discover_tools');
     expect(prompt).toContain('Use find_resource FIRST');
+    expect(prompt).toContain('## Conversation Retrieval');
+    expect(prompt).toContain('search_chats');
+  });
+
+  it('injects AI chat retrieval pointers for a concrete conversation', async () => {
+    const monitoringService = {
+      getDashboardStats: vi.fn().mockRejectedValue(new Error('stats unavailable')),
+    };
+    const conversationSearchService = {
+      getPromptPointers: vi.fn().mockResolvedValue({
+        currentProjectId: 'project-1',
+        availableProjects: [
+          {
+            projectId: 'project-1',
+            name: 'Gateway AI',
+            description: 'AI chat work',
+            conversationCount: 2,
+            lastUserMessageAt: '2026-06-26T12:00:00.000Z',
+          },
+        ],
+        recentChats: [
+          {
+            conversationId: 'conversation-1',
+            projectId: 'project-1',
+            title: 'Migration issue',
+            lastUserMessageAt: '2026-06-26T12:00:00.000Z',
+          },
+        ],
+      }),
+    };
+    const service = createService({ monitoringService, conversationSearchService });
+
+    const prompt = await service.buildSystemPrompt(
+      {
+        ...BASE_USER,
+        scopes: ['feat:ai:use'],
+      },
+      undefined,
+      'conversation-1'
+    );
+
+    expect(conversationSearchService.getPromptPointers).toHaveBeenCalledWith('user-1', 'conversation-1');
+    expect(prompt).toContain('## AI Chat Retrieval Pointers');
+    expect(prompt).toContain('Current project ID: project-1');
+    expect(prompt).toContain('Gateway AI');
+    expect(prompt).toContain('Migration issue');
+    expect(prompt).toContain('These pointers are not full context or evidence');
   });
 
   it('advertises logging documentation to logging-scoped users', async () => {

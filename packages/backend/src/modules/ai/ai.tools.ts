@@ -149,6 +149,99 @@ export const AI_TOOLS: AIToolDefinition[] = [
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
   },
+  {
+    name: 'search_chats',
+    description:
+      "Search the user's previous AI chats using deterministic raw-history retrieval. Use this when the user refers to prior work, older decisions, previous bugs, commands, errors, files, projects, or missing context. Returns conversation-level results with message-level snippets; use read_chat_slice for exact source details.",
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query. Keep exact identifiers, errors, file paths, commands, and tool names unchanged.',
+        },
+        scope: {
+          type: 'object',
+          description:
+            'Search boundary. Default is current project when this chat is in a project, otherwise no_project. Use all_user_chats only when the user clearly asks broadly or project-local search is insufficient for an obviously cross-project reference.',
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['current_project', 'project', 'no_project', 'all_user_chats'],
+            },
+            projectId: {
+              type: 'string',
+              description: 'Required when type is project.',
+            },
+          },
+        },
+        limit: { type: 'number', description: 'Maximum conversations to return. Default 10, max 20.' },
+      },
+      required: ['query'],
+    },
+    destructive: false,
+    category: 'Conversation Retrieval',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'find_in_chat',
+    description:
+      'Search inside a specific previous AI chat without reading the whole chat. Use after search_chats when you know the target conversation but need a more precise matching message.',
+    parameters: {
+      type: 'object',
+      properties: {
+        conversationId: { type: 'string', description: 'Conversation UUID to search.' },
+        query: { type: 'string', description: 'Search query within that conversation.' },
+        limit: { type: 'number', description: 'Maximum matches to return. Default 10, max 20.' },
+      },
+      required: ['conversationId', 'query'],
+    },
+    destructive: false,
+    category: 'Conversation Retrieval',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'read_chat_slice',
+    description:
+      'Read a bounded slice of raw messages from a previous AI chat for source verification. Do not use this to read entire chat histories; call search_chats or find_in_chat first unless the user named the exact chat.',
+    parameters: {
+      type: 'object',
+      properties: {
+        conversationId: { type: 'string', description: 'Conversation UUID to read.' },
+        mode: {
+          type: 'string',
+          enum: ['latest', 'first', 'around_message', 'after', 'before'],
+          description: 'Which bounded slice to read.',
+        },
+        messageId: { type: 'string', description: 'Anchor message UUID for around_message, after, or before.' },
+        cursor: { type: 'string', description: 'Cursor returned by a previous read_chat_slice call.' },
+        limit: { type: 'number', description: 'Maximum messages to return. Default 20, max 50.' },
+      },
+      required: ['conversationId', 'mode'],
+    },
+    destructive: false,
+    category: 'Conversation Retrieval',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'list_projects',
+    description:
+      'List AI chat projects as retrieval boundaries. Use when the user names or implies another project and you need the projectId before searching that project.',
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Maximum projects to return. Default 20, max 50.' },
+        cursor: { type: 'string', description: 'Pagination cursor from a previous list_projects response.' },
+      },
+    },
+    destructive: false,
+    category: 'Conversation Retrieval',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
 
   // ── PKI ──
   ...PKI_AI_TOOLS,

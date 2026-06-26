@@ -87,6 +87,7 @@ import type {
 import { executeWebSearch } from './ai.web-search.js';
 import { getAIToolApprovalDecision } from './ai-approval-policy.js';
 import { AIConversationService } from './ai-conversation.service.js';
+import { type AIChatSearchScope, AIConversationSearchService } from './ai-conversation-search.service.js';
 
 const logger = createChildLogger('AIService');
 const SANDBOX_TOOL_NAMES = new Set([
@@ -253,6 +254,21 @@ function inferDiscoveredToolsetsFromMessages(messages: ChatMessage[]): string[] 
     : [];
 }
 
+function normalizeSearchScope(value: unknown): AIChatSearchScope | undefined {
+  if (!isRecord(value) || typeof value.type !== 'string') return undefined;
+  if (value.type === 'current_project' || value.type === 'no_project' || value.type === 'all_user_chats') {
+    return { type: value.type };
+  }
+  if (value.type === 'project' && typeof value.projectId === 'string' && value.projectId.trim()) {
+    return { type: 'project', projectId: value.projectId.trim() };
+  }
+  return undefined;
+}
+
+function normalizeReadChatSliceMode(value: unknown): 'latest' | 'first' | 'around_message' | 'after' | 'before' {
+  return value === 'first' || value === 'around_message' || value === 'after' || value === 'before' ? value : 'latest';
+}
+
 export class AIService {
   constructor(
     private readonly settingsService: AISettingsService,
@@ -276,15 +292,28 @@ export class AIService {
     private readonly notifDeliveryService?: import('@/modules/notifications/notification-delivery.service.js').NotificationDeliveryService,
     private readonly notifDispatcherService?: import('@/modules/notifications/notification-dispatcher.service.js').NotificationDispatcherService,
     private readonly sandboxService?: AISandboxService,
-    private readonly artifactService?: AISandboxArtifactService
+    private readonly artifactService?: AISandboxArtifactService,
+    private readonly conversationSearchService?: AIConversationSearchService
   ) {}
 
-  async buildSystemPrompt(user: User, pageContext?: PageContext): Promise<string> {
+  async buildSystemPrompt(user: User, pageContext?: PageContext, conversationId?: string): Promise<string> {
+    const retrievalPointers = conversationId
+      ? await (this.conversationSearchService ?? container.resolve(AIConversationSearchService))
+          .getPromptPointers(user.id, conversationId)
+          .catch((error) => {
+            logger.warn('Failed to build AI conversation retrieval pointers', {
+              conversationId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return undefined;
+          })
+      : undefined;
     return buildAISystemPrompt(
       {
         settingsService: this.settingsService,
         monitoringService: this.monitoringService,
         caService: this.caService,
+        retrievalPointers,
       },
       user,
       pageContext
@@ -617,6 +646,41 @@ export class AIService {
           },
           user,
           args
+        );
+      case 'search_chats':
+        return (this.conversationSearchService ?? container.resolve(AIConversationSearchService)).searchChats(user.id, {
+          query: String(a.query ?? ''),
+          scope: normalizeSearchScope(a.scope),
+          limit: typeof a.limit === 'number' ? a.limit : undefined,
+          currentConversationId: runtimeContext.conversationId,
+        });
+      case 'find_in_chat':
+        return (this.conversationSearchService ?? container.resolve(AIConversationSearchService)).findInChat(user.id, {
+          conversationId: String(a.conversationId ?? ''),
+          query: String(a.query ?? ''),
+          limit: typeof a.limit === 'number' ? a.limit : undefined,
+          currentConversationId: runtimeContext.conversationId,
+        });
+      case 'read_chat_slice':
+        return (this.conversationSearchService ?? container.resolve(AIConversationSearchService)).readChatSlice(
+          user.id,
+          {
+            conversationId: String(a.conversationId ?? ''),
+            mode: normalizeReadChatSliceMode(a.mode),
+            messageId: typeof a.messageId === 'string' ? a.messageId : undefined,
+            cursor: typeof a.cursor === 'string' ? a.cursor : undefined,
+            limit: typeof a.limit === 'number' ? a.limit : undefined,
+            currentConversationId: runtimeContext.conversationId,
+          }
+        );
+      case 'list_projects':
+        return (this.conversationSearchService ?? container.resolve(AIConversationSearchService)).listProjects(
+          user.id,
+          {
+            limit: typeof a.limit === 'number' ? a.limit : undefined,
+            cursor: typeof a.cursor === 'string' ? a.cursor : undefined,
+            currentConversationId: runtimeContext.conversationId,
+          }
         );
 
       case 'manage_proxy_template': {
@@ -1350,7 +1414,7 @@ export class AIService {
       baseURL: config.providerUrl || undefined,
     });
 
-    const systemPrompt = await this.buildSystemPrompt(user, pageContext);
+    const systemPrompt = await this.buildSystemPrompt(user, pageContext, conversationId);
     const inferredToolsets = inferDiscoveredToolsetsFromMessages(clientMessages);
     let discoveredToolsets = mergeToolsets(
       (await this.getConversationDiscoveredToolsets(user, conversationId)) ?? [],

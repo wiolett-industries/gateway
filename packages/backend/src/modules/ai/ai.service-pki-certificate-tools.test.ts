@@ -13,6 +13,9 @@ vi.mock('@/container.js', () => ({
   container: {
     resolve: vi.fn(() => mocks.exportService),
   },
+  TOKENS: {
+    DrizzleClient: Symbol.for('DrizzleClient'),
+  },
 }));
 
 import { AIService } from './ai.service.js';

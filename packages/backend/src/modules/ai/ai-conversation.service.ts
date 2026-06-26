@@ -12,6 +12,7 @@ import { AppError } from '@/middleware/error-handler.js';
 import type { AISandboxService } from './ai.sandbox.service.js';
 import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
 import type { AIConversationStatus, PageContext } from './ai.types.js';
+import type { AIConversationSearchService } from './ai-conversation-search.service.js';
 
 const RETAIN_FULL_TOOL_OUTPUT_COUNT = 10;
 const ACTIVE_RUN_STATUSES = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'] as const;
@@ -61,7 +62,8 @@ export class AIConversationService {
     private readonly cleanup?: {
       artifacts: AISandboxArtifactService;
       sandbox: AISandboxService;
-    }
+    },
+    private readonly searchService?: AIConversationSearchService
   ) {}
 
   async listConversations(userId: string): Promise<AIConversationSummary[]> {
@@ -172,6 +174,7 @@ export class AIConversationService {
       .update(aiConversations)
       .set({ title: normalizedTitle, updatedAt: new Date() })
       .where(and(eq(aiConversations.id, existing.id), eq(aiConversations.userId, userId)));
+    await this.searchService?.rebuildConversationIndex(userId, existing.id);
 
     return this.getConversation(userId, existing.id);
   }
@@ -222,6 +225,7 @@ export class AIConversationService {
     });
 
     await this.attachArtifactsFromMessages(userId, conversationId!, messages);
+    await this.searchService?.rebuildConversationIndex(userId, conversationId!);
     const saved = await this.getConversation(userId, conversationId!);
     if (!saved) throw new Error('Failed to save conversation');
     return saved;
@@ -282,6 +286,7 @@ export class AIConversationService {
         conversationId,
         sanitizeConversationMessagesForStorage(input.messages)
       );
+      await this.searchService?.rebuildConversationIndex(userId, conversationId);
     }
     return this.getConversation(userId, conversationId);
   }
@@ -374,6 +379,7 @@ export class AIConversationService {
         .set({ checkpoint: null, updatedAt: new Date() })
         .where(eq(aiConversations.id, conversationId));
     });
+    await this.searchService?.rebuildConversationIndex(userId, conversationId);
 
     const conversation = await this.getConversation(userId, conversationId);
     if (!conversation) return null;

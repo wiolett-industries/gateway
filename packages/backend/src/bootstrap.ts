@@ -21,6 +21,7 @@ import { AIService } from '@/modules/ai/ai.service.js';
 import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
 import { AIConversationService } from '@/modules/ai/ai-conversation.service.js';
 import { AIConversationFolderService } from '@/modules/ai/ai-conversation-folder.service.js';
+import { AIConversationSearchService } from '@/modules/ai/ai-conversation-search.service.js';
 import { AIRunService } from '@/modules/ai/ai-run.service.js';
 import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
@@ -459,14 +460,20 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(AISandboxRunnerService, aiSandboxRunnerService);
   const aiSandboxService = new AISandboxService(aiSandboxJobsService, aiSandboxRunnerService, aiSandboxArtifactService);
   container.registerInstance(AISandboxService, aiSandboxService);
-  const aiConversationService = new AIConversationService(db, {
-    artifacts: aiSandboxArtifactService,
-    sandbox: aiSandboxService,
-  });
+  const aiConversationSearchService = new AIConversationSearchService(db, auditService);
+  container.registerInstance(AIConversationSearchService, aiConversationSearchService);
+  const aiConversationService = new AIConversationService(
+    db,
+    {
+      artifacts: aiSandboxArtifactService,
+      sandbox: aiSandboxService,
+    },
+    aiConversationSearchService
+  );
   container.registerInstance(AIConversationService, aiConversationService);
-  const aiConversationFolderService = new AIConversationFolderService(db);
+  const aiConversationFolderService = new AIConversationFolderService(db, aiConversationSearchService);
   container.registerInstance(AIConversationFolderService, aiConversationFolderService);
-  const aiRunService = new AIRunService(db, eventBus);
+  const aiRunService = new AIRunService(db, eventBus, aiConversationSearchService);
   container.registerInstance(AIRunService, aiRunService);
   aiSandboxService.startPolicyReconciliation();
   authService.setSandboxService(aiSandboxService);
@@ -619,7 +626,8 @@ export async function initializeContainer(): Promise<void> {
     notifDeliveryService,
     notifDispatcherService,
     aiSandboxService,
-    aiSandboxArtifactService
+    aiSandboxArtifactService,
+    aiConversationSearchService
   );
   container.registerInstance(AIService, aiService);
 

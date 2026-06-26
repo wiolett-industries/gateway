@@ -17,6 +17,7 @@ import type { User } from '@/types.js';
 import { AIService } from './ai.service.js';
 import type { ChatMessage, WSServerMessage } from './ai.types.js';
 import { classifyAIToolForApproval } from './ai-approval-policy.js';
+import type { AIConversationSearchService } from './ai-conversation-search.service.js';
 import {
   normalizeCheckpoint,
   questionTextFromArgs,
@@ -60,7 +61,8 @@ export class AIRunExecutor {
 
   constructor(
     private readonly db: DrizzleClient,
-    private readonly publishConversationChanged: PublishConversationChanged
+    private readonly publishConversationChanged: PublishConversationChanged,
+    private readonly conversationSearchService?: AIConversationSearchService
   ) {}
 
   startRunExecution(user: User, runId: string): void {
@@ -136,7 +138,11 @@ export class AIRunExecutor {
       }
     } catch (error) {
       if (abortController.signal.aborted) return;
-      const assistantMessageId = await this.persistAssistantMessageIfNeeded(run.conversationId, assistantContent);
+      const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+        user.id,
+        run.conversationId,
+        assistantContent
+      );
       if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
       await this.clearAssistantDraft(run.id);
       await this.updateRunStatus(run.id, 'failed', error instanceof Error ? error.message : 'AI run failed');
@@ -236,7 +242,11 @@ export class AIRunExecutor {
       }
     } catch (error) {
       if (abortController.signal.aborted) return;
-      const assistantMessageId = await this.persistAssistantMessageIfNeeded(input.conversationId, assistantContent);
+      const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+        user.id,
+        input.conversationId,
+        assistantContent
+      );
       if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(input.runId, assistantMessageId);
       await this.clearAssistantDraft(input.runId);
       await this.updateRunStatus(input.runId, 'failed', error instanceof Error ? error.message : 'AI run failed');
@@ -289,10 +299,15 @@ export class AIRunExecutor {
     }
 
     if (event.type === 'tool_approval_required') {
-      const assistantMessageId = await this.persistAssistantMessageIfNeeded(run.conversationId, assistantContent);
+      const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+        user.id,
+        run.conversationId,
+        assistantContent
+      );
       assistantMessageWritten = true;
       await this.clearAssistantDraft(run.id);
       await this.persistPendingInteraction(run, event, assistantMessageId);
+      await this.conversationSearchService?.rebuildConversationIndex(user.id, run.conversationId);
       await this.setConversationCheckpoint(run.conversationId, event);
       await this.updateRunStatus(run.id, event.name === 'ask_question' ? 'waiting_for_answer' : 'waiting_for_approval');
       this.publishConversationChanged(user.id, run.conversationId);
@@ -300,7 +315,11 @@ export class AIRunExecutor {
     }
 
     if (event.type === 'error' || event.type === 'context_blocked') {
-      const assistantMessageId = await this.persistAssistantMessageIfNeeded(run.conversationId, assistantContent);
+      const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+        user.id,
+        run.conversationId,
+        assistantContent
+      );
       assistantMessageWritten = true;
       if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
       await this.clearAssistantDraft(run.id);
@@ -310,7 +329,11 @@ export class AIRunExecutor {
     }
 
     if (event.type === 'conversation_ended') {
-      const assistantMessageId = await this.persistAssistantMessageIfNeeded(run.conversationId, assistantContent);
+      const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+        user.id,
+        run.conversationId,
+        assistantContent
+      );
       assistantMessageWritten = true;
       if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
       await this.clearAssistantDraft(run.id);
@@ -318,7 +341,11 @@ export class AIRunExecutor {
 
     if (event.type === 'done') {
       if (!assistantMessageWritten) {
-        const assistantMessageId = await this.persistAssistantMessageIfNeeded(run.conversationId, assistantContent);
+        const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+          user.id,
+          run.conversationId,
+          assistantContent
+        );
         if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
       }
       await this.clearAssistantDraft(run.id);
@@ -351,7 +378,11 @@ export class AIRunExecutor {
       .filter((message): message is ChatMessage => message !== null);
   }
 
-  private async persistAssistantMessageIfNeeded(conversationId: string, content: string): Promise<string | null> {
+  private async persistAssistantMessageIfNeeded(
+    userId: string,
+    conversationId: string,
+    content: string
+  ): Promise<string | null> {
     if (!content.trim()) return null;
     const sequence = await nextMessageSequence(this.db, conversationId);
     const [message] = await this.db
@@ -368,6 +399,7 @@ export class AIRunExecutor {
       )
       .returning({ id: aiConversationMessages.id });
     await this.db.update(aiConversations).set({ updatedAt: new Date() }).where(eq(aiConversations.id, conversationId));
+    await this.conversationSearchService?.rebuildConversationIndex(userId, conversationId);
     return message?.id ?? null;
   }
 

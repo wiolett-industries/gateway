@@ -17,6 +17,7 @@ import {
 import { AppError } from '@/middleware/error-handler.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { User } from '@/types.js';
+import type { AIConversationSearchService } from './ai-conversation-search.service.js';
 import { AIRunExecutor } from './ai-run-executor.js';
 
 const ACTIVE_RUN_STATUSES: AIRunStatus[] = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'];
@@ -94,10 +95,14 @@ export class AIRunService {
 
   constructor(
     private readonly db: DrizzleClient,
-    private readonly eventBus?: EventBusService
+    private readonly eventBus?: EventBusService,
+    private readonly conversationSearchService?: AIConversationSearchService
   ) {
-    this.executor = new AIRunExecutor(db, (userId, conversationId, invalidatedStores) =>
-      this.publishConversationChanged(userId, conversationId, invalidatedStores)
+    this.executor = new AIRunExecutor(
+      db,
+      (userId, conversationId, invalidatedStores) =>
+        this.publishConversationChanged(userId, conversationId, invalidatedStores),
+      conversationSearchService
     );
   }
 
@@ -176,6 +181,7 @@ export class AIRunService {
     });
 
     this.publishConversationChanged(input.userId, result.conversationId);
+    await this.conversationSearchService?.rebuildConversationIndex(input.userId, result.conversationId);
     return result;
   }
 

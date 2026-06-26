@@ -1,0 +1,1 @@
+CREATE INDEX "ai_conversation_search_fts_idx" ON "ai_conversation_search_documents" USING gin (to_tsvector('simple', "normalized_text"));

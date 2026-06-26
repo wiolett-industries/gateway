@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { aiConversationFolders, aiConversations } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
+import type { AIConversationSearchService } from './ai-conversation-search.service.js';
 
 const MAX_FOLDER_NAME_LENGTH = 255;
 const MAX_FOLDER_DESCRIPTION_LENGTH = 2000;
@@ -35,7 +36,10 @@ export interface MoveAIConversationsToFolderInput {
 }
 
 export class AIConversationFolderService {
-  constructor(private readonly db: DrizzleClient) {}
+  constructor(
+    private readonly db: DrizzleClient,
+    private readonly searchService?: AIConversationSearchService
+  ) {}
 
   async listFolders(userId: string): Promise<AIConversationFolderDto[]> {
     return this.db
@@ -142,6 +146,11 @@ export class AIConversationFolderService {
       .set({ folderId: input.folderId, updatedAt: new Date() })
       .where(and(eq(aiConversations.userId, userId), inArray(aiConversations.id, conversationIds)))
       .returning({ id: aiConversations.id });
+    await this.searchService?.updateConversationProjectIndex(
+      userId,
+      updated.map((conversation) => conversation.id),
+      input.folderId
+    );
     return { moved: updated.length };
   }
 

@@ -39,6 +39,10 @@ function userFacingToolDescription(name: string, category: string, destructive: 
   if (name === 'get_current_context') return 'Read the page and resource currently open in the UI.';
   if (name === 'end_conversation') return 'Close the current assistant conversation with a reason.';
   if (name === 'find_resource') return 'Search Gateway resources by name, type, or identifier.';
+  if (name === 'search_chats') return 'Search previous AI chats for relevant context.';
+  if (name === 'find_in_chat') return 'Search within a specific previous AI chat.';
+  if (name === 'read_chat_slice') return 'Read a bounded slice of messages from a previous AI chat.';
+  if (name === 'list_projects') return 'List AI chat projects available as retrieval boundaries.';
   if (name === 'internal_documentation') return 'Search the assistant documentation for Gateway operations.';
   if (name === 'wait') return 'Pause briefly before checking an operation again.';
   if (name === 'web_search') return 'Search the web when current external information is needed.';

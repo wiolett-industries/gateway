@@ -10,6 +10,10 @@ const SYSTEM_NEVER_ASK_TOOLS = new Set([
   'internal_documentation',
   'get_current_context',
   'wait',
+  'search_chats',
+  'find_in_chat',
+  'read_chat_slice',
+  'list_projects',
 ]);
 
 const READ_PREFIXES = /^(list|get|inspect|query|find|read|test)_/;

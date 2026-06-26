@@ -11,6 +11,22 @@ export interface SystemPromptContext {
   settingsService: AISettingsService;
   monitoringService: MonitoringService;
   caService: CAService;
+  retrievalPointers?: {
+    currentProjectId: string | null;
+    availableProjects: Array<{
+      projectId: string;
+      name: string;
+      description: string | null;
+      conversationCount: number;
+      lastUserMessageAt: string | null;
+    }>;
+    recentChats: Array<{
+      conversationId: string;
+      projectId: string | null;
+      title: string;
+      lastUserMessageAt: string | null;
+    }>;
+  };
 }
 
 export async function buildAISystemPrompt(
@@ -97,6 +113,15 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     )}. When unsure about field values, workflows, or constraints — look it up first. It's free, fast, and prevents errors.
 
 ## Key Facts (use internal_documentation for details)`);
+
+  parts.push(`\n## Conversation Retrieval
+You have read-only tools for finding and reading the user's previous AI chats: search_chats, find_in_chat, read_chat_slice, and list_projects.
+- At the beginning of a new conversation, if the user's first request appears to continue prior work, references previous discussion, or depends on missing project-specific context, run a lightweight search_chats before answering.
+- If you do not understand a project-specific name, error, command, file, resource, tool name, old decision, artifact, migration, or phrase from the current conversation, consider chat retrieval alongside internal_documentation, discover_tools, get_current_context, and find_resource.
+- Search the current project first when this chat belongs to a project. If this chat is outside a project, search no-project chats first.
+- Search a specific project only when the user names it or project pointers clearly indicate it. Use all_user_chats only when the user explicitly asks broadly or project-local search does not resolve an obviously cross-project reference.
+- Project and chat pointers are navigation hints only. Do not claim details from pointers or search snippets as certain until you read the relevant source with read_chat_slice.
+- Do not load entire chats. Use search_chats first, then find_in_chat or read_chat_slice only for targeted evidence.`);
 
   parts.push(
     `- Use get_current_context when the user refers to "this page", "current resource", "the item I am viewing", or similar phrasing. Do not guess the current route or resource ID from chat text.`
@@ -194,6 +219,14 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
       const safeId = pageContext.resourceId.replace(/[^a-zA-Z0-9_-]/g, '');
       parts.push(`Focused resource: ${safeType} with ID ${safeId}`);
     }
+  }
+
+  if (context.retrievalPointers) {
+    parts.push(`\n## AI Chat Retrieval Pointers
+Current project ID: ${context.retrievalPointers.currentProjectId ?? 'none'}.
+Available projects: ${JSON.stringify(context.retrievalPointers.availableProjects).slice(0, 6000)}.
+Recent chats in the current retrieval boundary: ${JSON.stringify(context.retrievalPointers.recentChats).slice(0, 6000)}.
+These pointers are not full context or evidence. Use conversation retrieval tools to inspect exact source messages.`);
   }
 
   if (config.customSystemPrompt) {
