@@ -119,6 +119,47 @@ describe('AIRunService startUserRun', () => {
     );
   });
 
+  it('appends a new user turn after the existing conversation history', async () => {
+    const conversation = { id: 'conversation-1', lastContext: null };
+    const message = { id: 'message-2' };
+    const run = {
+      id: 'run-2',
+      conversationId: 'conversation-1',
+      activeMessageId: 'message-2',
+      clientCommandId: 'cmd-2',
+      status: 'queued',
+    };
+    const harness = createStartRunDb({
+      selectRows: [[], [conversation], [], [], [{ sequence: 4 }]],
+      insertRows: [[message], [run]],
+    });
+    const service = new AIRunService(harness.db as never);
+
+    await expect(
+      service.startUserRun({
+        conversationId: 'conversation-1',
+        userId: 'user-1',
+        title: 'Existing chat',
+        userMessage: { role: 'user', content: 'follow up' },
+        clientCommandId: 'cmd-2',
+      })
+    ).resolves.toEqual({
+      conversationId: 'conversation-1',
+      userMessageId: 'message-2',
+      run,
+      duplicate: false,
+    });
+
+    expect(harness.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conversation-1',
+        sequence: 5,
+        role: 'user',
+        content: 'follow up',
+      })
+    );
+  });
+
   it('returns an existing run for a repeated command without creating another transaction', async () => {
     const run = {
       id: 'run-1',
