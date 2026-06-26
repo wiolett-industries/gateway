@@ -1123,7 +1123,12 @@ function findActiveRuntimeAssistantIndex(messages: AIMessage[], activeRunId: str
 function mergeToolCalls(existing: AIToolCall[], incoming: AIToolCall[]): AIToolCall[] {
   const byId = new Map(existing.map((toolCall) => [toolCall.id, toolCall]));
   for (const toolCall of incoming) {
-    byId.set(toolCall.id, { ...byId.get(toolCall.id), ...toolCall });
+    const previous = byId.get(toolCall.id);
+    byId.set(toolCall.id, {
+      ...previous,
+      ...toolCall,
+      arguments: { ...(previous?.arguments ?? {}), ...toolCall.arguments },
+    });
   }
   return [...byId.values()];
 }

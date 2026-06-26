@@ -482,7 +482,14 @@ describe("AI backend runtime store", () => {
                 type: "function",
                 function: {
                   name: "ask_question",
-                  arguments: JSON.stringify({ question: "Убить все активные sandbox-процессы?" }),
+                  arguments: JSON.stringify({
+                    question: "Убить все активные sandbox-процессы?",
+                    options: [
+                      { label: "yes", description: "Да" },
+                      { label: "no", description: "Нет" },
+                    ],
+                    allowFreeText: false,
+                  }),
                 },
               },
             ],
@@ -517,7 +524,14 @@ describe("AI backend runtime store", () => {
       expect.objectContaining({
         id: "call_question_1",
         status: "awaiting_approval",
-        arguments: { question: "Убить все активные sandbox-процессы?" },
+        arguments: {
+          question: "Убить все активные sandbox-процессы?",
+          options: [
+            { label: "yes", description: "Да" },
+            { label: "no", description: "Нет" },
+          ],
+          allowFreeText: false,
+        },
       }),
     ]);
 
