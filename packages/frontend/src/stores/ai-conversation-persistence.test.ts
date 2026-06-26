@@ -71,6 +71,24 @@ function sentPayloads(socket: MockWebSocket): Array<Record<string, unknown>> {
   return vi.mocked(socket.send).mock.calls.map(([payload]) => JSON.parse(String(payload)));
 }
 
+function runtimeRun(status: "queued" | "running" | "waiting_for_approval" | "waiting_for_answer") {
+  return {
+    id: "run-1",
+    conversationId: "conversation-1",
+    userId: "user-1",
+    status,
+    activeMessageId: "assistant-1",
+    clientCommandId: "command-1",
+    assistantDraftContent: null,
+    error: null,
+    startedAt: "2026-06-26T10:00:00.000Z",
+    completedAt: null,
+    stoppedAt: null,
+    createdAt: "2026-06-26T10:00:00.000Z",
+    updatedAt: "2026-06-26T10:00:01.000Z",
+  };
+}
+
 describe("AI backend runtime store", () => {
   afterEach(() => {
     resetAIStateForAuthChange();
@@ -434,6 +452,141 @@ describe("AI backend runtime store", () => {
         status: "awaiting_approval",
       }),
     ]);
+  });
+
+  it("merges pending ask_question runtime state into the saved assistant tool call", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [
+          {
+            id: "assistant-1",
+            role: "assistant",
+            content: "",
+            toolCalls: [
+              {
+                id: "call_question_1",
+                type: "function",
+                function: {
+                  name: "ask_question",
+                  arguments: JSON.stringify({ question: "Убить все активные sandbox-процессы?" }),
+                },
+              },
+            ],
+          },
+        ],
+        runtime: {
+          activeRun: runtimeRun("waiting_for_answer"),
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [
+            {
+              id: "question-row-1",
+              runId: "run-1",
+              conversationId: "conversation-1",
+              toolCallId: "call_question_1",
+              question: "Убить все активные sandbox-процессы?",
+              status: "pending",
+              answer: null,
+            },
+          ],
+          toolCalls: [],
+        },
+      },
+    });
+
+    const questionToolCalls = useAIStore
+      .getState()
+      .messages.flatMap((message) => message.toolCalls ?? [])
+      .filter((toolCall) => toolCall.name === "ask_question");
+
+    expect(questionToolCalls).toEqual([
+      expect.objectContaining({
+        id: "call_question_1",
+        status: "awaiting_approval",
+        arguments: { question: "Убить все активные sandbox-процессы?" },
+      }),
+    ]);
+
+    useAIStore.getState().answerQuestion("call_question_1", "yes");
+
+    expect(sentPayloads(socket)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "question.answer",
+          questionId: "call_question_1",
+          answer: "yes",
+        }),
+      ])
+    );
+  });
+
+  it("updates background chat runtime status from snapshots and status events", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: "conversation-current",
+      recentConversations: [
+        {
+          id: "conversation-1",
+          title: "Background chat",
+          createdAt: "2026-06-26T09:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:00.000Z",
+          lastUserMessageAt: "2026-06-26T09:30:00.000Z",
+          messageCount: 2,
+          status: "active",
+          blockReason: null,
+          activeRunStatus: "running",
+        },
+      ],
+    });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Background chat",
+          createdAt: "2026-06-26T09:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:00.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [],
+        runtime: {
+          activeRun: runtimeRun("waiting_for_answer"),
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [],
+        },
+      },
+    });
+
+    expect(useAIStore.getState().recentConversations[0].activeRunStatus).toBe("waiting_for_answer");
+    expect(useAIStore.getState().activeConversationId).toBe("conversation-current");
+
+    socket.emit({
+      type: "run.status_changed",
+      conversationId: "conversation-1",
+      run: null,
+    });
+
+    expect(useAIStore.getState().recentConversations[0].activeRunStatus).toBeNull();
   });
 
   it("orders restored snapshot messages by backend sequence", async () => {

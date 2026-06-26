@@ -839,17 +839,31 @@ function handleWSMessage(
       break;
 
     case "conversation.snapshot":
+      set((state) => ({
+        recentConversations: patchRecentConversationFromSnapshot(
+          state.recentConversations,
+          msg.snapshot
+        ),
+      }));
       if (get().activeConversationId !== msg.conversationId) return;
       set(projectConversationSnapshot(msg.snapshot));
       void get().fetchRecentConversations();
       break;
 
     case "run.status_changed":
-      if (get().activeConversationId !== msg.conversationId) return;
-      set({
-        activeRunId: msg.run?.id ?? null,
-        isStreaming: isActiveRunStatus(msg.run?.status),
-      });
+      set((state) => ({
+        recentConversations: patchRecentConversationRunStatus(
+          state.recentConversations,
+          msg.conversationId,
+          msg.run?.status ?? null
+        ),
+        ...(state.activeConversationId === msg.conversationId
+          ? {
+              activeRunId: msg.run?.id ?? null,
+              isStreaming: isActiveRunStatus(msg.run?.status),
+            }
+          : {}),
+      }));
       break;
 
     case "stores.invalidated":
@@ -870,13 +884,7 @@ function projectConversationSnapshot(snapshot: AIConversationRuntimeSnapshot): P
       : snapshot.runtime.pendingQuestion
         ? [snapshot.runtime.pendingQuestion]
         : [];
-  const pendingQuestionToolCalls = pendingQuestions.map((question) => ({
-    id: question.id,
-    name: "ask_question",
-    arguments: { question: question.question },
-    status: "awaiting_approval" as const,
-    result: question.answer ? { answer: question.answer } : undefined,
-  }));
+  const pendingQuestionToolCalls = pendingQuestions.map(pendingQuestionToToolCall);
   const messages = attachRuntimeToolCallsToMessages(
     normalizeSnapshotMessages(snapshot),
     [...runtimeToolCalls, ...pendingQuestionToolCalls],
@@ -954,21 +962,25 @@ function normalizeMessageToolCall(
 ): AIToolCall | null {
   if (!value || typeof value !== "object") return null;
   const toolCall = value as Record<string, unknown>;
+  const functionCall =
+    toolCall.function && typeof toolCall.function === "object" && !Array.isArray(toolCall.function)
+      ? (toolCall.function as Record<string, unknown>)
+      : null;
   const id =
     typeof toolCall.id === "string" && toolCall.id.length > 0
       ? toolCall.id
       : `${messageId}:tool:${index}`;
   const name =
-    typeof toolCall.name === "string" && toolCall.name.length > 0 ? toolCall.name : "tool";
+    typeof toolCall.name === "string" && toolCall.name.length > 0
+      ? toolCall.name
+      : typeof functionCall?.name === "string" && functionCall.name.length > 0
+        ? functionCall.name
+        : "tool";
+  const rawArguments = toolCall.arguments ?? functionCall?.arguments;
   return {
     id,
     name,
-    arguments:
-      toolCall.arguments &&
-      typeof toolCall.arguments === "object" &&
-      !Array.isArray(toolCall.arguments)
-        ? (toolCall.arguments as Record<string, unknown>)
-        : {},
+    arguments: normalizeToolCallArguments(rawArguments),
     status: normalizeToolCallStatus(toolCall.status),
     assistantMessageId:
       typeof toolCall.assistantMessageId === "string" ? toolCall.assistantMessageId : undefined,
@@ -1002,6 +1014,18 @@ function runtimeToolCallToUI(toolCall: AIRunToolCall): AIToolCall {
   };
 }
 
+function pendingQuestionToToolCall(
+  question: AIConversationRuntimeSnapshot["runtime"]["pendingQuestions"][number]
+): AIToolCall {
+  return {
+    id: question.toolCallId || question.id,
+    name: "ask_question",
+    arguments: { question: question.question },
+    status: "awaiting_approval",
+    result: question.answer ? { answer: question.answer } : undefined,
+  };
+}
+
 function runtimeToolStatusToUI(status: AIRunToolCall["status"]): AIToolCall["status"] {
   if (status === "pending_approval") return "awaiting_approval";
   if (status === "approved" || status === "running" || status === "created") return "running";
@@ -1021,6 +1045,19 @@ function attachRuntimeToolCallsToMessages(
   const unassignedToolCalls: AIToolCall[] = [];
 
   for (const toolCall of toolCalls) {
+    const existingToolCallMessageIndex = nextMessages.findIndex((message) =>
+      message.toolCalls?.some((existingToolCall) => existingToolCall.id === toolCall.id)
+    );
+    if (existingToolCallMessageIndex !== -1) {
+      nextMessages[existingToolCallMessageIndex] = {
+        ...nextMessages[existingToolCallMessageIndex],
+        toolCalls: mergeToolCalls(nextMessages[existingToolCallMessageIndex].toolCalls ?? [], [
+          toolCall,
+        ]),
+      };
+      continue;
+    }
+
     if (!toolCall.assistantMessageId) {
       unassignedToolCalls.push(toolCall);
       continue;
@@ -1085,8 +1122,51 @@ function findActiveRuntimeAssistantIndex(messages: AIMessage[], activeRunId: str
 
 function mergeToolCalls(existing: AIToolCall[], incoming: AIToolCall[]): AIToolCall[] {
   const byId = new Map(existing.map((toolCall) => [toolCall.id, toolCall]));
-  for (const toolCall of incoming) byId.set(toolCall.id, { ...byId.get(toolCall.id), ...toolCall });
+  for (const toolCall of incoming) {
+    byId.set(toolCall.id, { ...byId.get(toolCall.id), ...toolCall });
+  }
   return [...byId.values()];
+}
+
+function normalizeToolCallArguments(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== "string" || value.trim().length === 0) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function patchRecentConversationFromSnapshot(
+  conversations: AIConversationSummary[],
+  snapshot: AIConversationRuntimeSnapshot
+): AIConversationSummary[] {
+  return patchRecentConversationRunStatus(
+    conversations,
+    snapshot.conversation.id,
+    snapshot.runtime.activeRun?.status ?? null
+  );
+}
+
+function patchRecentConversationRunStatus(
+  conversations: AIConversationSummary[],
+  conversationId: string,
+  activeRunStatus: AIConversationSummary["activeRunStatus"]
+): AIConversationSummary[] {
+  let changed = false;
+  const nextConversations = conversations.map((conversation) => {
+    if (conversation.id !== conversationId) return conversation;
+    if (conversation.activeRunStatus === activeRunStatus) return conversation;
+    changed = true;
+    return { ...conversation, activeRunStatus };
+  });
+  return changed ? nextConversations : conversations;
 }
 
 function findLastAssistantIndex(messages: AIMessage[]): number {
