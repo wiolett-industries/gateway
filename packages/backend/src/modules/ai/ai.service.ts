@@ -75,7 +75,7 @@ import {
 import type { AISettingsService } from './ai.settings.service.js';
 import { manageStatusPageTool } from './ai.status-page-tools.js';
 import { buildAISystemPrompt } from './ai.system-prompt.js';
-import { AI_TOOLS, getOpenAITools, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
+import { AI_TOOLS, getOpenAITools, inferDiscoveredToolsetsFromText, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
 import type {
   AIMessageAttachment,
   ChatMessage,
@@ -243,6 +243,13 @@ function mergeToolsets(existing: string[], added: string[]): string[] {
 function discoveredToolsetsFromResult(value: unknown): string[] {
   return isRecord(value) && Array.isArray(value.discoveredToolsets)
     ? value.discoveredToolsets.filter((toolset): toolset is string => typeof toolset === 'string')
+    : [];
+}
+
+function inferDiscoveredToolsetsFromMessages(messages: ChatMessage[]): string[] {
+  const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+  return typeof latestUserMessage?.content === 'string'
+    ? inferDiscoveredToolsetsFromText(latestUserMessage.content)
     : [];
 }
 
@@ -1248,6 +1255,25 @@ export class AIService {
     }
   }
 
+  private async persistInferredToolsets(
+    user: User,
+    conversationId: string | undefined,
+    discoveredToolsets: string[]
+  ): Promise<void> {
+    if (!conversationId || discoveredToolsets.length === 0) return;
+    try {
+      await container.resolve(AIConversationService).updateRuntimeState(user.id, conversationId, {
+        discoveredToolsets,
+      });
+    } catch (error) {
+      logger.warn('Failed to persist inferred AI conversation toolsets', {
+        conversationId,
+        discoveredToolsets,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   private ensureToolScope(user: User, scope: string) {
     if (!hasScope(user.scopes, scope)) {
       throw new Error(`PERMISSION_DENIED: Missing required scope ${scope}`);
@@ -1325,7 +1351,14 @@ export class AIService {
     });
 
     const systemPrompt = await this.buildSystemPrompt(user, pageContext);
-    let discoveredToolsets = await this.getConversationDiscoveredToolsets(user, conversationId);
+    const inferredToolsets = inferDiscoveredToolsetsFromMessages(clientMessages);
+    let discoveredToolsets = mergeToolsets(
+      (await this.getConversationDiscoveredToolsets(user, conversationId)) ?? [],
+      inferredToolsets
+    );
+    if (inferredToolsets.length > 0) {
+      await this.persistInferredToolsets(user, conversationId, inferredToolsets);
+    }
     let tools = this.buildModelTools(config, user, discoveredToolsets);
 
     // Build messages array: system + client messages

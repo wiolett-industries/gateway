@@ -1454,8 +1454,31 @@ const BASE_AI_TOOL_NAMES = new Set([
   'web_search',
 ]);
 
+const TOOL_NAME_BOUNDARY = '[^a-zA-Z0-9_]';
+
 export function isDestructiveTool(name: string): boolean {
   return destructiveSet.has(name);
+}
+
+export function inferDiscoveredToolsetsFromText(text: string): string[] {
+  const discovered = new Set<string>();
+  for (const tool of AI_TOOLS) {
+    if (BASE_AI_TOOL_NAMES.has(tool.name)) continue;
+    if (matchesToolName(text, tool.name)) discovered.add(tool.category);
+  }
+  return [...discovered].sort((a, b) => a.localeCompare(b));
+}
+
+function matchesToolName(text: string, toolName: string): boolean {
+  const escapedName = escapeRegExp(toolName);
+  if (new RegExp(`(^|${TOOL_NAME_BOUNDARY})${escapedName}($|${TOOL_NAME_BOUNDARY})`, 'i').test(text)) return true;
+
+  const readableName = escapeRegExp(toolName.replaceAll('_', ' '));
+  return new RegExp(`(^|${TOOL_NAME_BOUNDARY})${readableName}($|${TOOL_NAME_BOUNDARY})`, 'i').test(text);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

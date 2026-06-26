@@ -125,6 +125,23 @@ describe('AIService system prompt', () => {
     expect(prompt).toContain('find_resource');
   });
 
+  it('tells sandbox-scoped assistants to discover hidden sandbox tools before refusing them', async () => {
+    const monitoringService = {
+      getDashboardStats: vi.fn().mockRejectedValue(new Error('stats unavailable')),
+    };
+    const service = createService({ monitoringService });
+
+    const prompt = await service.buildSystemPrompt({
+      ...BASE_USER,
+      scopes: ['ai:sandbox:use'],
+    });
+
+    expect(prompt).toContain('do NOT say the tool is unavailable');
+    expect(prompt).toContain('discover_tools({ category: "Sandbox", includeTools: true })');
+    expect(prompt).toContain('download_artifact');
+    expect(prompt).toContain('send_artifact');
+  });
+
   it('continues without inventory or CA sections when optional context fetches are unavailable', async () => {
     const caService = {
       getCATree: vi.fn(),

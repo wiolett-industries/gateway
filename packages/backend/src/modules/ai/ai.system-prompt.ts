@@ -108,6 +108,14 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     `- Use discover_tools when you are unsure which Gateway tool handles a task. It returns callable tool categories and, with category/query/includeTools, the relevant callable tool names.`
   );
   parts.push(
+    `- If the user names a Gateway tool or function that is not currently available in your tool schema, do NOT say the tool is unavailable. First call discover_tools with that tool name as query and includeTools:true, then continue with the discovered callable tool.`
+  );
+  if (hasScopeBase(user.scopes, 'ai:sandbox:use')) {
+    parts.push(
+      `- For sandbox workflows involving run_process, execute_script, download_artifact, read_artifact, send_artifact, read_process_output, write_process_stdin, kill_process, or list_sandbox_jobs, call discover_tools({ category: "Sandbox", includeTools: true }) first if those tools are not already visible.`
+    );
+  }
+  parts.push(
     `- Use find_resource FIRST when the user names a resource and you need an ID, nodeId, or exact type. It searches globally across readable resources. For type-scoped listing, use an empty query with a concrete type, e.g. find_resource({ query: "", types: ["docker_container"], limit: 50 }). Do not manually list all nodes and then scan each node for Docker resources unless find_resource failed or the user explicitly asked for per-node enumeration.`
   );
   if (hasScopeBase(user.scopes, 'docker:containers:view')) {

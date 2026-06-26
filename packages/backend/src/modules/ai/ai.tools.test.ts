@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { AI_TOOLS, getOpenAITools, isDestructiveTool, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
+import {
+  AI_TOOLS,
+  getOpenAITools,
+  inferDiscoveredToolsetsFromText,
+  isDestructiveTool,
+  TOOL_STORE_INVALIDATION_MAP,
+} from './ai.tools.js';
 
 function toolNames(scopes: string[]): string[] {
   return getOpenAITools([], scopes, false).map((tool) => tool.function.name);
@@ -256,6 +262,23 @@ describe('AI tool scope filtering', () => {
     expect(baseToolNames).toContain('fetch');
     expect(baseToolNames).not.toContain('execute_script');
     expect(baseToolNames).not.toContain('download_artifact');
+  });
+
+  it('infers hidden toolsets from explicit Gateway tool names in user text', () => {
+    const inferred = inferDiscoveredToolsetsFromText(
+      'Start a process, run download_artifact, then send artifact back to me.'
+    );
+
+    expect(inferred).toEqual(['Sandbox']);
+
+    const toolNames = getOpenAITools([], ['feat:ai:use', 'ai:sandbox:use'], false, {
+      discoveredToolsets: inferred,
+      sandboxEnabled: true,
+    }).map((tool) => tool.function.name);
+
+    expect(toolNames).toContain('run_process');
+    expect(toolNames).toContain('download_artifact');
+    expect(toolNames).toContain('send_artifact');
   });
 
   it('keeps logging and status-page tool registry contracts stable', () => {
