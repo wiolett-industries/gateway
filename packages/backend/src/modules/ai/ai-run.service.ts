@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import {
   type AIRun,
@@ -347,7 +347,7 @@ export class AIRunService {
       })
       .where(
         and(
-          eq(aiRunQuestions.id, input.questionId),
+          or(eq(aiRunQuestions.id, input.questionId), eq(aiRunQuestions.toolCallId, input.questionId)),
           eq(aiRunQuestions.runId, input.runId),
           eq(aiRunQuestions.conversationId, input.conversationId),
           eq(aiRunQuestions.status, 'pending')
@@ -364,7 +364,7 @@ export class AIRunService {
       };
     }
 
-    const existing = await this.getQuestion(input.questionId);
+    const existing = await this.getQuestion(input.questionId, input.runId, input.conversationId);
     if (!existing) throw new AppError(404, 'AI_QUESTION_NOT_FOUND', 'AI question not found');
     if (existing.runId !== input.runId || existing.conversationId !== input.conversationId) {
       throw new AppError(404, 'AI_QUESTION_NOT_FOUND', 'AI question not found');
@@ -565,8 +565,22 @@ export class AIRunService {
     return rows[0] ?? null;
   }
 
-  private async getQuestion(questionId: string): Promise<AIRunQuestion | null> {
-    const rows = await this.db.select().from(aiRunQuestions).where(eq(aiRunQuestions.id, questionId)).limit(1);
+  private async getQuestion(
+    questionId: string,
+    runId: string,
+    conversationId: string
+  ): Promise<AIRunQuestion | null> {
+    const rows = await this.db
+      .select()
+      .from(aiRunQuestions)
+      .where(
+        and(
+          or(eq(aiRunQuestions.id, questionId), eq(aiRunQuestions.toolCallId, questionId)),
+          eq(aiRunQuestions.runId, runId),
+          eq(aiRunQuestions.conversationId, conversationId)
+        )
+      )
+      .limit(1);
     return rows[0] ?? null;
   }
 

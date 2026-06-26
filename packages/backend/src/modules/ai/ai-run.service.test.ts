@@ -396,6 +396,31 @@ describe('AIRunService question answers', () => {
     ).resolves.toEqual({ question: existing, duplicate: true, remainingPendingQuestions: [] });
   });
 
+  it('treats original tool call ids as valid question ids', async () => {
+    const existing = {
+      id: 'question-1',
+      toolCallId: 'call_question_1',
+      runId: 'run-1',
+      conversationId: 'conversation-1',
+      status: 'answered',
+      answer: 'Use production',
+      answerClientCommandId: 'cmd-1',
+    };
+    const harness = createTransitionDb([], [[{ id: 'conversation-1' }], [existing]]);
+    const service = new AIRunService(harness.db as never);
+
+    await expect(
+      service.answerQuestion({
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+        questionId: 'call_question_1',
+        userId: 'user-1',
+        clientCommandId: 'cmd-1',
+        answer: 'Use production',
+      })
+    ).resolves.toEqual({ question: existing, duplicate: true, remainingPendingQuestions: [] });
+  });
+
   it('rejects conflicting answers', async () => {
     const harness = createTransitionDb(
       [],
