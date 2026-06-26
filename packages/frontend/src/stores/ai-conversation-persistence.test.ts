@@ -459,6 +459,62 @@ describe("AI backend runtime store", () => {
     ]);
   });
 
+  it("updates the sidebar from runtime snapshots without refetching conversations", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+    vi.mocked(listConversations).mockClear();
+
+    const snapshot = {
+      conversation: {
+        id: "conversation-1",
+        title: "Runtime chat",
+        createdAt: "2026-06-26T10:00:00.000Z",
+        updatedAt: "2026-06-26T10:00:01.000Z",
+        folderId: null,
+        lastUserMessageAt: "2026-06-26T10:00:00.000Z",
+        messageCount: 1,
+        status: "active" as const,
+        blockReason: null,
+        lastContext: null,
+        discoveredToolsets: [],
+        checkpoint: null,
+      },
+      messages: [
+        { id: "message-1", role: "user", content: "hello", createdAt: "2026-06-26T10:00:00.000Z" },
+      ],
+      runtime: {
+        activeRun: runtimeRun("running"),
+        pendingApprovals: [],
+        pendingQuestion: null,
+        pendingQuestions: [],
+        toolCalls: [],
+      },
+    };
+
+    socket.emit({ type: "conversation.snapshot", conversationId: "conversation-1", snapshot });
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        ...snapshot,
+        conversation: {
+          ...snapshot.conversation,
+          updatedAt: "2026-06-26T10:00:02.000Z",
+        },
+      },
+    });
+
+    expect(listConversations).not.toHaveBeenCalled();
+    expect(useAIStore.getState().recentConversations).toEqual([
+      expect.objectContaining({
+        id: "conversation-1",
+        title: "Runtime chat",
+        messageCount: 1,
+        activeRunStatus: "running",
+      }),
+    ]);
+  });
+
   it("merges pending ask_question runtime state into the saved assistant tool call", async () => {
     const socket = await connectAI();
     useAIStore.setState({ activeConversationId: "conversation-1" });

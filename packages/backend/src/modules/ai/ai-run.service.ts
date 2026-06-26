@@ -17,6 +17,7 @@ import {
 import { AppError } from '@/middleware/error-handler.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { User } from '@/types.js';
+import { countVisibleMessages, deriveConversationStatus, getLastUserMessageAt } from './ai-conversation.service.js';
 import type { AIConversationSearchService } from './ai-conversation-search.service.js';
 import { AIRunExecutor } from './ai-run-executor.js';
 
@@ -82,6 +83,11 @@ export interface AIConversationRuntimeSnapshot {
     title: string;
     createdAt: Date;
     updatedAt: Date;
+    folderId: string | null;
+    lastUserMessageAt: Date | null;
+    messageCount: number;
+    status: 'active' | 'ended' | 'context_blocked';
+    blockReason: string | null;
     lastContext: Record<string, unknown> | null;
     discoveredToolsets: string[];
     checkpoint: Record<string, unknown> | null;
@@ -534,22 +540,31 @@ export class AIRunService {
       this.getRuntimeSnapshot(conversationId),
     ]);
 
+    const snapshotMessages = messages.map((message) =>
+      toSnapshotMessage(message.id, message.sequence, message.uiMessage, message.createdAt)
+    );
+    const uiMessages = snapshotMessages.map((message) => message.uiMessage);
+    const loadedMessageRows = messages.map((message) => ({
+      role: readMessageRole(message.uiMessage),
+      uiMessage: message.uiMessage,
+      createdAt: message.createdAt,
+    }));
+
     return {
       conversation: {
         id: conversation.id,
         title: conversation.title,
         createdAt: conversation.createdAt,
         updatedAt: conversation.updatedAt,
+        folderId: conversation.folderId,
+        lastUserMessageAt: getLastUserMessageAt(loadedMessageRows),
+        messageCount: countVisibleMessages(uiMessages),
+        ...deriveConversationStatus(uiMessages),
         lastContext: conversation.lastContext,
         discoveredToolsets: conversation.discoveredToolsets,
         checkpoint: conversation.checkpoint,
       },
-      messages: withAssistantDraftMessage(
-        messages.map((message) =>
-          toSnapshotMessage(message.id, message.sequence, message.uiMessage, message.createdAt)
-        ),
-        runtime.activeRun
-      ),
+      messages: withAssistantDraftMessage(snapshotMessages, runtime.activeRun),
       runtime,
     };
   }
@@ -760,6 +775,12 @@ function toSnapshotMessage(id: string, sequence: number, uiMessage: unknown, cre
     sequence,
     createdAt: createdAt.toISOString(),
   };
+}
+
+function readMessageRole(uiMessage: unknown): string {
+  if (!uiMessage || typeof uiMessage !== 'object' || Array.isArray(uiMessage)) return '';
+  const role = (uiMessage as Record<string, unknown>).role;
+  return typeof role === 'string' ? role : '';
 }
 
 function withAssistantDraftMessage(

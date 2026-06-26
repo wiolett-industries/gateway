@@ -17,13 +17,6 @@ import {
 import { AIWebSocketClient } from "@/services/ai-websocket";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import { useCAStore } from "@/stores/ca";
-import { useCertificatesStore } from "@/stores/certificates";
-import { useDockerStore } from "@/stores/docker";
-import { useFolderStore } from "@/stores/folders";
-import { useNodesStore } from "@/stores/nodes";
-import { useProxyStore } from "@/stores/proxy";
-import { useSSLStore } from "@/stores/ssl";
 import { useUIStore } from "@/stores/ui";
 import type {
   AIConfig,
@@ -162,21 +155,18 @@ function invalidateStore(storeName: string): void {
       api.invalidateCache("cas:list:");
       api.invalidateCache("req:/api/monitoring/dashboard");
       api.invalidateCache("dashboard:stats:");
-      useCAStore.getState().fetchCAs();
       break;
     case "certificates":
       api.invalidateCache("req:/api/certificates");
       api.invalidateCache("certificates:list:");
       api.invalidateCache("req:/api/monitoring/dashboard");
       api.invalidateCache("dashboard:stats:");
-      useCertificatesStore.getState().fetchCertificates();
       break;
     case "ssl":
       api.invalidateCache("req:/api/ssl-certificates");
       api.invalidateCache("ssl:list:");
       api.invalidateCache("req:/api/monitoring/dashboard");
       api.invalidateCache("dashboard:stats:");
-      useSSLStore.getState().fetchCertificates();
       break;
     case "proxy":
       api.invalidateCache("req:/api/proxy-hosts");
@@ -188,8 +178,6 @@ function invalidateStore(storeName: string): void {
       api.invalidateCache("req:/api/monitoring/health-status");
       api.invalidateCache("dashboard:stats:");
       api.invalidateCache("dashboard:health");
-      useProxyStore.getState().fetchProxyHosts();
-      useFolderStore.getState().fetchGroupedHosts();
       break;
     case "templates":
       api.invalidateCache("req:/api/templates");
@@ -207,7 +195,6 @@ function invalidateStore(storeName: string): void {
       api.invalidateCache("req:/api/nodes");
       api.invalidateCache("req:/api/monitoring/dashboard");
       api.invalidateCache("dashboard:stats:");
-      useNodesStore.getState().fetchNodes();
       break;
     case "groups":
       api.invalidateCache("req:/api/admin/groups");
@@ -219,16 +206,16 @@ function invalidateStore(storeName: string): void {
       api.invalidateCache("admin:users");
       break;
     case "containers":
-      useDockerStore.getState().invalidate("containers");
+      api.invalidateCache("req:/api/docker");
       break;
     case "images":
-      useDockerStore.getState().invalidate("images");
+      api.invalidateCache("req:/api/docker");
       break;
     case "volumes":
-      useDockerStore.getState().invalidate("volumes");
+      api.invalidateCache("req:/api/docker");
       break;
     case "networks":
-      useDockerStore.getState().invalidate("networks");
+      api.invalidateCache("req:/api/docker");
       break;
   }
 }
@@ -622,7 +609,6 @@ export const useAIStore = create<AIState>()((set, get) => ({
       activeRunId: null,
       lastContext: null,
     });
-    void get().fetchRecentConversations();
   },
 
   fetchRecentConversations: async () => {
@@ -700,7 +686,6 @@ export const useAIStore = create<AIState>()((set, get) => ({
     }));
     try {
       await deleteConversationFolder(id);
-      void get().fetchRecentConversations();
     } catch (error) {
       set({ conversationFolders: previousFolders, recentConversations: previousConversations });
       throw error;
@@ -737,7 +722,6 @@ export const useAIStore = create<AIState>()((set, get) => ({
     }));
     try {
       await moveConversationsToFolder(conversationIds, folderId);
-      void get().fetchRecentConversations();
     } catch (error) {
       set({ recentConversations: previousConversations });
       throw error;
@@ -816,7 +800,6 @@ export const useAIStore = create<AIState>()((set, get) => ({
             }
           : {}),
       }));
-      void get().fetchRecentConversations();
     } catch {
       const localMsg: AIMessage = {
         id: generateId(),
@@ -834,21 +817,22 @@ export const useAIStore = create<AIState>()((set, get) => ({
     set((state) => ({
       savedName:
         state.activeConversationId === conversationId ? conversation.title : state.savedName,
-      recentConversations: state.recentConversations.map((item) =>
-        item.id === conversationId
-          ? {
-              ...item,
-              title: conversation.title,
-              updatedAt: conversation.updatedAt,
-              lastUserMessageAt: conversation.lastUserMessageAt,
-              status: conversation.status,
-              blockReason: conversation.blockReason,
-              activeRunStatus: conversation.activeRunStatus,
-            }
-          : item
+      recentConversations: sortConversationSummaries(
+        state.recentConversations.map((item) =>
+          item.id === conversationId
+            ? {
+                ...item,
+                title: conversation.title,
+                updatedAt: conversation.updatedAt,
+                lastUserMessageAt: conversation.lastUserMessageAt,
+                status: conversation.status,
+                blockReason: conversation.blockReason,
+                activeRunStatus: conversation.activeRunStatus,
+              }
+            : item
+        )
       ),
     }));
-    void get().fetchRecentConversations();
   },
 
   rollbackToMessage: async (messageId: string) => {
@@ -862,7 +846,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       result.conversation.messages,
       result.conversation.id
     );
-    set({
+    set((state) => ({
       messages,
       savedName: result.conversation.title,
       activeConversationId: result.conversation.id,
@@ -871,9 +855,25 @@ export const useAIStore = create<AIState>()((set, get) => ({
       lastContext: result.conversation.lastContext,
       pendingApprovalToolCallId: null,
       isStreaming: false,
-    });
+      recentConversations: sortConversationSummaries(
+        state.recentConversations.map((item) =>
+          item.id === result.conversation.id
+            ? {
+                ...item,
+                title: result.conversation.title,
+                updatedAt: result.conversation.updatedAt,
+                lastUserMessageAt: result.conversation.lastUserMessageAt,
+                folderId: result.conversation.folderId,
+                messageCount: result.conversation.messages.length,
+                status: result.conversation.status,
+                blockReason: result.conversation.blockReason,
+                activeRunStatus: result.conversation.activeRunStatus,
+              }
+            : item
+        )
+      ),
+    }));
     wsClient?.send({ type: "conversation.sync", conversationId: result.conversation.id });
-    void get().fetchRecentConversations();
     return result.message;
   },
 
@@ -903,7 +903,6 @@ export const useAIStore = create<AIState>()((set, get) => ({
         activeRunId: null,
         lastContext: null,
       });
-      void get().fetchRecentConversations();
       return true;
     }
 
@@ -1002,7 +1001,6 @@ function handleWSMessage(
       }));
       if (get().activeConversationId !== msg.conversationId) return;
       set(projectConversationSnapshot(msg.snapshot));
-      void get().fetchRecentConversations();
       break;
 
     case "run.status_changed":
@@ -1307,11 +1305,34 @@ function patchRecentConversationFromSnapshot(
   conversations: AIConversationSummary[],
   snapshot: AIConversationRuntimeSnapshot
 ): AIConversationSummary[] {
-  return patchRecentConversationRunStatus(
-    conversations,
-    snapshot.conversation.id,
-    snapshot.runtime.activeRun?.status ?? null
+  const existing = conversations.find(
+    (conversation) => conversation.id === snapshot.conversation.id
   );
+  const nextConversation: AIConversationSummary = {
+    id: snapshot.conversation.id,
+    title: snapshot.conversation.title,
+    createdAt: snapshot.conversation.createdAt,
+    updatedAt: snapshot.conversation.updatedAt,
+    lastUserMessageAt:
+      snapshot.conversation.lastUserMessageAt ??
+      snapshotLastUserMessageAt(snapshot.messages) ??
+      existing?.lastUserMessageAt ??
+      snapshot.conversation.createdAt,
+    folderId: snapshot.conversation.folderId ?? existing?.folderId ?? null,
+    messageCount: snapshot.conversation.messageCount ?? snapshot.messages.length,
+    status: snapshot.conversation.status ?? existing?.status ?? "active",
+    blockReason: snapshot.conversation.blockReason ?? existing?.blockReason ?? null,
+    activeRunStatus: snapshot.runtime.activeRun?.status ?? null,
+  };
+  const found = Boolean(existing);
+  const next = found
+    ? conversations.map((conversation) =>
+        conversation.id === nextConversation.id
+          ? { ...conversation, ...nextConversation }
+          : conversation
+      )
+    : [nextConversation, ...conversations];
+  return sortConversationSummaries(next);
 }
 
 function patchRecentConversationRunStatus(
@@ -1334,6 +1355,27 @@ function sortConversationFolders(folders: AIConversationFolder[]): AIConversatio
     if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder;
     return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
   });
+}
+
+function sortConversationSummaries(
+  conversations: AIConversationSummary[]
+): AIConversationSummary[] {
+  return [...conversations].sort((left, right) => {
+    const rightTime = Date.parse(right.lastUserMessageAt ?? right.createdAt);
+    const leftTime = Date.parse(left.lastUserMessageAt ?? left.createdAt);
+    return rightTime - leftTime;
+  });
+}
+
+function snapshotLastUserMessageAt(messages: unknown[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+    const record = message as Record<string, unknown>;
+    if (record.role !== "user") continue;
+    return typeof record.createdAt === "string" ? record.createdAt : null;
+  }
+  return null;
 }
 
 function findLastAssistantIndex(messages: AIMessage[]): number {

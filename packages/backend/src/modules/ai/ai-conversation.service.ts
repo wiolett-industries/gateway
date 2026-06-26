@@ -508,7 +508,10 @@ function toRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-function deriveConversationStatus(messages: unknown[]): { status: AIConversationStatus; blockReason: string | null } {
+export function deriveConversationStatus(messages: unknown[]): {
+  status: AIConversationStatus;
+  blockReason: string | null;
+} {
   for (let i = messages.length - 1; i >= 0; i--) {
     const record = toRecord(messages[i]);
     if (!record || typeof record.conversationStatus !== 'string') continue;
@@ -522,7 +525,7 @@ function deriveConversationStatus(messages: unknown[]): { status: AIConversation
   return { status: 'active', blockReason: null };
 }
 
-function countVisibleMessages(messages: unknown[]): number {
+export function countVisibleMessages(messages: unknown[]): number {
   return messages.filter((message) => !toRecord(message)?.conversationStatus).length;
 }
 
@@ -578,7 +581,7 @@ function extractToolResults(toolCalls: unknown[] | null): unknown {
   });
 }
 
-function getLastUserMessageAt(messages: LoadedConversationMessage[]): Date | null {
+export function getLastUserMessageAt(messages: LoadedConversationMessage[]): Date | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role === 'user') return message.createdAt;

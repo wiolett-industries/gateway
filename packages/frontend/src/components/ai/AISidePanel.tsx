@@ -196,7 +196,6 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     stopStreaming,
     clearMessages,
     handleSlashCommand,
-    fetchRecentConversations,
     loadConversation,
     deleteConversation,
     renameConversation,
@@ -368,10 +367,6 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     },
     [attachments, canAttachImages, setAttachments]
   );
-
-  useEffect(() => {
-    if (messages.length === 0) void fetchRecentConversations();
-  }, [fetchRecentConversations, messages.length]);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();

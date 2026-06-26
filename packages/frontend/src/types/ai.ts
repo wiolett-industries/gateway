@@ -244,6 +244,11 @@ export interface AIConversationRuntimeSnapshot {
     title: string;
     createdAt: string;
     updatedAt: string;
+    folderId?: string | null;
+    lastUserMessageAt?: string | null;
+    messageCount?: number;
+    status?: AIConversationStatus;
+    blockReason?: string | null;
     lastContext: PageContext | null;
     discoveredToolsets: string[];
     checkpoint: Record<string, unknown> | null;
