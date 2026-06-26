@@ -5,6 +5,9 @@ import {
   Loader2,
   Lock,
   MessageSquare,
+  Pencil,
+  Pin,
+  PinOff,
   Sparkles,
   Trash2,
   X,
@@ -13,6 +16,14 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { type AIApprovalMode, formatAIApprovalModeLabel } from "@/lib/ai-approval-mode";
@@ -175,6 +186,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     recentConversations,
     isLoadingRecentConversations,
     retryAfter,
+    savedName,
     activeConversationId,
     activeRunId,
     sendMessage,
@@ -187,6 +199,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     fetchRecentConversations,
     loadConversation,
     deleteConversation,
+    renameConversation,
     rollbackToMessage,
     connect,
   } = useAIStore();
@@ -197,15 +210,52 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
   const [canAttachImages, setCanAttachImages] = useState(false);
   const [slashResults, setSlashResults] = useState<typeof SLASH_COMMANDS>([]);
   const [slashIndex, setSlashIndex] = useState(0);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const context = usePageContext();
-  const { aiApprovalMode: approvalMode } = useUIStore();
+  const {
+    aiApprovalMode: approvalMode,
+    pinnedAIConversationIds,
+    togglePinnedAIConversation,
+  } = useUIStore();
   const approvalModeLabel = formatAIApprovalModeLabel(approvalMode);
   const conversationBlock = getConversationBlock(messages);
   const isNewConversationDraft = messages.length === 0;
   const currentConversationStreaming = !isNewConversationDraft && isStreaming;
+  const currentConversation = activeConversationId
+    ? recentConversations.find((conversation) => conversation.id === activeConversationId)
+    : null;
+  const currentChatTitle = activeConversationId
+    ? (savedName ?? currentConversation?.title ?? "New chat")
+    : "New chat";
+  const isCurrentChatPinned = activeConversationId
+    ? pinnedAIConversationIds.includes(activeConversationId)
+    : false;
+
+  const openRenameDialog = () => {
+    if (!activeConversationId) return;
+    setRenameDraft(currentChatTitle);
+    setRenameDialogOpen(true);
+  };
+
+  const submitRename = async () => {
+    if (!activeConversationId) return;
+    const nextTitle = renameDraft.trim();
+    if (!nextTitle) return;
+    setIsRenaming(true);
+    try {
+      await renameConversation(activeConversationId, nextTitle);
+      setRenameDialogOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to rename chat");
+    } finally {
+      setIsRenaming(false);
+    }
+  };
 
   const setApprovalMode = useCallback(
     async (mode: AIApprovalMode) => {
@@ -473,13 +523,51 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex h-[49px] shrink-0 items-center justify-between border-b border-border px-3">
-        <span className="text-sm font-semibold">AI Assistant</span>
+        <span
+          className="min-w-0 flex-1 truncate pr-2 text-sm font-semibold"
+          title={currentChatTitle}
+        >
+          {currentChatTitle}
+        </span>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => activeConversationId && togglePinnedAIConversation(activeConversationId)}
+            disabled={!activeConversationId}
+            title={isCurrentChatPinned ? "Unpin chat" : "Pin chat"}
+            aria-label={isCurrentChatPinned ? "Unpin chat" : "Pin chat"}
+          >
+            {isCurrentChatPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={openRenameDialog}
+            disabled={!activeConversationId}
+            title="Rename chat"
+            aria-label="Rename chat"
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => activeConversationId && void deleteConversation(activeConversationId)}
+            disabled={!activeConversationId}
+            title="Delete chat"
+            aria-label="Delete chat"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
           {onEnterLiteMode && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-9 w-9"
               onClick={onEnterLiteMode}
               title="Full screen"
               aria-label="Full screen"
@@ -488,12 +576,46 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
             </Button>
           )}
           {onClose && (
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
           )}
         </div>
       </div>
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename chat</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameDraft}
+            onChange={(event) => setRenameDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void submitRename();
+              }
+            }}
+            placeholder="Chat name"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRenameDialogOpen(false)}
+              disabled={isRenaming}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void submitRename()}
+              disabled={isRenaming || !renameDraft.trim()}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Messages */}
       {messages.length === 0 ? (

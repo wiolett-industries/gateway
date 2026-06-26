@@ -20,6 +20,7 @@ import { AISandboxRunnerService } from '@/modules/ai/ai.sandbox-runner.service.j
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
 import { AIConversationService } from '@/modules/ai/ai-conversation.service.js';
+import { AIConversationFolderService } from '@/modules/ai/ai-conversation-folder.service.js';
 import { AIRunService } from '@/modules/ai/ai-run.service.js';
 import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
@@ -463,6 +464,8 @@ export async function initializeContainer(): Promise<void> {
     sandbox: aiSandboxService,
   });
   container.registerInstance(AIConversationService, aiConversationService);
+  const aiConversationFolderService = new AIConversationFolderService(db);
+  container.registerInstance(AIConversationFolderService, aiConversationFolderService);
   const aiRunService = new AIRunService(db, eventBus);
   container.registerInstance(AIRunService, aiRunService);
   aiSandboxService.startPolicyReconciliation();

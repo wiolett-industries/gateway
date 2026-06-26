@@ -1,4 +1,6 @@
 {
+  "id": "ecb7433c-2596-4e0a-8e75-3a2c1bb6b159",
+  "prevId": "47b0cf71-4e32-40f0-83e4-eb379c94e660",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -219,6 +221,123 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.ai_conversation_folders": {
+      "name": "ai_conversation_folders",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "ai_conversation_folders_user_sort_idx": {
+          "name": "ai_conversation_folders_user_sort_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sort_order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ai_conversation_folders_user_name_idx": {
+          "name": "ai_conversation_folders_user_name_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ai_conversation_folders_user_id_users_id_fk": {
+          "name": "ai_conversation_folders_user_id_users_id_fk",
+          "tableFrom": "ai_conversation_folders",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.ai_conversation_messages": {
       "name": "ai_conversation_messages",
       "schema": "",
@@ -426,6 +545,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "folder_id": {
+          "name": "folder_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -483,6 +608,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "ai_conversations_user_folder_idx": {
+          "name": "ai_conversations_user_folder_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "folder_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -497,6 +643,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "ai_conversations_folder_id_ai_conversation_folders_id_fk": {
+          "name": "ai_conversations_folder_id_ai_conversation_folders_id_fk",
+          "tableFrom": "ai_conversations",
+          "tableTo": "ai_conversation_folders",
+          "columnsFrom": [
+            "folder_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -10088,10 +10247,8 @@
   "policies": {},
   "views": {},
   "_meta": {
+    "columns": {},
     "schemas": {},
-    "tables": {},
-    "columns": {}
-  },
-  "id": "47b0cf71-4e32-40f0-83e4-eb379c94e660",
-  "prevId": "abcf7cbb-1a52-4385-a19e-e65b5d112420"
+    "tables": {}
+  }
 }

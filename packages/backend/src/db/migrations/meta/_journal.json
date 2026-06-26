@@ -316,6 +316,13 @@
       "when": 1782828000000,
       "tag": "0044_ai_runtime_shape_fix",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1782914400000,
+      "tag": "0045_strong_trauma",
+      "breakpoints": true
     }
   ]
 }

@@ -781,6 +781,7 @@ class ApiClient extends withLoggingApi(
       updatedAt: string;
       lastUserMessageAt: string | null;
       messageCount: number;
+      folderId: string | null;
       status: "active" | "ended" | "context_blocked";
       blockReason: string | null;
       activeRunStatus: AIRunStatus | null;
@@ -794,11 +795,130 @@ class ApiClient extends withLoggingApi(
         updatedAt: string;
         lastUserMessageAt: string | null;
         messageCount: number;
+        folderId: string | null;
         status: "active" | "ended" | "context_blocked";
         blockReason: string | null;
         activeRunStatus: AIRunStatus | null;
       }>;
     }>("/ai/conversations");
+    return res.data;
+  }
+
+  async listAIConversationFolders(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      description: string;
+      sortOrder: number;
+      createdAt: string;
+      updatedAt: string;
+    }>
+  > {
+    const res = await this.request<{
+      data: Array<{
+        id: string;
+        name: string;
+        description: string;
+        sortOrder: number;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>("/ai/conversation-folders");
+    return res.data;
+  }
+
+  async createAIConversationFolder(data: { name: string; description?: string }): Promise<{
+    id: string;
+    name: string;
+    description: string;
+    sortOrder: number;
+    createdAt: string;
+    updatedAt: string;
+  }> {
+    const res = await this.request<{
+      data: {
+        id: string;
+        name: string;
+        description: string;
+        sortOrder: number;
+        createdAt: string;
+        updatedAt: string;
+      };
+    }>("/ai/conversation-folders", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  }
+
+  async updateAIConversationFolder(
+    id: string,
+    data: { name?: string; description?: string }
+  ): Promise<{
+    id: string;
+    name: string;
+    description: string;
+    sortOrder: number;
+    createdAt: string;
+    updatedAt: string;
+  }> {
+    const res = await this.request<{
+      data: {
+        id: string;
+        name: string;
+        description: string;
+        sortOrder: number;
+        createdAt: string;
+        updatedAt: string;
+      };
+    }>(`/ai/conversation-folders/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  }
+
+  async deleteAIConversationFolder(id: string): Promise<void> {
+    await this.request(`/ai/conversation-folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderAIConversationFolders(items: Array<{ id: string; sortOrder: number }>): Promise<
+    Array<{
+      id: string;
+      name: string;
+      description: string;
+      sortOrder: number;
+      createdAt: string;
+      updatedAt: string;
+    }>
+  > {
+    const res = await this.request<{
+      data: Array<{
+        id: string;
+        name: string;
+        description: string;
+        sortOrder: number;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>("/ai/conversation-folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+    return res.data;
+  }
+
+  async moveAIConversationsToFolder(
+    conversationIds: string[],
+    folderId: string | null
+  ): Promise<{ moved: number }> {
+    const res = await this.request<{ data: { moved: number } }>(
+      "/ai/conversation-folders/move-conversations",
+      {
+        method: "PUT",
+        body: JSON.stringify({ conversationIds, folderId }),
+      }
+    );
     return res.data;
   }
 
@@ -809,6 +929,7 @@ class ApiClient extends withLoggingApi(
     updatedAt: string;
     lastUserMessageAt: string | null;
     messageCount: number;
+    folderId: string | null;
     status: "active" | "ended" | "context_blocked";
     blockReason: string | null;
     activeRunStatus: AIRunStatus | null;
@@ -825,6 +946,7 @@ class ApiClient extends withLoggingApi(
         updatedAt: string;
         lastUserMessageAt: string | null;
         messageCount: number;
+        folderId: string | null;
         status: "active" | "ended" | "context_blocked";
         blockReason: string | null;
         activeRunStatus: AIRunStatus | null;
@@ -834,6 +956,49 @@ class ApiClient extends withLoggingApi(
         checkpoint: Record<string, unknown> | null;
       };
     }>(`/ai/conversations/${id}`);
+    return res.data;
+  }
+
+  async updateAIConversation(
+    id: string,
+    data: { title: string }
+  ): Promise<{
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    lastUserMessageAt: string | null;
+    messageCount: number;
+    folderId: string | null;
+    status: "active" | "ended" | "context_blocked";
+    blockReason: string | null;
+    activeRunStatus: AIRunStatus | null;
+    messages: AIMessage[];
+    lastContext: PageContext | null;
+    discoveredToolsets: string[];
+    checkpoint: Record<string, unknown> | null;
+  }> {
+    const res = await this.request<{
+      data: {
+        id: string;
+        title: string;
+        createdAt: string;
+        updatedAt: string;
+        lastUserMessageAt: string | null;
+        messageCount: number;
+        folderId: string | null;
+        status: "active" | "ended" | "context_blocked";
+        blockReason: string | null;
+        activeRunStatus: AIRunStatus | null;
+        messages: AIMessage[];
+        lastContext: PageContext | null;
+        discoveredToolsets: string[];
+        checkpoint: Record<string, unknown> | null;
+      };
+    }>(`/ai/conversations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
     return res.data;
   }
 
@@ -853,6 +1018,7 @@ class ApiClient extends withLoggingApi(
       updatedAt: string;
       lastUserMessageAt: string | null;
       messageCount: number;
+      folderId: string | null;
       status: "active" | "ended" | "context_blocked";
       blockReason: string | null;
       activeRunStatus: AIRunStatus | null;
@@ -872,6 +1038,7 @@ class ApiClient extends withLoggingApi(
           updatedAt: string;
           lastUserMessageAt: string | null;
           messageCount: number;
+          folderId: string | null;
           status: "active" | "ended" | "context_blocked";
           blockReason: string | null;
           activeRunStatus: AIRunStatus | null;

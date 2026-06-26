@@ -9,6 +9,7 @@ export interface SavedAIConversation {
   createdAt: string;
   updatedAt: string;
   lastUserMessageAt: string | null;
+  folderId: string | null;
   status: AIConversationStatus;
   blockReason: string | null;
   activeRunStatus: AIRunStatus | null;
@@ -20,10 +21,20 @@ export interface AIConversationSummary {
   createdAt: string;
   updatedAt: string;
   lastUserMessageAt: string | null;
+  folderId: string | null;
   messageCount: number;
   status: AIConversationStatus;
   blockReason: string | null;
   activeRunStatus: AIRunStatus | null;
+}
+
+export interface AIConversationFolder {
+  id: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export async function getConversation(id: string): Promise<SavedAIConversation> {
@@ -36,20 +47,22 @@ export async function getConversation(id: string): Promise<SavedAIConversation> 
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     lastUserMessageAt: conversation.lastUserMessageAt,
+    folderId: conversation.folderId,
     status: conversation.status,
     blockReason: conversation.blockReason,
     activeRunStatus: conversation.activeRunStatus,
   };
 }
 
-export async function listConversations(limit?: number): Promise<AIConversationSummary[]> {
+export async function listConversations(): Promise<AIConversationSummary[]> {
   const conversations = await api.listAIConversations();
-  return conversations.slice(0, limit).map((conversation) => ({
+  return conversations.map((conversation) => ({
     id: conversation.id,
     title: conversation.title,
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     lastUserMessageAt: conversation.lastUserMessageAt,
+    folderId: conversation.folderId,
     messageCount: conversation.messageCount,
     status: conversation.status,
     blockReason: conversation.blockReason,
@@ -59,6 +72,23 @@ export async function listConversations(limit?: number): Promise<AIConversationS
 
 export async function deleteConversation(id: string): Promise<void> {
   await api.deleteAIConversation(id);
+}
+
+export async function renameConversation(id: string, title: string): Promise<SavedAIConversation> {
+  const conversation = await api.updateAIConversation(id, { title });
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    messages: conversation.messages,
+    lastContext: conversation.lastContext,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    lastUserMessageAt: conversation.lastUserMessageAt,
+    folderId: conversation.folderId,
+    status: conversation.status,
+    blockReason: conversation.blockReason,
+    activeRunStatus: conversation.activeRunStatus,
+  };
 }
 
 export async function rollbackConversationToMessage(
@@ -76,9 +106,45 @@ export async function rollbackConversationToMessage(
       createdAt: result.conversation.createdAt,
       updatedAt: result.conversation.updatedAt,
       lastUserMessageAt: result.conversation.lastUserMessageAt,
+      folderId: result.conversation.folderId,
       status: result.conversation.status,
       blockReason: result.conversation.blockReason,
       activeRunStatus: result.conversation.activeRunStatus,
     },
   };
+}
+
+export async function listConversationFolders(): Promise<AIConversationFolder[]> {
+  return api.listAIConversationFolders();
+}
+
+export async function createConversationFolder(input: {
+  name: string;
+  description?: string;
+}): Promise<AIConversationFolder> {
+  return api.createAIConversationFolder(input);
+}
+
+export async function updateConversationFolder(
+  id: string,
+  input: { name?: string; description?: string }
+): Promise<AIConversationFolder> {
+  return api.updateAIConversationFolder(id, input);
+}
+
+export async function deleteConversationFolder(id: string): Promise<void> {
+  await api.deleteAIConversationFolder(id);
+}
+
+export async function reorderConversationFolders(
+  items: Array<{ id: string; sortOrder: number }>
+): Promise<AIConversationFolder[]> {
+  return api.reorderAIConversationFolders(items);
+}
+
+export async function moveConversationsToFolder(
+  conversationIds: string[],
+  folderId: string | null
+): Promise<void> {
+  await api.moveAIConversationsToFolder(conversationIds, folderId);
 }

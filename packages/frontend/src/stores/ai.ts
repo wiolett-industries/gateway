@@ -1,10 +1,18 @@
 import { create } from "zustand";
 import {
+  type AIConversationFolder,
   type AIConversationSummary,
+  createConversationFolder,
   deleteConversation,
+  deleteConversationFolder,
   getConversation,
+  listConversationFolders,
   listConversations,
+  moveConversationsToFolder,
+  renameConversation,
+  reorderConversationFolders,
   rollbackConversationToMessage,
+  updateConversationFolder,
 } from "@/services/ai-conversations";
 import { AIWebSocketClient } from "@/services/ai-websocket";
 import { api } from "@/services/api";
@@ -228,7 +236,9 @@ function invalidateStore(storeName: string): void {
 interface AIState {
   messages: AIMessage[];
   recentConversations: AIConversationSummary[];
+  conversationFolders: AIConversationFolder[];
   isLoadingRecentConversations: boolean;
+  isLoadingConversationFolders: boolean;
   isStreaming: boolean;
   isConnected: boolean;
   isConnecting: boolean;
@@ -257,8 +267,21 @@ interface AIState {
   stopStreaming: () => void;
   clearMessages: () => void;
   fetchRecentConversations: () => Promise<void>;
+  fetchConversationFolders: () => Promise<void>;
+  createConversationFolder: (input: {
+    name: string;
+    description?: string;
+  }) => Promise<AIConversationFolder | null>;
+  updateConversationFolder: (
+    id: string,
+    input: { name?: string; description?: string }
+  ) => Promise<AIConversationFolder | null>;
+  deleteConversationFolder: (id: string) => Promise<void>;
+  reorderConversationFolders: (folderIds: string[]) => Promise<void>;
+  moveConversationsToFolder: (conversationIds: string[], folderId: string | null) => Promise<void>;
   loadConversation: (conversationId: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
+  renameConversation: (conversationId: string, title: string) => Promise<void>;
   rollbackToMessage: (messageId: string) => Promise<AIMessage | null>;
   setEnabled: (enabled: boolean) => void;
   handleSlashCommand: (input: string) => Promise<boolean>;
@@ -369,7 +392,9 @@ export async function getAIContextUsage(messages: AIMessage[]): Promise<AIContex
 export const useAIStore = create<AIState>()((set, get) => ({
   messages: [],
   recentConversations: [],
+  conversationFolders: [],
   isLoadingRecentConversations: false,
+  isLoadingConversationFolders: false,
   isStreaming: false,
   isConnected: false,
   isConnecting: false,
@@ -613,6 +638,112 @@ export const useAIStore = create<AIState>()((set, get) => ({
     }
   },
 
+  fetchConversationFolders: async () => {
+    if (!useAuthStore.getState().user) return;
+    set((state) => ({
+      isLoadingConversationFolders: state.conversationFolders.length === 0,
+    }));
+    try {
+      const folders = await listConversationFolders();
+      set({
+        conversationFolders: sortConversationFolders(folders),
+        isLoadingConversationFolders: false,
+      });
+    } catch {
+      set({ isLoadingConversationFolders: false });
+    }
+  },
+
+  createConversationFolder: async (input) => {
+    const created = await createConversationFolder(input);
+    set((state) => ({
+      conversationFolders: sortConversationFolders([...state.conversationFolders, created]),
+    }));
+    return created;
+  },
+
+  updateConversationFolder: async (id, input) => {
+    const previousFolders = get().conversationFolders;
+    set((state) => ({
+      conversationFolders: state.conversationFolders.map((folder) =>
+        folder.id === id
+          ? {
+              ...folder,
+              ...input,
+              updatedAt: nowIso(),
+            }
+          : folder
+      ),
+    }));
+    try {
+      const updated = await updateConversationFolder(id, input);
+      set((state) => ({
+        conversationFolders: sortConversationFolders(
+          state.conversationFolders.map((folder) => (folder.id === id ? updated : folder))
+        ),
+      }));
+      return updated;
+    } catch (error) {
+      set({ conversationFolders: previousFolders });
+      throw error;
+    }
+  },
+
+  deleteConversationFolder: async (id) => {
+    const previousFolders = get().conversationFolders;
+    const previousConversations = get().recentConversations;
+    set((state) => ({
+      conversationFolders: state.conversationFolders.filter((folder) => folder.id !== id),
+      recentConversations: state.recentConversations.map((conversation) =>
+        conversation.folderId === id ? { ...conversation, folderId: null } : conversation
+      ),
+    }));
+    try {
+      await deleteConversationFolder(id);
+      void get().fetchRecentConversations();
+    } catch (error) {
+      set({ conversationFolders: previousFolders, recentConversations: previousConversations });
+      throw error;
+    }
+  },
+
+  reorderConversationFolders: async (folderIds) => {
+    const previousFolders = get().conversationFolders;
+    const orderById = new Map(folderIds.map((id, index) => [id, index]));
+    const nextFolders = sortConversationFolders(
+      previousFolders.map((folder) =>
+        orderById.has(folder.id) ? { ...folder, sortOrder: orderById.get(folder.id)! } : folder
+      )
+    );
+    set({ conversationFolders: nextFolders });
+    try {
+      const folders = await reorderConversationFolders(
+        nextFolders.map((folder, index) => ({ id: folder.id, sortOrder: index }))
+      );
+      set({ conversationFolders: sortConversationFolders(folders) });
+    } catch (error) {
+      set({ conversationFolders: previousFolders });
+      throw error;
+    }
+  },
+
+  moveConversationsToFolder: async (conversationIds, folderId) => {
+    const ids = new Set(conversationIds);
+    const previousConversations = get().recentConversations;
+    set((state) => ({
+      recentConversations: state.recentConversations.map((conversation) =>
+        ids.has(conversation.id) ? { ...conversation, folderId } : conversation
+      ),
+    }));
+    try {
+      await moveConversationsToFolder(conversationIds, folderId);
+      void get().fetchRecentConversations();
+    } catch (error) {
+      set({ recentConversations: previousConversations });
+      throw error;
+    }
+  },
+
   loadConversation: async (conversationId: string) => {
     const loadGeneration = (conversationLoadGeneration += 1);
     try {
@@ -696,6 +827,28 @@ export const useAIStore = create<AIState>()((set, get) => ({
       };
       set((state) => ({ messages: [...state.messages, localMsg] }));
     }
+  },
+
+  renameConversation: async (conversationId: string, title: string) => {
+    const conversation = await renameConversation(conversationId, title);
+    set((state) => ({
+      savedName:
+        state.activeConversationId === conversationId ? conversation.title : state.savedName,
+      recentConversations: state.recentConversations.map((item) =>
+        item.id === conversationId
+          ? {
+              ...item,
+              title: conversation.title,
+              updatedAt: conversation.updatedAt,
+              lastUserMessageAt: conversation.lastUserMessageAt,
+              status: conversation.status,
+              blockReason: conversation.blockReason,
+              activeRunStatus: conversation.activeRunStatus,
+            }
+          : item
+      ),
+    }));
+    void get().fetchRecentConversations();
   },
 
   rollbackToMessage: async (messageId: string) => {
@@ -782,7 +935,9 @@ export function resetAIStateForAuthChange() {
   useAIStore.setState({
     messages: [],
     recentConversations: [],
+    conversationFolders: [],
     isLoadingRecentConversations: false,
+    isLoadingConversationFolders: false,
     isStreaming: false,
     isConnected: false,
     isConnecting: false,
@@ -1172,6 +1327,13 @@ function patchRecentConversationRunStatus(
     return { ...conversation, activeRunStatus };
   });
   return changed ? nextConversations : conversations;
+}
+
+function sortConversationFolders(folders: AIConversationFolder[]): AIConversationFolder[] {
+  return [...folders].sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder;
+    return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+  });
 }
 
 function findLastAssistantIndex(messages: AIMessage[]): number {

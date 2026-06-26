@@ -122,6 +122,7 @@ describe('AI routes session-only authentication', () => {
       title: 'debug session',
       createdAt: new Date('2026-06-24T09:00:00Z'),
       updatedAt: new Date('2026-06-24T09:01:00Z'),
+      folderId: null,
       messageCount: 1,
       messages: [{ id: 'message-1', role: 'user', content: 'hello' }],
       lastContext: null,
@@ -161,6 +162,40 @@ describe('AI routes session-only authentication', () => {
     expect(await response.json()).toEqual({ code: 'NOT_FOUND', message: 'Conversation not found' });
   });
 
+  it('renames an owned conversation', async () => {
+    registerServices();
+    const renameConversation = vi.fn().mockResolvedValue({
+      id: 'conversation-1',
+      title: 'renamed chat',
+      createdAt: new Date('2026-06-24T09:00:00Z'),
+      updatedAt: new Date('2026-06-24T09:02:00Z'),
+      folderId: null,
+      messageCount: 1,
+      messages: [{ id: 'message-1', role: 'user', content: 'hello' }],
+      lastContext: null,
+      discoveredToolsets: [],
+      checkpoint: null,
+    });
+    container.registerInstance(AIConversationService, {
+      renameConversation,
+    } as unknown as AIConversationService);
+
+    const response = await createApp().request('/api/ai/conversations/conversation-1', {
+      method: 'PATCH',
+      headers: { Cookie: 'session_id=session-1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'renamed chat' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(renameConversation).toHaveBeenCalledWith(USER.id, 'conversation-1', 'renamed chat');
+    expect(await response.json()).toMatchObject({
+      data: {
+        id: 'conversation-1',
+        title: 'renamed chat',
+      },
+    });
+  });
+
   it('rolls conversations back to an owned user message', async () => {
     registerServices();
     const rollbackToMessage = vi.fn().mockResolvedValue({
@@ -170,6 +205,7 @@ describe('AI routes session-only authentication', () => {
         title: 'debug session',
         createdAt: new Date('2026-06-24T09:00:00Z'),
         updatedAt: new Date('2026-06-24T09:01:00Z'),
+        folderId: null,
         messageCount: 0,
         messages: [],
         lastContext: null,

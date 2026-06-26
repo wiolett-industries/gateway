@@ -1,12 +1,34 @@
+import {
+  DndContext,
+  type DragEndEvent,
+  DragOverlay,
+  type DragStartEvent,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CircleAlert,
+  Folder,
+  FolderOpen,
   Loader2,
   Lock,
   LogOut,
   MessageSquare,
+  MoreHorizontal,
   PanelLeft,
   PanelLeftClose,
+  Pencil,
   Pin,
   PinOff,
   Plus,
@@ -14,10 +36,18 @@ import {
   Shield,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,15 +55,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, getInitials } from "@/lib/utils";
-import type { AIConversationSummary } from "@/services/ai-conversations";
+import type { AIConversationFolder, AIConversationSummary } from "@/services/ai-conversations";
 import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
+
+const EXPANDED_PROJECT_IDS_STORAGE_KEY = "gateway-ai-lite-expanded-project-ids";
 
 function formatConversationDate(value: string): string {
   const date = new Date(value);
@@ -47,6 +81,26 @@ function formatConversationDate(value: string): string {
     return `${Math.floor(diffMinutes / 60)} h ago`;
   }
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function readExpandedProjectIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(EXPANDED_PROJECT_IDS_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((value): value is string => typeof value === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeExpandedProjectIds(ids: Set<string>) {
+  try {
+    localStorage.setItem(EXPANDED_PROJECT_IDS_STORAGE_KEY, JSON.stringify([...ids]));
+  } catch {
+    // Ignore unavailable storage; project expansion still works for the current session.
+  }
 }
 
 interface AILiteSidebarProps {
@@ -78,12 +132,23 @@ export function AILiteSidebar({
     messages,
     sidebarActiveConversationId,
     recentConversations,
+    conversationFolders,
     isLoadingRecentConversations,
     clearMessages,
+    createConversationFolder,
     deleteConversation,
+    deleteConversationFolder,
+    fetchConversationFolders,
     fetchRecentConversations,
     loadConversation,
+    moveConversationsToFolder,
+    reorderConversationFolders,
+    updateConversationFolder,
   } = useAIStore();
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(readExpandedProjectIds);
+  const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(null);
+  const [dragOverlayConversationId, setDragOverlayConversationId] = useState<string | null>(null);
   const canAccessAdministration = hasAnyScope("admin:audit", "admin:users", "admin:groups");
   const isExpanded = sidebarOpen;
   const pinnedConversationSet = new Set(pinnedAIConversationIds);
@@ -93,11 +158,34 @@ export function AILiteSidebar({
   const chatConversations = recentConversations.filter(
     (conversation) => !pinnedConversationSet.has(conversation.id)
   );
+  const sortedFolders = [...conversationFolders].sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder;
+    return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+  });
+  const conversationsByFolder = new Map<string | null, AIConversationSummary[]>();
+  conversationsByFolder.set(null, []);
+  for (const folder of sortedFolders) conversationsByFolder.set(folder.id, []);
+  for (const conversation of chatConversations) {
+    const folderId =
+      conversation.folderId && conversationsByFolder.has(conversation.folderId)
+        ? conversation.folderId
+        : null;
+    conversationsByFolder.get(folderId)?.push(conversation);
+  }
+  const rootConversations = conversationsByFolder.get(null) ?? [];
+  const dragOverlayConversation = dragOverlayConversationId
+    ? recentConversations.find((conversation) => conversation.id === dragOverlayConversationId)
+    : null;
   const visibleActiveConversationId = messages.length > 0 ? sidebarActiveConversationId : null;
 
   useEffect(() => {
     void fetchRecentConversations();
-  }, [fetchRecentConversations]);
+    void fetchConversationFolders();
+  }, [fetchConversationFolders, fetchRecentConversations]);
+
+  useEffect(() => {
+    writeExpandedProjectIds(expandedFolderIds);
+  }, [expandedFolderIds]);
 
   const handleNewChat = () => {
     useAIStore.setState({ sidebarActiveConversationId: null });
@@ -123,6 +211,65 @@ export function AILiteSidebar({
 
   const handleSwitchToDefaultMode = () => {
     setAILiteMode(false);
+  };
+
+  const handleToggleFolder = (folderId: string) => {
+    setExpandedFolderIds((current) => {
+      const next = new Set(current);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  };
+
+  const handleCreateFolder = async (name: string, description: string) => {
+    const folder = await createConversationFolder({ name, description });
+    if (folder) {
+      setExpandedFolderIds((current) => new Set([...current, folder.id]));
+      setFolderDialog(null);
+    }
+  };
+
+  const handleUpdateFolder = async (folderId: string, name: string, description: string) => {
+    await updateConversationFolder(folderId, { name, description });
+    setFolderDialog(null);
+  };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const activeData = event.active.data.current;
+    setDragOverlayConversationId(
+      activeData?.type === "conversation" && typeof activeData.conversationId === "string"
+        ? activeData.conversationId
+        : null
+    );
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setDragOverlayConversationId(null);
+    const activeData = event.active.data.current;
+    const overData = event.over?.data.current;
+    if (!activeData || !overData) return;
+
+    if (activeData.type === "folder" && overData.type === "folder") {
+      const oldIndex = sortedFolders.findIndex((folder) => folder.id === activeData.folderId);
+      const newIndex = sortedFolders.findIndex((folder) => folder.id === overData.folderId);
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+      void reorderConversationFolders(
+        arrayMove(sortedFolders, oldIndex, newIndex).map((folder) => folder.id)
+      );
+      return;
+    }
+
+    if (activeData.type === "conversation") {
+      const targetFolderId =
+        overData.type === "root"
+          ? null
+          : typeof overData.folderId === "string"
+            ? overData.folderId
+            : null;
+      if (activeData.folderId === targetFolderId) return;
+      void moveConversationsToFolder([activeData.conversationId], targetFolderId);
+    }
   };
 
   return (
@@ -217,20 +364,30 @@ export function AILiteSidebar({
                 Gateway AI
               </span>
               <div className="flex items-center gap-0.5">
-                <Tooltip>
-                  <TooltipTrigger asChild>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon"
                       className="h-10 w-10 md:h-7 md:w-7"
-                      onClick={handleNewChat}
-                      aria-label="New chat"
+                      aria-label="Create"
                     >
                       <Plus className="h-4 w-4" />
                     </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>New chat</TooltipContent>
-                </Tooltip>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuItem onClick={handleNewChat}>
+                      <MessageSquare className="mr-2 h-4 w-4" />
+                      New chat
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setFolderDialog({ mode: "create", name: "", description: "" })}
+                    >
+                      <Folder className="mr-2 h-4 w-4" />
+                      New project
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -273,34 +430,127 @@ export function AILiteSidebar({
                       </nav>
                     )}
 
-                    <nav className="space-y-0.5 px-2 py-2">
-                      <p className="px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                        Chats
-                      </p>
-                      {recentConversations.length === 0 ? (
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-3 overflow-hidden whitespace-nowrap bg-sidebar-accent px-3 py-2 text-left text-sm font-medium text-sidebar-accent-foreground"
-                          onClick={handleNewChat}
-                        >
-                          <MessageSquare className="h-4 w-4 shrink-0" />
-                          <span className="truncate">New chat</span>
-                        </button>
-                      ) : (
-                        chatConversations.map((conversation) => (
-                          <ConversationMenuItem
-                            key={conversation.id}
-                            conversation={conversation}
-                            active={visibleActiveConversationId === conversation.id}
-                            pinned={false}
-                            disableLayoutAnimation={isResizing}
-                            onLoad={() => void handleLoadConversation(conversation.id)}
-                            onTogglePin={() => togglePinnedAIConversation(conversation.id)}
-                            onDelete={() => void deleteConversation(conversation.id)}
-                          />
-                        ))
+                    <DndContext
+                      sensors={sensors}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      onDragCancel={() => setDragOverlayConversationId(null)}
+                    >
+                      {sortedFolders.length > 0 && (
+                        <nav className="space-y-0.5 px-2 py-2">
+                          <p className="px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Projects
+                          </p>
+                          <SortableContext
+                            items={sortedFolders.map((folder) => folder.id)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            {sortedFolders.map((folder) => {
+                              const folderConversations =
+                                conversationsByFolder.get(folder.id) ?? [];
+                              const isFolderExpanded = expandedFolderIds.has(folder.id);
+                              return (
+                                <div key={folder.id} className="space-y-0.5">
+                                  <FolderMenuItem
+                                    folder={folder}
+                                    conversations={folderConversations}
+                                    expanded={isFolderExpanded}
+                                    onToggle={() => handleToggleFolder(folder.id)}
+                                    onEdit={() =>
+                                      setFolderDialog({
+                                        mode: "edit",
+                                        folderId: folder.id,
+                                        name: folder.name,
+                                        description: folder.description,
+                                      })
+                                    }
+                                    onDelete={() => void deleteConversationFolder(folder.id)}
+                                  />
+                                  {folderConversations.length > 0 && (
+                                    <AnimatePresence initial={false}>
+                                      {isFolderExpanded && (
+                                        <motion.div
+                                          key={`${folder.id}-conversations`}
+                                          initial={{ height: 0, opacity: 0 }}
+                                          animate={{ height: "auto", opacity: 1 }}
+                                          exit={{ height: 0, opacity: 0 }}
+                                          transition={{ duration: 0.16, ease: "easeOut" }}
+                                          className="overflow-hidden"
+                                        >
+                                          <div className="space-y-0.5 pl-4">
+                                            {folderConversations.map((conversation) => (
+                                              <DraggableConversationMenuItem
+                                                key={conversation.id}
+                                                conversation={conversation}
+                                                folderId={folder.id}
+                                                active={
+                                                  visibleActiveConversationId === conversation.id
+                                                }
+                                                pinned={false}
+                                                disableLayoutAnimation={isResizing}
+                                                onLoad={() =>
+                                                  void handleLoadConversation(conversation.id)
+                                                }
+                                                onTogglePin={() =>
+                                                  togglePinnedAIConversation(conversation.id)
+                                                }
+                                                onDelete={() =>
+                                                  void deleteConversation(conversation.id)
+                                                }
+                                              />
+                                            ))}
+                                          </div>
+                                        </motion.div>
+                                      )}
+                                    </AnimatePresence>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </SortableContext>
+                        </nav>
                       )}
-                    </nav>
+
+                      <nav className="space-y-0.5 px-2 py-2">
+                        <p className="px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Chats
+                        </p>
+                        {recentConversations.length === 0 && sortedFolders.length === 0 ? (
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 overflow-hidden whitespace-nowrap bg-sidebar-accent px-3 py-2 text-left text-sm font-medium text-sidebar-accent-foreground"
+                            onClick={handleNewChat}
+                          >
+                            <MessageSquare className="h-4 w-4 shrink-0" />
+                            <span className="truncate">New chat</span>
+                          </button>
+                        ) : (
+                          <RootConversationDropZone>
+                            {rootConversations.map((conversation) => (
+                              <DraggableConversationMenuItem
+                                key={conversation.id}
+                                conversation={conversation}
+                                folderId={null}
+                                active={visibleActiveConversationId === conversation.id}
+                                pinned={false}
+                                disableLayoutAnimation={isResizing}
+                                onLoad={() => void handleLoadConversation(conversation.id)}
+                                onTogglePin={() => togglePinnedAIConversation(conversation.id)}
+                                onDelete={() => void deleteConversation(conversation.id)}
+                              />
+                            ))}
+                          </RootConversationDropZone>
+                        )}
+                      </nav>
+                      <DragOverlay dropAnimation={null}>
+                        {dragOverlayConversation ? (
+                          <ConversationDragOverlayItem
+                            conversation={dragOverlayConversation}
+                            width={Math.max(160, Math.min(sidebarWidth - 32, 360))}
+                          />
+                        ) : null}
+                      </DragOverlay>
+                    </DndContext>
                   </>
                 )}
               </div>
@@ -350,7 +600,278 @@ export function AILiteSidebar({
           </motion.div>
         )}
       </AnimatePresence>
+      {folderDialog && (
+        <ConversationFolderDialog
+          state={folderDialog}
+          onOpenChange={(open) => {
+            if (!open) setFolderDialog(null);
+          }}
+          onCreate={(name, description) => handleCreateFolder(name, description)}
+          onUpdate={(folderId, name, description) =>
+            handleUpdateFolder(folderId, name, description)
+          }
+        />
+      )}
     </aside>
+  );
+}
+
+type FolderDialogState =
+  | { mode: "create"; name: string; description: string }
+  | { mode: "edit"; folderId: string; name: string; description: string };
+
+function ConversationFolderDialog({
+  state,
+  onOpenChange,
+  onCreate,
+  onUpdate,
+}: {
+  state: FolderDialogState;
+  onOpenChange: (open: boolean) => void;
+  onCreate: (name: string, description: string) => Promise<void>;
+  onUpdate: (folderId: string, name: string, description: string) => Promise<void>;
+}) {
+  const [draftName, setDraftName] = useState(state.name);
+  const [draftDescription, setDraftDescription] = useState(state.description);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const canSubmit = draftName.trim().length > 0;
+
+  useEffect(() => {
+    setDraftName(state.name);
+    setDraftDescription(state.description);
+    setIsSubmitting(false);
+  }, [state]);
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setIsSubmitting(true);
+    try {
+      if (state.mode === "create") {
+        await onCreate(draftName.trim(), draftDescription.trim());
+      } else {
+        await onUpdate(state.folderId, draftName.trim(), draftDescription.trim());
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{state.mode === "create" ? "New project" : "Edit project"}</DialogTitle>
+          <DialogDescription>Group related AI chats in a sidebar project.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label htmlFor="ai-folder-name" className="text-sm font-medium text-foreground">
+              Name
+            </label>
+            <Input
+              id="ai-folder-name"
+              value={draftName}
+              onChange={(event) => setDraftName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+              placeholder="Project name"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="ai-folder-description" className="text-sm font-medium text-foreground">
+              Description
+            </label>
+            <Textarea
+              id="ai-folder-description"
+              value={draftDescription}
+              onChange={(event) => setDraftDescription(event.target.value)}
+              placeholder="Optional description"
+              className="min-h-20 resize-none"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button onClick={() => void submit()} disabled={isSubmitting || !canSubmit}>
+            {state.mode === "create" ? "Create" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FolderMenuItem({
+  folder,
+  conversations,
+  expanded,
+  onToggle,
+  onEdit,
+  onDelete,
+}: {
+  folder: AIConversationFolder;
+  conversations: AIConversationSummary[];
+  expanded: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: folder.id,
+    data: { type: "folder", folderId: folder.id },
+  });
+  const StatusIcon = getFolderStatusIcon(conversations, expanded);
+  const statusClassName = cn(
+    "h-4 w-4 shrink-0",
+    StatusIcon === Loader2
+      ? "animate-spin text-primary"
+      : StatusIcon === CircleAlert
+        ? "text-yellow-600 dark:text-yellow-400"
+        : ""
+  );
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(
+        "group flex max-w-full items-center overflow-hidden whitespace-nowrap text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        isDragging && "opacity-60"
+      )}
+      {...attributes}
+      {...listeners}
+    >
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden px-3 py-2 pr-1 text-left text-sm"
+        onClick={onToggle}
+      >
+        <StatusIcon className={statusClassName} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">{folder.name}</span>
+          {folder.description.trim() && (
+            <span className="truncate text-xs font-normal text-muted-foreground">
+              {folder.description}
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">{conversations.length}</span>
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="mr-2 flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-sidebar-accent-foreground"
+            aria-label={`Folder actions for ${folder.name}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem onClick={onEdit}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit
+          </DropdownMenuItem>
+          <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function RootConversationDropZone({ children }: { children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: "conversation-root",
+    data: { type: "root", folderId: null },
+  });
+  return (
+    <div ref={setNodeRef} className={cn("min-h-2 space-y-0.5", isOver && "bg-sidebar-accent/50")}>
+      {children}
+    </div>
+  );
+}
+
+function DraggableConversationMenuItem({
+  conversation,
+  folderId,
+  active,
+  pinned,
+  disableLayoutAnimation,
+  onLoad,
+  onTogglePin,
+  onDelete,
+}: {
+  conversation: AIConversationSummary;
+  folderId: string | null;
+  active: boolean;
+  pinned: boolean;
+  disableLayoutAnimation?: boolean;
+  onLoad: () => void;
+  onTogglePin: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `conversation:${conversation.id}`,
+    data: { type: "conversation", conversationId: conversation.id, folderId },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform) }}
+      className={cn(isDragging && "opacity-60")}
+      {...attributes}
+      {...listeners}
+    >
+      <ConversationMenuItem
+        conversation={conversation}
+        active={active}
+        pinned={pinned}
+        disableLayoutAnimation={disableLayoutAnimation}
+        onLoad={onLoad}
+        onTogglePin={onTogglePin}
+        onDelete={onDelete}
+      />
+    </div>
+  );
+}
+
+function ConversationDragOverlayItem({
+  conversation,
+  width,
+}: {
+  conversation: AIConversationSummary;
+  width: number;
+}) {
+  const StatusIcon = getConversationStatusIcon(conversation);
+  const statusIconClassName = cn(
+    "h-4 w-4 shrink-0",
+    conversation.activeRunStatus === "queued" || conversation.activeRunStatus === "running"
+      ? "animate-spin text-primary"
+      : conversation.activeRunStatus === "waiting_for_approval" ||
+          conversation.activeRunStatus === "waiting_for_answer"
+        ? "text-yellow-600 dark:text-yellow-400"
+        : ""
+  );
+
+  return (
+    <div
+      style={{ width }}
+      className="flex max-w-[calc(100vw-2rem)] items-center gap-3 overflow-hidden whitespace-nowrap border border-sidebar-border bg-sidebar-background px-3 py-2 text-sm font-medium text-sidebar-foreground shadow-lg"
+    >
+      <StatusIcon className={statusIconClassName} />
+      <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
+    </div>
   );
 }
 
@@ -471,6 +992,27 @@ function getConversationStatusIcon(conversation: AIConversationSummary) {
     default:
       return conversation.status === "active" ? MessageSquare : Lock;
   }
+}
+
+function getFolderStatusIcon(conversations: AIConversationSummary[], expanded: boolean) {
+  if (
+    conversations.some(
+      (conversation) =>
+        conversation.activeRunStatus === "waiting_for_approval" ||
+        conversation.activeRunStatus === "waiting_for_answer"
+    )
+  ) {
+    return CircleAlert;
+  }
+  if (
+    conversations.some(
+      (conversation) =>
+        conversation.activeRunStatus === "queued" || conversation.activeRunStatus === "running"
+    )
+  ) {
+    return Loader2;
+  }
+  return expanded ? FolderOpen : Folder;
 }
 
 function AccountDropdownContent({

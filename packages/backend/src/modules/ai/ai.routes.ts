@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { z } from 'zod';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
@@ -12,6 +13,7 @@ import { AIConfigUpdateSchema } from './ai.schemas.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS } from './ai.tools.js';
 import { AIConversationService } from './ai-conversation.service.js';
+import { AIConversationFolderService } from './ai-conversation-folder.service.js';
 
 export const aiRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
@@ -58,6 +60,38 @@ function userFacingToolDescription(name: string, category: string, destructive: 
   return `${destructive ? 'Change' : 'Use'} ${category.toLowerCase()} capabilities.`;
 }
 
+const CreateAIConversationFolderSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  description: z.string().max(2000).optional(),
+});
+
+const UpdateAIConversationFolderSchema = z
+  .object({
+    name: z.string().trim().min(1).max(255).optional(),
+    description: z.string().max(2000).optional(),
+  })
+  .refine((value) => value.name !== undefined || value.description !== undefined, {
+    message: 'name or description is required',
+  });
+
+const ReorderAIConversationFoldersSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.string().uuid(),
+      sortOrder: z.number().int().min(0),
+    })
+  ),
+});
+
+const MoveAIConversationsToFolderSchema = z.object({
+  conversationIds: z.array(z.string().uuid()).min(1),
+  folderId: z.string().uuid().nullable(),
+});
+
+const UpdateAIConversationSchema = z.object({
+  title: z.string().trim().min(1).max(255),
+});
+
 aiRoutes.use('*', authMiddleware);
 aiRoutes.use('*', sessionOnly);
 
@@ -75,10 +109,75 @@ aiRoutes.get('/conversations', requireScope('feat:ai:use'), async (c) => {
   return c.json({ data });
 });
 
+aiRoutes.get('/conversation-folders', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  const data = await service.listFolders(user.id);
+  return c.json({ data });
+});
+
+aiRoutes.post('/conversation-folders', requireScope('feat:ai:use'), async (c) => {
+  const parsed = CreateAIConversationFolderSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  const data = await service.createFolder(user.id, parsed.data);
+  return c.json({ data }, 201);
+});
+
+aiRoutes.patch('/conversation-folders/:id', requireScope('feat:ai:use'), async (c) => {
+  const parsed = UpdateAIConversationFolderSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  const data = await service.updateFolder(user.id, c.req.param('id'), parsed.data);
+  return c.json({ data });
+});
+
+aiRoutes.delete('/conversation-folders/:id', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  await service.deleteFolder(user.id, c.req.param('id'));
+  return c.json({ data: { deleted: true } });
+});
+
+aiRoutes.put('/conversation-folders/reorder', requireScope('feat:ai:use'), async (c) => {
+  const parsed = ReorderAIConversationFoldersSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  const data = await service.reorderFolders(user.id, parsed.data);
+  return c.json({ data });
+});
+
+aiRoutes.put('/conversation-folders/move-conversations', requireScope('feat:ai:use'), async (c) => {
+  const parsed = MoveAIConversationsToFolderSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  const data = await service.moveConversationsToFolder(user.id, parsed.data);
+  return c.json({ data });
+});
+
 aiRoutes.get('/conversations/:id', requireScope('feat:ai:use'), async (c) => {
   const service = container.resolve(AIConversationService);
   const user = c.get('user')!;
   const data = await service.getConversation(user.id, c.req.param('id'));
+  if (!data) return c.json({ code: 'NOT_FOUND', message: 'Conversation not found' }, 404);
+  return c.json({ data });
+});
+
+aiRoutes.patch('/conversations/:id', requireScope('feat:ai:use'), async (c) => {
+  const parsed = UpdateAIConversationSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIConversationService);
+  const user = c.get('user')!;
+  const data = await service.renameConversation(user.id, c.req.param('id'), parsed.data.title);
   if (!data) return c.json({ code: 'NOT_FOUND', message: 'Conversation not found' }, 404);
   return c.json({ data });
 });

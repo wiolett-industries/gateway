@@ -1,8 +1,16 @@
-import { Minimize2, Sparkles } from "lucide-react";
+import { Minimize2, Pencil, Pin, PinOff, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { type AIApprovalMode, formatAIApprovalModeLabel } from "@/lib/ai-approval-mode";
 import {
   confirmBypassEverythingMode,
@@ -103,8 +111,10 @@ export function AILitePanel() {
     isConnecting,
     connectionError,
     retryAfter,
+    savedName,
     activeConversationId,
     activeRunId,
+    recentConversations,
     sendMessage,
     approveTool,
     rejectTool,
@@ -112,10 +122,17 @@ export function AILitePanel() {
     stopStreaming,
     clearMessages,
     handleSlashCommand,
+    deleteConversation,
+    renameConversation,
     rollbackToMessage,
     connect,
   } = useAIStore();
-  const { setAILiteMode, aiApprovalMode: approvalMode } = useUIStore();
+  const {
+    setAILiteMode,
+    aiApprovalMode: approvalMode,
+    pinnedAIConversationIds,
+    togglePinnedAIConversation,
+  } = useUIStore();
 
   const [input, setInput] = useAIComposerDraft(activeConversationId);
   const [attachments, setAttachments] = useAIComposerAttachmentsDraft(activeConversationId);
@@ -123,6 +140,9 @@ export function AILitePanel() {
   const [canAttachImages, setCanAttachImages] = useState(false);
   const [slashResults, setSlashResults] = useState<typeof SLASH_COMMANDS>([]);
   const [slashIndex, setSlashIndex] = useState(0);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -131,6 +151,36 @@ export function AILitePanel() {
   const conversationBlock = getConversationBlock(messages);
   const isNewConversationDraft = messages.length === 0;
   const currentConversationStreaming = !isNewConversationDraft && isStreaming;
+  const currentConversation = activeConversationId
+    ? recentConversations.find((conversation) => conversation.id === activeConversationId)
+    : null;
+  const currentChatTitle = activeConversationId
+    ? (savedName ?? currentConversation?.title ?? "New chat")
+    : "New chat";
+  const isCurrentChatPinned = activeConversationId
+    ? pinnedAIConversationIds.includes(activeConversationId)
+    : false;
+
+  const openRenameDialog = () => {
+    if (!activeConversationId) return;
+    setRenameDraft(currentChatTitle);
+    setRenameDialogOpen(true);
+  };
+
+  const submitRename = async () => {
+    if (!activeConversationId) return;
+    const nextTitle = renameDraft.trim();
+    if (!nextTitle) return;
+    setIsRenaming(true);
+    try {
+      await renameConversation(activeConversationId, nextTitle);
+      setRenameDialogOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to rename chat");
+    } finally {
+      setIsRenaming(false);
+    }
+  };
 
   const setApprovalMode = useCallback(
     async (mode: AIApprovalMode) => {
@@ -385,18 +435,92 @@ export function AILitePanel() {
   return (
     <div className="flex h-full flex-col bg-background">
       <div className="flex h-[49px] shrink-0 items-center justify-between border-b border-border px-4">
-        <span className="text-sm font-semibold">AI Assistant</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={() => setAILiteMode(false)}
-          title="Exit full screen"
-          aria-label="Exit full screen"
+        <span
+          className="min-w-0 flex-1 truncate pr-2 text-sm font-semibold"
+          title={currentChatTitle}
         >
-          <Minimize2 className="h-4 w-4" />
-        </Button>
+          {currentChatTitle}
+        </span>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => activeConversationId && togglePinnedAIConversation(activeConversationId)}
+            disabled={!activeConversationId}
+            title={isCurrentChatPinned ? "Unpin chat" : "Pin chat"}
+            aria-label={isCurrentChatPinned ? "Unpin chat" : "Pin chat"}
+          >
+            {isCurrentChatPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={openRenameDialog}
+            disabled={!activeConversationId}
+            title="Rename chat"
+            aria-label="Rename chat"
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => activeConversationId && void deleteConversation(activeConversationId)}
+            disabled={!activeConversationId}
+            title="Delete chat"
+            aria-label="Delete chat"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => setAILiteMode(false)}
+            title="Exit full screen"
+            aria-label="Exit full screen"
+          >
+            <Minimize2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename chat</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameDraft}
+            onChange={(event) => setRenameDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void submitRename();
+              }
+            }}
+            placeholder="Chat name"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRenameDialogOpen(false)}
+              disabled={isRenaming}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void submitRename()}
+              disabled={isRenaming || !renameDraft.trim()}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {messages.length === 0 ? (
         <div className="flex min-h-0 flex-1 items-center justify-center px-4">

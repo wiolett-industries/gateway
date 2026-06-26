@@ -8,6 +8,7 @@ import {
   aiRuns,
   aiRunToolCalls,
 } from '@/db/schema/index.js';
+import { AppError } from '@/middleware/error-handler.js';
 import type { AISandboxService } from './ai.sandbox.service.js';
 import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
 import type { AIConversationStatus, PageContext } from './ai.types.js';
@@ -26,6 +27,7 @@ export interface AIConversationSummary {
   title: string;
   createdAt: Date;
   updatedAt: Date;
+  folderId: string | null;
   lastUserMessageAt: Date | null;
   messageCount: number;
   status: AIConversationStatus;
@@ -97,6 +99,7 @@ export class AIConversationService {
           title: row.title,
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
+          folderId: row.folderId,
           lastUserMessageAt: getLastUserMessageAt(messageRows),
           messageCount: countVisibleMessages(messages),
           ...deriveConversationStatus(messages),
@@ -125,6 +128,7 @@ export class AIConversationService {
       title: row.title,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      folderId: row.folderId,
       lastUserMessageAt: getLastUserMessageAt(messageRows),
       messageCount: countVisibleMessages(messages),
       ...deriveConversationStatus(messages),
@@ -144,6 +148,32 @@ export class AIConversationService {
       .from(aiConversations)
       .where(and(eq(aiConversations.userId, userId), inArray(aiConversations.id, ids)));
     return Object.fromEntries(rows.map((row) => [row.id, row.title]));
+  }
+
+  async renameConversation(
+    userId: string,
+    conversationId: string,
+    title: string
+  ): Promise<AIConversationDetail | null> {
+    const existing = await this.getOwnedConversation(userId, conversationId);
+    if (!existing) return null;
+
+    const normalizedTitle = normalizeTitle(title);
+    if (normalizedTitle !== existing.title) {
+      const duplicate = await this.db.query.aiConversations.findFirst({
+        where: and(eq(aiConversations.userId, userId), eq(aiConversations.title, normalizedTitle)),
+      });
+      if (duplicate && duplicate.id !== existing.id) {
+        throw new AppError(409, 'AI_CONVERSATION_TITLE_EXISTS', 'AI conversation title already exists');
+      }
+    }
+
+    await this.db
+      .update(aiConversations)
+      .set({ title: normalizedTitle, updatedAt: new Date() })
+      .where(and(eq(aiConversations.id, existing.id), eq(aiConversations.userId, userId)));
+
+    return this.getConversation(userId, existing.id);
   }
 
   async saveConversation(userId: string, input: SaveAIConversationInput): Promise<AIConversationDetail> {

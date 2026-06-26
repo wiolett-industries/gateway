@@ -10,6 +10,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+import { aiConversationFolders } from './ai-conversation-folders.js';
 import { users } from './users.js';
 
 export const aiConversations = pgTable(
@@ -23,12 +24,14 @@ export const aiConversations = pgTable(
     lastContext: jsonb('last_context').$type<Record<string, unknown> | null>(),
     discoveredToolsets: jsonb('discovered_toolsets').$type<string[]>().notNull().default([]),
     checkpoint: jsonb('checkpoint').$type<Record<string, unknown> | null>(),
+    folderId: uuid('folder_id').references(() => aiConversationFolders.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     userTitleIdx: uniqueIndex('ai_conversations_user_title_idx').on(table.userId, table.title),
     userUpdatedIdx: index('ai_conversations_user_updated_idx').on(table.userId, table.updatedAt),
+    userFolderIdx: index('ai_conversations_user_folder_idx').on(table.userId, table.folderId),
   })
 );
 

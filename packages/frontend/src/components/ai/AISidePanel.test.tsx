@@ -190,6 +190,7 @@ describe("AISidePanel autoscroll", () => {
   it("renders lite sidebar conversations and wires load and delete actions", async () => {
     const user = userEvent.setup();
     const fetchRecentConversations = vi.fn();
+    const fetchConversationFolders = vi.fn();
     const loadConversation = vi.fn().mockResolvedValue(undefined);
     const deleteConversation = vi.fn().mockResolvedValue(undefined);
 
@@ -217,6 +218,7 @@ describe("AISidePanel autoscroll", () => {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             lastUserMessageAt: new Date().toISOString(),
+            folderId: null,
             messageCount: 3,
             status: "active",
             blockReason: null,
@@ -225,6 +227,7 @@ describe("AISidePanel autoscroll", () => {
         ],
         isLoadingRecentConversations: false,
         fetchRecentConversations,
+        fetchConversationFolders,
         loadConversation,
         deleteConversation,
       });
@@ -250,7 +253,8 @@ describe("AISidePanel autoscroll", () => {
     expect(await screen.findByText("Administration")).toBeInTheDocument();
   });
 
-  it("clears the active lite sidebar conversation when starting a new chat", () => {
+  it("clears the active lite sidebar conversation when starting a new chat", async () => {
+    const user = userEvent.setup();
     act(() => {
       useAuthStore.setState({
         user: {
@@ -275,6 +279,7 @@ describe("AISidePanel autoscroll", () => {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             lastUserMessageAt: new Date().toISOString(),
+            folderId: null,
             messageCount: 3,
             status: "active",
             blockReason: null,
@@ -283,6 +288,7 @@ describe("AISidePanel autoscroll", () => {
         ],
         isLoadingRecentConversations: false,
         fetchRecentConversations: vi.fn(),
+        fetchConversationFolders: vi.fn(),
       });
       useUIStore.setState({ sidebarOpen: true });
     });
@@ -296,7 +302,8 @@ describe("AISidePanel autoscroll", () => {
     const conversationRow = screen.getByText("Recent chat").closest(".group");
     expect(conversationRow).toHaveClass("bg-sidebar-accent");
 
-    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(await screen.findByRole("menuitem", { name: /New chat/ }));
 
     expect(useAIStore.getState().sidebarActiveConversationId).toBeNull();
     expect(conversationRow).not.toHaveClass("bg-sidebar-accent");
@@ -327,6 +334,7 @@ describe("AISidePanel autoscroll", () => {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             lastUserMessageAt: new Date().toISOString(),
+            folderId: null,
             messageCount: 3,
             status: "active",
             blockReason: null,
@@ -335,6 +343,7 @@ describe("AISidePanel autoscroll", () => {
         ],
         isLoadingRecentConversations: false,
         fetchRecentConversations: vi.fn(),
+        fetchConversationFolders: vi.fn(),
       });
       useUIStore.setState({ sidebarOpen: true });
     });
@@ -367,6 +376,7 @@ describe("AISidePanel autoscroll", () => {
         recentConversations: [],
         isLoadingRecentConversations: false,
         fetchRecentConversations: vi.fn(),
+        fetchConversationFolders: vi.fn(),
       });
       useUIStore.setState({ sidebarOpen: true });
     });
