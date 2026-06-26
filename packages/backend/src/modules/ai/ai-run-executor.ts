@@ -307,7 +307,7 @@ export class AIRunExecutor {
       assistantMessageWritten = true;
       await this.clearAssistantDraft(run.id);
       await this.persistPendingInteraction(run, event, assistantMessageId);
-      await this.conversationSearchService?.rebuildConversationIndex(user.id, run.conversationId);
+      this.conversationSearchService?.rebuildConversationIndexBestEffort(user.id, run.conversationId);
       await this.setConversationCheckpoint(run.conversationId, event);
       await this.updateRunStatus(run.id, event.name === 'ask_question' ? 'waiting_for_answer' : 'waiting_for_approval');
       this.publishConversationChanged(user.id, run.conversationId);
@@ -399,7 +399,7 @@ export class AIRunExecutor {
       )
       .returning({ id: aiConversationMessages.id });
     await this.db.update(aiConversations).set({ updatedAt: new Date() }).where(eq(aiConversations.id, conversationId));
-    await this.conversationSearchService?.rebuildConversationIndex(userId, conversationId);
+    this.conversationSearchService?.rebuildConversationIndexBestEffort(userId, conversationId);
     return message?.id ?? null;
   }
 

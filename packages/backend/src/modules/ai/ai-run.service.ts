@@ -181,7 +181,7 @@ export class AIRunService {
     });
 
     this.publishConversationChanged(input.userId, result.conversationId);
-    await this.conversationSearchService?.rebuildConversationIndex(input.userId, result.conversationId);
+    this.conversationSearchService?.rebuildConversationIndexBestEffort(input.userId, result.conversationId);
     return result;
   }
 

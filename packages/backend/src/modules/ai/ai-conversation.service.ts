@@ -174,7 +174,7 @@ export class AIConversationService {
       .update(aiConversations)
       .set({ title: normalizedTitle, updatedAt: new Date() })
       .where(and(eq(aiConversations.id, existing.id), eq(aiConversations.userId, userId)));
-    await this.searchService?.rebuildConversationIndex(userId, existing.id);
+    this.searchService?.rebuildConversationIndexBestEffort(userId, existing.id);
 
     return this.getConversation(userId, existing.id);
   }
@@ -225,7 +225,7 @@ export class AIConversationService {
     });
 
     await this.attachArtifactsFromMessages(userId, conversationId!, messages);
-    await this.searchService?.rebuildConversationIndex(userId, conversationId!);
+    this.searchService?.rebuildConversationIndexBestEffort(userId, conversationId!);
     const saved = await this.getConversation(userId, conversationId!);
     if (!saved) throw new Error('Failed to save conversation');
     return saved;
@@ -286,7 +286,7 @@ export class AIConversationService {
         conversationId,
         sanitizeConversationMessagesForStorage(input.messages)
       );
-      await this.searchService?.rebuildConversationIndex(userId, conversationId);
+      this.searchService?.rebuildConversationIndexBestEffort(userId, conversationId);
     }
     return this.getConversation(userId, conversationId);
   }
@@ -379,7 +379,7 @@ export class AIConversationService {
         .set({ checkpoint: null, updatedAt: new Date() })
         .where(eq(aiConversations.id, conversationId));
     });
-    await this.searchService?.rebuildConversationIndex(userId, conversationId);
+    this.searchService?.rebuildConversationIndexBestEffort(userId, conversationId);
 
     const conversation = await this.getConversation(userId, conversationId);
     if (!conversation) return null;

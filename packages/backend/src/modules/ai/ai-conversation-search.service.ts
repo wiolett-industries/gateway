@@ -8,10 +8,13 @@ import {
   aiRunToolCalls,
   type NewAIConversationSearchDocument,
 } from '@/db/schema/index.js';
+import { createChildLogger } from '@/lib/logger.js';
 import { escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import { normalizeSearchText, relaxedTokenWindows, trigramSimilarity } from './ai-conversation-search-normalizer.js';
+
+const logger = createChildLogger('AIConversationSearch');
 
 const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SEARCH_LIMIT = 20;
@@ -110,6 +113,12 @@ export class AIConversationSearchService {
     private readonly auditService?: AuditService
   ) {}
 
+  rebuildConversationIndexBestEffort(userId: string, conversationId: string): void {
+    void this.rebuildConversationIndex(userId, conversationId).catch((error) => {
+      logger.warn('Failed to rebuild AI conversation search index', { conversationId, error });
+    });
+  }
+
   async rebuildConversationIndex(userId: string, conversationId: string): Promise<void> {
     const conversation = await this.getOwnedConversation(userId, conversationId);
     if (!conversation) return;
@@ -162,6 +171,16 @@ export class AIConversationSearchService {
       await this.rebuildConversationIndex(userId, conversationId);
     }
     return missing.length;
+  }
+
+  updateConversationProjectIndexBestEffort(userId: string, conversationIds: string[], projectId: string | null): void {
+    void this.updateConversationProjectIndex(userId, conversationIds, projectId).catch((error) => {
+      logger.warn('Failed to update AI conversation search project index', {
+        conversationIds,
+        projectId,
+        error,
+      });
+    });
   }
 
   async updateConversationProjectIndex(

@@ -146,7 +146,7 @@ export class AIConversationFolderService {
       .set({ folderId: input.folderId, updatedAt: new Date() })
       .where(and(eq(aiConversations.userId, userId), inArray(aiConversations.id, conversationIds)))
       .returning({ id: aiConversations.id });
-    await this.searchService?.updateConversationProjectIndex(
+    this.searchService?.updateConversationProjectIndexBestEffort(
       userId,
       updated.map((conversation) => conversation.id),
       input.folderId
