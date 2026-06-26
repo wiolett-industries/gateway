@@ -309,6 +309,13 @@
       "when": 1782741600000,
       "tag": "0043_ai_run_user_command_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1782828000000,
+      "tag": "0044_ai_runtime_shape_fix",
+      "breakpoints": true
     }
   ]
 }
