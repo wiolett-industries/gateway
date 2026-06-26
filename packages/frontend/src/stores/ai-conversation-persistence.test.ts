@@ -149,6 +149,7 @@ describe("AI backend runtime store", () => {
     useAIStore.setState({
       messages: [],
       activeConversationId: "old-conversation",
+      sidebarActiveConversationId: "old-conversation",
       savedName: "Old conversation",
       lastContext: null,
     });
@@ -163,6 +164,70 @@ describe("AI backend runtime store", () => {
     });
     expect(payload).not.toHaveProperty("conversationId", "old-conversation");
     expect(useAIStore.getState().activeConversationId).toBeNull();
+    expect(useAIStore.getState().sidebarActiveConversationId).toBeNull();
+  });
+
+  it("does not reselect a stale conversation load after starting a new chat", async () => {
+    const socket = await connectAI();
+    let resolveConversation: (value: Awaited<ReturnType<typeof getConversation>>) => void =
+      () => {};
+    vi.mocked(getConversation).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveConversation = resolve;
+        })
+    );
+
+    const loadPromise = useAIStore.getState().loadConversation("conversation-1");
+    expect(useAIStore.getState().activeConversationId).toBe("conversation-1");
+    expect(useAIStore.getState().sidebarActiveConversationId).toBe("conversation-1");
+
+    useAIStore.getState().clearMessages();
+    expect(useAIStore.getState().activeConversationId).toBeNull();
+    expect(useAIStore.getState().sidebarActiveConversationId).toBeNull();
+
+    resolveConversation({
+      id: "conversation-1",
+      title: "Restored chat",
+      messages: [{ id: "message-1", role: "user", content: "hello" }],
+      lastContext: null,
+      updatedAt: "2026-06-26T10:00:00.000Z",
+      status: "active",
+      blockReason: null,
+      activeRunStatus: null,
+    });
+    await loadPromise;
+
+    expect(useAIStore.getState().activeConversationId).toBeNull();
+    expect(useAIStore.getState().sidebarActiveConversationId).toBeNull();
+    expect(sentPayloads(socket)).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "conversation.subscribe",
+          conversationId: "conversation-1",
+        }),
+      ])
+    );
+  });
+
+  it("does not reselect a chat from a late non-message command ack", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: null,
+      sidebarActiveConversationId: null,
+    });
+
+    socket.emit({
+      type: "command.ack",
+      commandType: "question.answer",
+      clientCommandId: "command-1",
+      conversationId: "conversation-1",
+      runId: "run-1",
+    });
+
+    expect(useAIStore.getState().activeConversationId).toBeNull();
+    expect(useAIStore.getState().sidebarActiveConversationId).toBeNull();
+    expect(useAIStore.getState().activeRunId).toBeNull();
   });
 
   it("normalizes restored conversations before they reach message renderers", async () => {

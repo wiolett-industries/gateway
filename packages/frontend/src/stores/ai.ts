@@ -237,6 +237,7 @@ interface AIState {
   retryAfter: number | null;
   savedName: string | null;
   activeConversationId: string | null;
+  sidebarActiveConversationId: string | null;
   activeRunId: string | null;
   lastContext: PageContext | null;
   pendingApprovalToolCallId: string | null;
@@ -265,6 +266,7 @@ interface AIState {
 }
 
 let wsClient: AIWebSocketClient | null = null;
+let conversationLoadGeneration = 0;
 
 export interface AIConversationBlock {
   status: Exclude<AIConversationStatus, "active">;
@@ -376,6 +378,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
   retryAfter: null,
   savedName: null,
   activeConversationId: null,
+  sidebarActiveConversationId: null,
   activeRunId: null,
   lastContext: null,
   pendingApprovalToolCallId: null,
@@ -457,13 +460,20 @@ export const useAIStore = create<AIState>()((set, get) => ({
         conversationId: state.activeConversationId,
       });
     }
+    if (options.startNewConversation) conversationLoadGeneration += 1;
 
     set({
       isStreaming: true,
       lastContext: context ?? null,
       pendingApprovalToolCallId: null,
       ...(options.startNewConversation
-        ? { messages: [], savedName: null, activeConversationId: null, activeRunId: null }
+        ? {
+            messages: [],
+            savedName: null,
+            activeConversationId: null,
+            sidebarActiveConversationId: null,
+            activeRunId: null,
+          }
         : {}),
     });
 
@@ -573,6 +583,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
   },
 
   clearMessages: () => {
+    conversationLoadGeneration += 1;
     const activeConversationId = get().activeConversationId;
     if (activeConversationId) {
       wsClient?.send({ type: "conversation.unsubscribe", conversationId: activeConversationId });
@@ -581,6 +592,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       messages: [],
       savedName: null,
       activeConversationId: null,
+      sidebarActiveConversationId: null,
       activeRunId: null,
       lastContext: null,
     });
@@ -601,6 +613,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
   },
 
   loadConversation: async (conversationId: string) => {
+    const loadGeneration = (conversationLoadGeneration += 1);
     try {
       const previousConversationId = get().activeConversationId;
       if (previousConversationId && previousConversationId !== conversationId) {
@@ -613,20 +626,24 @@ export const useAIStore = create<AIState>()((set, get) => ({
         messages: [],
         savedName: null,
         activeConversationId: conversationId,
+        sidebarActiveConversationId: conversationId,
         activeRunId: null,
         lastContext: null,
         pendingApprovalToolCallId: null,
       });
       const conversation = await getConversation(conversationId);
+      if (loadGeneration !== conversationLoadGeneration) return;
       set({
         messages: normalizeConversationMessages(conversation.messages, conversation.id),
         savedName: conversation.title,
         activeConversationId: conversation.id,
+        sidebarActiveConversationId: conversation.id,
         activeRunId: null,
         lastContext: conversation.lastContext,
       });
       wsClient?.send({ type: "conversation.subscribe", conversationId });
     } catch {
+      if (loadGeneration !== conversationLoadGeneration) return;
       const localMsg: AIMessage = {
         id: generateId(),
         role: "assistant",
@@ -638,6 +655,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         messages: [localMsg],
         savedName: null,
         activeConversationId: null,
+        sidebarActiveConversationId: null,
         activeRunId: null,
         lastContext: null,
         pendingApprovalToolCallId: null,
@@ -660,6 +678,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
               messages: [],
               savedName: null,
               activeConversationId: null,
+              sidebarActiveConversationId: null,
               activeRunId: null,
               lastContext: null,
             }
@@ -693,6 +712,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       messages,
       savedName: result.conversation.title,
       activeConversationId: result.conversation.id,
+      sidebarActiveConversationId: result.conversation.id,
       activeRunId: null,
       lastContext: result.conversation.lastContext,
       pendingApprovalToolCallId: null,
@@ -725,6 +745,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         messages: [],
         savedName: null,
         activeConversationId: null,
+        sidebarActiveConversationId: null,
         activeRunId: null,
         lastContext: null,
       });
@@ -756,6 +777,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
 export function resetAIStateForAuthChange() {
   wsClient?.disconnect();
   wsClient = null;
+  conversationLoadGeneration += 1;
   useAIStore.setState({
     messages: [],
     recentConversations: [],
@@ -767,6 +789,7 @@ export function resetAIStateForAuthChange() {
     retryAfter: null,
     savedName: null,
     activeConversationId: null,
+    sidebarActiveConversationId: null,
     activeRunId: null,
     lastContext: null,
     pendingApprovalToolCallId: null,
@@ -780,9 +803,21 @@ function handleWSMessage(
 ) {
   switch (msg.type) {
     case "command.ack":
-      set({
-        ...(msg.conversationId ? { activeConversationId: msg.conversationId } : {}),
-        ...(msg.runId ? { activeRunId: msg.runId } : {}),
+      set((state) => {
+        const selectsConversation = msg.commandType === "conversation.send_message";
+        const matchesCurrentConversation =
+          !!msg.conversationId && state.activeConversationId === msg.conversationId;
+        return {
+          ...(selectsConversation && msg.conversationId
+            ? {
+                activeConversationId: msg.conversationId,
+                sidebarActiveConversationId: msg.conversationId,
+              }
+            : {}),
+          ...(msg.runId && (selectsConversation || matchesCurrentConversation)
+            ? { activeRunId: msg.runId }
+            : {}),
+        };
       });
       break;
 
@@ -852,6 +887,7 @@ function projectConversationSnapshot(snapshot: AIConversationRuntimeSnapshot): P
     messages,
     savedName: snapshot.conversation.title,
     activeConversationId: snapshot.conversation.id,
+    sidebarActiveConversationId: snapshot.conversation.id,
     activeRunId: snapshot.runtime.activeRun?.id ?? null,
     lastContext: snapshot.conversation.lastContext,
     pendingApprovalToolCallId:

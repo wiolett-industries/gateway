@@ -178,7 +178,9 @@ describe("AISidePanel autoscroll", () => {
         isLoading: false,
       });
       useAIStore.setState({
+        messages: [{ id: "message-1", role: "user", content: "hello" }],
         activeConversationId: "conversation-1",
+        sidebarActiveConversationId: "conversation-1",
         recentConversations: [
           {
             id: "conversation-1",
@@ -215,6 +217,100 @@ describe("AISidePanel autoscroll", () => {
 
     await user.click(screen.getByRole("button", { name: /User One/i }));
     expect(await screen.findByText("Administration")).toBeInTheDocument();
+  });
+
+  it("clears the active lite sidebar conversation when starting a new chat", () => {
+    act(() => {
+      useAuthStore.setState({
+        user: {
+          id: "user-1",
+          email: "user@example.com",
+          name: "User One",
+          groupName: "admin",
+          scopes: ["feat:ai:use"],
+          isBlocked: false,
+        } as any,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      useAIStore.setState({
+        messages: [{ id: "message-1", role: "user", content: "hello" }],
+        activeConversationId: "conversation-1",
+        sidebarActiveConversationId: "conversation-1",
+        recentConversations: [
+          {
+            id: "conversation-1",
+            title: "Recent chat",
+            updatedAt: new Date().toISOString(),
+            messageCount: 3,
+            status: "active",
+            blockReason: null,
+            activeRunStatus: null,
+          },
+        ],
+        isLoadingRecentConversations: false,
+        fetchRecentConversations: vi.fn(),
+      });
+      useUIStore.setState({ sidebarOpen: true });
+    });
+
+    renderWithRouter(
+      <TooltipProvider>
+        <AILiteSidebar />
+      </TooltipProvider>
+    );
+
+    const conversationRow = screen.getByText("Recent chat").closest(".group");
+    expect(conversationRow).toHaveClass("bg-sidebar-accent");
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+
+    expect(useAIStore.getState().sidebarActiveConversationId).toBeNull();
+    expect(conversationRow).not.toHaveClass("bg-sidebar-accent");
+  });
+
+  it("does not highlight a saved chat while the current chat draft is empty", () => {
+    act(() => {
+      useAuthStore.setState({
+        user: {
+          id: "user-1",
+          email: "user@example.com",
+          name: "User One",
+          groupName: "admin",
+          scopes: ["feat:ai:use"],
+          isBlocked: false,
+        } as any,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      useAIStore.setState({
+        messages: [],
+        activeConversationId: "conversation-1",
+        sidebarActiveConversationId: "conversation-1",
+        recentConversations: [
+          {
+            id: "conversation-1",
+            title: "Recent chat",
+            updatedAt: new Date().toISOString(),
+            messageCount: 3,
+            status: "active",
+            blockReason: null,
+            activeRunStatus: null,
+          },
+        ],
+        isLoadingRecentConversations: false,
+        fetchRecentConversations: vi.fn(),
+      });
+      useUIStore.setState({ sidebarOpen: true });
+    });
+
+    renderWithRouter(
+      <TooltipProvider>
+        <AILiteSidebar />
+      </TooltipProvider>
+    );
+
+    expect(screen.getByText("Recent chat").closest(".group")).not.toHaveClass("bg-sidebar-accent");
   });
 
   it("hides lite sidebar administration link without admin access", async () => {

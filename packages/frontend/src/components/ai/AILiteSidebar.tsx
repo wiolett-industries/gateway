@@ -75,7 +75,8 @@ export function AILiteSidebar({
     setAILiteMode,
   } = useUIStore();
   const {
-    activeConversationId,
+    messages,
+    sidebarActiveConversationId,
     recentConversations,
     isLoadingRecentConversations,
     clearMessages,
@@ -92,12 +93,14 @@ export function AILiteSidebar({
   const chatConversations = recentConversations.filter(
     (conversation) => !pinnedConversationSet.has(conversation.id)
   );
+  const visibleActiveConversationId = messages.length > 0 ? sidebarActiveConversationId : null;
 
   useEffect(() => {
     void fetchRecentConversations();
   }, [fetchRecentConversations]);
 
   const handleNewChat = () => {
+    useAIStore.setState({ sidebarActiveConversationId: null });
     clearMessages();
     navigate("/");
   };
@@ -151,7 +154,13 @@ export function AILiteSidebar({
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNewChat}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleNewChat}
+                  aria-label="New chat"
+                >
                   <Plus className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
@@ -215,6 +224,7 @@ export function AILiteSidebar({
                       size="icon"
                       className="h-10 w-10 md:h-7 md:w-7"
                       onClick={handleNewChat}
+                      aria-label="New chat"
                     >
                       <Plus className="h-4 w-4" />
                     </Button>
@@ -252,7 +262,7 @@ export function AILiteSidebar({
                           <ConversationMenuItem
                             key={conversation.id}
                             conversation={conversation}
-                            active={activeConversationId === conversation.id}
+                            active={visibleActiveConversationId === conversation.id}
                             pinned
                             disableLayoutAnimation={isResizing}
                             onLoad={() => void handleLoadConversation(conversation.id)}
@@ -281,7 +291,7 @@ export function AILiteSidebar({
                           <ConversationMenuItem
                             key={conversation.id}
                             conversation={conversation}
-                            active={activeConversationId === conversation.id}
+                            active={visibleActiveConversationId === conversation.id}
                             pinned={false}
                             disableLayoutAnimation={isResizing}
                             onLoad={() => void handleLoadConversation(conversation.id)}
