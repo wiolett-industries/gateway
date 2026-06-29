@@ -123,8 +123,17 @@ describe('events websocket authentication', () => {
     expect(ws.send).toHaveBeenCalledWith(
       JSON.stringify({
         type: 'subscribed',
-        channels: [],
-        rejected: ['unmapped.channel', 'logging.environment.changed', 'system.update.changed'],
+        channels: ['system.update.changed'],
+        rejected: ['unmapped.channel', 'logging.environment.changed'],
+      })
+    );
+
+    eventBus.publish('system.update.changed', { updating: true, targetVersion: 'v2.4.0' });
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'event',
+        channel: 'system.update.changed',
+        payload: { updating: true, targetVersion: 'v2.4.0' },
       })
     );
 

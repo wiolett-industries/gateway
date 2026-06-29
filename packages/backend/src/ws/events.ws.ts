@@ -98,6 +98,7 @@ function requiredScopeFor(channel: string): string | null {
 
 function hasChannelAccess(scopes: string[], channel: string): boolean {
   if (channel.startsWith('permissions.changed.')) return true;
+  if (channel === 'system.update.changed') return true;
   const required = requiredScopeFor(channel);
   if (!required) return false;
 
@@ -184,6 +185,7 @@ function isProxyFolderLayoutPayload(payload: unknown): boolean {
 }
 
 function canReceiveChannelPayload(scopes: string[], channel: string, payload: unknown): boolean {
+  if (channel === 'system.update.changed') return true;
   if (channel === 'docker.folder.changed') {
     if (
       hasScope(scopes, 'docker:containers:view') ||

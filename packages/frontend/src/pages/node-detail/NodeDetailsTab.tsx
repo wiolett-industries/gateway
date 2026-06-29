@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { isDevForceUpdatesEnabled } from "@/lib/dev-force-updates";
 import { formatBytes, formatUptime } from "@/lib/utils";
 import { api } from "@/services/api";
 import {
@@ -113,6 +114,10 @@ export function NodeDetailsTab({
   }, [node.id, node.isConnected, node.status, node.type]);
 
   const handleDaemonUpdate = async () => {
+    if (isDevForceUpdatesEnabled()) {
+      toast.info("Local update preview only");
+      return;
+    }
     setIsUpdating(true);
     const targetVersion = daemonUpdate.latestVersion;
     try {
@@ -158,6 +163,35 @@ export function NodeDetailsTab({
         </div>
       )}
 
+      {!nodeUpdating && daemonUpdate.available && !pendingUpdateTarget && (
+        <PanelShell
+          title={<span style={{ color: "rgb(234 179 8)" }}>Update Available</span>}
+          description={`${daemonUpdate.latestVersion} is ready to install`}
+          dirty
+          actions={
+            <Button
+              style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
+              className="hover:opacity-90 disabled:opacity-50"
+              onClick={handleDaemonUpdate}
+              disabled={isUpdating || !canTriggerDaemonUpdate}
+              title={
+                canTriggerDaemonUpdate
+                  ? undefined
+                  : "Daemon update requires a connected compatible node"
+              }
+            >
+              <ArrowUpCircle className="h-3.5 w-3.5" />
+              Update to {daemonUpdate.latestVersion}
+            </Button>
+          }
+        >
+          <div className="divide-y divide-border">
+            <DetailRow label="Current version" value={node.daemonVersion ?? "Unknown"} />
+            <DetailRow label="New version" value={daemonUpdate.latestVersion ?? "Unknown"} />
+          </div>
+        </PanelShell>
+      )}
+
       {/* Node Details — 2 cards side by side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Identity */}
@@ -176,28 +210,7 @@ export function NodeDetailsTab({
         </PanelShell>
 
         {/* Runtime */}
-        <PanelShell
-          title="Runtime"
-          actions={
-            !nodeUpdating && daemonUpdate.available && !pendingUpdateTarget ? (
-              <Button
-                style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
-                className="hover:opacity-90 disabled:opacity-50"
-                onClick={handleDaemonUpdate}
-                disabled={isUpdating || !canTriggerDaemonUpdate}
-                title={
-                  canTriggerDaemonUpdate
-                    ? undefined
-                    : "Daemon update requires a connected compatible node"
-                }
-              >
-                <ArrowUpCircle className="h-3.5 w-3.5" />
-                Update to {daemonUpdate.latestVersion}
-              </Button>
-            ) : null
-          }
-          bodyClassName="divide-y divide-border"
-        >
+        <PanelShell title="Runtime" bodyClassName="divide-y divide-border">
           <DetailRow
             label="Daemon Version"
             value={

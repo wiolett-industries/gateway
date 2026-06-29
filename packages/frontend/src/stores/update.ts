@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { applyForcedGatewayUpdateStatus } from "@/lib/dev-force-updates";
 import { api } from "@/services/api";
 import { useAppStatusStore } from "@/stores/app-status";
 import type { UpdateStatus } from "@/types";
@@ -21,7 +22,7 @@ export const useUpdateStore = create<UpdateState>()((set, get) => ({
 
   fetchStatus: async () => {
     try {
-      const status = await api.getVersionInfo();
+      const status = applyForcedGatewayUpdateStatus(await api.getVersionInfo());
       api.setCache("system:version", status);
       set({ status });
     } catch {
@@ -32,7 +33,7 @@ export const useUpdateStore = create<UpdateState>()((set, get) => ({
   checkForUpdates: async () => {
     set({ isChecking: true });
     try {
-      const status = await api.checkForUpdates();
+      const status = applyForcedGatewayUpdateStatus(await api.checkForUpdates());
       api.setCache("system:version", status);
       set({ status });
     } catch {

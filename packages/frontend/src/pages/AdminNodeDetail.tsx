@@ -29,6 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { getForcedDaemonUpdateForNode } from "@/lib/dev-force-updates";
 import { getNodeAppearanceColor, NODE_APPEARANCE_COLOR_OPTIONS } from "@/lib/node-appearance";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -130,6 +131,8 @@ export function AdminNodeDetail() {
     (hasScope("nodes:lock") || hasScope(`nodes:lock:${node.id}`));
   const daemonUpdate = useMemo(() => {
     if (!id || !node) return { available: false, latestVersion: null };
+    const forced = getForcedDaemonUpdateForNode(node);
+    if (forced) return forced;
     const typeStatus = daemonUpdates.find((status) => status.daemonType === node.type);
     const nodeStatus = typeStatus?.nodes.find((status) => status.nodeId === id);
     return {

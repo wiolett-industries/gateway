@@ -3,6 +3,19 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAppStatusStore } from "@/stores/app-status";
 
+export function normalizeGatewayUpdateVersion(version: string | null | undefined): string {
+  return (version ?? "").trim().replace(/^v/i, "");
+}
+
+export function isGatewayUpdateTargetVersion(
+  currentVersion: string | null | undefined,
+  targetVersion: string
+): boolean {
+  return (
+    normalizeGatewayUpdateVersion(currentVersion) === normalizeGatewayUpdateVersion(targetVersion)
+  );
+}
+
 function MaintenanceScreen() {
   const setMaintenanceActive = useAppStatusStore((s) => s.setMaintenanceActive);
 
@@ -75,7 +88,7 @@ function GatewayUpdatingScreen() {
             const payload = (await versionResponse.json()) as {
               data?: { currentVersion?: string };
             };
-            if (payload.data?.currentVersion === targetVersion) {
+            if (isGatewayUpdateTargetVersion(payload.data?.currentVersion, targetVersion)) {
               clearGatewayUpdating();
               window.location.reload();
               return;
@@ -95,6 +108,7 @@ function GatewayUpdatingScreen() {
     const interval = window.setInterval(() => {
       void checkHealth();
     }, 3000);
+    void checkHealth();
 
     return () => window.clearInterval(interval);
   }, [clearGatewayUpdating, targetVersion]);
