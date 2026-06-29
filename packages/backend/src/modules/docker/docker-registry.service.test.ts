@@ -42,6 +42,71 @@ function createSavedRegistryConnectionService(rowOverride: Partial<Record<string
   );
 }
 
+function registryRow(rowOverride: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'registry-1',
+    name: 'Registry',
+    url: 'https://registry.example.com',
+    username: 'user',
+    encryptedPassword: '{}',
+    trustedAuthRealm: null,
+    scope: 'global',
+    nodeId: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...rowOverride,
+  };
+}
+
+function createSingleRegistryService(row: Record<string, unknown>) {
+  const db = {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn().mockResolvedValue([row]),
+        })),
+      })),
+    })),
+  };
+  const service = new DockerRegistryService(
+    db as never,
+    {} as never,
+    { decryptString: vi.fn().mockReturnValue('password') } as never,
+    {} as never
+  );
+  return { db, service };
+}
+
+function createRegistryUpdateService(existing: Record<string, unknown>) {
+  const capturedUpdates: Record<string, unknown>[] = [];
+  const db = {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn().mockResolvedValue([existing]),
+        })),
+      })),
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn((updates: Record<string, unknown>) => {
+        capturedUpdates.push(updates);
+        return {
+          where: vi.fn(() => ({
+            returning: vi.fn().mockResolvedValue([{ ...existing, ...updates }]),
+          })),
+        };
+      }),
+    })),
+  };
+  const service = new DockerRegistryService(
+    db as never,
+    { log: vi.fn().mockResolvedValue(undefined) } as never,
+    { encryptString: vi.fn().mockReturnValue({ encryptedKey: 'key', encryptedDek: 'dek' }) } as never,
+    {} as never
+  );
+  return { capturedUpdates, db, service };
+}
+
 describe('DockerRegistryService image registry mappings', () => {
   function createService(mappingRegistryId = 'team-registry') {
     const registries = [
@@ -114,6 +179,87 @@ describe('DockerRegistryService image registry mappings', () => {
 
     expect(candidates.map((candidate) => candidate.registryId)).toEqual(['team-registry']);
     expect(candidates[0]?.url).toBe('registry.example.com');
+  });
+
+  it('allows an explicit global registry on any target node', async () => {
+    const { service } = createSingleRegistryService(registryRow({ scope: 'global', nodeId: null }));
+
+    const candidates = await service.resolveAuthCandidatesForImagePull(
+      'node-2',
+      'registry.example.com/team/app:new',
+      'registry-1'
+    );
+
+    expect(candidates.map((candidate) => candidate.registryId)).toEqual(['registry-1']);
+  });
+
+  it('allows an explicit node-scoped registry on its own target node', async () => {
+    const { service } = createSingleRegistryService(registryRow({ scope: 'node', nodeId: 'node-1' }));
+
+    const candidates = await service.resolveAuthCandidatesForImagePull(
+      'node-1',
+      'registry.example.com/team/app:new',
+      'registry-1'
+    );
+
+    expect(candidates.map((candidate) => candidate.registryId)).toEqual(['registry-1']);
+  });
+
+  it('rejects an explicit node-scoped registry on a different target node', async () => {
+    const { service } = createSingleRegistryService(registryRow({ scope: 'node', nodeId: 'node-1' }));
+
+    await expect(
+      service.resolveAuthCandidatesForImagePull('node-2', 'registry.example.com/team/app:new', 'registry-1')
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'REGISTRY_NOT_AVAILABLE_FOR_NODE',
+    });
+  });
+});
+
+describe('DockerRegistryService credential retargeting guard', () => {
+  it('preserves the saved password for metadata-only registry edits', async () => {
+    const { capturedUpdates, service } = createRegistryUpdateService(registryRow());
+
+    await service.update('registry-1', { name: 'Renamed Registry' }, 'user-1');
+
+    expect(capturedUpdates[0]).toMatchObject({ name: 'Renamed Registry' });
+    expect(capturedUpdates[0]).not.toHaveProperty('encryptedPassword');
+  });
+
+  it('rejects origin-changing registry edits without a replacement password', async () => {
+    const { db, service } = createRegistryUpdateService(registryRow());
+
+    await expect(
+      service.update('registry-1', { url: 'https://registry-alt.example.com' }, 'user-1')
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'CREDENTIAL_REENTRY_REQUIRED',
+    });
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('allows origin-changing registry edits with a replacement password', async () => {
+    const { capturedUpdates, service } = createRegistryUpdateService(registryRow());
+
+    await service.update(
+      'registry-1',
+      { url: 'https://registry-alt.example.com', password: 'new-password' },
+      'user-1'
+    );
+
+    expect(capturedUpdates[0]).toMatchObject({ url: 'https://registry-alt.example.com' });
+    expect(capturedUpdates[0]?.encryptedPassword).toBe(JSON.stringify({ encryptedKey: 'key', encryptedDek: 'dek' }));
+  });
+
+  it('clears node affinity when a registry is intentionally moved back to global scope', async () => {
+    const { capturedUpdates, service } = createRegistryUpdateService(
+      registryRow({ scope: 'node', nodeId: 'node-1' })
+    );
+
+    await service.update('registry-1', { scope: 'global', password: 'new-password' }, 'user-1');
+
+    expect(capturedUpdates[0]).toMatchObject({ scope: 'global', nodeId: null });
   });
 });
 

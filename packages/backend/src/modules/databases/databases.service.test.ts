@@ -360,3 +360,136 @@ describe('DatabaseConnectionService connection views', () => {
     });
   });
 });
+
+describe('DatabaseConnectionService credential retargeting guard', () => {
+  function encryptedConfig(config: Record<string, unknown>) {
+    return JSON.stringify({ payload: JSON.stringify(config) });
+  }
+
+  function createUpdateService(rowOverride: Record<string, unknown> = {}) {
+    const row = {
+      id: 'db-1',
+      name: 'Production Postgres',
+      type: 'postgres',
+      description: null,
+      tags: [],
+      manualSizeLimitMb: null,
+      host: 'db.example.com',
+      port: 5432,
+      databaseName: 'app',
+      username: 'app_user',
+      tlsEnabled: true,
+      encryptedConfig: encryptedConfig({
+        type: 'postgres',
+        host: 'db.example.com',
+        port: 5432,
+        database: 'app',
+        username: 'app_user',
+        password: 'secret-password',
+        sslEnabled: true,
+      }),
+      healthStatus: 'online',
+      lastHealthCheckAt: null,
+      lastError: null,
+      healthHistory: [],
+      createdById: 'user-1',
+      updatedById: null,
+      createdAt: new Date('2026-06-20T10:00:00.000Z'),
+      updatedAt: new Date('2026-06-21T10:00:00.000Z'),
+      ...rowOverride,
+    };
+    const capturedUpdates: Record<string, unknown>[] = [];
+    const db = {
+      query: {
+        databaseConnections: {
+          findFirst: vi.fn().mockResolvedValue(row),
+        },
+      },
+      update: vi.fn(() => ({
+        set: vi.fn((updates: Record<string, unknown>) => {
+          capturedUpdates.push(updates);
+          return {
+            where: vi.fn(() => ({
+              returning: vi.fn().mockResolvedValue([{ ...row, ...updates }]),
+            })),
+          };
+        }),
+      })),
+    };
+    const cryptoService = {
+      decryptString: vi.fn((payload: { payload: string }) => payload.payload),
+      encryptString: vi.fn((value: string) => ({ payload: value })),
+    };
+    const service = new DatabaseConnectionService(
+      db as never,
+      { log: vi.fn().mockResolvedValue(undefined) } as never,
+      cryptoService as never
+    );
+    const testNormalizedConnection = vi
+      .spyOn(
+        service as unknown as { testNormalizedConnection: (config: unknown) => Promise<unknown> },
+        'testNormalizedConnection'
+      )
+      .mockResolvedValue({ status: 'online', responseMs: 1 });
+    return { capturedUpdates, cryptoService, db, service, testNormalizedConnection };
+  }
+
+  function decryptCapturedConfig(capturedUpdates: Record<string, unknown>[], cryptoService: { decryptString: any }) {
+    const encryptedConfig = capturedUpdates[0]?.encryptedConfig as string;
+    const encryptedPayload = JSON.parse(encryptedConfig) as { payload: string };
+    return JSON.parse(cryptoService.decryptString(encryptedPayload));
+  }
+
+  it('preserves the stored password for metadata-only edits', async () => {
+    const { capturedUpdates, cryptoService, service } = createUpdateService();
+
+    await service.update('db-1', { name: 'Renamed Postgres' }, 'user-1');
+
+    const config = decryptCapturedConfig(capturedUpdates, cryptoService);
+    expect(config.password).toBe('secret-password');
+    expect(config.host).toBe('db.example.com');
+  });
+
+  it('rejects target-changing edits without a replacement password before testing the connection', async () => {
+    const { db, service, testNormalizedConnection } = createUpdateService();
+
+    await expect(service.update('db-1', { config: { host: 'db-alt.example.com' } }, 'user-1')).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'CREDENTIAL_REENTRY_REQUIRED',
+    });
+    expect(testNormalizedConnection).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('allows target-changing edits with a replacement password', async () => {
+    const { capturedUpdates, cryptoService, service } = createUpdateService();
+
+    await service.update(
+      'db-1',
+      { config: { host: 'db-alt.example.com', password: 'new-secret-password' } },
+      'user-1'
+    );
+
+    const config = decryptCapturedConfig(capturedUpdates, cryptoService);
+    expect(config.host).toBe('db-alt.example.com');
+    expect(config.password).toBe('new-secret-password');
+  });
+
+  it('uses a password embedded in a replacement connection string instead of the old saved password', async () => {
+    const { capturedUpdates, cryptoService, service } = createUpdateService();
+
+    await service.update(
+      'db-1',
+      {
+        config: {
+          connectionString: 'postgresql://app_user:embedded-secret@db-alt.example.com:5432/app?sslmode=require',
+        },
+      },
+      'user-1'
+    );
+
+    const config = decryptCapturedConfig(capturedUpdates, cryptoService);
+    expect(config.host).toBe('db-alt.example.com');
+    expect(config.password).toBe('embedded-secret');
+  });
+});

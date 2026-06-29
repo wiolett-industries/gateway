@@ -597,6 +597,12 @@ export async function recreateWithConfig(
   const expectedState = await ctx.resolveExpectedRecreateState(nodeId, containerId);
   ctx.requireNoTransition(nodeId, name);
   config = await applyPersistedDockerRuntimeSettingsToConfig(ctx.runtimeOperationContext(), nodeId, name, config);
+  const normalizedEnv = normalizeEnvRecord(config.env);
+  if (normalizedEnv) {
+    config.env = normalizedEnv;
+  } else {
+    delete config.env;
+  }
   const inspect = await ctx.inspectContainer(nodeId, containerId);
   const recreateStopTimeout = ctx.resolveStopTimeoutFromInspect(inspect as Record<string, any>, config);
   assertDockerMountChangeAllowed({
@@ -615,7 +621,7 @@ export async function recreateWithConfig(
   if (ctx.environmentService) {
     const storedEnv = await ctx.environmentService.getDecryptedMap(nodeId, name);
     if (Object.keys(storedEnv).length > 0) {
-      const existingEnv = (config.env as Record<string, string> | undefined) || {};
+      const existingEnv = normalizeEnvRecord(config.env) || {};
       config.env = { ...storedEnv, ...existingEnv };
     }
   }
@@ -623,7 +629,7 @@ export async function recreateWithConfig(
   if (ctx.secretService) {
     const secrets = await ctx.secretService.getDecryptedMap(nodeId, name);
     if (Object.keys(secrets).length > 0) {
-      const existingEnv = (config.env as Record<string, string> | undefined) || {};
+      const existingEnv = normalizeEnvRecord(config.env) || {};
       config.env = { ...existingEnv, ...secrets };
     }
   }

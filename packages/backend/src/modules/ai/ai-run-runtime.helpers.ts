@@ -74,6 +74,20 @@ export function normalizeCheckpoint(value: Record<string, unknown> | null): AIMo
   };
 }
 
+export function toClientCheckpoint(value: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!value) return null;
+  return {
+    type: typeof value.type === 'string' ? value.type : undefined,
+    requestId: typeof value.requestId === 'string' ? value.requestId : undefined,
+    allQuestions: Array.isArray(value.allQuestions)
+      ? value.allQuestions.map(normalizeCheckpointQuestion).filter((question) => question !== null)
+      : [],
+    queuedApprovals: Array.isArray(value.queuedApprovals)
+      ? value.queuedApprovals.map(normalizeQueuedApproval).filter((approval) => approval !== null)
+      : [],
+  };
+}
+
 function normalizeCheckpointQuestion(value: unknown): { id: string; args: Record<string, unknown> } | null {
   if (!isRecord(value) || typeof value.id !== 'string') return null;
   return {

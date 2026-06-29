@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { envListToMap, normalizeEnvRecord } from './docker-env-operations.js';
 import { DockerManagementService } from './docker.service.js';
 
 function dbWithOnlineDockerNode() {
@@ -39,6 +40,16 @@ function inspectResult(env: string[]) {
 }
 
 describe('DockerManagementService env operations', () => {
+  it('keeps env arrays out of record normalization', () => {
+    expect(normalizeEnvRecord(['PATH=/bin'])).toBeUndefined();
+    expect(envListToMap(['PATH=/bin', 'APP_PORT=4000', 'EMPTY=', 'NO_EQUALS'])).toEqual({
+      PATH: '/bin',
+      APP_PORT: '4000',
+      EMPTY: '',
+      NO_EQUALS: '',
+    });
+  });
+
   it('returns stored decrypted environment when it exists', async () => {
     const dispatch = {
       sendDockerContainerCommand: vi.fn().mockResolvedValue(inspectResult(['RUNTIME=value'])),
@@ -76,6 +87,123 @@ describe('DockerManagementService env operations', () => {
     expect(environmentService.seedFromRuntimeIfMissing).toHaveBeenCalledWith('node-1', 'api', {
       PUBLIC: '1',
       NO_EQUALS: '',
+    });
+  });
+
+  it('does not spread array-shaped recreate env into numeric keys when merging stored env and secrets', async () => {
+    const inspect = {
+      Id: 'container-1',
+      Name: '/api',
+      Config: {
+        Image: 'team/api:latest',
+        Labels: {},
+      },
+      State: { Status: 'running' },
+    };
+    const dispatch = {
+      sendDockerContainerCommand: vi.fn(async (_nodeId: string, action: string, payload?: Record<string, unknown>) => {
+        if (action === 'inspect') {
+          return { success: true, detail: JSON.stringify(inspect) };
+        }
+        if (action === 'recreate') {
+          return { success: true, detail: JSON.stringify({ ok: true }), payload };
+        }
+        return { success: false, error: `unexpected action ${action}` };
+      }),
+    };
+    const service = createService(dispatch);
+    vi.spyOn(
+      service as unknown as {
+        watchRecreateByName: (
+          nodeId: string,
+          containerName: string,
+          oldContainerId: string,
+          taskId: string | undefined,
+          progress: string,
+          expectedState: string,
+          timeoutMs?: number
+        ) => void;
+      },
+      'watchRecreateByName'
+    ).mockImplementation(() => undefined);
+    service.setEnvironmentService({
+      getDecryptedMap: vi.fn().mockResolvedValue({ STORED: 'yes' }),
+    } as never);
+    service.setSecretService({
+      getDecryptedMap: vi.fn().mockResolvedValue({ SECRET: 'decrypted' }),
+    } as never);
+
+    await service.recreateWithConfig(
+      'node-1',
+      'container-1',
+      { image: 'team/api:latest', env: ['PATH=/bin'] },
+      'user-1',
+      { skipImagePull: true }
+    );
+
+    const recreateCall = dispatch.sendDockerContainerCommand.mock.calls.find((call) => call[1] === 'recreate');
+    const config = JSON.parse((recreateCall?.[2] as { configJson: string }).configJson);
+    expect(config.env).toEqual({ STORED: 'yes', SECRET: 'decrypted' });
+    expect(config.env).not.toHaveProperty('0');
+  });
+
+  it('keeps valid record-shaped recreate env while merging stored env and secrets', async () => {
+    const inspect = {
+      Id: 'container-1',
+      Name: '/api',
+      Config: {
+        Image: 'team/api:latest',
+        Labels: {},
+      },
+      State: { Status: 'running' },
+    };
+    const dispatch = {
+      sendDockerContainerCommand: vi.fn(async (_nodeId: string, action: string, payload?: Record<string, unknown>) => {
+        if (action === 'inspect') {
+          return { success: true, detail: JSON.stringify(inspect) };
+        }
+        if (action === 'recreate') {
+          return { success: true, detail: JSON.stringify({ ok: true }), payload };
+        }
+        return { success: false, error: `unexpected action ${action}` };
+      }),
+    };
+    const service = createService(dispatch);
+    vi.spyOn(
+      service as unknown as {
+        watchRecreateByName: (
+          nodeId: string,
+          containerName: string,
+          oldContainerId: string,
+          taskId: string | undefined,
+          progress: string,
+          expectedState: string,
+          timeoutMs?: number
+        ) => void;
+      },
+      'watchRecreateByName'
+    ).mockImplementation(() => undefined);
+    service.setEnvironmentService({
+      getDecryptedMap: vi.fn().mockResolvedValue({ STORED: 'yes', APP_PORT: 'stored' }),
+    } as never);
+    service.setSecretService({
+      getDecryptedMap: vi.fn().mockResolvedValue({ SECRET: 'decrypted' }),
+    } as never);
+
+    await service.recreateWithConfig(
+      'node-1',
+      'container-1',
+      { image: 'team/api:latest', env: { APP_PORT: '4000' } },
+      'user-1',
+      { skipImagePull: true }
+    );
+
+    const recreateCall = dispatch.sendDockerContainerCommand.mock.calls.find((call) => call[1] === 'recreate');
+    const config = JSON.parse((recreateCall?.[2] as { configJson: string }).configJson);
+    expect(config.env).toEqual({
+      STORED: 'yes',
+      APP_PORT: '4000',
+      SECRET: 'decrypted',
     });
   });
 });

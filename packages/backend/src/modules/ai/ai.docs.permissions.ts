@@ -143,6 +143,7 @@ Gateway uses a group-based permission system with nested group inheritance. Each
 | docker:containers:view | View container details (resource-scopable) |
 | docker:containers:create | Create/deploy containers |
 | docker:containers:edit | Edit container settings (resource-scopable) |
+| docker:containers:config | Edit container recreate/configuration fields (resource-scopable) |
 | docker:containers:manage | Start/stop/restart/kill/update containers (resource-scopable) |
 | docker:containers:environment | View/edit container environment variables (resource-scopable) |
 | docker:containers:delete | Remove containers (resource-scopable) |

@@ -41,7 +41,7 @@ export async function getContainerEnv(context: DockerEnvOperationContext, nodeId
 }
 
 export function normalizeEnvRecord(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
   }
 

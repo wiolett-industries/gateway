@@ -13,6 +13,7 @@ import type { AISandboxService } from './ai.sandbox.service.js';
 import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
 import type { AIConversationStatus, PageContext } from './ai.types.js';
 import type { AIConversationSearchService } from './ai-conversation-search.service.js';
+import { toClientCheckpoint } from './ai-run-runtime.helpers.js';
 
 const RETAIN_FULL_TOOL_OUTPUT_COUNT = 10;
 const ACTIVE_RUN_STATUSES = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'] as const;
@@ -138,7 +139,7 @@ export class AIConversationService {
       messages,
       lastContext: row.lastContext,
       discoveredToolsets: row.discoveredToolsets,
-      checkpoint: row.checkpoint,
+      checkpoint: toClientCheckpoint(row.checkpoint),
     };
   }
 

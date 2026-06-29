@@ -138,6 +138,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `docker:containers:view` | Yes |
 | `docker:containers:create` | Yes |
 | `docker:containers:edit` | Yes |
+| `docker:containers:config` | Yes |
 | `docker:containers:manage` | Yes |
 | `docker:containers:environment` | Yes |
 | `docker:containers:delete` | Yes |

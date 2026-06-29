@@ -39,6 +39,7 @@ export async function executeGroupTool(
       return context.groupService.updateGroup(a.groupId, input);
     }
     case 'delete_group':
+      await context.groupService.assertCanDeleteGroup(a.groupId, user.scopes);
       await context.groupService.deleteGroup(a.groupId);
       return { success: true };
     default:

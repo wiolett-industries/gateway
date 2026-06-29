@@ -20,6 +20,7 @@ import type { User } from '@/types.js';
 import { countVisibleMessages, deriveConversationStatus, getLastUserMessageAt } from './ai-conversation.service.js';
 import type { AIConversationSearchService } from './ai-conversation-search.service.js';
 import { AIRunExecutor } from './ai-run-executor.js';
+import { toClientCheckpoint } from './ai-run-runtime.helpers.js';
 
 const ACTIVE_RUN_STATUSES: AIRunStatus[] = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'];
 
@@ -587,7 +588,7 @@ export class AIRunService {
         ...deriveConversationStatus(uiMessages),
         lastContext: conversation.lastContext,
         discoveredToolsets: conversation.discoveredToolsets,
-        checkpoint: conversation.checkpoint,
+        checkpoint: toClientCheckpoint(conversation.checkpoint),
       },
       messages: withAssistantDraftMessage(snapshotMessages, runtime.activeRun, runtime.assistantDraftContent),
       runtime,

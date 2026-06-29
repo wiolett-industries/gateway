@@ -24,6 +24,8 @@ interface RegistryConnectionTestResult {
   error?: string;
 }
 
+type DockerRegistryRow = typeof dockerRegistries.$inferSelect;
+
 export class DockerRegistryService {
   private eventBus?: EventBusService;
 
@@ -59,11 +61,16 @@ export class DockerRegistryService {
   }
 
   async get(id: string) {
-    const [row] = await this.db.select().from(dockerRegistries).where(eq(dockerRegistries.id, id)).limit(1);
-    if (!row) throw new AppError(404, 'NOT_FOUND', 'Docker registry not found');
+    const row = await this.getRegistryRow(id);
     // Strip encrypted password from response
     const { encryptedPassword: _ep, ...safe } = row;
     return safe;
+  }
+
+  private async getRegistryRow(id: string): Promise<DockerRegistryRow> {
+    const [row] = await this.db.select().from(dockerRegistries).where(eq(dockerRegistries.id, id)).limit(1);
+    if (!row) throw new AppError(404, 'NOT_FOUND', 'Docker registry not found');
+    return row;
   }
 
   async create(
@@ -124,8 +131,8 @@ export class DockerRegistryService {
     },
     userId: string
   ) {
-    // Verify exists
-    await this.get(id);
+    const existing = await this.getRegistryRow(id);
+    this.assertOriginChangeHasReplacementPassword(existing, input);
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (input.name !== undefined) updates.name = input.name;
@@ -133,7 +140,11 @@ export class DockerRegistryService {
     if (input.username !== undefined) updates.username = input.username;
     if (input.trustedAuthRealm !== undefined) updates.trustedAuthRealm = input.trustedAuthRealm.trim() || null;
     if (input.scope !== undefined) updates.scope = input.scope;
-    if (input.nodeId !== undefined) updates.nodeId = input.nodeId;
+    if (input.nodeId !== undefined) {
+      updates.nodeId = input.nodeId;
+    } else if (input.scope === 'global') {
+      updates.nodeId = null;
+    }
 
     if (input.password !== undefined) {
       if (input.password) {
@@ -353,6 +364,85 @@ export class DockerRegistryService {
     }
   }
 
+  private normalizeOriginUrl(rawUrl: string): string {
+    try {
+      const url = this.normalizeRegistryBaseUrl(rawUrl);
+      const protocol = url.protocol.toLowerCase();
+      const hostname = url.hostname.toLowerCase();
+      const port = url.port ? `:${url.port}` : '';
+      const path = url.pathname.replace(/\/+$/, '');
+      return `${protocol}//${hostname}${port}${path}`;
+    } catch {
+      return rawUrl.trim().replace(/\/+$/, '').toLowerCase();
+    }
+  }
+
+  private registryOrigin(
+    registry: Pick<DockerRegistryRow, 'url' | 'trustedAuthRealm' | 'scope' | 'nodeId' | 'username'>
+  ): Record<string, string> {
+    return {
+      url: this.normalizeOriginUrl(registry.url),
+      trustedAuthRealm: registry.trustedAuthRealm?.trim() || '',
+      scope: registry.scope,
+      nodeId: registry.scope === 'node' ? registry.nodeId ?? '' : '',
+      username: registry.username ?? '',
+    };
+  }
+
+  private nextRegistryOrigin(
+    existing: DockerRegistryRow,
+    input: {
+      url?: string;
+      username?: string;
+      trustedAuthRealm?: string;
+      scope?: string;
+      nodeId?: string;
+    }
+  ): Record<string, string> {
+    const scope = input.scope ?? existing.scope;
+    return this.registryOrigin({
+      url: input.url ?? existing.url,
+      trustedAuthRealm:
+        input.trustedAuthRealm !== undefined ? input.trustedAuthRealm.trim() || null : existing.trustedAuthRealm,
+      scope,
+      nodeId: scope === 'global' ? null : input.nodeId !== undefined ? input.nodeId : existing.nodeId,
+      username: input.username !== undefined ? input.username : existing.username,
+    });
+  }
+
+  private assertOriginChangeHasReplacementPassword(
+    existing: DockerRegistryRow,
+    input: {
+      url?: string;
+      username?: string;
+      password?: string;
+      trustedAuthRealm?: string;
+      scope?: string;
+      nodeId?: string;
+    }
+  ) {
+    if (!existing.encryptedPassword) return;
+    const currentOrigin = this.registryOrigin(existing);
+    const nextOrigin = this.nextRegistryOrigin(existing, input);
+    const originChanged = Object.keys(currentOrigin).some((key) => currentOrigin[key] !== nextOrigin[key]);
+    if (!originChanged || input.password?.trim()) return;
+
+    throw new AppError(
+      400,
+      'CREDENTIAL_REENTRY_REQUIRED',
+      'Registry origin changed. Re-enter the registry password to avoid reusing saved credentials against a different registry.'
+    );
+  }
+
+  private assertRegistryVisibleFromNode(row: DockerRegistryRow, nodeId: string) {
+    if (row.scope === 'global' || row.nodeId === nodeId) return;
+    throw new AppError(
+      403,
+      'REGISTRY_NOT_AVAILABLE_FOR_NODE',
+      'This Docker registry is not available for the selected node.'
+    );
+  }
+
   private extractRegistryHostFromImageRef(imageRef: string): string | null {
     const firstSegment = imageRef.split('/')[0] ?? '';
     if (!firstSegment) return null;
@@ -366,9 +456,10 @@ export class DockerRegistryService {
    * Get base64-encoded Docker auth JSON for a registry (for image pull).
    * Returns the registry URL and auth string, or null if not found.
    */
-  async getAuthForPull(registryId: string): Promise<DockerRegistryAuthCandidate | null> {
-    const [row] = await this.db.select().from(dockerRegistries).where(eq(dockerRegistries.id, registryId)).limit(1);
-    return row ? this.authCandidateFromRegistry(row) : null;
+  async getAuthForPull(registryId: string, targetNodeId: string): Promise<DockerRegistryAuthCandidate | null> {
+    const row = await this.getRegistryRow(registryId);
+    this.assertRegistryVisibleFromNode(row, targetNodeId);
+    return this.authCandidateFromRegistry(row);
   }
 
   async rememberImageRegistry(nodeId: string, imageRef: string, registryId?: string | null): Promise<void> {
@@ -437,7 +528,7 @@ export class DockerRegistryService {
     registryId?: string
   ): Promise<DockerRegistryAuthCandidate[]> {
     if (registryId) {
-      const auth = await this.getAuthForPull(registryId);
+      const auth = await this.getAuthForPull(registryId, nodeId);
       return auth ? [auth] : [];
     }
 

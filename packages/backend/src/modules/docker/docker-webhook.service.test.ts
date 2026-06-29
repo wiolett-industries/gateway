@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { DockerWebhookService } from './docker-webhook.service.js';
 
 describe('DockerWebhookService', () => {
-  function createService() {
+  function createService(inspectConfig: Record<string, unknown> = {}) {
     const docker = {
       inspectContainer: vi.fn().mockResolvedValue({
         Config: {
           Image: 'registry.example.com/team/app:old',
+          ...inspectConfig,
         },
         HostConfig: {},
         NetworkingConfig: {},
@@ -92,5 +93,28 @@ describe('DockerWebhookService', () => {
       null,
       { skipImagePull: true, skipWebhookCleanup: true }
     );
+  });
+
+  it('converts Docker inspect env arrays before recreating from a webhook update', async () => {
+    const { docker, service } = createService({
+      Env: ['PATH=/bin', 'APP_PORT=4000', 'EMPTY=', 'NO_EQUALS'],
+    });
+
+    await service.triggerUpdate({
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      containerName: 'app',
+      tag: 'new',
+      webhookId: 'webhook-1',
+    });
+
+    const config = docker.recreateWithConfig.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(config.env).toEqual({
+      PATH: '/bin',
+      APP_PORT: '4000',
+      EMPTY: '',
+      NO_EQUALS: '',
+    });
+    expect(config.env).not.toHaveProperty('0');
   });
 });

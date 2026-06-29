@@ -41,6 +41,7 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "docker:containers:view",
   "docker:containers:create",
   "docker:containers:edit",
+  "docker:containers:config",
   "docker:containers:manage",
   "docker:containers:environment",
   "docker:containers:delete",
@@ -658,6 +659,12 @@ const RAW_TOKEN_SCOPES = [
     value: "docker:containers:edit",
     label: "Edit Containers",
     desc: "Edit container settings and configuration",
+    group: "Docker: Containers",
+  },
+  {
+    value: "docker:containers:config",
+    label: "Container Config",
+    desc: "Edit container recreate/configuration fields",
     group: "Docker: Containers",
   },
   {

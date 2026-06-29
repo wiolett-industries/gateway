@@ -92,6 +92,7 @@ const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
     'docker:containers:files',
     'docker:containers:secrets',
     'docker:containers:webhooks',
+    'docker:containers:config',
     'docker:containers:edit',
   ],
   manage_database_connection: [

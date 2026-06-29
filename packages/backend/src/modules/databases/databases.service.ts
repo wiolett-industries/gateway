@@ -245,30 +245,46 @@ export class DatabaseConnectionService {
   async update(id: string, input: UpdateDatabaseConnectionInput, userId: string): Promise<DatabaseConnectionView> {
     const existing = await this.getRow(id);
     const currentConfig = this.decryptConfig(existing.encryptedConfig);
+    const replacementPassword = this.extractReplacementPassword(input.config);
     const nextPassword =
-      input.config && 'password' in input.config
-        ? (input.config.password ?? currentConfig.password)
-        : currentConfig.password;
+      replacementPassword !== undefined ? replacementPassword : currentConfig.password;
+    const inputConfig = input.config ?? {};
     const mergedConfig =
       currentConfig.type === 'postgres'
-        ? this.normalizePostgres({
-            host: currentConfig.host,
-            port: currentConfig.port,
-            database: currentConfig.database,
-            username: currentConfig.username,
-            sslEnabled: currentConfig.sslEnabled,
-            ...(input.config ?? {}),
-            password: nextPassword,
-          })
-        : this.normalizeRedis({
-            host: currentConfig.host,
-            port: currentConfig.port,
-            username: currentConfig.username ?? undefined,
-            db: currentConfig.db,
-            tlsEnabled: currentConfig.tlsEnabled,
-            ...(input.config ?? {}),
-            password: nextPassword,
-          });
+        ? this.normalizePostgres(
+            inputConfig.connectionString
+              ? {
+                  ...inputConfig,
+                  password: nextPassword,
+                }
+              : {
+                  host: currentConfig.host,
+                  port: currentConfig.port,
+                  database: currentConfig.database,
+                  username: currentConfig.username,
+                  sslEnabled: currentConfig.sslEnabled,
+                  ...inputConfig,
+                  password: nextPassword,
+                }
+          )
+        : this.normalizeRedis(
+            inputConfig.connectionString
+              ? {
+                  ...inputConfig,
+                  password: nextPassword,
+                }
+              : {
+                  host: currentConfig.host,
+                  port: currentConfig.port,
+                  username: currentConfig.username ?? undefined,
+                  db: currentConfig.db,
+                  tlsEnabled: currentConfig.tlsEnabled,
+                  ...inputConfig,
+                  password: nextPassword,
+                }
+          );
+
+    this.assertOriginChangeHasReplacementPassword(currentConfig, mergedConfig, replacementPassword);
 
     const connectionFieldsChanged = JSON.stringify(currentConfig) !== JSON.stringify(mergedConfig);
     let statusUpdate: Partial<typeof databaseConnections.$inferInsert> = {};
@@ -751,6 +767,60 @@ export class DatabaseConnectionService {
   private decryptConfig(encryptedConfig: string): DatabaseConnectionConfig {
     const parsed = JSON.parse(encryptedConfig) as { encryptedKey: string; encryptedDek: string };
     return JSON.parse(this.cryptoService.decryptString(parsed)) as DatabaseConnectionConfig;
+  }
+
+  private extractReplacementPassword(inputConfig: UpdateDatabaseConnectionInput['config']): string | undefined {
+    if (!inputConfig) return undefined;
+    if ('password' in inputConfig) return inputConfig.password;
+    if (!inputConfig.connectionString) return undefined;
+
+    try {
+      const url = new URL(inputConfig.connectionString);
+      return url.password ? decodeURIComponent(url.password) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private databaseCredentialOrigin(config: DatabaseConnectionConfig): Record<string, string | number | boolean | null> {
+    if (config.type === 'postgres') {
+      return {
+        type: config.type,
+        host: config.host.trim().toLowerCase(),
+        port: config.port,
+        database: config.database,
+        username: config.username,
+        sslEnabled: config.sslEnabled,
+      };
+    }
+
+    return {
+      type: config.type,
+      host: config.host.trim().toLowerCase(),
+      port: config.port,
+      db: config.db,
+      username: config.username ?? null,
+      tlsEnabled: config.tlsEnabled,
+    };
+  }
+
+  private assertOriginChangeHasReplacementPassword(
+    currentConfig: DatabaseConnectionConfig,
+    mergedConfig: DatabaseConnectionConfig,
+    replacementPassword: string | undefined
+  ) {
+    if (!currentConfig.password) return;
+
+    const currentOrigin = this.databaseCredentialOrigin(currentConfig);
+    const nextOrigin = this.databaseCredentialOrigin(mergedConfig);
+    const originChanged = Object.keys(currentOrigin).some((key) => currentOrigin[key] !== nextOrigin[key]);
+    if (!originChanged || replacementPassword?.length) return;
+
+    throw new AppError(
+      400,
+      'CREDENTIAL_REENTRY_REQUIRED',
+      'Database connection target changed. Re-enter the database password to avoid reusing saved credentials against a different target.'
+    );
   }
 
   private normalizePostgres(
