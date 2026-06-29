@@ -173,4 +173,33 @@ describe('AIRunExecutor live assistant draft streaming', () => {
       expect.objectContaining({ status: 'failed', error: 'provider failed' })
     );
   });
+
+  it('persists a redacted copy of one-time API token tool results', async () => {
+    const harness = createExecutorHarness([
+      {
+        type: 'tool_call_start',
+        requestId: 'request-1',
+        id: 'call-1',
+        name: 'manage_api_token',
+        arguments: { operation: 'create', name: 'Deploy' },
+      },
+      {
+        type: 'tool_result',
+        requestId: 'request-1',
+        id: 'call-1',
+        name: 'manage_api_token',
+        result: { id: 'token-1', name: 'Deploy', token: 'gw_secret' },
+      },
+      { type: 'done', requestId: 'request-1' },
+    ]);
+
+    await executeRun(harness.executor);
+
+    expect(harness.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'completed',
+        result: { id: 'token-1', name: 'Deploy', token: '[REDACTED_ONE_TIME_SECRET]', tokenRedacted: true },
+      })
+    );
+  });
 });

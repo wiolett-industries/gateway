@@ -508,6 +508,66 @@ describe('AIRunService stopRun', () => {
 });
 
 describe('AIRunService runtime snapshots', () => {
+  it('returns only client-safe checkpoint metadata in conversation snapshots', async () => {
+    const now = new Date('2026-06-26T10:00:00.000Z');
+    let whereCall = 0;
+    const limit = vi.fn(async () => [
+      {
+        id: 'conversation-1',
+        title: 'Runtime chat',
+        createdAt: now,
+        updatedAt: now,
+        folderId: null,
+        lastContext: null,
+        discoveredToolsets: [],
+        checkpoint: {
+          type: 'tool_approval_required',
+          requestId: 'request-1',
+          pendingMessages: [{ role: 'system', content: 'server-only system prompt' }],
+          allQuestions: [],
+          queuedApprovals: [
+            { id: 'call-2', name: 'restart_docker_container', arguments: { containerId: 'abc' } },
+          ],
+        },
+      },
+    ]);
+    const orderBy = vi.fn(async () => [
+      {
+        id: 'message-1',
+        sequence: 0,
+        uiMessage: { role: 'user', content: 'hello' },
+        createdAt: now,
+      },
+    ]);
+    const where = vi.fn(() => {
+      whereCall += 1;
+      return whereCall === 1 ? { limit } : { orderBy };
+    });
+    const from = vi.fn(() => ({ where }));
+    const select = vi.fn(() => ({ from }));
+    const service = new AIRunService({ select } as never);
+    (service as unknown as { getRuntimeSnapshot: (conversationId: string) => Promise<unknown> }).getRuntimeSnapshot =
+      vi.fn().mockResolvedValue({
+        activeRun: null,
+        assistantDraftContent: null,
+        assistantDraftVersion: null,
+        pendingApprovals: [],
+        pendingQuestion: null,
+        pendingQuestions: [],
+        toolCalls: [],
+      });
+
+    const snapshot = await service.getConversationSnapshot('user-1', 'conversation-1');
+
+    expect(snapshot?.conversation.checkpoint).toEqual({
+      type: 'tool_approval_required',
+      requestId: 'request-1',
+      allQuestions: [],
+      queuedApprovals: [{ id: 'call-2', name: 'restart_docker_container', arguments: { containerId: 'abc' } }],
+    });
+    expect(JSON.stringify(snapshot)).not.toContain('server-only system prompt');
+  });
+
   it('uses the in-memory live draft and version when an active run is streaming', async () => {
     const run = {
       id: 'run-1',

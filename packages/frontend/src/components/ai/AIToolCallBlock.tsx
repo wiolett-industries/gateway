@@ -164,7 +164,7 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
       {toolStatus === "awaiting_approval" && toolName !== "ask_question" && (
         <div className="flex items-center gap-2 border border-border bg-yellow-500/5 px-2.5 py-2">
           <span className="flex-1 text-yellow-600 dark:text-yellow-400 text-xs">
-            This action requires your approval
+            {hasError ? `Could not send decision: ${safeToolCall.error}` : "This action requires your approval"}
           </span>
           <Button
             size="sm"
@@ -286,6 +286,9 @@ export function QuestionBlock({
     <div className="bg-primary/5">
       <div className="px-3 py-2 border-b border-border">
         <p className="text-sm font-medium">{question}</p>
+        {safeToolCall.error && (
+          <p className="mt-1 text-xs text-destructive">Could not send answer: {safeToolCall.error}</p>
+        )}
       </div>
 
       {options.length > 0 && (

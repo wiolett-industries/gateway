@@ -14,6 +14,7 @@ import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js'
 import type { AIConversationStatus, PageContext } from './ai.types.js';
 import type { AIConversationSearchService } from './ai-conversation-search.service.js';
 import { toClientCheckpoint } from './ai-run-runtime.helpers.js';
+import { redactOneTimeSecretToolResult } from './ai-secret-result-redaction.js';
 
 const RETAIN_FULL_TOOL_OUTPUT_COUNT = 10;
 const ACTIVE_RUN_STATUSES = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'] as const;
@@ -495,9 +496,13 @@ function sanitizeConversationMessage(message: unknown, retainedToolCallIds: Set<
 function sanitizeToolCall(toolCall: unknown, retainedToolCallIds: Set<string>): unknown {
   const record = toRecord(toolCall);
   if (!record || record.name === 'ask_question' || typeof record.id !== 'string') return toolCall;
-  if (retainedToolCallIds.has(record.id) || !Object.hasOwn(record, 'result')) return toolCall;
+  const result = Object.hasOwn(record, 'result')
+    ? redactOneTimeSecretToolResult(typeof record.name === 'string' ? record.name : '', record.result)
+    : undefined;
+  const toolCallWithRedactedSecrets = result !== record.result ? { ...record, result } : record;
+  if (retainedToolCallIds.has(record.id) || !Object.hasOwn(record, 'result')) return toolCallWithRedactedSecrets;
   return {
-    ...record,
+    ...toolCallWithRedactedSecrets,
     result: {
       summary: 'Tool output omitted from saved conversation after the latest 10 tool calls.',
       fullOutputOmitted: true,
@@ -578,7 +583,13 @@ function extractToolResults(toolCalls: unknown[] | null): unknown {
   return toolCalls.map((toolCall) => {
     if (!toolCall || typeof toolCall !== 'object') return null;
     const record = toolCall as Record<string, unknown>;
-    return { id: record.id, name: record.name, result: record.result, error: record.error };
+    const name = typeof record.name === 'string' ? record.name : '';
+    return {
+      id: record.id,
+      name: record.name,
+      result: redactOneTimeSecretToolResult(name, record.result),
+      error: record.error,
+    };
   });
 }
 

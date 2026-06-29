@@ -30,6 +30,7 @@ import type {
   SandboxRunnerWriteStdinResult,
 } from '@/modules/ai/ai.sandbox-runner.protocol.js';
 import { type DockerCreateContainerConfig, DockerService } from '@/services/docker.service.js';
+import { resolveHostArtifactPath as resolveSafeHostArtifactPath } from './artifact-path.js';
 import { readResponseBodyCapped } from './network.js';
 
 const logger = createChildLogger('SandboxRunner');
@@ -282,26 +283,8 @@ async function workspaceDirForProcess(processId: string): Promise<string> {
   return workspaceDir;
 }
 
-async function resolveHostArtifactPath(workspaceDir: string, relativePath: string): Promise<string> {
-  const root = await fs.realpath(workspaceDir);
-  const hostPath = path.join(root, ...relativePath.split('/'));
-  const parentPath = path.dirname(hostPath);
-  await fs.mkdir(parentPath, { recursive: true });
-  const realParent = await fs.realpath(parentPath);
-  if (realParent !== root && !realParent.startsWith(`${root}${path.sep}`)) {
-    throw new Error('artifact path must stay inside /workspace');
-  }
-  await allowSandboxDirectoryAccess(realParent);
-
-  const existing = await fs.lstat(hostPath).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return null;
-    throw error;
-  });
-  if (existing?.isSymbolicLink()) {
-    throw new Error('artifact path must not be a symbolic link');
-  }
-  return hostPath;
-}
+const resolveHostArtifactPath = (workspaceDir: string, relativePath: string) =>
+  resolveSafeHostArtifactPath(workspaceDir, relativePath, allowSandboxDirectoryAccess);
 
 async function containerConfig(
   policy: SandboxRunnerExecuteScriptParams['policy'],

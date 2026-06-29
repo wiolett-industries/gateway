@@ -42,6 +42,7 @@ describe('AIService group tool routing', () => {
       createGroup: vi.fn().mockResolvedValue({ id: 'group-2', name: 'Operators' }),
       assertCanUpdateGroup: vi.fn().mockResolvedValue(undefined),
       updateGroup: vi.fn().mockResolvedValue({ id: 'group-2', name: 'Ops' }),
+      assertCanDeleteGroup: vi.fn().mockResolvedValue(undefined),
       deleteGroup: vi.fn().mockResolvedValue(undefined),
     };
     const service = createService(groupService);
@@ -97,6 +98,21 @@ describe('AIService group tool routing', () => {
       result: { success: true },
       invalidateStores: ['groups'],
     });
+    expect(groupService.assertCanDeleteGroup).toHaveBeenCalledWith('group-2', BASE_USER.scopes);
     expect(groupService.deleteGroup).toHaveBeenCalledWith('group-2');
+  });
+
+  it('does not delete a group when descendant-scope authorization rejects it', async () => {
+    const groupService = {
+      assertCanDeleteGroup: vi.fn().mockRejectedValue(new Error('Cannot delete group with broader scopes')),
+      deleteGroup: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = createService(groupService);
+
+    await expect(service.executeTool(BASE_USER, 'delete_group', { groupId: 'group-2' })).resolves.toEqual({
+      error: 'Cannot delete group with broader scopes',
+      invalidateStores: [],
+    });
+    expect(groupService.deleteGroup).not.toHaveBeenCalled();
   });
 });

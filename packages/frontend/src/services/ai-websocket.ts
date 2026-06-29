@@ -125,10 +125,12 @@ export class AIWebSocketClient {
     this.setConnected(false);
   }
 
-  send(msg: WSClientMessage): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
+  send(msg: WSClientMessage): true {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      throw new Error("AI connection is not open");
     }
+    this.ws.send(JSON.stringify(msg));
+    return true;
   }
 
   onMessage(handler: MessageHandler): void {

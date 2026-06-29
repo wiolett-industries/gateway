@@ -1,8 +1,33 @@
 import { Buffer } from 'node:buffer';
 import dns from 'node:dns/promises';
+import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
+import type { IncomingMessage, RequestOptions } from 'node:http';
 
 const MAX_REDIRECTS = 5;
+
+type ResolvedFetchTarget = {
+  url: URL;
+  address: string;
+  family: 4 | 6;
+};
+
+type NetworkResponse = {
+  status: number;
+  statusText: string;
+  headers: Headers;
+  body: AsyncIterable<Buffer>;
+  close: () => void;
+};
+
+type NetworkTransport = (target: ResolvedFetchTarget, signal: AbortSignal) => Promise<NetworkResponse>;
+
+let networkTransport: NetworkTransport = requestResolvedUrl;
+
+export function setSandboxNetworkTransportForTests(transport: NetworkTransport | null): void {
+  networkTransport = transport ?? requestResolvedUrl;
+}
 
 export async function readResponseBodyCapped(
   url: string,
@@ -18,38 +43,35 @@ export async function readResponseBodyCapped(
   const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
     while (true) {
-      await assertFetchUrlAllowed(currentUrl);
-      const response = await fetch(currentUrl, { signal: controller.signal, redirect: 'manual' });
+      const target = await resolveFetchUrl(currentUrl);
+      const response = await networkTransport(target, controller.signal);
       if (isRedirectStatus(response.status)) {
         if (redirects >= MAX_REDIRECTS) throw new Error(`too many redirects (max ${MAX_REDIRECTS})`);
         const location = response.headers.get('location');
         if (!location) throw new Error(`redirect response missing location header (${response.status})`);
-        await response.body?.cancel().catch(() => {});
-        currentUrl = new URL(location, currentUrl).toString();
+        response.close();
+        currentUrl = new URL(location, target.url).toString();
         redirects += 1;
         continue;
       }
 
-      if (!response.ok) {
+      if (response.status < 200 || response.status >= 300) {
+        response.close();
         throw new Error(`fetch failed (${response.status} ${response.statusText})`);
       }
-      if (!response.body) throw new Error('fetch response body is not readable');
 
       const contentLength = response.headers.get('content-length');
       if (contentLength && Number(contentLength) > limitBytes) {
+        response.close();
         throw new Error(`download exceeds ${limitBytes} byte limit`);
       }
 
-      const reader = response.body.getReader();
       const chunks: Buffer[] = [];
       let total = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = Buffer.from(value);
+      for await (const chunk of response.body) {
         total += chunk.byteLength;
         if (total > limitBytes) {
-          await reader.cancel().catch(() => {});
+          response.close();
           throw new Error(`download exceeds ${limitBytes} byte limit`);
         }
         chunks.push(chunk);
@@ -70,6 +92,10 @@ function isRedirectStatus(status: number): boolean {
 }
 
 export async function assertFetchUrlAllowed(rawUrl: string): Promise<void> {
+  await resolveFetchUrl(rawUrl);
+}
+
+async function resolveFetchUrl(rawUrl: string): Promise<ResolvedFetchTarget> {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -83,9 +109,9 @@ export async function assertFetchUrlAllowed(rawUrl: string): Promise<void> {
   if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
     throw new Error('localhost URLs are not allowed');
   }
-  const addresses =
+  const addresses: Array<{ address: string; family?: number }> =
     net.isIP(hostname) !== 0
-      ? [{ address: hostname }]
+      ? [{ address: hostname, family: net.isIPv4(hostname) ? 4 : 6 }]
       : await dns.lookup(hostname, { all: true, verbatim: true }).catch((error) => {
           throw new Error(`failed to resolve URL hostname: ${error instanceof Error ? error.message : String(error)}`);
         });
@@ -95,6 +121,58 @@ export async function assertFetchUrlAllowed(rawUrl: string): Promise<void> {
       throw new Error(`URL resolves to a blocked network address: ${address}`);
     }
   }
+  const first = addresses[0];
+  if (!first) throw new Error('failed to resolve URL hostname: no addresses returned');
+  return {
+    url: parsed,
+    address: first.address,
+    family: first.family === 6 || net.isIPv6(first.address) ? 6 : 4,
+  };
+}
+
+async function requestResolvedUrl(target: ResolvedFetchTarget, signal: AbortSignal): Promise<NetworkResponse> {
+  const client = target.url.protocol === 'https:' ? https : http;
+  const options: RequestOptions & { servername?: string } = {
+    protocol: target.url.protocol,
+    hostname: target.url.hostname,
+    port: target.url.port || (target.url.protocol === 'https:' ? 443 : 80),
+    path: `${target.url.pathname}${target.url.search}`,
+    method: 'GET',
+    headers: { host: target.url.host },
+    family: target.family,
+    lookup: (_hostname, _options, callback) => callback(null, target.address, target.family),
+    servername: target.url.protocol === 'https:' && net.isIP(target.url.hostname) === 0 ? target.url.hostname : undefined,
+  };
+
+  return new Promise((resolve, reject) => {
+    const request = client.request(options, (response) => resolve(toNetworkResponse(response)));
+    const onAbort = () => request.destroy(new Error('fetch aborted'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    request.once('error', (error) => {
+      signal.removeEventListener('abort', onAbort);
+      reject(error);
+    });
+    request.once('close', () => signal.removeEventListener('abort', onAbort));
+    request.end();
+  });
+}
+
+function toNetworkResponse(response: IncomingMessage): NetworkResponse {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(response.headers)) {
+    if (Array.isArray(value)) {
+      for (const item of value) headers.append(name, item);
+    } else if (value !== undefined) {
+      headers.set(name, String(value));
+    }
+  }
+  return {
+    status: response.statusCode ?? 0,
+    statusText: response.statusMessage ?? '',
+    headers,
+    body: response,
+    close: () => response.destroy(),
+  };
 }
 
 export function isBlockedNetworkAddress(address: string): boolean {

@@ -277,6 +277,48 @@ interface AIState {
 
 let wsClient: AIWebSocketClient | null = null;
 let conversationLoadGeneration = 0;
+const pendingToolCommands = new Map<
+  string,
+  { toolCallId: string; previousStatus: AIToolCall["status"]; previousResult?: unknown; decision: "approval" | "question" }
+>();
+
+function updateToolCallById(
+  messages: AIMessage[],
+  toolCallId: string,
+  update: (toolCall: AIToolCall) => AIToolCall
+): AIMessage[] {
+  return messages.map((msg) => ({
+    ...msg,
+    toolCalls: msg.toolCalls?.map((tc) => (tc.id === toolCallId ? update(tc) : tc)),
+  }));
+}
+
+function appendLocalAssistantError(messages: AIMessage[], content: string): AIMessage[] {
+  return [
+    ...messages,
+    {
+      id: generateId(),
+      role: "assistant",
+      content,
+      createdAt: nowIso(),
+      localOnly: true,
+    },
+  ];
+}
+
+function sendWSMessage(msg: Parameters<AIWebSocketClient["send"]>[0]): void {
+  if (!wsClient) throw new Error("AI connection is not open");
+  wsClient.send(msg);
+}
+
+function trySendWSMessage(msg: Parameters<AIWebSocketClient["send"]>[0]): boolean {
+  try {
+    sendWSMessage(msg);
+    return true;
+  } catch {
+    return false;
+  }
+}
 const assistantDraftVersions = new Map<string, number>();
 
 export interface AIConversationBlock {
@@ -431,7 +473,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       });
       const activeConversationId = get().activeConversationId;
       if (connected && activeConversationId) {
-        wsClient?.send({ type: "conversation.subscribe", conversationId: activeConversationId });
+        trySendWSMessage({ type: "conversation.subscribe", conversationId: activeConversationId });
       }
       if (!connected) set({ isStreaming: false });
     });
@@ -469,7 +511,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
     if ((!options.startNewConversation && state.isStreaming) || getConversationBlock(baseMessages))
       return;
     if (options.startNewConversation && state.activeConversationId) {
-      wsClient?.send({
+      trySendWSMessage({
         type: "conversation.unsubscribe",
         conversationId: state.activeConversationId,
       });
@@ -492,96 +534,165 @@ export const useAIStore = create<AIState>()((set, get) => ({
     });
 
     const clientCommandId = generateId();
-    wsClient?.send({
-      type: "conversation.send_message",
-      clientCommandId,
-      content,
-      attachments,
-      context,
-      conversationId: options.startNewConversation
-        ? undefined
-        : (state.activeConversationId ?? undefined),
-    });
+    try {
+      sendWSMessage({
+        type: "conversation.send_message",
+        clientCommandId,
+        content,
+        attachments,
+        context,
+        conversationId: options.startNewConversation
+          ? undefined
+          : (state.activeConversationId ?? undefined),
+      });
+    } catch (error) {
+      set((state) => ({
+        isStreaming: false,
+        messages: appendLocalAssistantError(
+          state.messages,
+          `**Error:** ${error instanceof Error ? error.message : "Failed to send message"}`
+        ),
+      }));
+    }
   },
 
   approveTool: (toolCallId: string) => {
     const state = get();
     if (!state.activeConversationId || !state.activeRunId) return;
-    wsClient?.send({
-      type: "approval.decide",
-      conversationId: state.activeConversationId,
-      runId: state.activeRunId,
-      approvalId: toolCallId,
-      decision: "approved",
-      clientCommandId: generateId(),
-    });
+    const previous = state.messages
+      .flatMap((message) => message.toolCalls ?? [])
+      .find((toolCall) => toolCall.id === toolCallId);
+    const clientCommandId = generateId();
 
-    // Update tool status
     set((state) => ({
-      messages: state.messages.map((msg) => ({
-        ...msg,
-        toolCalls: msg.toolCalls?.map((tc) =>
-          tc.id === toolCallId ? { ...tc, status: "running" as const } : tc
-        ),
+      messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+        ...tc,
+        status: "running",
+        error: undefined,
       })),
     }));
+    pendingToolCommands.set(clientCommandId, {
+      toolCallId,
+      previousStatus: previous?.status ?? "awaiting_approval",
+      previousResult: previous?.result,
+      decision: "approval",
+    });
+    try {
+      sendWSMessage({
+        type: "approval.decide",
+        conversationId: state.activeConversationId,
+        runId: state.activeRunId,
+        approvalId: toolCallId,
+        decision: "approved",
+        clientCommandId,
+      });
+    } catch (error) {
+      pendingToolCommands.delete(clientCommandId);
+      set((state) => ({
+        messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+          ...tc,
+          status: "awaiting_approval",
+          result: previous?.result,
+          error: error instanceof Error ? error.message : "Failed to send approval",
+        })),
+      }));
+    }
   },
 
   rejectTool: (toolCallId: string) => {
     const state = get();
     if (!state.activeConversationId || !state.activeRunId) return;
-    wsClient?.send({
-      type: "approval.decide",
-      conversationId: state.activeConversationId,
-      runId: state.activeRunId,
-      approvalId: toolCallId,
-      decision: "rejected",
-      clientCommandId: generateId(),
-    });
+    const previous = state.messages
+      .flatMap((message) => message.toolCalls ?? [])
+      .find((toolCall) => toolCall.id === toolCallId);
+    const clientCommandId = generateId();
 
     set((state) => ({
-      messages: state.messages.map((msg) => ({
-        ...msg,
-        toolCalls: msg.toolCalls?.map((tc) =>
-          tc.id === toolCallId ? { ...tc, status: "rejected" as const } : tc
-        ),
+      messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+        ...tc,
+        status: "rejected",
+        error: undefined,
       })),
     }));
+    pendingToolCommands.set(clientCommandId, {
+      toolCallId,
+      previousStatus: previous?.status ?? "awaiting_approval",
+      previousResult: previous?.result,
+      decision: "approval",
+    });
+    try {
+      sendWSMessage({
+        type: "approval.decide",
+        conversationId: state.activeConversationId,
+        runId: state.activeRunId,
+        approvalId: toolCallId,
+        decision: "rejected",
+        clientCommandId,
+      });
+    } catch (error) {
+      pendingToolCommands.delete(clientCommandId);
+      set((state) => ({
+        messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+          ...tc,
+          status: "awaiting_approval",
+          result: previous?.result,
+          error: error instanceof Error ? error.message : "Failed to send rejection",
+        })),
+      }));
+    }
   },
 
   answerQuestion: (toolCallId: string, answer: string) => {
     const state = get();
     if (!state.activeConversationId || !state.activeRunId) return;
 
-    set((state) => {
-      return {
-        messages: state.messages.map((msg) => ({
-          ...msg,
-          toolCalls: msg.toolCalls?.map((tc) => {
-            if (tc.id === toolCallId) {
-              return { ...tc, status: "completed" as const, result: { answer } };
-            }
-            return tc;
-          }),
-        })),
-      };
-    });
+    const previous = state.messages
+      .flatMap((message) => message.toolCalls ?? [])
+      .find((toolCall) => toolCall.id === toolCallId);
+    const clientCommandId = generateId();
 
-    wsClient?.send({
-      type: "question.answer",
-      conversationId: state.activeConversationId,
-      runId: state.activeRunId,
-      questionId: toolCallId,
-      answer,
-      clientCommandId: generateId(),
+    set((state) => ({
+      messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+        ...tc,
+        status: "completed",
+        result: { answer },
+        error: undefined,
+      })),
+      pendingApprovalToolCallId: null,
+    }));
+    pendingToolCommands.set(clientCommandId, {
+      toolCallId,
+      previousStatus: previous?.status ?? "awaiting_approval",
+      previousResult: previous?.result,
+      decision: "question",
     });
-    set({ pendingApprovalToolCallId: null });
+    try {
+      sendWSMessage({
+        type: "question.answer",
+        conversationId: state.activeConversationId,
+        runId: state.activeRunId,
+        questionId: toolCallId,
+        answer,
+        clientCommandId,
+      });
+    } catch (error) {
+      pendingToolCommands.delete(clientCommandId);
+      set((state) => ({
+        messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+          ...tc,
+          status: "awaiting_approval",
+          result: previous?.result,
+          error: error instanceof Error ? error.message : "Failed to send answer",
+        })),
+        pendingApprovalToolCallId: toolCallId,
+      }));
+    }
   },
 
   stopStreaming: () => {
     const state = get();
     if (state.activeConversationId && state.activeRunId) {
-      wsClient?.send({
+      trySendWSMessage({
         type: "run.stop",
         conversationId: state.activeConversationId,
         runId: state.activeRunId,
@@ -600,7 +711,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
     conversationLoadGeneration += 1;
     const activeConversationId = get().activeConversationId;
     if (activeConversationId) {
-      wsClient?.send({ type: "conversation.unsubscribe", conversationId: activeConversationId });
+      trySendWSMessage({ type: "conversation.unsubscribe", conversationId: activeConversationId });
     }
     set({
       messages: [],
@@ -734,7 +845,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
     try {
       const previousConversationId = get().activeConversationId;
       if (previousConversationId && previousConversationId !== conversationId) {
-        wsClient?.send({
+        trySendWSMessage({
           type: "conversation.unsubscribe",
           conversationId: previousConversationId,
         });
@@ -758,7 +869,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         activeRunId: null,
         lastContext: conversation.lastContext,
       });
-      wsClient?.send({ type: "conversation.subscribe", conversationId });
+      trySendWSMessage({ type: "conversation.subscribe", conversationId });
     } catch {
       if (loadGeneration !== conversationLoadGeneration) return;
       const localMsg: AIMessage = {
@@ -784,7 +895,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
     try {
       await deleteConversation(conversationId);
       if (get().activeConversationId === conversationId) {
-        wsClient?.send({ type: "conversation.unsubscribe", conversationId });
+        trySendWSMessage({ type: "conversation.unsubscribe", conversationId });
       }
       set((state) => ({
         recentConversations: state.recentConversations.filter(
@@ -874,7 +985,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         )
       ),
     }));
-    wsClient?.send({ type: "conversation.sync", conversationId: result.conversation.id });
+    trySendWSMessage({ type: "conversation.sync", conversationId: result.conversation.id });
     return result.message;
   },
 
@@ -894,7 +1005,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
     if (cmd === "/clear" || cmd === "/new") {
       const activeConversationId = get().activeConversationId;
       if (activeConversationId) {
-        wsClient?.send({ type: "conversation.unsubscribe", conversationId: activeConversationId });
+        trySendWSMessage({ type: "conversation.unsubscribe", conversationId: activeConversationId });
       }
       set({
         messages: [],
@@ -960,6 +1071,7 @@ function handleWSMessage(
 ) {
   switch (msg.type) {
     case "command.ack":
+      if (msg.clientCommandId) pendingToolCommands.delete(msg.clientCommandId);
       set((state) => {
         const selectsConversation = msg.commandType === "conversation.send_message";
         const matchesCurrentConversation =
@@ -979,18 +1091,26 @@ function handleWSMessage(
       break;
 
     case "command.error":
+      {
+        const pending = msg.clientCommandId ? pendingToolCommands.get(msg.clientCommandId) : undefined;
+        if (pending) {
+          if (msg.clientCommandId) pendingToolCommands.delete(msg.clientCommandId);
+          set((state) => ({
+            isStreaming: false,
+            messages: updateToolCallById(state.messages, pending.toolCallId, (tc) => ({
+              ...tc,
+              status: pending.previousStatus,
+              result: pending.previousResult,
+              error: msg.message,
+            })),
+            pendingApprovalToolCallId: pending.toolCallId,
+          }));
+          break;
+        }
+      }
       set((state) => ({
         isStreaming: false,
-        messages: [
-          ...state.messages,
-          {
-            id: generateId(),
-            role: "assistant",
-            content: `**Error:** ${msg.message}`,
-            createdAt: nowIso(),
-            localOnly: true,
-          },
-        ],
+        messages: appendLocalAssistantError(state.messages, `**Error:** ${msg.message}`),
       }));
       break;
 

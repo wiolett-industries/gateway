@@ -59,6 +59,7 @@ import { executeProxyTool, PROXY_TOOL_NAMES } from './ai.proxy-tools.js';
 import { findResource } from './ai.resource-search.js';
 import type { AISandboxService } from './ai.sandbox.service.js';
 import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
+import { redactOneTimeSecretToolResult } from './ai-secret-result-redaction.js';
 import {
   agentPage,
   agentPageLimit,
@@ -133,6 +134,8 @@ function conversationEndReason(result: unknown, fallback: string): string {
 
 function compactToolResultForModel(toolName: string, value: unknown): unknown {
   if (value == null) return value;
+  const redactedValue = redactOneTimeSecretToolResult(toolName, value);
+  if (redactedValue !== value) return redactedValue;
   if (toolName === 'get_docker_container_logs') return compactLogLikeResult(value, 'Docker container logs');
   if (toolName === 'send_artifact' && isRecord(value)) {
     const { artifactId, filename, mediaType, sizeBytes, sourcePath, downloadUrl } = value;

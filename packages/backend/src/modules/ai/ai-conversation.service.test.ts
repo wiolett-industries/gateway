@@ -48,6 +48,31 @@ describe('AIConversationService storage sanitization', () => {
     expect(sanitized.toolCalls[11].result).toBe('raw output 12');
     expect(sanitized.toolCalls[12].result).toEqual({ answer: 'yes' });
   });
+
+  it('redacts one-time API token results even when the tool call output is retained', () => {
+    const [sanitized] = sanitizeConversationMessagesForStorage([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        toolCalls: [
+          {
+            id: 'token-call-1',
+            name: 'manage_api_token',
+            status: 'completed',
+            result: { id: 'token-1', name: 'Deploy', token: 'gw_secret' },
+          },
+        ],
+      },
+    ]) as Array<{ toolCalls: Array<{ result: unknown }> }>;
+
+    expect(sanitized.toolCalls[0].result).toEqual({
+      id: 'token-1',
+      name: 'Deploy',
+      token: '[REDACTED_ONE_TIME_SECRET]',
+      tokenRedacted: true,
+    });
+  });
 });
 
 describe('AIConversationService conversation ordering', () => {

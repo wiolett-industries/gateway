@@ -26,6 +26,7 @@ import {
   toCheckpoint,
   toPageContext,
 } from './ai-run-runtime.helpers.js';
+import { redactOneTimeSecretToolResult } from './ai-secret-result-redaction.js';
 
 const logger = createChildLogger('AI-Run-Executor');
 
@@ -318,7 +319,7 @@ export class AIRunExecutor {
     }
 
     if (event.type === 'tool_result') {
-      await this.finishToolCall(run.id, event.id, event.result, event.error ?? null);
+      await this.finishToolCall(run.id, event.id, event.name, event.result, event.error ?? null);
       this.publishConversationChanged(user.id, run.conversationId);
       return { assistantContent, assistantMessageWritten, done: false };
     }
@@ -502,15 +503,17 @@ export class AIRunExecutor {
   private async finishToolCall(
     runId: string,
     toolCallId: string,
+    toolName: string,
     result: unknown,
     error: string | null
   ): Promise<void> {
     const now = new Date();
+    const persistedResult = error ? result : redactOneTimeSecretToolResult(toolName, result);
     await this.db
       .update(aiRunToolCalls)
       .set({
         status: error ? 'failed' : 'completed',
-        result,
+        result: persistedResult,
         error,
         completedAt: now,
         updatedAt: now,

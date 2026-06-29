@@ -1,13 +1,19 @@
-FROM node:24-alpine AS builder
+FROM node:24-alpine AS base
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile || pnpm install
+# This Dockerfile is built from the repository root:
+#   docker build -f packages/backend/Dockerfile .
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
+COPY packages/backend/package.json packages/backend/
+RUN pnpm install --frozen-lockfile
 
-COPY . .
+FROM base AS builder
+
+COPY packages/backend/ packages/backend/
+WORKDIR /app/packages/backend
 RUN pnpm build
 
 FROM node:24-alpine AS production
@@ -21,11 +27,16 @@ RUN addgroup --system --gid 1001 nodejs && \
     mkdir -p /var/lib/gateway/tls && \
     chown -R nodejs:nodejs /var/lib/gateway
 
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/config/update-trust/update-signing-public-key.pem ./dist/lib/update-signing-public-key.pem
-COPY --from=builder /app/src/db/migrations ./src/db/migrations
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/backend/package.json packages/backend/
+RUN pnpm --filter backend install --prod --frozen-lockfile
+
+WORKDIR /app/packages/backend
+
+COPY --from=builder /app/packages/backend/dist ./dist
+COPY --from=builder /app/packages/backend/src/db/migrations ./src/db/migrations
+COPY config/update-trust/update-signing-public-key.pem ./dist/lib/update-signing-public-key.pem
+COPY proto/ /app/proto/
 
 USER nodejs
 
