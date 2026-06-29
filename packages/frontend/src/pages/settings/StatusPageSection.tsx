@@ -1,7 +1,8 @@
+import { Save } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -86,6 +88,9 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
   const [config, setConfig] = useState<StatusPageConfig>(
     () => api.getCached<StatusPageConfig>("settings:status-page-config") ?? DEFAULT_CONFIG
   );
+  const [savedConfig, setSavedConfig] = useState<StatusPageConfig>(
+    () => api.getCached<StatusPageConfig>("settings:status-page-config") ?? DEFAULT_CONFIG
+  );
   const [sslCerts, setSslCerts] = useState<SSLCertificate[]>(
     () => api.getCached<SSLCertificate[]>("settings:status-page-ssl-certs") ?? []
   );
@@ -105,6 +110,7 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
       const settings = await api.getStatusPageSettings();
       api.setCache("settings:status-page-config", settings);
       setConfig(settings);
+      setSavedConfig(settings);
     } catch {
       /* optional feature; ignore until user opens it */
     }
@@ -139,13 +145,55 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
     loadProxyTemplates();
   });
 
-  const updateConfig = async (patch: Partial<StatusPageConfig>) => {
+  const statusPageSettingsPayload = useMemo(
+    () => ({
+      enabled: config.enabled,
+      domain: config.domain,
+      upstreamUrl: config.upstreamUrl?.trim() ? config.upstreamUrl.trim() : null,
+      nodeId: config.nodeId || null,
+      sslCertificateId: config.sslCertificateId,
+      proxyTemplateId: config.proxyTemplateId,
+    }),
+    [
+      config.domain,
+      config.enabled,
+      config.nodeId,
+      config.proxyTemplateId,
+      config.sslCertificateId,
+      config.upstreamUrl,
+    ]
+  );
+
+  const savedStatusPageSettingsPayload = useMemo(
+    () => ({
+      enabled: savedConfig.enabled,
+      domain: savedConfig.domain,
+      upstreamUrl: savedConfig.upstreamUrl?.trim() ? savedConfig.upstreamUrl.trim() : null,
+      nodeId: savedConfig.nodeId || null,
+      sslCertificateId: savedConfig.sslCertificateId,
+      proxyTemplateId: savedConfig.proxyTemplateId,
+    }),
+    [
+      savedConfig.domain,
+      savedConfig.enabled,
+      savedConfig.nodeId,
+      savedConfig.proxyTemplateId,
+      savedConfig.sslCertificateId,
+      savedConfig.upstreamUrl,
+    ]
+  );
+
+  const hasSettingsChanges =
+    JSON.stringify(statusPageSettingsPayload) !== JSON.stringify(savedStatusPageSettingsPayload);
+
+  const saveConfig = async () => {
     if (!canManage) return;
     setSavingSettings(true);
     try {
-      const updated = await api.updateStatusPageSettings(patch);
+      const updated = await api.updateStatusPageSettings(statusPageSettingsPayload);
       api.setCache("settings:status-page-config", updated);
       setConfig(updated);
+      setSavedConfig(updated);
       toast.success("Status page settings updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update status page");
@@ -156,125 +204,151 @@ export function StatusPageSection({ nodesList }: StatusPageSectionProps) {
   };
 
   return (
-    <div className="border border-border bg-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="font-semibold">Status Page</h2>
-            <Badge variant={config.enabled ? "success" : "secondary"}>
-              {config.enabled ? "Enabled" : "Disabled"}
-            </Badge>
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Enable the public status page and configure its custom domain
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <PanelShell
+      title="Status Page"
+      description="Enable the public status page and configure its custom domain"
+      actions={
+        <Button onClick={saveConfig} disabled={!canManage || savingSettings || !hasSettingsChanges}>
+          <Save className="h-4 w-4" />
+          Save
+        </Button>
+      }
+      dirty={hasSettingsChanges}
+    >
+      <div className="divide-y divide-border">
+        <SettingsRow
+          label="Enabled"
+          description="Expose the public status page through the configured domain"
+          controlClassName="w-auto"
+        >
           <Switch
             checked={config.enabled}
             disabled={!canManage || savingSettings}
-            onChange={(enabled) => updateConfig({ enabled })}
+            onChange={(enabled) => setConfig((prev) => ({ ...prev, enabled }))}
           />
-        </div>
+        </SettingsRow>
+        <SettingsRow label="Domain" description="Public hostname for the status page">
+          <Input
+            value={config.domain}
+            disabled={!canManage || savingSettings}
+            placeholder="status.example.com"
+            onChange={(event) => setConfig((prev) => ({ ...prev, domain: event.target.value }))}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label="Gateway upstream URL"
+          description="Internal Gateway URL used by the generated proxy host"
+        >
+          <Input
+            value={config.upstreamUrl ?? ""}
+            disabled={!canManage || savingSettings}
+            placeholder="http://172.16.20.60:3000"
+            onChange={(event) =>
+              setConfig((prev) => ({ ...prev, upstreamUrl: event.target.value }))
+            }
+          />
+        </SettingsRow>
+        <SettingsRow
+          label="Nginx node"
+          description="Online nginx node that serves the public status page"
+        >
+          <Select
+            value={config.nodeId ?? ""}
+            disabled={!canManage || config.enabled || savingSettings}
+            onValueChange={(nodeId) => setConfig((prev) => ({ ...prev, nodeId }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select an online nginx node" />
+            </SelectTrigger>
+            <SelectContent>
+              {onlineNginxNodes.map((node) => (
+                <SelectItem key={node.id} value={node.id} disabled={node.serviceCreationLocked}>
+                  {node.displayName || node.hostname}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+        <SettingsRow
+          label="SSL certificate"
+          description="Certificate presented by the public status page endpoint"
+        >
+          <Select
+            value={config.sslCertificateId ?? "__none__"}
+            disabled={!canManage || savingSettings}
+            onValueChange={(sslCertificateId) =>
+              setConfig((prev) => ({
+                ...prev,
+                sslCertificateId: sslCertificateId === "__none__" ? null : sslCertificateId,
+              }))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">No certificate</SelectItem>
+              {sslCerts
+                .filter((cert) => cert.status === "active")
+                .map((cert) => (
+                  <SelectItem key={cert.id} value={cert.id}>
+                    {cert.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+        <SettingsRow
+          label="Proxy template"
+          description="Optional nginx template override for the generated proxy host"
+        >
+          <Select
+            value={config.proxyTemplateId ?? "__default__"}
+            disabled={!canManage || savingSettings}
+            onValueChange={(proxyTemplateId) =>
+              setConfig((prev) => ({
+                ...prev,
+                proxyTemplateId: proxyTemplateId === "__default__" ? null : proxyTemplateId,
+              }))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__">Default template</SelectItem>
+              {proxyTemplates.map((template) => (
+                <SelectItem key={template.id} value={template.id}>
+                  {template.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
       </div>
+    </PanelShell>
+  );
+}
 
-      <div className="space-y-4 p-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Domain">
-            <Input
-              value={config.domain}
-              disabled={!canManage}
-              placeholder="status.example.com"
-              onChange={(event) => setConfig((prev) => ({ ...prev, domain: event.target.value }))}
-              onBlur={() => updateConfig({ domain: config.domain })}
-            />
-          </Field>
-          <Field label="Gateway upstream URL">
-            <Input
-              value={config.upstreamUrl ?? ""}
-              disabled={!canManage}
-              placeholder="http://172.16.20.60:3000"
-              onChange={(event) =>
-                setConfig((prev) => ({ ...prev, upstreamUrl: event.target.value }))
-              }
-              onBlur={() =>
-                updateConfig({
-                  upstreamUrl: config.upstreamUrl?.trim() ? config.upstreamUrl.trim() : null,
-                })
-              }
-            />
-          </Field>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <Field label="Nginx node">
-            <Select
-              value={config.nodeId ?? ""}
-              disabled={!canManage || config.enabled || savingSettings}
-              onValueChange={(nodeId) => updateConfig({ nodeId })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select an online nginx node" />
-              </SelectTrigger>
-              <SelectContent>
-                {onlineNginxNodes.map((node) => (
-                  <SelectItem key={node.id} value={node.id} disabled={node.serviceCreationLocked}>
-                    {node.displayName || node.hostname}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="SSL certificate">
-            <Select
-              value={config.sslCertificateId ?? "__none__"}
-              disabled={!canManage}
-              onValueChange={(sslCertificateId) =>
-                updateConfig({
-                  sslCertificateId: sslCertificateId === "__none__" ? null : sslCertificateId,
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">No certificate</SelectItem>
-                {sslCerts
-                  .filter((cert) => cert.status === "active")
-                  .map((cert) => (
-                    <SelectItem key={cert.id} value={cert.id}>
-                      {cert.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="Proxy template" className="md:col-span-2 xl:col-span-1">
-            <Select
-              value={config.proxyTemplateId ?? "__default__"}
-              disabled={!canManage}
-              onValueChange={(proxyTemplateId) =>
-                updateConfig({
-                  proxyTemplateId: proxyTemplateId === "__default__" ? null : proxyTemplateId,
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__default__">Default template</SelectItem>
-                {proxyTemplates.map((template) => (
-                  <SelectItem key={template.id} value={template.id}>
-                    {template.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-      </div>
-    </div>
+function SettingsRow({
+  label,
+  description,
+  children,
+  controlClassName = "w-full sm:w-[28rem]",
+}: {
+  label: string;
+  description: string;
+  children: React.ReactNode;
+  controlClassName?: string;
+}) {
+  return (
+    <label className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{label}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">{description}</span>
+      </span>
+      <span className={`min-w-0 shrink-0 ${controlClassName}`}>{children}</span>
+    </label>
   );
 }
 
@@ -532,10 +606,10 @@ export function IncidentDialog({
             <Input value={title} onChange={(event) => setTitle(event.target.value)} />
           </Field>
           <Field label="Message">
-            <textarea
+            <Textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
-              className="min-h-28 w-full border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="min-h-28"
             />
           </Field>
           <Field label="Severity">
@@ -550,7 +624,7 @@ export function IncidentDialog({
               </SelectContent>
             </Select>
           </Field>
-          <div className="max-h-48 space-y-2 overflow-y-auto border border-border p-3">
+          <div className="space-y-2 border border-border p-3">
             {services.map((service) => (
               <label key={service.id} className="flex items-center gap-2 text-sm">
                 <input

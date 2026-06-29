@@ -2,9 +2,12 @@ import { Download, EllipsisVertical, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
+import { PanelShell } from "@/components/common/PanelShell";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import {
@@ -31,14 +34,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatRelativeDate } from "@/lib/utils";
+import {
+  type AuditExportFormat,
+  buildAuditExportFilename,
+  downloadTextFile,
+  formatAuditExport,
+  formatAuditToken,
+  getAuditEntryUserKey,
+  getAuditEntryUserLabel,
+} from "@/pages/audit-log/audit-format";
 import { api } from "@/services/api";
 import type { AuditLogEntry } from "@/types";
 
 const PAGE_SIZE = 100;
 const AUDIT_VIEW_STORAGE_KEY = "gateway:audit-log:view";
 const SYSTEM_USER_FILTER = "system";
-
-type AuditExportFormat = "csv" | "tsv" | "txt" | "html";
 
 interface AuditViewConfig {
   excludedActions: string[];
@@ -219,10 +229,6 @@ const AUDIT_RESOURCE_OPTIONS = [
   "user",
 ] as const;
 
-function formatAuditToken(value: string): string {
-  return value.replace(/[._-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
 function readAuditViewConfig(): AuditViewConfig {
   if (typeof window === "undefined") return DEFAULT_AUDIT_VIEW_CONFIG;
   try {
@@ -260,148 +266,109 @@ function localDateTimeToIso(value: string): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
-function getAuditEntryUserKey(entry: AuditLogEntry): string {
-  return entry.userId ?? SYSTEM_USER_FILTER;
+function getAuditUserLabel(entry: AuditLogEntry): string {
+  return entry.userName || entry.userEmail || "System";
 }
 
-function getAuditEntryUserLabel(entry: AuditLogEntry): string {
-  return entry.userName || entry.userEmail || (entry.userId ? entry.userId : "System");
+function getAuditUserInitials(entry: AuditLogEntry): string {
+  const label = getAuditUserLabel(entry);
+  if (label === "System") return "SY";
+  return label
+    .split(/[\s@._-]+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 }
 
-function buildAuditExportFilename(format: AuditExportFormat): string {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return `gateway-audit-log-${timestamp}.${format}`;
-}
-
-function downloadTextFile(content: string, filename: string, type: string) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function auditEntryToExportRow(entry: AuditLogEntry): string[] {
-  return [
-    new Date(entry.createdAt).toLocaleString(),
-    getAuditEntryUserLabel(entry),
-    entry.userId ?? "",
-    entry.action,
-    entry.resourceType,
-    entry.resourceId ?? "",
-    entry.ipAddress ?? "",
-    entry.userAgent ?? "",
-    JSON.stringify(entry.details ?? {}),
-  ];
-}
-
-const AUDIT_EXPORT_HEADERS = [
-  "Time",
-  "User",
-  "User ID",
-  "Action",
-  "Resource Type",
-  "Resource ID",
-  "IP Address",
-  "User Agent",
-  "Details",
-];
-
-function escapeDelimitedValue(value: string, delimiter: "," | "\t"): string {
-  if (delimiter === "\t") return value.replace(/[\t\r\n]+/g, " ");
-  if (!/[",\r\n]/.test(value)) return value;
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
-function formatDelimitedAuditExport(entries: AuditLogEntry[], delimiter: "," | "\t"): string {
-  const rows = [AUDIT_EXPORT_HEADERS, ...entries.map(auditEntryToExportRow)];
-  return rows
-    .map((row) => row.map((value) => escapeDelimitedValue(value, delimiter)).join(delimiter))
-    .join("\n");
-}
-
-function formatTextAuditExport(entries: AuditLogEntry[]): string {
-  return entries
-    .map((entry) => {
-      const row = auditEntryToExportRow(entry);
-      return AUDIT_EXPORT_HEADERS.map((header, index) => `${header}: ${row[index]}`).join("\n");
-    })
-    .join("\n\n---\n\n");
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function formatHtmlAuditExport(entries: AuditLogEntry[]): string {
-  const head = AUDIT_EXPORT_HEADERS.map((header) => `<th>${escapeHtml(header)}</th>`).join("");
-  const body = entries
-    .map(
-      (entry) =>
-        `<tr>${auditEntryToExportRow(entry)
-          .map((value) => `<td>${escapeHtml(value)}</td>`)
-          .join("")}</tr>`
-    )
-    .join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Gateway Audit Log</title><style>body{font-family:system-ui,sans-serif;background:#111;color:#eee}table{border-collapse:collapse;width:100%}th,td{border:1px solid #444;padding:6px;text-align:left;vertical-align:top}th{background:#222}</style></head><body><h1>Gateway Audit Log</h1><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></body></html>`;
-}
-
-function formatAuditExport(
-  entries: AuditLogEntry[],
-  format: AuditExportFormat
-): { content: string; type: string } {
-  if (format === "csv") {
-    return { content: formatDelimitedAuditExport(entries, ","), type: "text/csv;charset=utf-8" };
+function getAuditResourceNameFromDetails(details: AuditLogEntry["details"]): string | null {
+  if (!details) return null;
+  for (const key of [
+    "newName",
+    "name",
+    "displayName",
+    "hostname",
+    "commonName",
+    "cn",
+    "domain",
+    "containerName",
+    "imageRef",
+    "key",
+  ]) {
+    const value = details[key];
+    if (typeof value === "string" && value.trim()) return value;
   }
-  if (format === "tsv") {
-    return {
-      content: formatDelimitedAuditExport(entries, "\t"),
-      type: "text/tab-separated-values;charset=utf-8",
-    };
+  for (const key of ["domainNames", "domains"]) {
+    const value = details[key];
+    if (!Array.isArray(value)) continue;
+    const names = value.filter((item): item is string => typeof item === "string" && !!item.trim());
+    if (names.length) return names.join(", ");
   }
-  if (format === "html") {
-    return { content: formatHtmlAuditExport(entries), type: "text/html;charset=utf-8" };
-  }
-  return { content: formatTextAuditExport(entries), type: "text/plain;charset=utf-8" };
+  return null;
+}
+
+function getAuditResourceDisplay(entry: AuditLogEntry): { label: string; title: string } {
+  const resourceName = entry.resourceName ?? getAuditResourceNameFromDetails(entry.details);
+  const resourceValue = resourceName ?? entry.resourceId;
+  const resourceType = formatAuditToken(entry.resourceType);
+  const label = resourceValue ? `${resourceType} / ${resourceValue}` : resourceType;
+  const title =
+    resourceName && entry.resourceId && resourceName !== entry.resourceId
+      ? `${label} (${entry.resourceId})`
+      : label;
+  return { label, title };
 }
 
 const columns: DataTableColumn<AuditLogEntry>[] = [
   {
     key: "user",
     header: "User",
-    width: "200px",
+    width: "minmax(180px, 1fr)",
     truncate: true,
-    render: (entry) => entry.userName || entry.userEmail || "System",
+    render: (entry) => {
+      const label = getAuditUserLabel(entry);
+      const isSystem = label === "System";
+      return (
+        <span className="flex min-w-0 items-center gap-2">
+          <Avatar className="h-7 w-7">
+            <AvatarFallback className="text-[10px]">
+              {isSystem ? <Settings className="h-3.5 w-3.5" /> : getAuditUserInitials(entry)}
+            </AvatarFallback>
+          </Avatar>
+          <span className="truncate">{label}</span>
+        </span>
+      );
+    },
   },
   {
     key: "action",
     header: "Action",
-    width: "240px",
+    width: "minmax(180px, 1fr)",
     render: (entry) => (
-      <span className="font-mono text-xs bg-muted px-1.5 py-0.5">{entry.action}</span>
+      <span title={entry.action} className="text-muted-foreground">
+        {formatAuditToken(entry.action)}
+      </span>
     ),
   },
   {
     key: "resource",
     header: "Resource",
+    width: "minmax(260px, 1.6fr)",
     truncate: true,
-    render: (entry) => (
-      <span className="text-muted-foreground">
-        {entry.resourceType}
-        {entry.resourceId ? ` / ${entry.resourceId.slice(0, 8)}…` : ""}
-      </span>
-    ),
+    render: (entry) => {
+      const resource = getAuditResourceDisplay(entry);
+      return (
+        <span className="text-muted-foreground" title={resource.title}>
+          {resource.label}
+        </span>
+      );
+    },
   },
   {
     key: "ip",
     header: "IP Address",
-    width: "140px",
+    width: "minmax(160px, 0.75fr)",
     render: (entry) => (
       <span className="font-mono text-xs text-muted-foreground">{entry.ipAddress || "—"}</span>
     ),
@@ -409,7 +376,8 @@ const columns: DataTableColumn<AuditLogEntry>[] = [
   {
     key: "time",
     header: "Time",
-    width: "180px",
+    width: "minmax(130px, 0.65fr)",
+    align: "right",
     render: (entry) => (
       <span className="text-muted-foreground">{formatRelativeDate(entry.createdAt)}</span>
     ),
@@ -747,12 +715,15 @@ export function AuditLog({
       >
         {!embedded && (
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-bold">Audit Log</h1>
-              <p className="text-sm text-muted-foreground">
-                {total} entries
-                {hiddenFilterCount ? ` · ${hiddenFilterCount} hidden by local view` : ""}
-              </p>
+            <div className="flex items-center gap-3">
+              <LiteModeBackButton />
+              <div>
+                <h1 className="text-2xl font-bold">Audit Log</h1>
+                <p className="text-sm text-muted-foreground">
+                  {total} entries
+                  {hiddenFilterCount ? ` · ${hiddenFilterCount} hidden by local view` : ""}
+                </p>
+              </div>
             </div>
             {auditActions}
           </div>
@@ -818,6 +789,7 @@ export function AuditLog({
               onRowClick={setSelectedEntry}
               scrollRef={scrollRef}
               horizontalScroll
+              minWidth="1000px"
               emptyMessage="No audit log entries found"
               footer={
                 <div ref={sentinelRef} className="py-4 text-center text-xs text-muted-foreground">
@@ -834,11 +806,11 @@ export function AuditLog({
       </div>
 
       <Dialog open={configOpen} onOpenChange={setConfigOpen}>
-        <DialogContent className="sm:grid-rows-[auto,minmax(0,1fr),auto] sm:max-h-[calc(100vh-6rem)] sm:overflow-hidden sm:max-w-4xl">
+        <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Configure Audit View</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 px-1 sm:min-h-0 sm:overflow-y-auto md:grid md:gap-4 md:space-y-0 md:grid-cols-2">
+          <div className="space-y-4 px-1 md:grid md:grid-cols-2 md:gap-4 md:space-y-0">
             <AuditOptionChecklist
               title="Hidden Actions"
               description="Checked actions are excluded by the backend before pagination."
@@ -877,11 +849,11 @@ export function AuditLog({
       </Dialog>
 
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
-        <DialogContent className="sm:grid-rows-[auto,minmax(0,1fr),auto] sm:max-h-[calc(100vh-6rem)] sm:overflow-hidden sm:max-w-5xl">
+        <DialogContent className="sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>Download Audit Log</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 px-1 sm:min-h-0 sm:overflow-y-auto">
+          <div className="space-y-4 px-1">
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <label className="text-sm font-medium">From</label>
@@ -944,12 +916,12 @@ export function AuditLog({
       </Dialog>
 
       <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && setSelectedEntry(null)}>
-        <DialogContent className="grid-rows-[auto,minmax(0,1fr)] max-h-[calc(100vh-6rem)] max-w-[calc(100vw-2rem)] overflow-hidden sm:max-w-3xl">
+        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Audit Entry Details</DialogTitle>
           </DialogHeader>
           {selectedEntry ? (
-            <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto pr-1">
+            <div className="min-w-0 space-y-4 pr-1">
               <div className="grid gap-3 text-sm sm:grid-cols-6">
                 <AuditDetail
                   className="sm:col-span-2"
@@ -1051,12 +1023,13 @@ function AuditOptionChecklist({
   emptyMessage?: string;
 }) {
   return (
-    <div className="min-h-0 border border-border">
-      <div className="border-b border-border px-3 py-2">
-        <h3 className="text-sm font-medium">{title}</h3>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-      <div className="max-h-72 overflow-y-auto">
+    <PanelShell
+      title={title}
+      description={description}
+      className="min-h-0"
+      headerClassName="px-3 py-2"
+    >
+      <div>
         {options.length === 0 ? (
           <p className="px-3 py-4 text-sm text-muted-foreground">{emptyMessage}</p>
         ) : (
@@ -1069,7 +1042,7 @@ function AuditOptionChecklist({
                 type="checkbox"
                 checked={selected.includes(option.value)}
                 onChange={() => onToggle(option.value)}
-                className="h-4 w-4 accent-primary"
+                className="form-checkbox"
               />
               <span className="min-w-0 truncate font-mono text-xs" title={option.label}>
                 {option.label}
@@ -1078,6 +1051,6 @@ function AuditOptionChecklist({
           ))
         )}
       </div>
-    </div>
+    </PanelShell>
   );
 }

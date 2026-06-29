@@ -1,14 +1,100 @@
+import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { z } from 'zod';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { aiStatusRoute, getAiConfigRoute, listAiToolsRoute, updateAiConfigRoute } from './ai.openapi.js';
+import { AISandboxService } from './ai.sandbox.service.js';
+import { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
 import { AIConfigUpdateSchema } from './ai.schemas.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS } from './ai.tools.js';
+import { AIConversationService } from './ai-conversation.service.js';
+import { AIConversationFolderService } from './ai-conversation-folder.service.js';
 
 export const aiRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
+
+function humanizeToolName(name: string): string {
+  const acronyms = new Set(['ai', 'api', 'ca', 'crl', 'dns', 'http', 'https', 'id', 'ip', 'pki', 'ssl', 'url']);
+  return name
+    .split('_')
+    .map((part) => (acronyms.has(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join(' ');
+}
+
+function toolSubject(name: string): string {
+  return humanizeToolName(
+    name.replace(
+      /^(list|get|create|update|delete|remove|manage|query|run|scan|reveal|test|pull|start|stop|restart|inspect)_/,
+      ''
+    )
+  ).toLowerCase();
+}
+
+function userFacingToolDescription(name: string, category: string, destructive: boolean): string {
+  if (name === 'discover_tools') return 'Find available Gateway tool groups and capabilities.';
+  if (name === 'get_current_context') return 'Read the page and resource currently open in the UI.';
+  if (name === 'end_conversation') return 'Close the current assistant conversation with a reason.';
+  if (name === 'find_resource') return 'Search Gateway resources by name, type, or identifier.';
+  if (name === 'search_chats') return 'Search previous AI chats for relevant context.';
+  if (name === 'find_in_chat') return 'Search within a specific previous AI chat.';
+  if (name === 'read_chat_slice') return 'Read a bounded slice of messages from a previous AI chat.';
+  if (name === 'list_projects') return 'List AI chat projects available as retrieval boundaries.';
+  if (name === 'internal_documentation') return 'Search the assistant documentation for Gateway operations.';
+  if (name === 'wait') return 'Pause briefly before checking an operation again.';
+  if (name === 'web_search') return 'Search the web when current external information is needed.';
+
+  const subject = toolSubject(name);
+  if (name.startsWith('list_')) return `View ${subject} records.`;
+  if (name.startsWith('get_') || name.startsWith('inspect_')) return `View details for ${subject}.`;
+  if (name.startsWith('create_')) return `Create ${subject}.`;
+  if (name.startsWith('update_') || name.startsWith('manage_')) return `Change ${subject}.`;
+  if (name.startsWith('delete_') || name.startsWith('remove_')) return `Delete ${subject}.`;
+  if (name.startsWith('query_') || name.startsWith('run_') || name.startsWith('scan_')) return `Run ${subject}.`;
+  if (name.startsWith('pull_')) return `Pull ${subject}.`;
+  if (name.startsWith('start_')) return `Start ${subject}.`;
+  if (name.startsWith('stop_')) return `Stop ${subject}.`;
+  if (name.startsWith('restart_')) return `Restart ${subject}.`;
+  if (name.startsWith('reveal_')) return `Reveal ${subject}.`;
+  if (name.startsWith('test_')) return `Test ${subject}.`;
+
+  return `${destructive ? 'Change' : 'Use'} ${category.toLowerCase()} capabilities.`;
+}
+
+const CreateAIConversationFolderSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  description: z.string().max(2000).optional(),
+});
+
+const UpdateAIConversationFolderSchema = z
+  .object({
+    name: z.string().trim().min(1).max(255).optional(),
+    description: z.string().max(2000).optional(),
+  })
+  .refine((value) => value.name !== undefined || value.description !== undefined, {
+    message: 'name or description is required',
+  });
+
+const ReorderAIConversationFoldersSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.string().uuid(),
+      sortOrder: z.number().int().min(0),
+    })
+  ),
+});
+
+const MoveAIConversationsToFolderSchema = z.object({
+  conversationIds: z.array(z.string().uuid()).min(1),
+  folderId: z.string().uuid().nullable(),
+});
+
+const UpdateAIConversationSchema = z.object({
+  title: z.string().trim().min(1).max(255),
+});
 
 aiRoutes.use('*', authMiddleware);
 aiRoutes.use('*', sessionOnly);
@@ -18,6 +104,106 @@ aiRoutes.openapi(aiStatusRoute, async (c) => {
   const settingsService = container.resolve(AISettingsService);
   const enabled = await settingsService.isEnabled();
   return c.json({ enabled });
+});
+
+aiRoutes.get('/conversations', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AIConversationService);
+  const user = c.get('user')!;
+  const data = await service.listConversations(user.id);
+  return c.json({ data });
+});
+
+aiRoutes.get('/conversation-folders', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  const data = await service.listFolders(user.id);
+  return c.json({ data });
+});
+
+aiRoutes.post('/conversation-folders', requireScope('feat:ai:use'), async (c) => {
+  const parsed = CreateAIConversationFolderSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  const data = await service.createFolder(user.id, parsed.data);
+  return c.json({ data }, 201);
+});
+
+aiRoutes.patch('/conversation-folders/:id', requireScope('feat:ai:use'), async (c) => {
+  const parsed = UpdateAIConversationFolderSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  const data = await service.updateFolder(user.id, c.req.param('id'), parsed.data);
+  return c.json({ data });
+});
+
+aiRoutes.delete('/conversation-folders/:id', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  await service.deleteFolder(user.id, c.req.param('id'));
+  return c.json({ data: { deleted: true } });
+});
+
+aiRoutes.put('/conversation-folders/reorder', requireScope('feat:ai:use'), async (c) => {
+  const parsed = ReorderAIConversationFoldersSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  const data = await service.reorderFolders(user.id, parsed.data);
+  return c.json({ data });
+});
+
+aiRoutes.put('/conversation-folders/move-conversations', requireScope('feat:ai:use'), async (c) => {
+  const parsed = MoveAIConversationsToFolderSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIConversationFolderService);
+  const user = c.get('user')!;
+  const data = await service.moveConversationsToFolder(user.id, parsed.data);
+  return c.json({ data });
+});
+
+aiRoutes.get('/conversations/:id', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AIConversationService);
+  const user = c.get('user')!;
+  const data = await service.getConversation(user.id, c.req.param('id'));
+  if (!data) return c.json({ code: 'NOT_FOUND', message: 'Conversation not found' }, 404);
+  return c.json({ data });
+});
+
+aiRoutes.patch('/conversations/:id', requireScope('feat:ai:use'), async (c) => {
+  const parsed = UpdateAIConversationSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIConversationService);
+  const user = c.get('user')!;
+  const data = await service.renameConversation(user.id, c.req.param('id'), parsed.data.title);
+  if (!data) return c.json({ code: 'NOT_FOUND', message: 'Conversation not found' }, 404);
+  return c.json({ data });
+});
+
+aiRoutes.delete('/conversations/:id', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AIConversationService);
+  const user = c.get('user')!;
+  const deleted = await service.deleteConversation(user.id, c.req.param('id'));
+  if (!deleted) return c.json({ code: 'NOT_FOUND', message: 'Conversation not found' }, 404);
+  return c.json({ data: { deleted: true } });
+});
+
+aiRoutes.post('/conversations/:id/rollback', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AIConversationService);
+  const user = c.get('user')!;
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const messageId = typeof body.messageId === 'string' ? body.messageId : '';
+  if (!messageId) return c.json({ code: 'VALIDATION_ERROR', message: 'messageId is required' }, 400);
+
+  const result = await service.rollbackToMessage(user.id, c.req.param('id'), messageId);
+  if (!result) return c.json({ code: 'NOT_FOUND', message: 'Conversation message not found' }, 404);
+  return c.json({ data: result });
 });
 
 // GET /api/ai/config — full config for admin display (admin only)
@@ -35,7 +221,8 @@ aiRoutes.openapi({ ...updateAiConfigRoute, middleware: requireScope('feat:ai:con
   }
 
   const settingsService = container.resolve(AISettingsService);
-  const config = await settingsService.updateConfig(body.data);
+  await settingsService.updateConfig(body.data);
+  const config = await settingsService.getConfigForAdmin();
   return c.json({ data: config });
 });
 
@@ -43,14 +230,21 @@ aiRoutes.openapi({ ...updateAiConfigRoute, middleware: requireScope('feat:ai:con
 aiRoutes.openapi({ ...listAiToolsRoute, middleware: requireScope('feat:ai:configure') }, async (c) => {
   const grouped: Record<
     string,
-    Array<{ name: string; description: string; destructive: boolean; requiredScope: string }>
+    Array<{
+      name: string;
+      displayName: string;
+      displayDescription: string;
+      destructive: boolean;
+      requiredScope: string;
+    }>
   > = {};
 
   for (const tool of AI_TOOLS) {
     if (!grouped[tool.category]) grouped[tool.category] = [];
     grouped[tool.category].push({
       name: tool.name,
-      description: tool.description,
+      displayName: humanizeToolName(tool.name),
+      displayDescription: userFacingToolDescription(tool.name, tool.category, tool.destructive),
       destructive: tool.destructive,
       requiredScope: tool.requiredScope,
     });
@@ -58,3 +252,117 @@ aiRoutes.openapi({ ...listAiToolsRoute, middleware: requireScope('feat:ai:config
 
   return c.json({ data: grouped });
 });
+
+aiRoutes.get('/sandbox/status', requireScope('ai:sandbox:use'), async (c) => {
+  const service = container.resolve(AISandboxService);
+  const status = service.status();
+  return c.json({ data: { ...status, state: status.status } });
+});
+
+aiRoutes.get('/sandbox/jobs', requireScope('ai:sandbox:use'), async (c) => {
+  const service = container.resolve(AISandboxService);
+  const user = c.get('user')!;
+  const activeOnly = c.req.query('activeOnly') === 'true';
+  const statusRaw = c.req.query('status');
+  const status =
+    statusRaw &&
+    ['queued', 'running', 'exited', 'killed', 'timeout', 'failed', 'revoked', 'expired'].includes(statusRaw)
+      ? statusRaw
+      : undefined;
+  const limitRaw = Number(c.req.query('limit') ?? 50);
+  const data = await service.listJobs(user, {
+    activeOnly,
+    status,
+    limit: Number.isFinite(limitRaw) ? limitRaw : 50,
+  });
+  return c.json({ data });
+});
+
+aiRoutes.post('/sandbox/jobs/:id/kill', requireScope('ai:sandbox:use'), async (c) => {
+  const service = container.resolve(AISandboxService);
+  const user = c.get('user')!;
+  const data = await service.killProcess(user, c.req.param('id'));
+  return c.json({ data });
+});
+
+aiRoutes.get('/sandbox/jobs/:id/output', requireScope('ai:sandbox:use'), async (c) => {
+  const service = container.resolve(AISandboxService);
+  const user = c.get('user')!;
+  const tailRaw = Number(c.req.query('tail') ?? 200);
+  const data = await service.readProcessOutput(user, c.req.param('id'), Number.isFinite(tailRaw) ? tailRaw : 200);
+  return c.json({ data });
+});
+
+const MAX_CHAT_IMAGE_BYTES = 10 * 1024 * 1024;
+
+aiRoutes.post('/sandbox/artifacts', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AISandboxArtifactService);
+  const user = c.get('user')!;
+  const body = await c.req.parseBody();
+  const file = body.file;
+  const conversationId = typeof body.conversationId === 'string' && body.conversationId ? body.conversationId : null;
+  if (!(file instanceof File)) {
+    return c.json({ code: 'VALIDATION_ERROR', message: 'Image file is required' }, 400);
+  }
+  if (!file.type.startsWith('image/')) {
+    return c.json({ code: 'VALIDATION_ERROR', message: 'Only image attachments are supported' }, 400);
+  }
+  if (file.size > MAX_CHAT_IMAGE_BYTES) {
+    return c.json({ code: 'VALIDATION_ERROR', message: 'Image attachment must be 10 MB or smaller' }, 400);
+  }
+  const artifact = await service.saveFromBuffer({
+    userId: user.id,
+    conversationId,
+    filename: file.name || 'image',
+    mediaType: file.type,
+    buffer: Buffer.from(await file.arrayBuffer()),
+  });
+  return c.json({
+    data: {
+      artifactId: artifact.id,
+      filename: artifact.filename,
+      mediaType: artifact.mediaType,
+      sizeBytes: artifact.sizeBytes,
+      downloadUrl: artifact.downloadUrl,
+      kind: 'image',
+    },
+  });
+});
+
+aiRoutes.get('/sandbox/artifacts', requireScope('feat:ai:use'), async (c) => {
+  const artifactService = container.resolve(AISandboxArtifactService);
+  const conversationService = container.resolve(AIConversationService);
+  const user = c.get('user')!;
+  const artifacts = await artifactService.listForUser(user.id);
+  const conversationTitles = await conversationService.listConversationTitles(
+    user.id,
+    artifacts.map((artifact) => artifact.conversationId).filter((id): id is string => Boolean(id))
+  );
+  return c.json({
+    data: artifacts.map((artifact) => ({
+      ...artifact,
+      conversationTitle: artifact.conversationId ? (conversationTitles[artifact.conversationId] ?? null) : null,
+    })),
+  });
+});
+
+aiRoutes.delete('/sandbox/artifacts/:id', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AISandboxArtifactService);
+  const user = c.get('user')!;
+  await service.delete(user.id, c.req.param('id'));
+  return c.json({ data: { deleted: true } });
+});
+
+aiRoutes.get('/sandbox/artifacts/:id/download', requireScope('feat:ai:use'), async (c) => {
+  const service = container.resolve(AISandboxArtifactService);
+  const user = c.get('user')!;
+  const artifact = await service.getDownload(user.id, c.req.param('id'));
+  c.header('Content-Type', artifact.metadata.mediaType);
+  c.header('Content-Length', String(artifact.metadata.sizeBytes));
+  c.header('Content-Disposition', `attachment; filename="${contentDispositionFilename(artifact.metadata.filename)}"`);
+  return c.body(Readable.toWeb(createReadStream(artifact.filePath)) as ReadableStream);
+});
+
+function contentDispositionFilename(filename: string): string {
+  return filename.replace(/["\r\n\\]/g, '_');
+}

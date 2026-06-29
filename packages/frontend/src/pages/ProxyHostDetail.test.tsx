@@ -16,17 +16,53 @@ vi.mock("./proxy-detail/SettingsTab", () => ({
   SettingsTab: ({
     accessListId,
     onAccessListChange,
+    healthCheckExpectedStatus,
+    setHealthCheckExpectedStatus,
   }: {
     accessListId: string;
     onAccessListChange: (value: string) => void;
+    healthCheckExpectedStatus: number | null;
+    setHealthCheckExpectedStatus: (value: number | null) => void;
   }) => (
     <div>
       <div data-testid="access-list-value">{accessListId || "__none__"}</div>
       <button type="button" onClick={() => onAccessListChange("")}>
         Clear access list
       </button>
+      <input
+        aria-label="Expected status"
+        value={healthCheckExpectedStatus ?? ""}
+        onChange={(event) =>
+          setHealthCheckExpectedStatus(event.target.value ? Number(event.target.value) : null)
+        }
+      />
     </div>
   ),
+}));
+
+vi.mock("@/components/proxy/CreateProxyHostDialog", () => ({
+  CreateProxyHostDialog: ({
+    open,
+    existingHost,
+    onSuccess,
+  }: {
+    open: boolean;
+    existingHost: ProxyHost;
+    onSuccess?: (hostId: string, host?: ProxyHost) => void;
+  }) =>
+    open ? (
+      <button
+        type="button"
+        onClick={() =>
+          onSuccess?.(existingHost.id, {
+            ...existingHost,
+            domainNames: ["renamed.example.com"],
+          })
+        }
+      >
+        Mock save renamed proxy host
+      </button>
+    ) : null,
 }));
 
 vi.mock("./proxy-detail/AdvancedTab", () => ({
@@ -61,7 +97,9 @@ vi.mock("./proxy-detail/LogsTab", () => ({
 }));
 
 vi.mock("./proxy-detail/RawConfigTab", () => ({
-  RawConfigTab: () => <div>Raw config tab</div>,
+  RawConfigTab: ({ renderedConfig }: { renderedConfig: string }) => (
+    <div>Raw config tab {renderedConfig}</div>
+  ),
 }));
 
 function makeProxyHost(overrides: Record<string, unknown> = {}) {
@@ -174,6 +212,32 @@ describe("ProxyHostDetail", () => {
     expect(screen.getByTestId("access-list-value")).toHaveTextContent("__none__");
   });
 
+  it("does not update settings when the user cannot edit the proxy host", async () => {
+    useAuthStore.setState({
+      user: makeUser({
+        scopes: ["proxy:view:host-1"],
+      }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
+    const updateSpy = vi.spyOn(api, "updateProxyHost").mockResolvedValue(makeProxyHost());
+
+    renderWithRouter(<ProxyHostDetail />, {
+      path: "/proxy-hosts/:id/:tab",
+      route: "/proxy-hosts/host-1/settings",
+      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+    });
+
+    expect(await screen.findByTestId("access-list-value")).toHaveTextContent("acl-1");
+    fireEvent.click(screen.getByRole("button", { name: "Clear access list" }));
+
+    await waitFor(() => {
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+    expect(screen.getByTestId("access-list-value")).toHaveTextContent("acl-1");
+  });
+
   it("clears advanced config with an explicit null and keeps the editor empty after resync", async () => {
     vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
     vi.spyOn(api, "updateProxyHost").mockResolvedValue(
@@ -200,5 +264,82 @@ describe("ProxyHostDetail", () => {
       });
     });
     expect(textarea.value).toBe("");
+  });
+
+  it("clears health check expected status with an explicit null", async () => {
+    vi.spyOn(api, "getProxyHost").mockResolvedValue(
+      makeProxyHost({
+        healthCheckEnabled: true,
+        healthCheckExpectedStatus: 204,
+      })
+    );
+    vi.spyOn(api, "updateProxyHost").mockResolvedValue(
+      makeProxyHost({
+        healthCheckEnabled: true,
+        healthCheckExpectedStatus: null,
+      })
+    );
+
+    renderWithRouter(<ProxyHostDetail />, {
+      path: "/proxy-hosts/:id/:tab",
+      route: "/proxy-hosts/host-1/settings",
+      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+    });
+
+    const input = (await screen.findByLabelText("Expected status")) as HTMLInputElement;
+    expect(input.value).toBe("204");
+
+    fireEvent.change(input, { target: { value: "" } });
+
+    await waitFor(() => {
+      expect(api.updateProxyHost).toHaveBeenCalledWith(
+        "host-1",
+        expect.objectContaining({
+          healthCheckExpectedStatus: null,
+        })
+      );
+    });
+    expect(input.value).toBe("");
+  });
+
+  it("keeps proxy host detail mounted after editing domains", async () => {
+    vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
+
+    renderWithRouter(<ProxyHostDetail />, {
+      path: "/proxy-hosts/:id/:tab",
+      route: "/proxy-hosts/host-1/details",
+      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+    });
+
+    expect(await screen.findByRole("heading", { name: "example.com" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mock save renamed proxy host" }));
+
+    expect(await screen.findByRole("heading", { name: "renamed.example.com" })).toBeInTheDocument();
+    expect(screen.queryByText("Proxy Hosts")).not.toBeInTheDocument();
+  });
+
+  it("loads rendered config when reloading directly on the raw tab", async () => {
+    useAuthStore.setState({
+      user: makeUser({
+        scopes: ["proxy:raw:read:host-1"],
+      }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
+    vi.spyOn(api, "getRenderedProxyConfig").mockResolvedValue({
+      rendered: "server { listen 80; }",
+    });
+
+    renderWithRouter(<ProxyHostDetail />, {
+      path: "/proxy-hosts/:id/:tab",
+      route: "/proxy-hosts/host-1/raw",
+      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+    });
+
+    expect(await screen.findByText(/Raw config tab server/)).toBeInTheDocument();
+    expect(api.getRenderedProxyConfig).toHaveBeenCalledWith("host-1");
   });
 });

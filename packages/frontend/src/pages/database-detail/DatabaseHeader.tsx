@@ -1,12 +1,5 @@
-import {
-  ArrowLeft,
-  EllipsisVertical,
-  KeyRound,
-  Pin,
-  RefreshCw,
-  Settings,
-  Trash2,
-} from "lucide-react";
+import { EllipsisVertical, KeyRound, Pin, RefreshCw, Settings, Trash2 } from "lucide-react";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,9 +67,7 @@ export function DatabaseHeader({
   return (
     <div className="flex shrink-0 items-center justify-between gap-3">
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+        <PageBackButton onClick={onBack} />
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <h1 className="truncate text-2xl font-bold">{database.name}</h1>

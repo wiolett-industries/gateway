@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { vi } from "vitest";
 import { api } from "@/services/api";
@@ -18,6 +19,7 @@ vi.mock("@/services/api", () => ({
   api: {
     getNode: vi.fn(),
     getNodeHealthHistory: vi.fn(),
+    updateNode: vi.fn(),
   },
 }));
 
@@ -62,6 +64,10 @@ vi.mock("./DockerNetworks", () => ({
 }));
 
 describe("AdminNodeDetail", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("keeps the node page mounted when switching URL-backed tabs", async () => {
     useAuthStore.setState({
       user: makeUser({ scopes: ["nodes:details", "nodes:config:view", "nodes:logs"] }),
@@ -94,5 +100,55 @@ describe("AdminNodeDetail", () => {
     expect(await screen.findByText("Node monitoring content")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Edge 1" })).toBeInTheDocument();
     await waitFor(() => expect(api.getNode).toHaveBeenCalledTimes(1));
+  });
+
+  it("saves node appearance name and predefined color", async () => {
+    useAuthStore.setState({
+      user: makeUser({ scopes: ["nodes:details", "nodes:rename"] }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    vi.mocked(api.getNode).mockResolvedValue({
+      ...makeNode({ id: "node-1", type: "docker", hostname: "docker-1", displayName: "Docker 1" }),
+      lastHealthReport: null,
+      lastStatsReport: null,
+      liveHealthReport: null,
+      liveStatsReport: null,
+    });
+    vi.mocked(api.getNodeHealthHistory).mockResolvedValue([]);
+    vi.mocked(api.updateNode).mockResolvedValue(
+      makeNode({
+        id: "node-1",
+        type: "docker",
+        hostname: "docker-1",
+        displayName: "Docker Blue",
+        appearanceColor: "blue",
+      })
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/nodes/node-1/details"]}>
+        <Routes>
+          <Route path="/nodes/:id/:tab?" element={<AdminNodeDetail />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("heading", { name: "Docker 1" })).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /appearance/i }));
+    const displayNameInput = screen.getByLabelText(/display name/i);
+    await user.clear(displayNameInput);
+    await user.type(displayNameInput, "Docker Blue");
+    await user.click(screen.getByRole("button", { name: "Blue color" }));
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(api.updateNode).toHaveBeenCalledWith("node-1", {
+        displayName: "Docker Blue",
+        appearanceColor: "blue",
+      })
+    );
   });
 });

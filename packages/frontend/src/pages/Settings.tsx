@@ -1,12 +1,41 @@
-import { Moon, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  Moon,
+  ServerCog,
+  SlidersHorizontal,
+  Sparkles,
+  Sun,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { confirm } from "@/components/common/ConfirmDialog";
+import { toast } from "sonner";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
+import { PanelShell } from "@/components/common/PanelShell";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AI_APPROVAL_MODE_META,
+  AI_APPROVAL_MODES,
+  type AIApprovalMode,
+} from "@/lib/ai-approval-mode";
+import {
+  confirmBypassEverythingMode,
+  updateAIApprovalModeOptimistically,
+} from "@/lib/ai-user-preferences";
 import { deriveAllowedResourceIdsByScope, scopeMatches } from "@/lib/scope-utils";
+import { getInitials } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -21,7 +50,7 @@ import { OAuthApplicationsSection } from "./settings/OAuthApplicationsSection";
 import { StatusPageSection } from "./settings/StatusPageSection";
 import { UpdateSection } from "./settings/UpdateSection";
 
-const SETTINGS_TABS = ["preferences", "gateway", "features"] as const;
+const SETTINGS_TABS = ["preferences", "gateway", "features", "ai"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 function isSettingsTab(value: string | null | undefined): value is SettingsTab {
@@ -39,12 +68,9 @@ export function Settings() {
     setShowUpdateNotifications,
     showSystemCertificates,
     setShowSystemCertificates,
-    aiBypassCreateApprovals,
-    setAIBypassCreateApprovals,
-    aiBypassEditApprovals,
-    setAIBypassEditApprovals,
-    aiBypassDeleteApprovals,
-    setAIBypassDeleteApprovals,
+    showAILiteModeCTA,
+    setShowAILiteModeCTA,
+    aiApprovalMode,
   } = useUIStore();
   const [nodesList, setNodesList] = useState<Node[]>([]);
   const [proxyHostsList, setProxyHostsList] = useState<ProxyHost[]>([]);
@@ -66,6 +92,17 @@ export function Settings() {
   const canManageLicense = hasScope("license:manage");
   const canViewStatusPage = hasScope("status-page:view");
   const userScopes = user?.scopes;
+  const canAccessGatewayTab =
+    canViewGatewaySettings || canManageRegistries || canUpdate || canViewLicense;
+  const canAccessFeaturesTab = canViewStatusPage || canViewHousekeeping;
+  const availableTabs = useMemo<SettingsTab[]>(() => {
+    const tabs: SettingsTab[] = ["preferences"];
+    if (canAccessGatewayTab) tabs.push("gateway");
+    if (canAccessFeaturesTab) tabs.push("features");
+    if (canConfigAI) tabs.push("ai");
+    return tabs;
+  }, [canAccessFeaturesTab, canAccessGatewayTab, canConfigAI]);
+  const currentTab = availableTabs.includes(activeTab) ? activeTab : availableTabs[0];
 
   useEffect(() => {
     api
@@ -165,6 +202,14 @@ export function Settings() {
     }
   }, [navigate, tabParam]);
 
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      navigate(availableTabs[0] === "preferences" ? "/settings" : `/settings/${availableTabs[0]}`, {
+        replace: true,
+      });
+    }
+  }, [activeTab, availableTabs, navigate]);
+
   const handleToggleSystemCertificates = (checked: boolean) => {
     setShowSystemCertificates(checked);
     api.invalidateCache("req:/api/cas");
@@ -177,6 +222,23 @@ export function Settings() {
     api.invalidateCache("dashboard:stats:");
   };
 
+  const handleAIApprovalModeChange = async (mode: AIApprovalMode) => {
+    if (mode === aiApprovalMode) return;
+    if (
+      mode === "bypass-everything" &&
+      aiApprovalMode !== "bypass-everything" &&
+      !(await confirmBypassEverythingMode())
+    ) {
+      return;
+    }
+
+    try {
+      await updateAIApprovalModeOptimistically(mode, aiApprovalMode);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update AI mode");
+    }
+  };
+
   const handleTabChange = (value: string) => {
     navigate(value === "preferences" ? "/settings" : `/settings/${value}`);
   };
@@ -184,46 +246,61 @@ export function Settings() {
   return (
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">Settings</h1>
-          <p className="text-sm text-muted-foreground">Account and application settings</p>
+        <div className="flex items-center gap-3">
+          <LiteModeBackButton />
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold">Settings</h1>
+            <p className="text-sm text-muted-foreground">Account and application settings</p>
+          </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col">
+        <Tabs value={currentTab} onValueChange={handleTabChange} className="flex flex-col">
           <TabsList className="shrink-0">
-            <TabsTrigger value="preferences">Preferences</TabsTrigger>
-            <TabsTrigger value="gateway">Gateway settings</TabsTrigger>
-            <TabsTrigger value="features">Features</TabsTrigger>
+            <TabsTrigger value="preferences" className="gap-1.5">
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Preferences
+            </TabsTrigger>
+            {canAccessGatewayTab && (
+              <TabsTrigger value="gateway" className="gap-1.5">
+                <ServerCog className="h-3.5 w-3.5" />
+                Gateway settings
+              </TabsTrigger>
+            )}
+            {canAccessFeaturesTab && (
+              <TabsTrigger value="features" className="gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" />
+                Features
+              </TabsTrigger>
+            )}
+            {canConfigAI && (
+              <TabsTrigger value="ai" className="gap-1.5">
+                <Bot className="h-3.5 w-3.5" />
+                AI Assistant
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="preferences" className="pb-0">
             <div className="space-y-4">
-              <div className="border border-border bg-card">
-                <div className="border-b border-border p-4">
-                  <h2 className="font-semibold">Profile</h2>
-                </div>
+              <PanelShell title="Profile">
                 {user && (
                   <div className="flex items-center gap-4 p-4">
-                    <div className="h-10 w-10 bg-muted flex items-center justify-center shrink-0">
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {(user.name || user.email).charAt(0).toUpperCase()}
-                      </span>
-                    </div>
+                    <Avatar className="h-10 w-10 shrink-0">
+                      <AvatarImage src={user.avatarUrl ?? undefined} />
+                      <AvatarFallback className="text-sm">
+                        {getInitials(user.name || user.email)}
+                      </AvatarFallback>
+                    </Avatar>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium">{user.name || "Not set"}</p>
                       <p className="text-xs text-muted-foreground">{user.email}</p>
                     </div>
-                    <Badge variant="secondary" className="text-xs">
-                      {user.groupName}
-                    </Badge>
+                    <Badge variant="secondary">{user.groupName}</Badge>
                   </div>
                 )}
-              </div>
+              </PanelShell>
 
-              <div className="border border-border bg-card">
-                <div className="border-b border-border p-4">
-                  <h2 className="font-semibold">Preferences</h2>
-                </div>
+              <PanelShell title="Preferences">
                 <div className="divide-y divide-border">
                   <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     <div>
@@ -263,6 +340,15 @@ export function Settings() {
                       onChange={setShowUpdateNotifications}
                     />
                   </div>
+                  <div className="flex items-center justify-between gap-4 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium">Lite mode shortcuts</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Show sidebar shortcuts for switching between Gateway and AI lite mode
+                      </p>
+                    </div>
+                    <Switch checked={showAILiteModeCTA} onChange={setShowAILiteModeCTA} />
+                  </div>
                   {canViewSystemCertificates && (
                     <div className="flex items-center justify-between gap-4 px-4 py-3">
                       <div>
@@ -278,31 +364,13 @@ export function Settings() {
                     </div>
                   )}
                   {canUseAI && (
-                    <>
-                      <AIBypassRow
-                        label="AI: bypass create approvals"
-                        description="Allow AI to create resources without confirmation"
-                        checked={aiBypassCreateApprovals}
-                        onChange={setAIBypassCreateApprovals}
-                      />
-                      <AIBypassRow
-                        label="AI: bypass edit approvals"
-                        description="Allow AI to modify resources without confirmation"
-                        checked={aiBypassEditApprovals}
-                        onChange={setAIBypassEditApprovals}
-                        dangerous
-                      />
-                      <AIBypassRow
-                        label="AI: bypass delete approvals"
-                        description="Allow AI to delete resources without confirmation"
-                        checked={aiBypassDeleteApprovals}
-                        onChange={setAIBypassDeleteApprovals}
-                        dangerous
-                      />
-                    </>
+                    <AIApprovalModeRow
+                      value={aiApprovalMode}
+                      onChange={handleAIApprovalModeChange}
+                    />
                   )}
                 </div>
-              </div>
+              </PanelShell>
 
               <ApiTokensSection
                 user={user}
@@ -321,45 +389,49 @@ export function Settings() {
             </div>
           </TabsContent>
 
-          <TabsContent value="gateway" className="pb-0">
-            <div className="space-y-4">
-              {canViewGatewaySettings && (
-                <AuthProvisioningSection canEdit={canEditGatewaySettings} />
-              )}
+          {canAccessGatewayTab && (
+            <TabsContent value="gateway" className="pb-0">
+              <div className="space-y-4">
+                {canViewGatewaySettings && (
+                  <AuthProvisioningSection canEdit={canEditGatewaySettings} />
+                )}
 
-              {canManageRegistries && <DockerRegistriesSection nodesList={nodesList} />}
+                {canManageRegistries && <DockerRegistriesSection nodesList={nodesList} />}
 
-              {canViewLicense ? (
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  <UpdateSection canUpdate={canUpdate} />
-                  <LicenseSection canManage={canManageLicense} />
-                </div>
-              ) : (
-                <UpdateSection canUpdate={canUpdate} />
-              )}
-            </div>
-          </TabsContent>
+                {canViewLicense ? (
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    {canUpdate && <UpdateSection canUpdate={canUpdate} />}
+                    <LicenseSection canManage={canManageLicense} />
+                  </div>
+                ) : (
+                  canUpdate && <UpdateSection canUpdate={canUpdate} />
+                )}
+              </div>
+            </TabsContent>
+          )}
 
-          <TabsContent value="features" className="pb-0">
-            <div className="space-y-4">
-              {canConfigAI && <AIConfigSection />}
+          {canAccessFeaturesTab && (
+            <TabsContent value="features" className="pb-0">
+              <div className="space-y-4">
+                {canViewStatusPage && <StatusPageSection nodesList={nodesList} />}
 
-              {canViewStatusPage && <StatusPageSection nodesList={nodesList} />}
+                {canViewHousekeeping && (
+                  <HousekeepingSection
+                    canRun={canRunHousekeeping}
+                    canConfigure={canConfigureHousekeeping}
+                  />
+                )}
+              </div>
+            </TabsContent>
+          )}
 
-              {canViewHousekeeping && (
-                <HousekeepingSection
-                  canRun={canRunHousekeeping}
-                  canConfigure={canConfigureHousekeeping}
-                />
-              )}
-
-              {!canConfigAI && !canViewStatusPage && !canViewHousekeeping && (
-                <div className="border border-border bg-card p-6 text-center text-sm text-muted-foreground">
-                  No feature settings available for your account.
-                </div>
-              )}
-            </div>
-          </TabsContent>
+          {canConfigAI && (
+            <TabsContent value="ai" className="pb-0">
+              <div className="space-y-4">
+                <AIConfigSection />
+              </div>
+            </TabsContent>
+          )}
         </Tabs>
 
         <p className="text-center text-xs text-muted-foreground">
@@ -378,40 +450,53 @@ export function Settings() {
   );
 }
 
-function AIBypassRow({
-  label,
-  description,
-  checked,
+function AIApprovalModeRow({
+  value,
   onChange,
-  dangerous,
 }: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  dangerous?: boolean;
+  value: AIApprovalMode;
+  onChange: (mode: AIApprovalMode) => void | Promise<void>;
 }) {
-  const handleChange = async (v: boolean) => {
-    if (v && dangerous) {
-      const ok = await confirm({
-        title: `Enable ${label.toLowerCase().replace("ai: ", "")}?`,
-        description:
-          "This may be dangerous. The AI assistant will perform these actions without asking for your confirmation.",
-        confirmLabel: "Enable",
-        variant: "destructive",
-      });
-      if (!ok) return;
-    }
-    onChange(v);
-  };
+  const current = AI_APPROVAL_MODE_META[value];
+  const CurrentIcon = current.icon;
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <div>
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">AI approval mode</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{current.description}</p>
       </div>
-      <Switch checked={checked} onChange={handleChange} />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="w-full justify-between sm:w-[250px]">
+            <span className="flex min-w-0 items-center gap-2">
+              <CurrentIcon className="h-4 w-4 shrink-0" />
+              <span className="truncate">{current.menuLabel}</span>
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-[min(22rem,calc(100vw-2rem))]">
+          {AI_APPROVAL_MODES.map((mode) => {
+            const item = AI_APPROVAL_MODE_META[mode];
+            const Icon = item.icon;
+            return (
+              <DropdownMenuItem
+                key={mode}
+                className="items-start gap-3"
+                onSelect={() => void onChange(mode)}
+              >
+                <Icon className="mt-0.5 h-4 w-4" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{item.menuLabel}</span>
+                  <span className="block text-xs text-muted-foreground">{item.description}</span>
+                </span>
+                {value === mode && <Check className="mt-0.5 h-4 w-4" />}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

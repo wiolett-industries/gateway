@@ -1,19 +1,20 @@
 import {
+  AlertTriangle,
   CheckCircle2,
   ExternalLink,
   Eye,
   MoreVertical,
   Pencil,
   Plus,
-  Save,
+  Settings as SettingsIcon,
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
@@ -33,7 +34,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -41,8 +41,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useRealtime } from "@/hooks/use-realtime";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -64,11 +64,12 @@ import {
   ServiceDialog,
   statusBadge,
 } from "./settings/StatusPageSection";
+import { StatusPageSettingsTab } from "./status-page/StatusPageSettingsTab";
 
 const TABS = [
-  { value: "services", label: "Exposed Services" },
-  { value: "incidents", label: "Incidents" },
-  { value: "settings", label: "Settings" },
+  { value: "services", label: "Exposed Services", icon: ShieldCheck },
+  { value: "incidents", label: "Incidents", icon: AlertTriangle },
+  { value: "settings", label: "Settings", icon: SettingsIcon },
 ] as const;
 
 const DEFAULT_CONFIG: StatusPageConfig = {
@@ -473,16 +474,19 @@ export function StatusPage() {
     <PageTransition>
       <div className="h-full space-y-4 overflow-y-auto p-6">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">Status Page</h1>
-              <Badge variant={config.enabled ? "success" : "secondary"}>
-                {config.enabled ? "Enabled" : "Disabled"}
-              </Badge>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <LiteModeBackButton />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold">Status Page</h1>
+                <Badge variant={config.enabled ? "success" : "secondary"}>
+                  {config.enabled ? "Enabled" : "Disabled"}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Manage public services and incident communication
+              </p>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Manage public services and incident communication
-            </p>
           </div>
           <ResponsiveHeaderActions actions={headerActions}>{headerAction}</ResponsiveHeaderActions>
         </div>
@@ -511,7 +515,8 @@ export function StatusPage() {
         >
           <TabsList className="shrink-0">
             {TABS.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>
+              <TabsTrigger key={tab.value} value={tab.value} className="gap-1.5">
+                <tab.icon className="h-3.5 w-3.5" />
                 {tab.label}
               </TabsTrigger>
             ))}
@@ -551,7 +556,7 @@ export function StatusPage() {
           </TabsContent>
 
           <TabsContent value="settings">
-            <SettingsTab
+            <StatusPageSettingsTab
               config={config}
               canManage={canManage}
               saving={savingConfig}
@@ -589,232 +594,6 @@ export function StatusPage() {
         />
       </div>
     </PageTransition>
-  );
-}
-
-function SettingsTab({
-  config,
-  canManage,
-  saving,
-  onConfigChange,
-  onSave,
-}: {
-  config: StatusPageConfig;
-  canManage: boolean;
-  saving: boolean;
-  onConfigChange: Dispatch<SetStateAction<StatusPageConfig>>;
-  onSave: (patch: Partial<StatusPageConfig>) => void;
-}) {
-  const disabled = !canManage || saving;
-  const setSeverity = (key: "autoDegradedSeverity" | "autoOutageSeverity") => (value: string) => {
-    const severity = value as StatusPageIncidentSeverity;
-    onConfigChange((prev) => ({ ...prev, [key]: severity }));
-  };
-
-  const saveSettings = () => {
-    onSave({
-      title: config.title,
-      description: config.description,
-      recentIncidentDays: config.recentIncidentDays,
-      publicIncidentLimit: config.publicIncidentLimit,
-      autoDegradedEnabled: config.autoDegradedEnabled,
-      autoOutageEnabled: config.autoOutageEnabled,
-      autoDegradedSeverity: config.autoDegradedSeverity,
-      autoOutageSeverity: config.autoOutageSeverity,
-      autoCreateThresholdSeconds: config.autoCreateThresholdSeconds,
-      autoResolveThresholdSeconds: config.autoResolveThresholdSeconds,
-    });
-  };
-
-  return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      <div className="border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
-          <div>
-            <h2 className="text-sm font-semibold">General Settings</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Configure public copy and recent incident visibility.
-            </p>
-          </div>
-          {canManage && (
-            <Button size="sm" onClick={saveSettings} disabled={saving}>
-              <Save className="h-4 w-4" />
-              Save
-            </Button>
-          )}
-        </div>
-        <div className="grid gap-4 p-4">
-          <Field label="Public title">
-            <Input
-              value={config.title}
-              disabled={disabled}
-              onChange={(event) =>
-                onConfigChange((prev) => ({ ...prev, title: event.target.value }))
-              }
-            />
-          </Field>
-          <Field label="Public description">
-            <textarea
-              value={config.description}
-              disabled={disabled}
-              onChange={(event) =>
-                onConfigChange((prev) => ({ ...prev, description: event.target.value }))
-              }
-              className="min-h-20 w-full border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-            />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Recent resolved incident days">
-              <Input
-                type="number"
-                min={1}
-                max={365}
-                value={config.recentIncidentDays}
-                disabled={disabled}
-                onChange={(event) =>
-                  onConfigChange((prev) => ({
-                    ...prev,
-                    recentIncidentDays: Number(event.target.value),
-                  }))
-                }
-              />
-            </Field>
-            <Field label="Public incident limit">
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                value={config.publicIncidentLimit}
-                disabled={disabled}
-                onChange={(event) =>
-                  onConfigChange((prev) => ({
-                    ...prev,
-                    publicIncidentLimit: Number(event.target.value),
-                  }))
-                }
-              />
-            </Field>
-          </div>
-        </div>
-      </div>
-
-      <div className="border border-border bg-card">
-        <div className="border-b border-border p-4">
-          <h2 className="text-sm font-semibold">Auto-Incident Settings</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Configure automatic incident creation and severity defaults.
-          </p>
-        </div>
-        <div className="divide-y divide-border">
-          <div className="flex items-center justify-between gap-4 px-4 py-3">
-            <div>
-              <p className="text-sm font-medium">Auto incidents for degraded services</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Create an automatic incident when an exposed service is degraded.
-              </p>
-            </div>
-            <Switch
-              checked={config.autoDegradedEnabled}
-              disabled={disabled}
-              onChange={(autoDegradedEnabled) =>
-                onConfigChange((prev) => ({ ...prev, autoDegradedEnabled }))
-              }
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4 px-4 py-3">
-            <div>
-              <p className="text-sm font-medium">Degraded incident severity</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Severity used for automatic degraded-service incidents.
-              </p>
-            </div>
-            <Select
-              value={config.autoDegradedSeverity}
-              disabled={disabled || !config.autoDegradedEnabled}
-              onValueChange={setSeverity("autoDegradedSeverity")}
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="info">Info</SelectItem>
-                <SelectItem value="warning">Warning</SelectItem>
-                <SelectItem value="critical">Critical</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center justify-between gap-4 px-4 py-3">
-            <div>
-              <p className="text-sm font-medium">Auto incidents for outages</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Create an automatic incident when an exposed service is offline.
-              </p>
-            </div>
-            <Switch
-              checked={config.autoOutageEnabled}
-              disabled={disabled}
-              onChange={(autoOutageEnabled) =>
-                onConfigChange((prev) => ({ ...prev, autoOutageEnabled }))
-              }
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4 px-4 py-3 xl:border-b xl:border-border">
-            <div>
-              <p className="text-sm font-medium">Outage incident severity</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Severity used for automatic outage incidents.
-              </p>
-            </div>
-            <Select
-              value={config.autoOutageSeverity}
-              disabled={disabled || !config.autoOutageEnabled}
-              onValueChange={setSeverity("autoOutageSeverity")}
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="info">Info</SelectItem>
-                <SelectItem value="warning">Warning</SelectItem>
-                <SelectItem value="critical">Critical</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-4 px-4 py-3 sm:grid-cols-2">
-            <Field label="Create incident after seconds">
-              <Input
-                type="number"
-                min={30}
-                max={86400}
-                value={config.autoCreateThresholdSeconds}
-                disabled={disabled}
-                onChange={(event) =>
-                  onConfigChange((prev) => ({
-                    ...prev,
-                    autoCreateThresholdSeconds: Number(event.target.value),
-                  }))
-                }
-              />
-            </Field>
-            <Field label="Resolve incident after seconds">
-              <Input
-                type="number"
-                min={30}
-                max={86400}
-                value={config.autoResolveThresholdSeconds}
-                disabled={disabled}
-                onChange={(event) =>
-                  onConfigChange((prev) => ({
-                    ...prev,
-                    autoResolveThresholdSeconds: Number(event.target.value),
-                  }))
-                }
-              />
-            </Field>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -966,23 +745,13 @@ function IncidentsTab({
             <div className="flex flex-wrap items-center justify-between gap-3 p-4">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <div className="flex min-h-7 flex-wrap items-center gap-2">
-                  <Badge
-                    variant={statusBadge(incident.severity) as never}
-                    className="min-h-7 px-2.5 py-1.5 text-[12px]"
-                  >
+                  <Badge variant={statusBadge(incident.severity) as never}>
                     {incident.severity}
                   </Badge>
-                  <Badge
-                    variant={incident.status === "active" ? "warning" : "secondary"}
-                    className="min-h-7 px-2.5 py-1.5 text-[12px]"
-                  >
+                  <Badge variant={incident.status === "active" ? "warning" : "secondary"}>
                     {incident.status}
                   </Badge>
-                  {incident.type === "automatic" && (
-                    <Badge variant="secondary" className="min-h-7 px-2.5 py-1.5 text-[12px]">
-                      AUTO
-                    </Badge>
-                  )}
+                  {incident.type === "automatic" && <Badge variant="secondary">AUTO</Badge>}
                   <h2 className="m-0 translate-y-px text-base font-medium leading-none">
                     {incident.title}
                   </h2>
@@ -1170,10 +939,10 @@ function IncidentUpdateDialog({
             </Select>
           </Field>
           <Field label="Message">
-            <textarea
+            <Textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
-              className="min-h-28 w-full border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="min-h-28"
             />
           </Field>
         </div>

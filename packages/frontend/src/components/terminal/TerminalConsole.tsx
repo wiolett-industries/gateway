@@ -319,7 +319,7 @@ export function TerminalConsole({
   if (isPopout) {
     return (
       <div className="relative flex-1 min-h-0">
-        <div className="absolute inset-0 bg-card rounded-md border border-border flex flex-col items-center justify-center gap-4">
+        <div className="absolute inset-0 bg-card flex flex-col items-center justify-center gap-4">
           <Terminal className="h-10 w-10 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">Console is open in a separate window</p>
           <Button variant="outline" size="sm" onClick={bringBack}>
@@ -332,10 +332,7 @@ export function TerminalConsole({
 
   return (
     <div className="relative flex-1 min-h-0">
-      <div
-        ref={termRef}
-        className="absolute inset-0 bg-card rounded-md overflow-hidden border border-border"
-      />
+      <div ref={termRef} className="absolute inset-0 bg-card overflow-hidden" />
       {popoutUrl && (
         <div className="absolute right-2.5 bottom-2.5 z-10">
           <Button variant="outline" size="sm" onClick={openPopout}>

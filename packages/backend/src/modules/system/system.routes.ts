@@ -6,6 +6,7 @@ import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { EventBusService } from '@/services/event-bus.service.js';
 import { UpdateService } from '@/services/update.service.js';
@@ -17,6 +18,7 @@ import {
   performSystemUpdateRoute,
   releaseNotesForVersionRoute,
   releaseNotesRoute,
+  systemConfigRoute,
   systemVersionRoute,
   updateDaemonRoute,
 } from './system.docs.js';
@@ -39,6 +41,18 @@ systemRoutes.openapi(systemVersionRoute, async (c) => {
   const updateService = container.resolve(UpdateService);
   const status = await updateService.getCachedStatus();
   return c.json({ data: status });
+});
+
+systemRoutes.openapi(systemConfigRoute, async (c) => {
+  const service = container.resolve(GeneralSettingsService);
+  const config = await service.getConfig();
+  return c.json({
+    data: {
+      fileUploadMaxBytes: config.fileUploadMaxBytes,
+      fileOpenMaxBytes: config.fileOpenMaxBytes,
+      features: config.features,
+    },
+  });
 });
 
 // POST /check-update — manual check against GitLab (admin only)

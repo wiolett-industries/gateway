@@ -2,17 +2,28 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { getResourceScopedIds, hasScope } from '@/lib/permissions.js';
+import { getResourceScopedIds, hasScope, hasScopeBase } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireScope, requireScopeForResource } from '@/modules/auth/auth.middleware.js';
+import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
 import type { AppEnv } from '@/types.js';
+import { DatabaseFolderService } from './database-folders.service.js';
 import { DatabaseMonitoringService } from './database-monitoring.service.js';
 import {
   addPostgresColumnRoute,
   browsePostgresRowsRoute,
   createDatabaseConnectionRoute,
+  createDatabaseFolderRoute,
   databaseMonitoringStreamRoute,
   deleteDatabaseConnectionRoute,
+  deleteDatabaseFolderRoute,
   deletePostgresColumnRoute,
   deletePostgresRowRoute,
   deleteRedisKeyRoute,
@@ -24,14 +35,20 @@ import {
   getRedisKeyRoute,
   insertPostgresRowRoute,
   listDatabaseConnectionsRoute,
+  listDatabaseFoldersRoute,
   listPostgresSchemasRoute,
   listPostgresTablesRoute,
+  moveDatabaseFolderRoute,
+  moveDatabasesToFolderRoute,
   postgresTableMetadataRoute,
+  reorderDatabaseFoldersRoute,
+  reorderDatabasesRoute,
   revealDatabaseCredentialsRoute,
   scanRedisKeysRoute,
   setRedisKeyRoute,
   testDatabaseConnectionRoute,
   updateDatabaseConnectionRoute,
+  updateDatabaseFolderRoute,
   updatePostgresColumnTypeRoute,
   updatePostgresRowRoute,
 } from './databases.docs.js';
@@ -75,16 +92,106 @@ function ensureAnyDatabaseScope(c: any, databaseId: string, scopeBases: string[]
 
 databaseRoutes.use('*', authMiddleware);
 
+databaseRoutes.openapi(listDatabaseFoldersRoute, async (c) => {
+  const service = container.resolve(DatabaseFolderService);
+  const scopes = c.get('effectiveScopes') ?? [];
+  const canManageFolders = hasScope(scopes, 'databases:folders:manage');
+  const hasGlobalAccess = hasScope(scopes, 'databases:view');
+  const allowedIds = getResourceScopedIds(scopes, 'databases:view');
+  if (!canManageFolders && !hasScopeBase(scopes, 'databases:view')) {
+    throw new AppError(403, 'FORBIDDEN', 'Missing required scope: databases:view or databases:folders:manage');
+  }
+  const data = await service.getFolderTree(
+    canManageFolders || hasGlobalAccess ? { includeAllFolders: canManageFolders } : { allowedResourceIds: allowedIds }
+  );
+  return c.json({ data });
+});
+
+databaseRoutes.openapi(
+  { ...createDatabaseFolderRoute, middleware: requireScope('databases:folders:manage') },
+  async (c) => {
+    const service = container.resolve(DatabaseFolderService);
+    const user = c.get('user')!;
+    const input = CreateResourceFolderSchema.parse(await c.req.json());
+    const data = await service.createFolder(input, user.id);
+    return c.json({ data }, 201);
+  }
+);
+
+databaseRoutes.openapi(
+  { ...reorderDatabaseFoldersRoute, middleware: requireScope('databases:folders:manage') },
+  async (c) => {
+    const service = container.resolve(DatabaseFolderService);
+    const input = ReorderResourceFoldersSchema.parse(await c.req.json());
+    await service.reorderFolders(input);
+    return c.json({ success: true });
+  }
+);
+
+databaseRoutes.openapi(
+  { ...moveDatabasesToFolderRoute, middleware: requireScope('databases:folders:manage') },
+  async (c) => {
+    const service = container.resolve(DatabaseFolderService);
+    const user = c.get('user')!;
+    const input = MoveResourcesToFolderSchema.parse(await c.req.json());
+    await service.moveResourcesToFolder(input, user.id);
+    return c.json({ success: true });
+  }
+);
+
+databaseRoutes.openapi(
+  { ...reorderDatabasesRoute, middleware: requireScope('databases:folders:manage') },
+  async (c) => {
+    const service = container.resolve(DatabaseFolderService);
+    const input = ReorderResourcesSchema.parse(await c.req.json());
+    await service.reorderResources(input);
+    return c.json({ success: true });
+  }
+);
+
+databaseRoutes.openapi(
+  { ...updateDatabaseFolderRoute, middleware: requireScope('databases:folders:manage') },
+  async (c) => {
+    const service = container.resolve(DatabaseFolderService);
+    const user = c.get('user')!;
+    const input = UpdateResourceFolderSchema.parse(await c.req.json());
+    const data = await service.updateFolder(c.req.param('id')!, input, user.id);
+    return c.json({ data });
+  }
+);
+
+databaseRoutes.openapi(
+  { ...moveDatabaseFolderRoute, middleware: requireScope('databases:folders:manage') },
+  async (c) => {
+    const service = container.resolve(DatabaseFolderService);
+    const user = c.get('user')!;
+    const input = MoveResourceFolderSchema.parse(await c.req.json());
+    const data = await service.moveFolder(c.req.param('id')!, input, user.id);
+    return c.json({ data });
+  }
+);
+
+databaseRoutes.openapi(
+  { ...deleteDatabaseFolderRoute, middleware: requireScope('databases:folders:manage') },
+  async (c) => {
+    const service = container.resolve(DatabaseFolderService);
+    const user = c.get('user')!;
+    await service.deleteFolder(c.req.param('id')!, user.id);
+    return c.json({ success: true });
+  }
+);
+
 databaseRoutes.openapi(listDatabaseConnectionsRoute, async (c) => {
   const service = container.resolve(DatabaseConnectionService);
   const scopes = c.get('effectiveScopes') ?? [];
   const hasGlobalAccess = hasScope(scopes, 'databases:view');
+  const canManageFolders = hasScope(scopes, 'databases:folders:manage');
   const allowedIds = getResourceScopedIds(scopes, 'databases:view');
-  if (!hasGlobalAccess && allowedIds.length === 0) {
+  if (!hasGlobalAccess && !canManageFolders && allowedIds.length === 0) {
     throw new AppError(403, 'FORBIDDEN', 'Missing required database access scope');
   }
   const query = DatabaseListQuerySchema.parse(c.req.query());
-  const data = await service.list(query, hasGlobalAccess ? undefined : { allowedIds });
+  const data = await service.list(query, hasGlobalAccess || canManageFolders ? undefined : { allowedIds });
   return c.json(data);
 });
 

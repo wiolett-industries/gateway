@@ -17,6 +17,7 @@ export const dockerContainerFolders = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
+    resourceType: varchar('resource_type', { length: 32 }).notNull().default('container'),
     parentId: uuid('parent_id').references((): AnyPgColumn => dockerContainerFolders.id, { onDelete: 'cascade' }),
     sortOrder: integer('sort_order').notNull().default(0),
     depth: integer('depth').notNull().default(0),
@@ -30,8 +31,12 @@ export const dockerContainerFolders = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    parentIdx: index('docker_container_folder_parent_idx').on(table.parentId),
-    sortIdx: index('docker_container_folder_sort_idx').on(table.parentId, table.sortOrder),
-    systemComposeIdx: uniqueIndex('docker_container_folder_compose_unique_idx').on(table.nodeId, table.composeProject),
+    parentIdx: index('docker_container_folder_parent_idx').on(table.resourceType, table.parentId),
+    sortIdx: index('docker_container_folder_sort_idx').on(table.resourceType, table.parentId, table.sortOrder),
+    systemComposeIdx: uniqueIndex('docker_container_folder_compose_unique_idx').on(
+      table.nodeId,
+      table.resourceType,
+      table.composeProject
+    ),
   })
 );

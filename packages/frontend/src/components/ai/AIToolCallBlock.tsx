@@ -1,9 +1,10 @@
 import {
   BookOpen,
   Box,
-  Check,
   ChevronDown,
   ChevronRight,
+  Clock,
+  Download,
   FileText,
   Globe,
   HelpCircle,
@@ -65,6 +66,11 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   web_search: Search,
   internal_documentation: BookOpen,
   ask_question: HelpCircle,
+  wait: Clock,
+  fetch: Globe,
+  download_artifact: Download,
+  read_artifact: FileText,
+  send_artifact: Download,
 };
 
 interface AIToolCallBlockProps {
@@ -76,62 +82,91 @@ interface AIToolCallBlockProps {
 
 export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlockProps) {
   const [expanded, setExpanded] = useState(false);
-  const Icon = CATEGORY_ICONS[toolCall.name] || ShieldCheck;
+  const safeToolCall =
+    toolCall && typeof toolCall === "object" ? toolCall : ({} as Partial<AIToolCall>);
+  const toolName =
+    typeof safeToolCall.name === "string" && safeToolCall.name ? safeToolCall.name : "unknown_tool";
+  const toolArguments =
+    safeToolCall.arguments &&
+    typeof safeToolCall.arguments === "object" &&
+    !Array.isArray(safeToolCall.arguments)
+      ? safeToolCall.arguments
+      : {};
+  const toolStatus = safeToolCall.status ?? "failed";
+  const Icon =
+    toolStatus === "running"
+      ? Loader2
+      : toolStatus === "failed"
+        ? X
+        : CATEGORY_ICONS[toolName] || ShieldCheck;
 
   const statusIcon = () => {
-    switch (toolCall.status) {
+    switch (toolStatus) {
       case "running":
-        return <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />;
+        return null;
       case "completed":
-        return <Check className="h-3.5 w-3.5 text-green-500" />;
+        return null;
       case "failed":
-        return <X className="h-3.5 w-3.5 text-destructive" />;
+        return null;
       case "awaiting_approval":
-        return <div className="h-3.5 w-3.5 bg-yellow-500 animate-pulse" />;
+        return null;
       case "rejected":
         return <X className="h-3.5 w-3.5 text-muted-foreground" />;
     }
   };
 
   const isSkipped =
-    toolCall.result &&
-    typeof toolCall.result === "object" &&
-    "skipped" in (toolCall.result as Record<string, unknown>);
+    safeToolCall.result &&
+    typeof safeToolCall.result === "object" &&
+    "skipped" in (safeToolCall.result as Record<string, unknown>);
   const toolLabel =
-    toolCall.name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) +
+    toolName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) +
     (isSkipped ? " (skipped)" : "");
 
-  const hasArgs = Object.keys(toolCall.arguments).length > 0;
-  const hasResult = toolCall.result !== undefined && !isSkipped;
-  const hasError = !!toolCall.error;
-  const hasContent = hasArgs || hasResult || hasError || toolCall.status === "rejected";
+  const hasArgs = Object.keys(toolArguments).length > 0;
+  const shouldHideResult = toolName === "send_artifact";
+  const hasResult = safeToolCall.result !== undefined && !isSkipped && !shouldHideResult;
+  const hasError = !!safeToolCall.error;
+  const hasContent = hasArgs || hasResult || hasError || toolStatus === "rejected";
+  const isExpandedChevronVisible = expanded || toolStatus === "running" || toolStatus === "failed";
 
   return (
-    <div className="border border-border bg-muted/30 text-xs my-1.5">
+    <div className="my-0.5 text-sm">
       <button
         onClick={hasContent ? () => setExpanded(!expanded) : undefined}
-        className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${hasContent ? "hover:bg-muted/50 cursor-pointer" : "cursor-default"}`}
+        className={`group flex items-center gap-2 py-0.5 text-left text-muted-foreground transition-colors ${hasContent ? "cursor-pointer hover:text-foreground focus-visible:text-foreground focus-visible:outline-none" : "cursor-default"}`}
       >
-        {hasContent ? (
-          expanded ? (
-            <ChevronDown className="h-3 w-3 shrink-0" />
+        <Icon
+          className={`h-3.5 w-3.5 shrink-0 ${
+            toolStatus === "running"
+              ? "animate-spin text-primary"
+              : toolStatus === "failed"
+                ? "text-destructive"
+                : "opacity-70"
+          }`}
+        />
+        <span className={`truncate ${isSkipped ? "text-muted-foreground" : ""}`}>{toolLabel}</span>
+        {hasContent &&
+          (expanded ? (
+            <ChevronDown className="-ml-1 h-3 w-3 shrink-0 opacity-70 transition-opacity" />
           ) : (
-            <ChevronRight className="h-3 w-3 shrink-0" />
-          )
-        ) : (
-          <span className="w-3 shrink-0" />
-        )}
-        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className={`flex-1 truncate font-medium ${isSkipped ? "text-muted-foreground" : ""}`}>
-          {toolLabel}
-        </span>
+            <ChevronRight
+              className={`-ml-1 h-3 w-3 shrink-0 transition-opacity ${
+                isExpandedChevronVisible
+                  ? "opacity-70"
+                  : "opacity-0 group-hover:opacity-70 group-focus-visible:opacity-70"
+              }`}
+            />
+          ))}
         {!isSkipped && statusIcon()}
       </button>
 
-      {toolCall.status === "awaiting_approval" && toolCall.name !== "ask_question" && (
-        <div className="flex items-center gap-2 px-2.5 py-2 border-t border-border bg-yellow-500/5">
+      {toolStatus === "awaiting_approval" && toolName !== "ask_question" && (
+        <div className="flex items-center gap-2 border border-border bg-yellow-500/5 px-2.5 py-2">
           <span className="flex-1 text-yellow-600 dark:text-yellow-400 text-xs">
-            This action requires your approval
+            {hasError
+              ? `Could not send decision: ${safeToolCall.error}`
+              : "This action requires your approval"}
           </span>
           <Button
             size="sm"
@@ -139,7 +174,7 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
             className="h-6 px-2 text-xs"
             onClick={(e) => {
               e.stopPropagation();
-              onReject?.(toolCall.id);
+              if (typeof safeToolCall.id === "string") onReject?.(safeToolCall.id);
             }}
           >
             Reject
@@ -149,7 +184,7 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
             className="h-6 px-2 text-xs"
             onClick={(e) => {
               e.stopPropagation();
-              onApprove?.(toolCall.id);
+              if (typeof safeToolCall.id === "string") onApprove?.(safeToolCall.id);
             }}
           >
             Approve
@@ -164,24 +199,28 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
       >
         <div className="overflow-hidden">
           {hasArgs && (
-            <pre className="text-[11px] bg-muted px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap border-t border-border">
-              {JSON.stringify(toolCall.arguments, null, 2)}
+            <pre className="overflow-x-auto whitespace-pre-wrap border border-border bg-muted px-2.5 py-1.5 text-[11px]">
+              {JSON.stringify(toolArguments, null, 2)}
             </pre>
           )}
           {hasResult && (
-            <pre className="text-[11px] bg-muted/50 px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap max-h-48 border-t border-border">
-              {typeof toolCall.result === "string"
-                ? toolCall.result
-                : JSON.stringify(toolCall.result, null, 2)}
+            <pre className="max-h-48 overflow-x-auto whitespace-pre-wrap border border-t-0 border-border bg-muted/50 px-2.5 py-1.5 text-[11px]">
+              {typeof safeToolCall.result === "string"
+                ? safeToolCall.result
+                : JSON.stringify(safeToolCall.result, null, 2)}
             </pre>
           )}
           {hasError && (
-            <p className="text-destructive px-2.5 py-1.5 border-t border-border">
-              {toolCall.error}
+            <p
+              className={`border border-border px-2.5 py-1.5 text-destructive ${
+                hasArgs || hasResult ? "border-t-0" : ""
+              }`}
+            >
+              {safeToolCall.error}
             </p>
           )}
-          {toolCall.status === "rejected" && (
-            <p className="text-muted-foreground italic px-2.5 py-1.5 border-t border-border">
+          {toolStatus === "rejected" && (
+            <p className="border border-border px-2.5 py-1.5 italic text-muted-foreground">
               Rejected by user
             </p>
           )}
@@ -199,7 +238,15 @@ export function QuestionBlock({
   onAnswer?: (id: string, answer: string) => void;
 }) {
   const [answerText, setAnswerText] = useState("");
-  const args = toolCall.arguments as {
+  const safeToolCall =
+    toolCall && typeof toolCall === "object" ? toolCall : ({} as Partial<AIToolCall>);
+  const args = (
+    safeToolCall.arguments &&
+    typeof safeToolCall.arguments === "object" &&
+    !Array.isArray(safeToolCall.arguments)
+      ? safeToolCall.arguments
+      : {}
+  ) as {
     question?: string;
     options?: Array<{ label: string; description?: string }>;
     allowFreeText?: boolean;
@@ -208,16 +255,19 @@ export function QuestionBlock({
   const options = args.options || [];
   const allowFreeText =
     args.allowFreeText !== undefined ? args.allowFreeText : options.length === 0;
-  const isAnswered = toolCall.status === "completed" || toolCall.status === "failed";
+  const status = safeToolCall.status ?? "failed";
+  const isAnswered = status === "completed" || status === "failed";
+  const isPending = status === "running";
 
   const handleSubmit = (text: string) => {
+    if (isPending) return;
     if (!text.trim()) return;
-    onAnswer?.(toolCall.id, text.trim());
+    if (typeof safeToolCall.id === "string") onAnswer?.(safeToolCall.id, text.trim());
   };
 
   // Already answered
   if (isAnswered) {
-    const answer = (toolCall.result as { answer?: string })?.answer;
+    const answer = (safeToolCall.result as { answer?: string })?.answer;
     return (
       <div className="border border-border bg-muted/30 my-1.5 px-3 py-2">
         <p className="text-sm text-muted-foreground">{question}</p>
@@ -227,7 +277,7 @@ export function QuestionBlock({
   }
 
   // Not yet active (e.g. still processing on backend)
-  if (toolCall.status !== "awaiting_approval" && toolCall.status !== "running") {
+  if (status !== "awaiting_approval" && status !== "running") {
     return (
       <div className="border border-border bg-muted/30 my-1.5 px-3 py-2">
         <p className="text-sm text-muted-foreground">{question}</p>
@@ -240,6 +290,17 @@ export function QuestionBlock({
     <div className="bg-primary/5">
       <div className="px-3 py-2 border-b border-border">
         <p className="text-sm font-medium">{question}</p>
+        {safeToolCall.error && (
+          <p className="mt-1 text-xs text-destructive">
+            Could not send answer: {safeToolCall.error}
+          </p>
+        )}
+        {isPending && (
+          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Sending answer...
+          </p>
+        )}
       </div>
 
       {options.length > 0 && (
@@ -248,7 +309,8 @@ export function QuestionBlock({
             <button
               key={i}
               onClick={() => handleSubmit(opt.label)}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-accent transition-colors border-b border-border last:border-b-0"
+              disabled={isPending}
+              className="w-full px-3 py-2 text-left text-sm hover:bg-accent transition-colors border-b border-border last:border-b-0 disabled:pointer-events-none disabled:opacity-60"
             >
               <span>{opt.label}</span>
               {opt.description && (
@@ -272,10 +334,11 @@ export function QuestionBlock({
               placeholder={options.length > 0 ? "Or type your answer..." : "Type your answer..."}
               className="w-full bg-background border border-input px-2.5 py-1.5 pr-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               autoFocus
+              disabled={isPending}
             />
             <button
               className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
-              disabled={!answerText.trim()}
+              disabled={isPending || !answerText.trim()}
               onClick={() => handleSubmit(answerText)}
             >
               <Send className="h-3.5 w-3.5" />

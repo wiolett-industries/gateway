@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { api } from "@/services/api";
 
@@ -28,15 +29,23 @@ export function AIToolAccessModal({
   const [tools, setTools] = useState<
     Record<
       string,
-      Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>
+      Array<{
+        name: string;
+        displayName: string;
+        displayDescription: string;
+        destructive: boolean;
+        requiredScope: string;
+      }>
     >
   >({});
   const [disabledTools, setDisabledTools] = useState<string[]>(initialDisabled);
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (open) {
       setDisabledTools(initialDisabled);
+      setSearch("");
       api
         .getAITools()
         .then(setTools)
@@ -63,6 +72,25 @@ export function AIToolAccessModal({
   const categories = Object.keys(tools);
   const totalTools = Object.values(tools).flat().length;
   const enabledCount = totalTools - disabledTools.length;
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleTools = Object.fromEntries(
+    categories
+      .map((category) => [
+        category,
+        tools[category].filter((tool) => {
+          if (!normalizedSearch) return true;
+          return [
+            category,
+            tool.displayName,
+            tool.displayDescription,
+            tool.name,
+            tool.requiredScope,
+          ].some((value) => value.toLowerCase().includes(normalizedSearch));
+        }),
+      ])
+      .filter(([, items]) => items.length > 0)
+  ) as typeof tools;
+  const visibleCategories = Object.keys(visibleTools);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -73,53 +101,72 @@ export function AIToolAccessModal({
         </DialogHeader>
 
         <div className="min-w-0 space-y-2">
-          <div className="max-h-96 overflow-y-auto overflow-x-hidden border border-border">
-            {categories.map((category, ci) => (
-              <div key={category}>
-                {ci > 0 && <Separator />}
-                <div className="px-3 py-1.5 bg-muted/50">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    {category}
-                  </p>
+          <div className="overflow-hidden border border-border">
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search tools or scopes..."
+              className="h-9 rounded-none border-0 border-b border-border text-sm focus-visible:ring-0"
+            />
+            <div className="max-h-[min(28rem,48dvh)] overflow-y-auto overflow-x-hidden overscroll-contain">
+              {visibleCategories.length === 0 ? (
+                <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  No tools found.
                 </div>
-                {tools[category].map((tool) => {
-                  const isEnabled = !disabledTools.includes(tool.name);
-                  return (
-                    <label
-                      key={tool.name}
-                      className="flex min-w-0 cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-accent"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isEnabled}
-                        onChange={() => toggleTool(tool.name)}
-                        className="form-checkbox shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="break-words text-sm">
-                          {tool.description}
-                          {tool.destructive && (
-                            <span className="ml-1 text-[10px] text-yellow-600 dark:text-yellow-400">
-                              (requires approval)
-                            </span>
-                          )}
-                        </p>
-                        <p className="break-all font-mono text-xs text-muted-foreground">
-                          {tool.name}
-                          <span className="ml-2 text-muted-foreground/60">
-                            min: {tool.requiredRole}
-                          </span>
-                        </p>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            ))}
+              ) : (
+                visibleCategories.map((category, ci) => (
+                  <div key={category}>
+                    {ci > 0 && <Separator />}
+                    <div className="px-3 py-1.5 bg-muted/50">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        {category}
+                      </p>
+                    </div>
+                    {visibleTools[category].map((tool) => {
+                      const isEnabled = !disabledTools.includes(tool.name);
+                      return (
+                        <label
+                          key={tool.name}
+                          className="flex min-w-0 cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-accent"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isEnabled}
+                            onChange={() => toggleTool(tool.name)}
+                            className="form-checkbox shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="break-words text-sm font-medium">
+                              {tool.displayName}
+                              {tool.destructive && (
+                                <span className="ml-1 text-[10px] text-yellow-600 dark:text-yellow-400">
+                                  (requires approval)
+                                </span>
+                              )}
+                            </p>
+                            <p className="mt-0.5 break-words text-xs text-muted-foreground">
+                              {tool.displayDescription}
+                            </p>
+                            <p className="break-all font-mono text-xs text-muted-foreground">
+                              {tool.name}
+                              <span className="ml-2 text-muted-foreground/60">
+                                scope: {tool.requiredScope}
+                              </span>
+                            </p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="border-t border-border px-3 py-2">
+              <p className="text-xs text-muted-foreground">
+                {enabledCount} of {totalTools} tool{totalTools !== 1 ? "s" : ""} enabled
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {enabledCount} of {totalTools} tool{totalTools !== 1 ? "s" : ""} enabled
-          </p>
         </div>
 
         <DialogFooter>

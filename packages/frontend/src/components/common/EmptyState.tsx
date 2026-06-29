@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface EmptyStateProps {
   message: string;
@@ -13,6 +13,8 @@ interface EmptyStateProps {
   hasActiveFilters?: boolean;
   /** Callback when clearing filters */
   onReset?: () => void;
+  /** Use inside an already bordered/card section. */
+  embedded?: boolean;
 }
 
 export function EmptyState({
@@ -22,9 +24,15 @@ export function EmptyState({
   onAction,
   hasActiveFilters,
   onReset,
+  embedded,
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center gap-2 py-16 border border-border bg-card">
+    <div
+      className={cn(
+        "flex flex-col items-center gap-2 bg-card",
+        embedded ? "py-8" : "py-16 border border-border"
+      )}
+    >
       <p className="text-sm text-muted-foreground">
         {message}
         {actionLabel && actionHref && (
@@ -43,12 +51,15 @@ export function EmptyState({
             </button>
           </>
         )}
+        {hasActiveFilters && onReset && (
+          <>
+            {" "}
+            <button type="button" onClick={onReset} className="text-foreground hover:underline">
+              Clear filters
+            </button>
+          </>
+        )}
       </p>
-      {hasActiveFilters && onReset && (
-        <Button variant="outline" size="sm" onClick={onReset}>
-          Clear filters
-        </Button>
-      )}
     </div>
   );
 }

@@ -3,10 +3,12 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +27,7 @@ import { useUIStore } from "@/stores/ui";
 import type { CA } from "@/types";
 
 type StatusFilter = "active" | "all";
+type CARow = { ca: CA; depth: number };
 
 const statusOptions: { value: StatusFilter; label: string }[] = [
   { value: "active", label: "Active only" },
@@ -85,6 +88,57 @@ export function CAs() {
   const canCreateIntermediate = hasScopedAccess("pki:ca:create:intermediate");
 
   const getChildren = (parentId: string) => visibleCAs.filter((ca) => ca.parentId === parentId);
+  const flattenCARows = (items: CA[], depth = 0): CARow[] =>
+    items.flatMap((ca) => [{ ca, depth }, ...flattenCARows(getChildren(ca.id), depth + 1)]);
+  const caRows = flattenCARows(topLevelCAs);
+  const caColumns: SimpleTableColumn<CARow>[] = [
+    {
+      id: "common-name",
+      header: "Common Name",
+      render: ({ ca, depth }) => (
+        <div className="flex items-center gap-1.5" style={{ paddingLeft: `${depth * 24}px` }}>
+          {depth > 0 && <CornerDownRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
+          <span className="text-sm font-medium">{ca.commonName}</span>
+          {ca.isSystem && <Badge variant="outline">System</Badge>}
+        </div>
+      ),
+    },
+    {
+      id: "algorithm",
+      header: "Algorithm",
+      render: ({ ca }) => <span className="text-sm text-muted-foreground">{ca.keyAlgorithm}</span>,
+    },
+    {
+      id: "certificates",
+      header: "Certificates",
+      render: ({ ca }) => <span className="text-sm text-muted-foreground">{ca.certCount}</span>,
+    },
+    {
+      id: "expires",
+      header: "Expires",
+      render: ({ ca }) => {
+        const expDays = daysUntil(ca.notAfter);
+        return (
+          <span
+            className={`text-sm ${
+              expDays <= 90 && expDays > 0
+                ? "text-amber-600 dark:text-amber-400"
+                : expDays <= 0
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+            }`}
+          >
+            {formatDate(ca.notAfter)}
+          </span>
+        );
+      },
+    },
+    {
+      id: "status",
+      header: "Status",
+      render: ({ ca }) => <StatusBadge status={ca.status} />,
+    },
+  ];
 
   const hasActiveFilters = statusFilter !== "active" || search !== "";
 
@@ -99,15 +153,18 @@ export function CAs() {
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
+      <div className="h-full overflow-y-auto p-6 space-y-3">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">Certificate Authorities</h1>
-            <p className="text-sm text-muted-foreground">
-              {activeCAs.length} active &middot; {totalCerts} certificate
-              {totalCerts !== 1 ? "s" : ""} issued
-            </p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">Certificate Authorities</h1>
+              <p className="text-sm text-muted-foreground">
+                {activeCAs.length} active &middot; {totalCerts} certificate
+                {totalCerts !== 1 ? "s" : ""} issued
+              </p>
+            </div>
           </div>
           <ResponsiveHeaderActions
             actions={[
@@ -196,34 +253,12 @@ export function CAs() {
         {/* Table */}
         {visibleCAs.length > 0 ? (
           <div className="border border-border bg-card">
-            <div className="overflow-x-auto -mb-px">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Common Name</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Algorithm</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Certificates</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Expires</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {topLevelCAs.map((rootCA) => {
-                    const children = getChildren(rootCA.id);
-                    return (
-                      <CARows
-                        key={rootCA.id}
-                        ca={rootCA}
-                        children={children}
-                        allCAs={visibleCAs}
-                        depth={0}
-                        onSelect={(id) => navigate(`/cas/${id}`)}
-                      />
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <SimpleTable
+              columns={caColumns}
+              rows={caRows}
+              getRowKey={({ ca }) => ca.id}
+              onRowClick={({ ca }) => navigate(`/cas/${ca.id}`)}
+            />
           </div>
         ) : (
           <EmptyState
@@ -249,67 +284,5 @@ export function CAs() {
         />
       </div>
     </PageTransition>
-  );
-}
-
-function CARows({
-  ca,
-  children,
-  allCAs,
-  depth,
-  onSelect,
-}: {
-  ca: CA;
-  children: CA[];
-  allCAs: CA[];
-  depth: number;
-  onSelect: (id: string) => void;
-}) {
-  const expDays = daysUntil(ca.notAfter);
-  const grandchildren = (parentId: string) => allCAs.filter((c) => c.parentId === parentId);
-
-  return (
-    <>
-      <tr
-        className="hover:bg-accent transition-colors cursor-pointer"
-        onClick={() => onSelect(ca.id)}
-      >
-        <td className="p-3">
-          <div className="flex items-center gap-1.5">
-            {depth > 0 && (
-              <CornerDownRight className="h-3 w-3 text-muted-foreground shrink-0 ml-0 mr-1" />
-            )}
-            <span className="text-sm font-medium">{ca.commonName}</span>
-            {ca.isSystem && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                System
-              </Badge>
-            )}
-          </div>
-        </td>
-        <td className="p-3 text-sm text-muted-foreground">{ca.keyAlgorithm}</td>
-        <td className="p-3 text-sm text-muted-foreground">{ca.certCount}</td>
-        <td className="p-3">
-          <span
-            className={`text-sm ${expDays <= 90 && expDays > 0 ? "text-amber-600 dark:text-amber-400" : expDays <= 0 ? "text-destructive" : "text-muted-foreground"}`}
-          >
-            {formatDate(ca.notAfter)}
-          </span>
-        </td>
-        <td className="p-3 align-middle">
-          <StatusBadge status={ca.status} />
-        </td>
-      </tr>
-      {children.map((child) => (
-        <CARows
-          key={child.id}
-          ca={child}
-          children={grandchildren(child.id)}
-          allCAs={allCAs}
-          depth={depth + 1}
-          onSelect={onSelect}
-        />
-      ))}
-    </>
   );
 }

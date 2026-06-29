@@ -239,6 +239,104 @@
       "when": 1781715300000,
       "tag": "0033_oauth_access_token_nullable_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1782057600000,
+      "tag": "0034_docker_resource_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1782129600000,
+      "tag": "0035_nodes_databases_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1782133200000,
+      "tag": "0036_node_appearance_color",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1782223200000,
+      "tag": "0037_logging_admin_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1782309600000,
+      "tag": "0038_domain_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1782396000000,
+      "tag": "0039_ai_conversations",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1782482400000,
+      "tag": "0040_sandbox_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1782568800000,
+      "tag": "0041_user_ai_approval_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1782655200000,
+      "tag": "0042_ai_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1782741600000,
+      "tag": "0043_ai_run_user_command_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1782828000000,
+      "tag": "0044_ai_runtime_shape_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1782914400000,
+      "tag": "0045_strong_trauma",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1783000800000,
+      "tag": "0046_lethal_nightmare",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1783004400000,
+      "tag": "0047_workable_zeigeist",
+      "breakpoints": true
     }
   ]
 }

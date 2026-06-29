@@ -11,6 +11,7 @@ import { AccessLists } from "@/pages/AccessLists";
 import { Administration } from "@/pages/Administration";
 import { AdminNodeDetail } from "@/pages/AdminNodeDetail";
 import { AdminNodes } from "@/pages/AdminNodes";
+import { AIArtifactPopout } from "@/pages/AIArtifactPopout";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { BlockedPage } from "@/pages/Blocked";
 import { CADetail } from "@/pages/CADetail";
@@ -27,6 +28,7 @@ import { DockerContainerDetail } from "@/pages/DockerContainerDetail";
 import { DockerDeploymentDetail } from "@/pages/DockerDeploymentDetail";
 import { DockerFilePopout } from "@/pages/DockerFilePopout";
 import { DockerLogsPopout } from "@/pages/DockerLogsPopout";
+import { DockerVolumeDetail } from "@/pages/DockerVolumeDetail";
 import { Domains } from "@/pages/Domains";
 import { Logging } from "@/pages/Logging";
 import { LoginPage } from "@/pages/Login";
@@ -46,6 +48,8 @@ import { ApiRequestError } from "@/services/api-base";
 import { eventStream } from "@/services/event-stream";
 import { APP_STATUS_STORAGE_KEY, useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
+import { useSystemConfigStore } from "@/stores/system-config";
+import { useUIStore } from "@/stores/ui";
 
 /** Helper to wrap a page element with a scope guard */
 function scoped(scope: string, element: React.ReactElement) {
@@ -141,6 +145,17 @@ function DockerDeploymentDetailGuard() {
   return <DockerDeploymentDetail />;
 }
 
+function DockerVolumeDetailGuard() {
+  const { nodeId } = useParams<{ nodeId: string }>();
+  const hasScope = useAuthStore((s) => s.hasScope);
+
+  if (!hasScope("docker:volumes:view") && !(nodeId && hasScope(`docker:volumes:view:${nodeId}`))) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <DockerVolumeDetail />;
+}
+
 function ProxyHostDetailGuard() {
   const { id } = useParams<{ id: string }>();
   const hasScope = useAuthStore((s) => s.hasScope);
@@ -165,8 +180,9 @@ function ProxyHostsPageGuard() {
 
 function CAsPageGuard() {
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
 
-  if (!hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")) {
+  if (!pkiEnabled || !hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")) {
     return <Navigate to="/" replace />;
   }
 
@@ -175,8 +191,9 @@ function CAsPageGuard() {
 
 function CADetailGuard() {
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
 
-  if (!hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")) {
+  if (!pkiEnabled || !hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate")) {
     return <Navigate to="/" replace />;
   }
 
@@ -186,12 +203,35 @@ function CADetailGuard() {
 function CertificateDetailGuard() {
   const { id } = useParams<{ id: string }>();
   const hasScope = useAuthStore((s) => s.hasScope);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
 
-  if (!hasScope("pki:cert:view") && !(id && hasScope(`pki:cert:view:${id}`))) {
+  if (!pkiEnabled || (!hasScope("pki:cert:view") && !(id && hasScope(`pki:cert:view:${id}`)))) {
     return <Navigate to="/" replace />;
   }
 
   return <CertificateDetail />;
+}
+
+function CertificatesPageGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
+
+  if (!pkiEnabled || !hasScope("pki:cert:view")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Certificates />;
+}
+
+function DomainsPageGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
+  const domainsEnabled = useSystemConfigStore((s) => s.config.features.domainsEnabled);
+
+  if (!domainsEnabled || !hasScope("domains:view")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Domains />;
 }
 
 function NginxTemplateEditGuard() {
@@ -220,6 +260,17 @@ function NodeDetailGuard() {
   return <AdminNodeDetail />;
 }
 
+function NodesPageGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
+  const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
+
+  if (!hasScopedAccess("nodes:details") && !hasScope("nodes:folders:manage")) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <AdminNodes />;
+}
+
 function DockerPageGuard() {
   const hasScope = useAuthStore((s) => s.hasScope);
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
@@ -240,9 +291,11 @@ function DockerPageGuard() {
 }
 
 function DatabasesPageGuard() {
+  const hasScope = useAuthStore((s) => s.hasScope);
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
 
-  const canAccessDatabases = hasScopedAccess("databases:view");
+  const canAccessDatabases =
+    hasScopedAccess("databases:view") || hasScope("databases:folders:manage");
 
   if (!canAccessDatabases) {
     return <Navigate to="/" replace />;
@@ -366,6 +419,7 @@ function RealtimeBridge() {
   const canListNodes = useAuthStore((s) => s.hasScopedAccess("nodes:details"));
   const setGatewayUpdatingActive = useAppStatusStore((s) => s.setGatewayUpdatingActive);
   const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
+  const hydrateAIApprovalMode = useUIStore((s) => s.hydrateAIApprovalMode);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -374,6 +428,20 @@ function RealtimeBridge() {
     }
     return;
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    void api
+      .getUserPreferences()
+      .then((preferences) => {
+        if (!cancelled) hydrateAIApprovalMode(preferences.aiApprovalMode);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateAIApprovalMode, user?.id]);
 
   // Live permission updates: refresh the local user (and thus scopes) whenever
   // the server says this user's permissions changed.
@@ -534,6 +602,30 @@ export default function App() {
               }
             />
             <Route
+              path="/docker/volume-file/:nodeId/:volumeName"
+              element={
+                <PopoutAuthGate>
+                  <DockerFilePopout />
+                </PopoutAuthGate>
+              }
+            />
+            <Route
+              path="/nodes/file/:nodeId"
+              element={
+                <PopoutAuthGate>
+                  <DockerFilePopout />
+                </PopoutAuthGate>
+              }
+            />
+            <Route
+              path="/ai/artifact/:artifactId"
+              element={
+                <PopoutAuthGate>
+                  <AIArtifactPopout />
+                </PopoutAuthGate>
+              }
+            />
+            <Route
               path="/docker/compose-logs/:nodeId/:project"
               element={
                 <PopoutAuthGate>
@@ -559,11 +651,11 @@ export default function App() {
                 path="/ssl-certificates"
                 element={scoped("ssl:cert:view", <SSLCertificates />)}
               />
-              <Route path="/domains" element={scoped("domains:view", <Domains />)} />
+              <Route path="/domains" element={<DomainsPageGuard />} />
               <Route path="/access-lists" element={scoped("acl:view", <AccessLists />)} />
               <Route path="/cas" element={<CAsPageGuard />} />
               <Route path="/cas/:id" element={<CADetailGuard />} />
-              <Route path="/certificates" element={scoped("pki:cert:view", <Certificates />)} />
+              <Route path="/certificates" element={<CertificatesPageGuard />} />
               <Route path="/certificates/:id" element={<CertificateDetailGuard />} />
               <Route path="/templates/:tab?" element={<TemplatesPage />} />
               <Route path="/administration" element={<AdministrationPageGuard />} />
@@ -589,7 +681,7 @@ export default function App() {
                 path="/admin/groups"
                 element={scoped("admin:groups", <Navigate to="/administration/groups" replace />)}
               />
-              <Route path="/nodes" element={scoped("nodes:details", <AdminNodes />)} />
+              <Route path="/nodes" element={<NodesPageGuard />} />
               <Route path="/nodes/:id/:tab?" element={<NodeDetailGuard />} />
               <Route path="/docker/:tab?" element={<DockerPageGuard />} />
               <Route
@@ -599,6 +691,10 @@ export default function App() {
               <Route
                 path="/docker/deployments/:nodeId/:deploymentId/:tab?"
                 element={<DockerDeploymentDetailGuard />}
+              />
+              <Route
+                path="/docker/volumes/:nodeId/:volumeName/:tab?"
+                element={<DockerVolumeDetailGuard />}
               />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

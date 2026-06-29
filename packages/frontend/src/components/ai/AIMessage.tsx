@@ -1,25 +1,140 @@
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  FileText,
+  Image as ImageIcon,
+  SquarePen,
+  TerminalSquare,
+} from "lucide-react";
+import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { AIMessage as AIMessageType } from "@/types/ai";
+import type { AIMessageAttachment, AIMessage as AIMessageType, AIToolCall } from "@/types/ai";
 import { AIToolCallBlock } from "./AIToolCallBlock";
 
 interface AIMessageProps {
   message: AIMessageType;
+  assistantMaxWidthClass?: string;
   onApprove?: (toolCallId: string) => void;
   onReject?: (toolCallId: string) => void;
   onAnswer?: (toolCallId: string, answer: string) => void;
+  onEditUserMessage?: (
+    messageId: string,
+    content: string,
+    attachments: AIMessageAttachment[]
+  ) => void;
 }
 
-export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageProps) {
+type ToolCallRenderItem =
+  | { type: "single"; toolCall: AIToolCall }
+  | { type: "finished-group"; toolCalls: AIToolCall[] };
+
+interface ArtifactAttachment {
+  artifactId?: string;
+  filename: string;
+  mediaType?: string;
+  sizeBytes: number;
+  sourcePath?: string;
+  downloadUrl: string;
+}
+
+type ArtifactPreviewKind = "image" | "text" | null;
+
+function isGroupableFinishedToolCall(toolCall: AIToolCall): boolean {
+  return toolCall.status === "completed" || toolCall.status === "failed";
+}
+
+function buildToolCallRenderItems(toolCalls: AIToolCall[]): ToolCallRenderItem[] {
+  const items: ToolCallRenderItem[] = [];
+  let finishedRun: AIToolCall[] = [];
+
+  const flushFinishedRun = () => {
+    if (finishedRun.length === 1) {
+      items.push({ type: "single", toolCall: finishedRun[0] });
+    } else if (finishedRun.length > 1) {
+      items.push({ type: "finished-group", toolCalls: finishedRun });
+    }
+    finishedRun = [];
+  };
+
+  for (const toolCall of toolCalls) {
+    if (isGroupableFinishedToolCall(toolCall)) {
+      finishedRun.push(toolCall);
+      continue;
+    }
+
+    flushFinishedRun();
+    items.push({ type: "single", toolCall });
+  }
+
+  flushFinishedRun();
+  return items;
+}
+
+export function AIMessage({
+  message,
+  assistantMaxWidthClass = "max-w-[95%]",
+  onApprove,
+  onReject,
+  onAnswer,
+  onEditUserMessage,
+}: AIMessageProps) {
+  const content = typeof message.content === "string" ? message.content : "";
+  const toolCallItems = message.toolCalls ? buildToolCallRenderItems(message.toolCalls) : [];
+  const artifacts = extractArtifactAttachments(message.toolCalls);
+  const showArtifacts = artifacts.length > 0 && !message.isStreaming;
+
+  if (message.conversationStatus) return null;
+
   if (message.role === "user") {
     // Strip hidden system instructions (e.g. from command palette "Ask AI")
-    const displayContent = message.content
+    const displayContent = content
       .replace(/<system-instruction>[\s\S]*?<\/system-instruction>\s*/g, "")
       .trim();
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] bg-primary px-3 py-2 text-sm text-primary-foreground break-words">
-          {displayContent}
+      <div className="group relative flex justify-end">
+        <div className="flex max-w-[85%] flex-col items-end gap-1.5">
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-1">
+              {message.attachments.map((attachment) => (
+                <button
+                  key={attachment.artifactId}
+                  type="button"
+                  className="h-16 w-16 overflow-hidden border border-border bg-muted transition-colors hover:border-foreground"
+                  onClick={() => openArtifactPreview(attachment)}
+                  aria-label={`Preview ${attachment.filename}`}
+                >
+                  <img
+                    src={attachment.downloadUrl}
+                    alt={attachment.filename}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+          {displayContent && (
+            <div className="break-words bg-primary px-3 py-2 text-sm text-primary-foreground">
+              {displayContent}
+            </div>
+          )}
+        </div>
+        <div className="absolute right-0 top-full z-10 mt-1 flex items-center gap-1 text-xs text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <span className="whitespace-nowrap">{formatMessageRelativeTime(message)}</span>
+          {onEditUserMessage && (
+            <button
+              type="button"
+              onClick={() =>
+                onEditUserMessage(message.id, displayContent, message.attachments ?? [])
+              }
+              className="flex h-5 w-5 items-center justify-center transition-colors hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
+              aria-label="Edit message"
+            >
+              <SquarePen className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
     );
@@ -30,21 +145,21 @@ export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageP
       <div className="flex justify-center">
         <div className="max-w-[90%] bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
           <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-            {message.content}
+            {content}
           </Markdown>
         </div>
       </div>
     );
   }
 
-  const hasContent = !!message.content;
+  const hasContent = !!content;
   const hasToolCalls = !!message.toolCalls?.length;
   const allToolsDone =
     hasToolCalls &&
     message.toolCalls!.every(
       (tc) => tc.status === "completed" || tc.status === "failed" || tc.status === "rejected"
     );
-  const hasError = message.content?.includes("**Error:**");
+  const hasError = content.includes("**Error:**");
 
   const hasActiveQuestion =
     hasToolCalls &&
@@ -63,29 +178,47 @@ export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageP
   const isRetrying = message.isStreaming && hasError;
 
   return (
-    <div className="max-w-[95%]">
+    <div className={assistantMaxWidthClass}>
       <div className="text-sm">
         {/* Tool calls rendered first */}
         {hasToolCalls && (
-          <div className="space-y-1">
-            {message.toolCalls!.map((tc) => (
-              <AIToolCallBlock
-                key={tc.id}
-                toolCall={tc}
-                onApprove={onApprove}
-                onReject={onReject}
-                onAnswer={onAnswer}
-              />
-            ))}
+          <div className="space-y-0.5">
+            {toolCallItems.map((item) =>
+              item.type === "single" ? (
+                <AIToolCallBlock
+                  key={item.toolCall.id}
+                  toolCall={item.toolCall}
+                  onApprove={onApprove}
+                  onReject={onReject}
+                  onAnswer={onAnswer}
+                />
+              ) : (
+                <FinishedToolCallsGroup
+                  key={item.toolCalls.map((tc) => tc.id).join(":")}
+                  toolCalls={item.toolCalls}
+                />
+              )
+            )}
           </div>
         )}
 
         {/* Text content */}
         {hasContent && (
-          <div className="prose prose-sm dark:prose-invert !max-w-none break-words prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-pre:my-0 prose-table:my-0 prose-code:text-xs prose-pre:text-xs prose-pre:rounded-none prose-code:rounded-none prose-code:break-all [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0">
+          <div className="prose prose-sm dark:prose-invert !max-w-none break-words prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-ol:my-2 prose-pre:my-2 prose-table:my-0 prose-code:text-xs prose-pre:text-xs prose-pre:rounded-none prose-code:rounded-none prose-code:before:content-none prose-code:after:content-none [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0">
             <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {message.content}
+              {content}
             </Markdown>
+          </div>
+        )}
+
+        {showArtifacts && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {artifacts.map((artifact) => (
+              <ArtifactAttachmentCard
+                key={artifact.artifactId ?? artifact.downloadUrl}
+                artifact={artifact}
+              />
+            ))}
           </div>
         )}
 
@@ -103,9 +236,281 @@ export function AIMessage({ message, onApprove, onReject, onAnswer }: AIMessageP
   );
 }
 
+function openArtifactPreview(attachment: AIMessageAttachment | ArtifactAttachment) {
+  const artifactId =
+    "artifactId" in attachment && typeof attachment.artifactId === "string"
+      ? attachment.artifactId
+      : undefined;
+  if (!artifactId) {
+    window.open(attachment.downloadUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+  const params = new URLSearchParams({ filename: attachment.filename });
+  if (attachment.mediaType) params.set("mediaType", attachment.mediaType);
+  const url = `/ai/artifact/${encodeURIComponent(artifactId)}?${params.toString()}`;
+  window.open(url, `artifact-${artifactId}`, "width=900,height=600,menubar=no,toolbar=no");
+}
+
+function formatMessageRelativeTime(message: AIMessageType): string {
+  const value = message.createdAt ?? timestampFromGeneratedId(message.id);
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const diffMs = Math.max(0, Date.now() - date.getTime());
+  const diffSeconds = Math.floor(diffMs / 1000);
+  if (diffSeconds < 60) return "now";
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays} d ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function timestampFromGeneratedId(id: string | undefined): string | null {
+  if (!id) return null;
+  const timestamp = Number(id.split("-")[0]);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+  return new Date(timestamp).toISOString();
+}
+
+function extractArtifactAttachments(toolCalls: AIToolCall[] | undefined): ArtifactAttachment[] {
+  if (!toolCalls?.length) return [];
+  const artifacts: ArtifactAttachment[] = [];
+  const seen = new Set<string>();
+
+  for (const toolCall of toolCalls) {
+    if (toolCall.name !== "send_artifact" || toolCall.status !== "completed") continue;
+    const artifact = parseArtifactAttachment(toolCall.result);
+    if (!artifact || seen.has(artifact.downloadUrl)) continue;
+    seen.add(artifact.downloadUrl);
+    artifacts.push(artifact);
+  }
+
+  return artifacts;
+}
+
+function parseArtifactAttachment(value: unknown): ArtifactAttachment | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.downloadUrl !== "string" ||
+    typeof record.filename !== "string" ||
+    typeof record.sizeBytes !== "number"
+  ) {
+    return null;
+  }
+  return {
+    artifactId: typeof record.artifactId === "string" ? record.artifactId : undefined,
+    filename: record.filename,
+    mediaType: typeof record.mediaType === "string" ? record.mediaType : undefined,
+    sizeBytes: record.sizeBytes,
+    sourcePath: typeof record.sourcePath === "string" ? record.sourcePath : undefined,
+    downloadUrl: record.downloadUrl,
+  };
+}
+
+function ArtifactAttachmentCard({ artifact }: { artifact: ArtifactAttachment }) {
+  const previewKind = getArtifactPreviewKind(artifact);
+  const canPreview = previewKind !== null;
+  const Icon = previewKind === "image" ? ImageIcon : FileText;
+
+  const openPreview = () => {
+    if (canPreview) {
+      openArtifactPreview(artifact);
+      return;
+    }
+    window.open(artifact.downloadUrl, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <div className="group relative aspect-square w-28 overflow-hidden border border-border bg-muted transition-colors hover:border-foreground hover:bg-muted/80">
+      <button
+        type="button"
+        onClick={openPreview}
+        className="relative flex h-full w-full min-w-0 items-center justify-center text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        aria-label={canPreview ? `Preview ${artifact.filename}` : `Open ${artifact.filename}`}
+      >
+        {previewKind === "image" ? (
+          <img
+            src={artifact.downloadUrl}
+            alt={artifact.filename}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <Icon className="h-6 w-6 text-muted-foreground" />
+        )}
+        <span className="absolute inset-x-0 bottom-0 grid min-w-0 grid-cols-[minmax(0,1fr)_0px] items-center gap-0 bg-gradient-to-t from-muted via-muted/90 to-transparent px-2 pb-1.5 pt-6 transition-[grid-template-columns,gap] duration-150 ease-out group-hover:grid-cols-[minmax(0,1fr)_24px] group-hover:gap-1">
+          <span className="min-w-0">
+            <span className="block truncate text-xs font-medium leading-snug text-foreground">
+              {artifact.filename}
+            </span>
+            <span className="block truncate text-[11px] leading-snug text-muted-foreground">
+              {[formatBytes(artifact.sizeBytes), artifact.mediaType].filter(Boolean).join(" · ")}
+            </span>
+          </span>
+          <a
+            href={artifact.downloadUrl}
+            download={artifact.filename}
+            onClick={(event) => event.stopPropagation()}
+            className="flex h-6 w-6 items-center justify-center overflow-hidden text-muted-foreground opacity-0 transition-opacity duration-150 hover:text-foreground group-hover:opacity-100"
+            aria-label={`Download ${artifact.filename}`}
+          >
+            <Download className="h-4.5 w-4.5" />
+          </a>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function getArtifactPreviewKind(artifact: ArtifactAttachment): ArtifactPreviewKind {
+  const mediaType = artifact.mediaType?.toLowerCase() ?? "";
+  const extension = artifact.filename.toLowerCase().split(".").pop() ?? "";
+
+  if (mediaType.startsWith("image/") || IMAGE_PREVIEW_EXTENSIONS.has(extension)) return "image";
+  if (
+    mediaType.startsWith("text/") ||
+    CODE_PREVIEW_MEDIA_TYPES.has(mediaType) ||
+    TEXT_PREVIEW_EXTENSIONS.has(extension)
+  ) {
+    return "text";
+  }
+
+  return null;
+}
+
+const IMAGE_PREVIEW_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "svg", "gif"]);
+const TEXT_PREVIEW_EXTENSIONS = new Set([
+  "txt",
+  "md",
+  "markdown",
+  "ini",
+  "conf",
+  "cfg",
+  "cnf",
+  "yaml",
+  "yml",
+  "json",
+  "jsonl",
+  "js",
+  "jsx",
+  "ts",
+  "tsx",
+  "mjs",
+  "cjs",
+  "css",
+  "scss",
+  "html",
+  "xml",
+  "sh",
+  "bash",
+  "zsh",
+  "py",
+  "rb",
+  "go",
+  "rs",
+  "java",
+  "kt",
+  "php",
+  "sql",
+  "log",
+  "env",
+  "pem",
+  "crt",
+  "csr",
+  "key",
+  "toml",
+  "dockerfile",
+]);
+const CODE_PREVIEW_MEDIA_TYPES = new Set([
+  "application/json",
+  "application/javascript",
+  "application/typescript",
+  "application/xml",
+  "application/x-yaml",
+  "application/yaml",
+]);
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function FinishedToolCallsGroup({ toolCalls }: { toolCalls: AIToolCall[] }) {
+  const groupKey = toolCalls.map((toolCall) => toolCall.id).join(":");
+  const [expanded, setExpanded] = useState(() => wasToolGroupExpanded(groupKey));
+  const failedCount = toolCalls.filter((toolCall) => toolCall.status === "failed").length;
+  const groupLabel =
+    failedCount > 0
+      ? `Called ${toolCalls.length} tools, ${failedCount} failed`
+      : `Called ${toolCalls.length} tools`;
+
+  return (
+    <div className="my-0.5 text-sm">
+      <button
+        type="button"
+        onClick={() => {
+          setExpanded((value) => {
+            const next = !value;
+            setToolGroupExpanded(groupKey, next);
+            return next;
+          });
+        }}
+        className="group flex cursor-pointer items-center gap-2 py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
+      >
+        <TerminalSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
+        <span className="truncate">{groupLabel}</span>
+        {expanded ? (
+          <ChevronDown className="-ml-1 h-3 w-3 shrink-0 opacity-70 transition-opacity" />
+        ) : (
+          <ChevronRight className="-ml-1 h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-70 group-focus-visible:opacity-70" />
+        )}
+      </button>
+      <div
+        className="grid transition-[grid-template-rows] duration-150 ease-out"
+        style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
+      >
+        <div className="overflow-hidden">
+          <div className="py-1">
+            {toolCalls.map((toolCall) => (
+              <AIToolCallBlock key={toolCall.id} toolCall={toolCall} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const expandedToolGroupKeys = new Set<string>();
+
+function wasToolGroupExpanded(groupKey: string): boolean {
+  if (expandedToolGroupKeys.has(groupKey)) return true;
+  for (const expandedKey of expandedToolGroupKeys) {
+    if (groupKey.startsWith(`${expandedKey}:`)) return true;
+  }
+  return false;
+}
+
+function setToolGroupExpanded(groupKey: string, expanded: boolean): void {
+  if (expanded) {
+    expandedToolGroupKeys.add(groupKey);
+  } else {
+    expandedToolGroupKeys.delete(groupKey);
+    for (const expandedKey of Array.from(expandedToolGroupKeys)) {
+      if (expandedKey.startsWith(`${groupKey}:`)) expandedToolGroupKeys.delete(expandedKey);
+    }
+  }
+}
+
 function ThinkingIndicator({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-1.5 py-1 text-xs text-muted-foreground">
+    <div className="flex items-center gap-1.5 py-1 text-sm text-muted-foreground">
       <span className="thinking-shimmer">{label}</span>
       <style>{`
         .thinking-shimmer {
@@ -134,7 +539,7 @@ function ThinkingIndicator({ label }: { label: string }) {
 
 const markdownComponents = {
   pre: ({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) => (
-    <pre className="overflow-x-auto bg-muted p-2" {...props}>
+    <pre className="overflow-x-auto border border-border bg-muted p-2 text-foreground" {...props}>
       {children}
     </pre>
   ),
@@ -142,19 +547,19 @@ const markdownComponents = {
     const isBlock = className?.includes("language-");
     if (isBlock) {
       return (
-        <code className={className} {...props}>
+        <code className={`${className} text-foreground`} {...props}>
           {children}
         </code>
       );
     }
     return (
-      <code className="bg-muted px-1 py-0.5 text-xs" {...props}>
+      <code className="break-words bg-muted px-1 py-0.5 text-xs text-foreground" {...props}>
         {children}
       </code>
     );
   },
   table: ({ children, ...props }: React.HTMLAttributes<HTMLTableElement>) => (
-    <div className="overflow-x-auto bg-muted/50 border border-border">
+    <div className="overflow-x-auto border border-border bg-background">
       <table
         className="min-w-full text-xs [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium [&_th]:text-muted-foreground [&_td]:px-2 [&_td]:py-1.5 [&_td]:border-t [&_td]:border-border"
         {...props}

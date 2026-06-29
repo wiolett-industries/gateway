@@ -14,8 +14,8 @@ COPY packages/backend/package.json packages/backend/
 COPY packages/frontend/package.json packages/frontend/
 COPY packages/status-page/package.json packages/status-page/
 
-# Install all dependencies
-RUN pnpm install --frozen-lockfile || pnpm install
+# Install all dependencies from the committed lockfile.
+RUN pnpm install --frozen-lockfile
 
 # ── Build frontend ──────────────────────────────────────────────────
 FROM base AS frontend-builder
@@ -48,9 +48,11 @@ RUN apk add --no-cache nginx && \
 
 WORKDIR /app
 
-# Copy backend package.json and install production deps only
-COPY --from=backend-builder /app/packages/backend/package.json ./
-RUN pnpm install --prod --no-frozen-lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/backend/package.json packages/backend/
+RUN pnpm --filter backend install --prod --frozen-lockfile
+
+WORKDIR /app/packages/backend
 
 # Copy backend build
 COPY --from=backend-builder /app/packages/backend/dist ./dist
@@ -58,7 +60,7 @@ COPY --from=backend-builder /app/packages/backend/src/db/migrations ./src/db/mig
 COPY config/update-trust/update-signing-public-key.pem ./dist/lib/update-signing-public-key.pem
 
 # Copy proto file (loaded at runtime by @grpc/proto-loader)
-COPY proto/ ./proto/
+COPY proto/ /app/proto/
 
 # Copy frontend build into public/ for the backend to serve
 COPY --from=frontend-builder /app/packages/frontend/dist ./public

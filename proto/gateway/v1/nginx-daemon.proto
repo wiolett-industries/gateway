@@ -90,6 +90,7 @@ message CommandResult {
   bool success = 2;
   string error = 3;
   string detail = 4;
+  bytes data = 5;
 }
 
 message HealthReport {
@@ -195,6 +196,7 @@ message GatewayCommand {
     NodeExecCommand node_exec = 27;
     UpdateDaemonCommand update_daemon = 28;
     DockerDeploymentCommand docker_deployment = 29;
+    NodeFileCommand node_file = 30;
   }
 }
 
@@ -204,6 +206,14 @@ message NodeExecCommand {
   bool tty = 3;
   int32 rows = 4;
   int32 cols = 5;
+}
+
+message NodeFileCommand {
+  string action = 1;
+  string path = 2;
+  int64 max_bytes = 3;
+  bytes content = 4;
+  string target_path = 5;
 }
 
 message ApplyConfigCommand {
@@ -323,6 +333,11 @@ message DockerVolumeCommand {
   string driver = 3;
   map<string, string> labels = 4;
   bool force = 5;
+  string path = 6;
+  int64 max_bytes = 7;
+  string new_name = 8;
+  bytes content = 9;
+  string target_path = 10;
 }
 
 message DockerNetworkCommand {
@@ -359,6 +374,7 @@ message DockerFileCommand {
   string path = 3;
   int64 max_bytes = 4;
   bytes content = 5;
+  string target_path = 6;
 }
 
 message DockerConfigPushCommand {

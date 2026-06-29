@@ -6,66 +6,20 @@ import type {
   ApiToken,
   AuditLogEntry,
   AuthProvisioningSettings,
-  CA,
-  Certificate,
-  CertificateStatus,
-  CertificateType,
-  ContainerCreateConfig,
   CreateAccessListRequest,
   CreateDomainRequest,
-  CreateIntermediateCARequest,
-  CreateProxyHostRequest,
-  CreateRootCARequest,
-  DaemonUpdateStatus,
   DashboardStats,
-  DatabaseConnection,
   DnsStatus,
-  DockerContainer,
-  DockerContainerFolder,
-  DockerDeployment,
-  DockerFolderTreeNode,
-  DockerHealthCheck,
-  DockerImage,
-  DockerImageCleanupSettings,
-  DockerNetwork,
-  DockerRegistry,
-  DockerSecret,
-  DockerTask,
-  DockerVolume,
-  DockerWebhook,
   Domain,
   DomainSearchResult,
   DomainWithUsage,
-  FileEntry,
-  FolderTreeNode,
-  GroupedProxyHostsResponse,
-  HealthStatus,
-  HousekeepingConfig,
-  HousekeepingRunResult,
-  HousekeepingStats,
-  IssueCertFromCSRRequest,
-  IssueCertificateRequest,
-  LicenseStatusView,
   LinkInternalCertRequest,
-  LoggingEnvironment,
-  LoggingFacets,
-  LoggingFeatureStatus,
-  LoggingIngestToken,
-  LoggingMetadata,
-  LoggingSchema,
-  LoggingSearchRequest,
-  LoggingSearchResult,
   NginxTemplate,
-  OAuthAuthorization,
-  OAuthConsentPreview,
   PaginatedResponse,
   PermissionGroup,
-  PostgresTableMetadata,
   ProxyHost,
   ProxyHostFolder,
-  ProxyHostType,
   PublicStatusPageDto,
-  RedisKeyRecord,
   RequestACMECertRequest,
   SSLCertificate,
   SSLCertificateOperationResult,
@@ -78,46 +32,39 @@ import type {
   StatusPageProxyTemplateOption,
   StatusPageServiceItem,
   StatusPageSourceType,
-  Template,
   TemplateVariableDef,
   UpdateDomainRequest,
-  UpdateStatus,
   UploadCertRequest,
   User,
 } from "@/types";
+import type {
+  AIMessage,
+  AIMessageAttachment,
+  AIRunStatus,
+  AISandboxArtifact,
+  AISandboxJob,
+  AISandboxOutput,
+  AISandboxStatus,
+  PageContext,
+} from "@/types/ai";
+import type { FileEntry } from "@/types/docker";
+import { withAuthApi } from "./api-auth";
 import { API_BASE, ApiClientBase } from "./api-base";
+import { withDatabaseApi } from "./api-databases";
+import { withDockerApi } from "./api-docker";
+import { withLoggingApi } from "./api-logging";
+import { withNotificationApi } from "./api-notifications";
+import { withPkiApi } from "./api-pki";
+import { withProxyApi } from "./api-proxy";
+import { withSystemApi } from "./api-system";
 
-const AUTH_BASE = "/auth";
-
-type DockerListEnvelope<T> = {
-  data: T[];
-  total?: number;
-  limit?: number;
-  truncated?: boolean;
-};
-
-type DockerListQuery = {
-  search?: string;
-};
-
-function dockerListQuery(params?: DockerListQuery & { noCache?: boolean }) {
-  const query = new URLSearchParams();
-  if (params?.search?.trim()) query.set("search", params.search.trim());
-  if (params?.noCache) query.set("_t", String(Date.now()));
-  const qs = query.toString();
-  return qs ? `?${qs}` : "";
-}
-
-function withDockerListMeta<T extends object>(response: DockerListEnvelope<T>): T[] {
-  return (response.data ?? []).map((item) => ({
-    ...item,
-    _listTotal: response.total ?? response.data.length,
-    _listLimit: response.limit ?? response.data.length,
-    _listTruncated: response.truncated === true,
-  })) as T[];
-}
-
-class ApiClient extends ApiClientBase {
+class ApiClient extends withLoggingApi(
+  withNotificationApi(
+    withAuthApi(
+      withSystemApi(withDockerApi(withDatabaseApi(withPkiApi(withProxyApi(ApiClientBase)))))
+    )
+  )
+) {
   /**
    * Prefetch key data for all pages in background.
    * Called once after auth to prime the cache.
@@ -185,243 +132,6 @@ class ApiClient extends ApiClientBase {
       quiet(this.getAuditLog({ limit: 25 }).then((d) => this.setCache("audit:list", d)));
       quiet(this.listUsers().then((d) => this.setCache("admin:users", d)));
     }
-  }
-
-  // ── Auth ──────────────────────────────────────────────────────────
-
-  async getCurrentUser(): Promise<User> {
-    return this.request<User>("/auth/me");
-  }
-
-  async logout(): Promise<void> {
-    try {
-      await this.request<void>("/auth/logout", { method: "POST" });
-    } finally {
-      this.clearCsrfToken();
-      useAuthStore.getState().logout();
-    }
-  }
-
-  getLoginUrl(): string {
-    return `${AUTH_BASE}/login`;
-  }
-
-  async getOAuthConsent(requestId: string): Promise<OAuthConsentPreview> {
-    return this.request<OAuthConsentPreview>(`/api/oauth/consent/${encodeURIComponent(requestId)}`);
-  }
-
-  async approveOAuthConsent(requestId: string, scopes: string[]): Promise<{ redirectUrl: string }> {
-    return this.request<{ redirectUrl: string }>(
-      `/api/oauth/consent/${encodeURIComponent(requestId)}/approve`,
-      {
-        method: "POST",
-        body: JSON.stringify({ scopes }),
-      }
-    );
-  }
-
-  async denyOAuthConsent(requestId: string): Promise<{ redirectUrl: string }> {
-    return this.request<{ redirectUrl: string }>(
-      `/api/oauth/consent/${encodeURIComponent(requestId)}/deny`,
-      {
-        method: "POST",
-        body: JSON.stringify({}),
-      }
-    );
-  }
-
-  async listOAuthAuthorizations(): Promise<OAuthAuthorization[]> {
-    return this.unwrapData(
-      this.request<{ data: OAuthAuthorization[] }>("/api/oauth/authorizations")
-    );
-  }
-
-  async revokeOAuthAuthorization(clientId: string, resource: string): Promise<void> {
-    await this.request<void>(
-      `/api/oauth/authorizations/${encodeURIComponent(clientId)}?resource=${encodeURIComponent(resource)}`,
-      {
-        method: "DELETE",
-      }
-    );
-  }
-
-  async updateOAuthAuthorization(
-    clientId: string,
-    resource: string,
-    scopes: string[]
-  ): Promise<OAuthAuthorization> {
-    return this.unwrapData(
-      this.request<{ data: OAuthAuthorization }>(
-        `/api/oauth/authorizations/${encodeURIComponent(clientId)}?resource=${encodeURIComponent(resource)}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ scopes }),
-        }
-      )
-    );
-  }
-
-  // ── Certificate Authorities ───────────────────────────────────────
-
-  async listCAs(params?: { showSystem?: boolean }): Promise<CA[]> {
-    return this.request<CA[]>(`/cas${params?.showSystem ? "?showSystem=true" : ""}`);
-  }
-
-  async getCA(id: string, params?: { showSystem?: boolean }): Promise<CA> {
-    return this.request<CA>(`/cas/${id}${params?.showSystem ? "?showSystem=true" : ""}`);
-  }
-
-  async createRootCA(data: CreateRootCARequest): Promise<CA> {
-    return this.request<CA>("/cas", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  async createIntermediateCA(parentId: string, data: CreateIntermediateCARequest): Promise<CA> {
-    return this.request<CA>(`/cas/${parentId}/intermediate`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateCA(
-    id: string,
-    data: {
-      crlDistributionUrl?: string | null;
-      caIssuersUrl?: string | null;
-      maxValidityDays?: number;
-    }
-  ): Promise<CA> {
-    return this.request<CA>(`/cas/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    });
-  }
-
-  async revokeCA(id: string, reason: string): Promise<void> {
-    return this.request<void>(`/cas/${id}/revoke`, {
-      method: "POST",
-      body: JSON.stringify({ reason }),
-    });
-  }
-
-  async deleteCA(id: string): Promise<void> {
-    return this.request<void>(`/cas/${id}`, { method: "DELETE" });
-  }
-
-  async exportCAKey(id: string, passphrase: string): Promise<Blob> {
-    const response = await fetch(`${API_BASE}/cas/${id}/export-key`, {
-      method: "POST",
-      headers: this.getHeaders(),
-      body: JSON.stringify({ passphrase }),
-    });
-    if (!response.ok) throw new Error("Failed to export CA key");
-    return response.blob();
-  }
-
-  // ── Certificates ──────────────────────────────────────────────────
-
-  async listCertificates(params?: {
-    page?: number;
-    limit?: number;
-    search?: string;
-    status?: CertificateStatus;
-    type?: CertificateType;
-    caId?: string;
-    sortBy?: string;
-    sortOrder?: string;
-    showSystem?: boolean;
-  }): Promise<PaginatedResponse<Certificate>> {
-    const searchParams = new URLSearchParams();
-    if (params?.page) searchParams.set("page", params.page.toString());
-    if (params?.limit) searchParams.set("limit", params.limit.toString());
-    if (params?.search) searchParams.set("search", params.search);
-    if (params?.status) searchParams.set("status", params.status);
-    if (params?.type) searchParams.set("type", params.type);
-    if (params?.caId) searchParams.set("caId", params.caId);
-    if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
-    if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
-    if (params?.showSystem) searchParams.set("showSystem", "true");
-    searchParams.set("meta", "v2");
-
-    const query = searchParams.toString();
-    return this.request<PaginatedResponse<Certificate>>(`/certificates${query ? `?${query}` : ""}`);
-  }
-
-  async getCertificate(id: string): Promise<Certificate> {
-    return this.request<Certificate>(`/certificates/${id}`);
-  }
-
-  async issueCertificate(
-    data: IssueCertificateRequest
-  ): Promise<{ certificate: Certificate; privateKeyPem: string }> {
-    return this.request(`/certificates`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  async issueCertificateFromCSR(data: IssueCertFromCSRRequest): Promise<Certificate> {
-    return this.request<Certificate>(`/certificates/from-csr`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  async revokeCertificate(id: string, reason: string): Promise<void> {
-    return this.request<void>(`/certificates/${id}/revoke`, {
-      method: "POST",
-      body: JSON.stringify({ reason }),
-    });
-  }
-
-  async exportCertificate(id: string, format: string, passphrase?: string): Promise<Blob> {
-    const body: Record<string, string> = { format };
-    if (passphrase) body.passphrase = passphrase;
-    const response = await fetch(`${API_BASE}/certificates/${id}/export`, {
-      method: "POST",
-      headers: this.getHeaders(),
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) throw new Error("Failed to export certificate");
-    return response.blob();
-  }
-
-  async downloadChain(id: string): Promise<Blob> {
-    const response = await fetch(`${API_BASE}/certificates/${id}/chain`, {
-      headers: this.getHeaders(),
-    });
-    if (!response.ok) throw new Error("Failed to download chain");
-    return response.blob();
-  }
-
-  // ── Templates ─────────────────────────────────────────────────────
-
-  async listTemplates(): Promise<Template[]> {
-    return this.request<Template[]>("/templates");
-  }
-
-  async getTemplate(id: string): Promise<Template> {
-    return this.request<Template>(`/templates/${id}`);
-  }
-
-  async createTemplate(data: Partial<Template>): Promise<Template> {
-    return this.request<Template>("/templates", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateTemplate(id: string, data: Partial<Template>): Promise<Template> {
-    return this.request<Template>(`/templates/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteTemplate(id: string): Promise<void> {
-    return this.request<void>(`/templates/${id}`, { method: "DELETE" });
   }
 
   // ── Audit ─────────────────────────────────────────────────────────
@@ -546,6 +256,61 @@ class ApiClient extends ApiClientBase {
     await this.request(`/admin/users/${userId}`, { method: "DELETE" });
   }
 
+  async listAdminUserFolders(): Promise<import("@/types").ResourceFolderTreeNode[]> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolderTreeNode[] }>("/admin/user-folders")
+    );
+  }
+
+  async createAdminUserFolder(data: {
+    name: string;
+    parentId?: string;
+  }): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>("/admin/user-folders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateAdminUserFolder(
+    id: string,
+    data: { name: string }
+  ): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>(`/admin/user-folders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteAdminUserFolder(id: string): Promise<void> {
+    await this.request(`/admin/user-folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderAdminUserFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/admin/user-folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async moveAdminUsersToFolder(ids: string[], folderId: string | null): Promise<void> {
+    await this.request("/admin/user-folders/move-users", {
+      method: "POST",
+      body: JSON.stringify({ ids, folderId }),
+    });
+  }
+
+  async reorderAdminUsers(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/admin/user-folders/reorder-users", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
   async getAuthProvisioningSettings(): Promise<AuthProvisioningSettings> {
     return this.request<AuthProvisioningSettings>("/admin/auth-settings");
   }
@@ -556,6 +321,7 @@ class ApiClient extends ApiClientBase {
     oidcRequireVerifiedEmail?: boolean;
     oauthExtendedCallbackCompatibility?: boolean;
     mcpServerEnabled?: boolean;
+    generalSettings?: Partial<AuthProvisioningSettings["generalSettings"]>;
     networkSecurity?: Partial<AuthProvisioningSettings["networkSecurity"]>;
     outboundWebhookPolicy?: Partial<AuthProvisioningSettings["outboundWebhookPolicy"]>;
   }): Promise<AuthProvisioningSettings> {
@@ -606,6 +372,61 @@ class ApiClient extends ApiClientBase {
     await this.request(`/admin/groups/${id}`, { method: "DELETE" });
   }
 
+  async listAdminGroupFolders(): Promise<import("@/types").ResourceFolderTreeNode[]> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolderTreeNode[] }>("/admin/groups/folders")
+    );
+  }
+
+  async createAdminGroupFolder(data: {
+    name: string;
+    parentId?: string;
+  }): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>("/admin/groups/folders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateAdminGroupFolder(
+    id: string,
+    data: { name: string }
+  ): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>(`/admin/groups/folders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteAdminGroupFolder(id: string): Promise<void> {
+    await this.request(`/admin/groups/folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderAdminGroupFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/admin/groups/folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async moveAdminGroupsToFolder(ids: string[], folderId: string | null): Promise<void> {
+    await this.request("/admin/groups/folders/move-groups", {
+      method: "POST",
+      body: JSON.stringify({ ids, folderId }),
+    });
+  }
+
+  async reorderAdminGroups(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/admin/groups/folders/reorder-groups", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
   // ── Nodes ──
 
   async listNodes(params?: {
@@ -652,7 +473,13 @@ class ApiClient extends ApiClientBase {
     );
   }
 
-  async updateNode(id: string, data: { displayName?: string }): Promise<import("@/types").Node> {
+  async updateNode(
+    id: string,
+    data: {
+      displayName?: string | null;
+      appearanceColor?: import("@/types").NodeAppearanceColor | null;
+    }
+  ): Promise<import("@/types").Node> {
     return this.unwrapData(
       this.request(`/nodes/${id}`, {
         method: "PATCH",
@@ -675,6 +502,61 @@ class ApiClient extends ApiClientBase {
 
   async deleteNode(id: string): Promise<void> {
     await this.request(`/nodes/${id}`, { method: "DELETE" });
+  }
+
+  async listNodeFolders(): Promise<import("@/types").ResourceFolderTreeNode[]> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolderTreeNode[] }>("/nodes/folders")
+    );
+  }
+
+  async createNodeFolder(data: {
+    name: string;
+    parentId?: string;
+  }): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>("/nodes/folders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateNodeFolder(
+    id: string,
+    data: { name: string }
+  ): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>(`/nodes/folders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteNodeFolder(id: string): Promise<void> {
+    await this.request(`/nodes/folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderNodeFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/nodes/folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async moveNodesToFolder(ids: string[], folderId: string | null): Promise<void> {
+    await this.request("/nodes/folders/move-nodes", {
+      method: "POST",
+      body: JSON.stringify({ ids, folderId }),
+    });
+  }
+
+  async reorderNodes(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/nodes/folders/reorder-nodes", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
   }
 
   createNodeMonitoringStream(nodeId: string): EventSource {
@@ -714,6 +596,137 @@ class ApiClient extends ApiClientBase {
     );
   }
 
+  async listNodeDir(nodeId: string, path: string): Promise<FileEntry[]> {
+    const response = await this.request<{
+      data: FileEntry[];
+      total?: number;
+      limit?: number;
+      truncated?: boolean;
+    }>(`/nodes/${nodeId}/files?path=${encodeURIComponent(path)}`);
+    const data = response.data;
+    if (Array.isArray(data)) {
+      Object.defineProperty(data, "_listMeta", {
+        value: {
+          total: response.total,
+          limit: response.limit,
+          truncated: response.truncated,
+        },
+        enumerable: false,
+      });
+    }
+    return data;
+  }
+
+  async readNodeFile(nodeId: string, path: string): Promise<ArrayBuffer> {
+    return this.requestBinary(`/nodes/${nodeId}/files/read?path=${encodeURIComponent(path)}`);
+  }
+
+  async writeNodeFile(nodeId: string, path: string, content: string) {
+    const encoded = new TextEncoder().encode(content);
+    return this.unwrapData(
+      this.uploadRaw<{ data: unknown }>(
+        `/nodes/${nodeId}/files/write?path=${encodeURIComponent(path)}`,
+        {
+          method: "PUT",
+          body: encoded,
+          headers: { "Content-Type": "application/octet-stream" },
+        }
+      )
+    );
+  }
+
+  async createNodeFile(
+    nodeId: string,
+    path: string,
+    content: Blob | BufferSource | string = "",
+    onProgress?: (progress: { loaded: number; total: number }) => void
+  ) {
+    const body =
+      typeof content === "string"
+        ? new TextEncoder().encode(content)
+        : content instanceof Blob
+          ? content
+          : content;
+    return this.uploadRaw<void>(`/nodes/${nodeId}/files/create?path=${encodeURIComponent(path)}`, {
+      method: "POST",
+      body,
+      headers: { "Content-Type": "application/octet-stream" },
+      onProgress,
+    });
+  }
+
+  async initNodeFileUpload(
+    nodeId: string,
+    path: string,
+    totalBytes: number
+  ): Promise<{ uploadId: string; chunkSize: number }> {
+    return this.unwrapData(
+      this.request<{ data: { uploadId: string; chunkSize: number } }>(
+        `/nodes/${nodeId}/files/uploads`,
+        {
+          method: "POST",
+          body: JSON.stringify({ path, totalBytes }),
+        }
+      )
+    );
+  }
+
+  async uploadNodeFileChunk(
+    nodeId: string,
+    uploadId: string,
+    offset: number,
+    content: Blob,
+    onProgress?: (progress: { loaded: number; total: number }) => void
+  ): Promise<{ receivedBytes: number; totalBytes: number }> {
+    return this.unwrapData(
+      this.uploadRaw<{ data: { receivedBytes: number; totalBytes: number } }>(
+        `/nodes/${nodeId}/files/uploads/${uploadId}/chunks?offset=${offset}`,
+        {
+          method: "PUT",
+          body: content,
+          headers: { "Content-Type": "application/octet-stream" },
+          onProgress,
+        }
+      )
+    );
+  }
+
+  async completeNodeFileUpload(
+    nodeId: string,
+    uploadId: string,
+    path: string,
+    totalBytes: number
+  ): Promise<void> {
+    await this.request<void>(`/nodes/${nodeId}/files/uploads/${uploadId}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ path, totalBytes }),
+    });
+  }
+
+  async abortNodeFileUpload(nodeId: string, uploadId: string): Promise<void> {
+    await this.request<void>(`/nodes/${nodeId}/files/uploads/${uploadId}`, { method: "DELETE" });
+  }
+
+  async createNodeDirectory(nodeId: string, path: string) {
+    return this.request<void>(`/nodes/${nodeId}/files/directory`, {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    });
+  }
+
+  async deleteNodeFile(nodeId: string, path: string) {
+    return this.request<void>(`/nodes/${nodeId}/files?path=${encodeURIComponent(path)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async moveNodeFile(nodeId: string, fromPath: string, toPath: string) {
+    return this.request<void>(`/nodes/${nodeId}/files/move`, {
+      method: "POST",
+      body: JSON.stringify({ fromPath, toPath }),
+    });
+  }
+
   // ── AI Assistant ──
 
   async getAIStatus(): Promise<{ enabled: boolean }> {
@@ -736,129 +749,367 @@ class ApiClient extends ApiClientBase {
   async getAITools(): Promise<
     Record<
       string,
-      Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>
+      Array<{
+        name: string;
+        displayName: string;
+        displayDescription: string;
+        destructive: boolean;
+        requiredScope: string;
+      }>
     >
   > {
     const res = await this.request<{
       data: Record<
         string,
-        Array<{ name: string; description: string; destructive: boolean; requiredRole: string }>
+        Array<{
+          name: string;
+          displayName: string;
+          displayDescription: string;
+          destructive: boolean;
+          requiredScope: string;
+        }>
       >;
     }>("/ai/tools");
     return res.data;
   }
 
-  // ── Proxy Hosts ──────────────────────────────────────────────────
-
-  async listProxyHosts(params?: {
-    page?: number;
-    limit?: number;
-    search?: string;
-    type?: ProxyHostType;
-    healthStatus?: HealthStatus;
-    enabled?: boolean;
-    sortBy?: string;
-    sortOrder?: string;
-    nodeId?: string;
-  }): Promise<PaginatedResponse<ProxyHost>> {
-    const searchParams = new URLSearchParams();
-    if (params?.page) searchParams.set("page", params.page.toString());
-    if (params?.limit) searchParams.set("limit", params.limit.toString());
-    if (params?.search) searchParams.set("search", params.search);
-    if (params?.type) searchParams.set("type", params.type);
-    if (params?.healthStatus) searchParams.set("healthStatus", params.healthStatus);
-    if (params?.enabled !== undefined) searchParams.set("enabled", params.enabled.toString());
-    if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
-    if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
-    if (params?.nodeId) searchParams.set("nodeId", params.nodeId);
-
-    const query = searchParams.toString();
-    return this.request<PaginatedResponse<ProxyHost>>(`/proxy-hosts${query ? `?${query}` : ""}`);
+  async listAIConversations(): Promise<
+    Array<{
+      id: string;
+      title: string;
+      createdAt: string;
+      updatedAt: string;
+      lastUserMessageAt: string | null;
+      messageCount: number;
+      folderId: string | null;
+      status: "active" | "ended" | "context_blocked";
+      blockReason: string | null;
+      activeRunStatus: AIRunStatus | null;
+    }>
+  > {
+    const res = await this.request<{
+      data: Array<{
+        id: string;
+        title: string;
+        createdAt: string;
+        updatedAt: string;
+        lastUserMessageAt: string | null;
+        messageCount: number;
+        folderId: string | null;
+        status: "active" | "ended" | "context_blocked";
+        blockReason: string | null;
+        activeRunStatus: AIRunStatus | null;
+      }>;
+    }>("/ai/conversations");
+    return res.data;
   }
 
-  async getProxyHost(id: string): Promise<ProxyHost> {
-    return this.unwrapData(this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}`));
+  async listAIConversationFolders(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      description: string;
+      sortOrder: number;
+      createdAt: string;
+      updatedAt: string;
+    }>
+  > {
+    const res = await this.request<{
+      data: Array<{
+        id: string;
+        name: string;
+        description: string;
+        sortOrder: number;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>("/ai/conversation-folders");
+    return res.data;
   }
 
-  async getProxyHostHealthHistory(
-    id: string
-  ): Promise<Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>> {
-    return this.unwrapData(this.request(`/proxy-hosts/${id}/health-history`));
+  async createAIConversationFolder(data: { name: string; description?: string }): Promise<{
+    id: string;
+    name: string;
+    description: string;
+    sortOrder: number;
+    createdAt: string;
+    updatedAt: string;
+  }> {
+    const res = await this.request<{
+      data: {
+        id: string;
+        name: string;
+        description: string;
+        sortOrder: number;
+        createdAt: string;
+        updatedAt: string;
+      };
+    }>("/ai/conversation-folders", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return res.data;
   }
 
-  async createProxyHost(data: CreateProxyHostRequest): Promise<ProxyHost> {
-    return this.unwrapData(
-      this.request<{ data: ProxyHost }>("/proxy-hosts", {
-        method: "POST",
-        body: JSON.stringify(data),
-      })
-    );
+  async updateAIConversationFolder(
+    id: string,
+    data: { name?: string; description?: string }
+  ): Promise<{
+    id: string;
+    name: string;
+    description: string;
+    sortOrder: number;
+    createdAt: string;
+    updatedAt: string;
+  }> {
+    const res = await this.request<{
+      data: {
+        id: string;
+        name: string;
+        description: string;
+        sortOrder: number;
+        createdAt: string;
+        updatedAt: string;
+      };
+    }>(`/ai/conversation-folders/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return res.data;
   }
 
-  async updateProxyHost(id: string, data: Partial<CreateProxyHostRequest>): Promise<ProxyHost> {
-    return this.unwrapData(
-      this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}`, {
+  async deleteAIConversationFolder(id: string): Promise<void> {
+    await this.request(`/ai/conversation-folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderAIConversationFolders(items: Array<{ id: string; sortOrder: number }>): Promise<
+    Array<{
+      id: string;
+      name: string;
+      description: string;
+      sortOrder: number;
+      createdAt: string;
+      updatedAt: string;
+    }>
+  > {
+    const res = await this.request<{
+      data: Array<{
+        id: string;
+        name: string;
+        description: string;
+        sortOrder: number;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>("/ai/conversation-folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+    return res.data;
+  }
+
+  async moveAIConversationsToFolder(
+    conversationIds: string[],
+    folderId: string | null
+  ): Promise<{ moved: number }> {
+    const res = await this.request<{ data: { moved: number } }>(
+      "/ai/conversation-folders/move-conversations",
+      {
         method: "PUT",
-        body: JSON.stringify(data),
-      })
+        body: JSON.stringify({ conversationIds, folderId }),
+      }
     );
+    return res.data;
   }
 
-  async deleteProxyHost(id: string): Promise<void> {
-    return this.request<void>(`/proxy-hosts/${id}`, { method: "DELETE" });
+  async getAIConversation(id: string): Promise<{
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    lastUserMessageAt: string | null;
+    messageCount: number;
+    folderId: string | null;
+    status: "active" | "ended" | "context_blocked";
+    blockReason: string | null;
+    activeRunStatus: AIRunStatus | null;
+    messages: AIMessage[];
+    lastContext: PageContext | null;
+    discoveredToolsets: string[];
+    checkpoint: Record<string, unknown> | null;
+  }> {
+    const res = await this.request<{
+      data: {
+        id: string;
+        title: string;
+        createdAt: string;
+        updatedAt: string;
+        lastUserMessageAt: string | null;
+        messageCount: number;
+        folderId: string | null;
+        status: "active" | "ended" | "context_blocked";
+        blockReason: string | null;
+        activeRunStatus: AIRunStatus | null;
+        messages: AIMessage[];
+        lastContext: PageContext | null;
+        discoveredToolsets: string[];
+        checkpoint: Record<string, unknown> | null;
+      };
+    }>(`/ai/conversations/${id}`);
+    return res.data;
   }
 
-  async toggleProxyHost(id: string, enabled: boolean): Promise<ProxyHost> {
-    return this.unwrapData(
-      this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}/toggle`, {
-        method: "POST",
-        body: JSON.stringify({ enabled }),
-      })
+  async updateAIConversation(
+    id: string,
+    data: { title: string }
+  ): Promise<{
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    lastUserMessageAt: string | null;
+    messageCount: number;
+    folderId: string | null;
+    status: "active" | "ended" | "context_blocked";
+    blockReason: string | null;
+    activeRunStatus: AIRunStatus | null;
+    messages: AIMessage[];
+    lastContext: PageContext | null;
+    discoveredToolsets: string[];
+    checkpoint: Record<string, unknown> | null;
+  }> {
+    const res = await this.request<{
+      data: {
+        id: string;
+        title: string;
+        createdAt: string;
+        updatedAt: string;
+        lastUserMessageAt: string | null;
+        messageCount: number;
+        folderId: string | null;
+        status: "active" | "ended" | "context_blocked";
+        blockReason: string | null;
+        activeRunStatus: AIRunStatus | null;
+        messages: AIMessage[];
+        lastContext: PageContext | null;
+        discoveredToolsets: string[];
+        checkpoint: Record<string, unknown> | null;
+      };
+    }>(`/ai/conversations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  }
+
+  async deleteAIConversation(id: string): Promise<void> {
+    await this.request(`/ai/conversations/${id}`, { method: "DELETE" });
+  }
+
+  async rollbackAIConversationToMessage(
+    id: string,
+    messageId: string
+  ): Promise<{
+    message: AIMessage;
+    conversation: {
+      id: string;
+      title: string;
+      createdAt: string;
+      updatedAt: string;
+      lastUserMessageAt: string | null;
+      messageCount: number;
+      folderId: string | null;
+      status: "active" | "ended" | "context_blocked";
+      blockReason: string | null;
+      activeRunStatus: AIRunStatus | null;
+      messages: AIMessage[];
+      lastContext: PageContext | null;
+      discoveredToolsets: string[];
+      checkpoint: Record<string, unknown> | null;
+    };
+  }> {
+    const res = await this.request<{
+      data: {
+        message: AIMessage;
+        conversation: {
+          id: string;
+          title: string;
+          createdAt: string;
+          updatedAt: string;
+          lastUserMessageAt: string | null;
+          messageCount: number;
+          folderId: string | null;
+          status: "active" | "ended" | "context_blocked";
+          blockReason: string | null;
+          activeRunStatus: AIRunStatus | null;
+          messages: AIMessage[];
+          lastContext: PageContext | null;
+          discoveredToolsets: string[];
+          checkpoint: Record<string, unknown> | null;
+        };
+      };
+    }>(`/ai/conversations/${id}/rollback`, {
+      method: "POST",
+      body: JSON.stringify({ messageId }),
+    });
+    return res.data;
+  }
+
+  async getAISandboxStatus(): Promise<AISandboxStatus> {
+    const res = await this.request<{ data: AISandboxStatus }>("/ai/sandbox/status");
+    return res.data;
+  }
+
+  async listAISandboxJobs(
+    options: { activeOnly?: boolean; limit?: number; status?: AISandboxJob["status"] } = {}
+  ): Promise<AISandboxJob[]> {
+    const params = new URLSearchParams();
+    if (options.activeOnly !== undefined) params.set("activeOnly", String(options.activeOnly));
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    if (options.status !== undefined) params.set("status", options.status);
+    const query = params.toString();
+    const res = await this.request<{ data: AISandboxJob[] }>(
+      `/ai/sandbox/jobs${query ? `?${query}` : ""}`
     );
+    return res.data;
   }
 
-  async getRenderedProxyConfig(id: string): Promise<{ rendered: string }> {
-    return this.unwrapData(
-      this.request<{ data: { rendered: string } }>(`/proxy-hosts/${id}/rendered-config`)
+  async killAISandboxJob(id: string): Promise<unknown> {
+    const res = await this.request<{ data: unknown }>(`/ai/sandbox/jobs/${id}/kill`, {
+      method: "POST",
+    });
+    return res.data;
+  }
+
+  async getAISandboxJobOutput(id: string, tail = 200): Promise<AISandboxOutput> {
+    const params = new URLSearchParams({ tail: String(tail) });
+    const res = await this.request<{ data: AISandboxOutput }>(
+      `/ai/sandbox/jobs/${id}/output?${params}`
     );
+    return res.data;
   }
 
-  async validateProxyConfig(
-    snippet: string,
-    mode: "advanced" | "raw" = "advanced",
-    proxyHostId?: string
-  ): Promise<{ valid: boolean; errors: string[] }> {
-    return this.unwrapData(
-      this.request<{ data: { valid: boolean; errors: string[] } }>("/proxy-hosts/validate-config", {
-        method: "POST",
-        body: JSON.stringify({ snippet, mode, proxyHostId }),
-      })
-    );
+  async listAISandboxArtifacts(): Promise<AISandboxArtifact[]> {
+    const res = await this.request<{ data: AISandboxArtifact[] }>("/ai/sandbox/artifacts");
+    return res.data;
   }
 
-  // ── Proxy Host Folders ─────────────────────────────────────────
-
-  async listFolders(): Promise<FolderTreeNode[]> {
-    return this.unwrapData(this.request<{ data: FolderTreeNode[] }>("/proxy-host-folders"));
+  async deleteAISandboxArtifact(id: string): Promise<void> {
+    await this.request(`/ai/sandbox/artifacts/${id}`, { method: "DELETE" });
   }
 
-  async getGroupedProxyHosts(params?: {
-    search?: string;
-    type?: ProxyHostType;
-    healthStatus?: HealthStatus;
-    enabled?: boolean;
-  }): Promise<GroupedProxyHostsResponse> {
-    const searchParams = new URLSearchParams();
-    if (params?.search) searchParams.set("search", params.search);
-    if (params?.type) searchParams.set("type", params.type);
-    if (params?.healthStatus) searchParams.set("healthStatus", params.healthStatus);
-    if (params?.enabled !== undefined) searchParams.set("enabled", params.enabled.toString());
-    const query = searchParams.toString();
-    return this.unwrapData(
-      this.request<{ data: GroupedProxyHostsResponse }>(
-        `/proxy-host-folders/grouped${query ? `?${query}` : ""}`
-      )
-    );
+  async uploadAIChatArtifact(
+    file: File,
+    conversationId?: string | null
+  ): Promise<AIMessageAttachment> {
+    const body = new FormData();
+    body.append("file", file);
+    if (conversationId) body.append("conversationId", conversationId);
+    const res = await this.request<{ data: AIMessageAttachment }>("/ai/sandbox/artifacts", {
+      method: "POST",
+      body,
+    });
+    return res.data;
   }
 
   // ── Status Page ─────────────────────────────────────────────────
@@ -1056,63 +1307,6 @@ class ApiClient extends ApiClientBase {
     return this.request<void>("/proxy-host-folders/move-hosts", {
       method: "POST",
       body: JSON.stringify({ hostIds, folderId }),
-    });
-  }
-
-  // ── Docker Folders ─────────────────────────────────────────────
-
-  async listDockerFolders(): Promise<DockerFolderTreeNode[]> {
-    return this.unwrapData(this.request<{ data: DockerFolderTreeNode[] }>("/docker/folders"));
-  }
-
-  async createDockerFolder(data: {
-    name: string;
-    parentId?: string;
-  }): Promise<DockerContainerFolder> {
-    return this.unwrapData(
-      this.request<{ data: DockerContainerFolder }>("/docker/folders", {
-        method: "POST",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async updateDockerFolder(id: string, data: { name: string }): Promise<DockerContainerFolder> {
-    return this.unwrapData(
-      this.request<{ data: DockerContainerFolder }>(`/docker/folders/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async deleteDockerFolder(id: string): Promise<void> {
-    return this.request<void>(`/docker/folders/${id}`, { method: "DELETE" });
-  }
-
-  async reorderDockerFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
-    return this.request<void>("/docker/folders/reorder", {
-      method: "PUT",
-      body: JSON.stringify({ items }),
-    });
-  }
-
-  async moveDockerContainersToFolder(
-    items: Array<{ nodeId: string; containerName: string }>,
-    folderId: string | null
-  ): Promise<void> {
-    return this.request<void>("/docker/folders/move-containers", {
-      method: "POST",
-      body: JSON.stringify({ items, folderId }),
-    });
-  }
-
-  async reorderDockerContainers(
-    items: Array<{ nodeId: string; containerName: string; sortOrder: number }>
-  ): Promise<void> {
-    return this.request<void>("/docker/folders/reorder-containers", {
-      method: "PUT",
-      body: JSON.stringify({ items }),
     });
   }
 
@@ -1337,6 +1531,20 @@ class ApiClient extends ApiClientBase {
     });
   }
 
+  createProxyLogStreamWebSocket(hostId: string, tail = 200): WebSocket {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return new WebSocket(
+      `${proto}//${window.location.host}/api/monitoring/logs/${hostId}/ws?tail=${tail}`
+    );
+  }
+
+  createNodeNginxLogStreamWebSocket(nodeId: string, tail = 200): WebSocket {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return new WebSocket(
+      `${proto}//${window.location.host}/api/nodes/${nodeId}/nginx-logs/ws?tail=${tail}`
+    );
+  }
+
   // ── Domains ────────────────────────────────────────────────────
 
   async listDomains(params?: {
@@ -1392,1701 +1600,65 @@ class ApiClient extends ApiClientBase {
     );
   }
 
+  async listDomainFolders(): Promise<import("@/types").ResourceFolderTreeNode[]> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolderTreeNode[] }>("/domains/folders")
+    );
+  }
+
+  async createDomainFolder(data: {
+    name: string;
+    parentId?: string;
+  }): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>("/domains/folders", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async updateDomainFolder(
+    id: string,
+    data: { name: string }
+  ): Promise<import("@/types").ResourceFolder> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").ResourceFolder }>(`/domains/folders/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
+  async deleteDomainFolder(id: string): Promise<void> {
+    await this.request(`/domains/folders/${id}`, { method: "DELETE" });
+  }
+
+  async reorderDomainFolders(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/domains/folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
+  async moveDomainsToFolder(ids: string[], folderId: string | null): Promise<void> {
+    await this.request("/domains/folders/move-domains", {
+      method: "POST",
+      body: JSON.stringify({ ids, folderId }),
+    });
+  }
+
+  async reorderDomains(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request("/domains/folders/reorder-domains", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    });
+  }
+
   async searchDomains(q: string): Promise<DomainSearchResult[]> {
     return this.unwrapData(
       this.request<{ data: DomainSearchResult[] }>(`/domains/search?q=${encodeURIComponent(q)}`)
     );
-  }
-
-  // ── Databases ──────────────────────────────────────────────────
-
-  async listDatabases(params?: {
-    page?: number;
-    limit?: number;
-    search?: string;
-    type?: "postgres" | "redis";
-    healthStatus?: "online" | "offline" | "degraded" | "unknown";
-  }): Promise<PaginatedResponse<DatabaseConnection>> {
-    const searchParams = new URLSearchParams();
-    if (params?.page) searchParams.set("page", String(params.page));
-    if (params?.limit) searchParams.set("limit", String(params.limit));
-    if (params?.search) searchParams.set("search", params.search);
-    if (params?.type) searchParams.set("type", params.type);
-    if (params?.healthStatus) searchParams.set("healthStatus", params.healthStatus);
-    const query = searchParams.toString();
-    return this.request<PaginatedResponse<DatabaseConnection>>(
-      `/databases${query ? `?${query}` : ""}`
-    );
-  }
-
-  async getDatabase(id: string): Promise<DatabaseConnection> {
-    return this.unwrapData(this.request<{ data: DatabaseConnection }>(`/databases/${id}`));
-  }
-
-  async getDatabaseHealthHistory(id: string): Promise<DatabaseConnection["healthHistory"]> {
-    return this.unwrapData(this.request(`/databases/${id}/health-history`));
-  }
-
-  async createDatabase(data: Record<string, unknown>): Promise<DatabaseConnection> {
-    return this.unwrapData(
-      this.request<{ data: DatabaseConnection }>("/databases", {
-        method: "POST",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async updateDatabase(id: string, data: Record<string, unknown>): Promise<DatabaseConnection> {
-    return this.unwrapData(
-      this.request<{ data: DatabaseConnection }>(`/databases/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async deleteDatabase(id: string): Promise<void> {
-    await this.request<void>(`/databases/${id}`, { method: "DELETE" });
-  }
-
-  async testDatabase(id: string): Promise<{ ok: true; responseMs: number; status: string }> {
-    return this.unwrapData(
-      this.request<{ data: { ok: true; responseMs: number; status: string } }>(
-        `/databases/${id}/test`,
-        { method: "POST" }
-      )
-    );
-  }
-
-  async revealDatabaseCredentials(id: string): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(`/databases/${id}/reveal-credentials`)
-    );
-  }
-
-  createDatabaseMonitoringStream(id: string): EventSource {
-    return new EventSource(`${API_BASE}/databases/${id}/monitoring/stream`, {
-      withCredentials: true,
-    });
-  }
-
-  // ── External Logging ────────────────────────────────────────────
-
-  async getLoggingStatus(): Promise<LoggingFeatureStatus> {
-    return this.unwrapData(this.request<{ data: LoggingFeatureStatus }>("/logging/status"));
-  }
-
-  async listLoggingEnvironments(params?: { search?: string }): Promise<LoggingEnvironment[]> {
-    const query = new URLSearchParams();
-    if (params?.search) query.set("search", params.search);
-    const qs = query.toString();
-    return this.unwrapData(
-      this.request<{ data: LoggingEnvironment[] }>(`/logging/environments${qs ? `?${qs}` : ""}`)
-    );
-  }
-
-  async createLoggingEnvironment(data: Partial<LoggingEnvironment>): Promise<LoggingEnvironment> {
-    return this.unwrapData(
-      this.request<{ data: LoggingEnvironment }>("/logging/environments", {
-        method: "POST",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async updateLoggingEnvironment(
-    id: string,
-    data: Partial<LoggingEnvironment>
-  ): Promise<LoggingEnvironment> {
-    return this.unwrapData(
-      this.request<{ data: LoggingEnvironment }>(`/logging/environments/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async deleteLoggingEnvironment(id: string): Promise<void> {
-    await this.request<void>(`/logging/environments/${id}`, { method: "DELETE" });
-  }
-
-  async listLoggingSchemas(params?: { search?: string }): Promise<LoggingSchema[]> {
-    const query = new URLSearchParams();
-    if (params?.search) query.set("search", params.search);
-    const qs = query.toString();
-    return this.unwrapData(
-      this.request<{ data: LoggingSchema[] }>(`/logging/schemas${qs ? `?${qs}` : ""}`)
-    );
-  }
-
-  async getLoggingSchema(id: string): Promise<LoggingSchema> {
-    return this.unwrapData(this.request<{ data: LoggingSchema }>(`/logging/schemas/${id}`));
-  }
-
-  async createLoggingSchema(data: Partial<LoggingSchema>): Promise<LoggingSchema> {
-    return this.unwrapData(
-      this.request<{ data: LoggingSchema }>("/logging/schemas", {
-        method: "POST",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async updateLoggingSchema(id: string, data: Partial<LoggingSchema>): Promise<LoggingSchema> {
-    return this.unwrapData(
-      this.request<{ data: LoggingSchema }>(`/logging/schemas/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async deleteLoggingSchema(id: string): Promise<void> {
-    await this.request<void>(`/logging/schemas/${id}`, { method: "DELETE" });
-  }
-
-  async listLoggingTokens(environmentId: string): Promise<LoggingIngestToken[]> {
-    return this.unwrapData(
-      this.request<{ data: LoggingIngestToken[] }>(`/logging/environments/${environmentId}/tokens`)
-    );
-  }
-
-  async createLoggingToken(
-    environmentId: string,
-    data: { name: string; expiresAt?: string | null }
-  ): Promise<LoggingIngestToken> {
-    return this.unwrapData(
-      this.request<{ data: LoggingIngestToken }>(`/logging/environments/${environmentId}/tokens`, {
-        method: "POST",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async deleteLoggingToken(environmentId: string, tokenId: string): Promise<void> {
-    await this.request<void>(`/logging/environments/${environmentId}/tokens/${tokenId}`, {
-      method: "DELETE",
-    });
-  }
-
-  async searchLogs(
-    environmentId: string,
-    data: LoggingSearchRequest
-  ): Promise<{ data: LoggingSearchResult[]; nextCursor: string | null }> {
-    return this.request(`/logging/environments/${environmentId}/search`, {
-      method: "POST",
-      body: JSON.stringify({ limit: 100, ...data }),
-    });
-  }
-
-  async getLoggingFacets(
-    environmentId: string,
-    params?: { from?: string; to?: string }
-  ): Promise<LoggingFacets> {
-    const query = new URLSearchParams();
-    if (params?.from) query.set("from", params.from);
-    if (params?.to) query.set("to", params.to);
-    const qs = query.toString();
-    return this.unwrapData(
-      this.request<{ data: LoggingFacets }>(
-        `/logging/environments/${environmentId}/facets${qs ? `?${qs}` : ""}`
-      )
-    );
-  }
-
-  async getLoggingMetadata(environmentId: string): Promise<LoggingMetadata> {
-    return this.unwrapData(
-      this.request<{ data: LoggingMetadata }>(`/logging/environments/${environmentId}/metadata`)
-    );
-  }
-
-  async listPostgresSchemas(id: string): Promise<string[]> {
-    return this.unwrapData(this.request<{ data: string[] }>(`/databases/${id}/postgres/schemas`));
-  }
-
-  async listPostgresTables(
-    id: string,
-    schema: string
-  ): Promise<Array<{ name: string; type: "table" | "view" }>> {
-    return this.unwrapData(
-      this.request<{ data: Array<{ name: string; type: "table" | "view" }> }>(
-        `/databases/${id}/postgres/tables?schema=${encodeURIComponent(schema)}`
-      )
-    );
-  }
-
-  async getPostgresTableMetadata(
-    id: string,
-    schema: string,
-    table: string
-  ): Promise<PostgresTableMetadata> {
-    const query = new URLSearchParams({ schema, table }).toString();
-    return this.unwrapData(
-      this.request<{ data: PostgresTableMetadata }>(
-        `/databases/${id}/postgres/table-metadata?${query}`
-      )
-    );
-  }
-
-  async browsePostgresRows(
-    id: string,
-    params: {
-      schema: string;
-      table: string;
-      page?: number;
-      limit?: number;
-      sortBy?: string;
-      sortOrder?: "asc" | "desc";
-      searchColumn?: string;
-      searchOperation?: "like" | "equals" | "notEquals" | "greaterThan" | "lessThan";
-      searchValue?: string;
-    }
-  ): Promise<{
-    metadata: PostgresTableMetadata;
-    rows: Record<string, unknown>[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
-    const query = new URLSearchParams({
-      schema: params.schema,
-      table: params.table,
-      page: String(params.page ?? 1),
-      limit: String(params.limit ?? 100),
-      ...(params.sortBy ? { sortBy: params.sortBy } : {}),
-      ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
-      ...(params.searchColumn ? { searchColumn: params.searchColumn } : {}),
-      ...(params.searchOperation ? { searchOperation: params.searchOperation } : {}),
-      ...(params.searchValue ? { searchValue: params.searchValue } : {}),
-    }).toString();
-    return this.unwrapData(
-      this.request<{
-        data: {
-          metadata: PostgresTableMetadata;
-          rows: Record<string, unknown>[];
-          total: number;
-          page: number;
-          limit: number;
-        };
-      }>(`/databases/${id}/postgres/rows?${query}`)
-    );
-  }
-
-  async insertPostgresRow(
-    id: string,
-    schema: string,
-    table: string,
-    values: Record<string, unknown>
-  ): Promise<Record<string, unknown> | null> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> | null }>(`/databases/${id}/postgres/rows`, {
-        method: "POST",
-        body: JSON.stringify({ schema, table, values }),
-      })
-    );
-  }
-
-  async updatePostgresRow(
-    id: string,
-    schema: string,
-    table: string,
-    primaryKey: Record<string, unknown>,
-    values: Record<string, unknown>
-  ): Promise<Record<string, unknown> | null> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> | null }>(`/databases/${id}/postgres/rows`, {
-        method: "PATCH",
-        body: JSON.stringify({ schema, table, primaryKey, values }),
-      })
-    );
-  }
-
-  async deletePostgresRow(
-    id: string,
-    schema: string,
-    table: string,
-    primaryKey: Record<string, unknown>
-  ): Promise<void> {
-    await this.request<{ data: { success: true } }>(`/databases/${id}/postgres/rows`, {
-      method: "DELETE",
-      body: JSON.stringify({ schema, table, primaryKey }),
-    });
-  }
-
-  async updatePostgresColumnType(
-    id: string,
-    schema: string,
-    table: string,
-    column: string,
-    dataType: string
-  ): Promise<PostgresTableMetadata> {
-    return this.unwrapData(
-      this.request<{ data: PostgresTableMetadata }>(`/databases/${id}/postgres/columns/type`, {
-        method: "PATCH",
-        body: JSON.stringify({ schema, table, column, dataType }),
-      })
-    );
-  }
-
-  async addPostgresColumn(
-    id: string,
-    schema: string,
-    table: string,
-    column: string,
-    dataType: string
-  ): Promise<PostgresTableMetadata> {
-    return this.unwrapData(
-      this.request<{ data: PostgresTableMetadata }>(`/databases/${id}/postgres/columns`, {
-        method: "POST",
-        body: JSON.stringify({ schema, table, column, dataType }),
-      })
-    );
-  }
-
-  async deletePostgresColumn(
-    id: string,
-    schema: string,
-    table: string,
-    column: string
-  ): Promise<PostgresTableMetadata> {
-    return this.unwrapData(
-      this.request<{ data: PostgresTableMetadata }>(`/databases/${id}/postgres/columns`, {
-        method: "DELETE",
-        body: JSON.stringify({ schema, table, column }),
-      })
-    );
-  }
-
-  async executePostgresSql(
-    id: string,
-    sql: string
-  ): Promise<{
-    results: Array<{
-      command: string;
-      rowCount: number;
-      durationMs?: number;
-      fields: string[];
-      rows: Record<string, unknown>[];
-      truncated?: boolean;
-      maxRows?: number;
-    }>;
-    truncated?: boolean;
-    resultLimit?: number;
-  }> {
-    return this.unwrapData(
-      this.request<{
-        data: {
-          results: Array<{
-            command: string;
-            rowCount: number;
-            durationMs?: number;
-            fields: string[];
-            rows: Record<string, unknown>[];
-            truncated?: boolean;
-            maxRows?: number;
-          }>;
-          truncated?: boolean;
-          resultLimit?: number;
-        };
-      }>(`/databases/${id}/postgres/query`, {
-        method: "POST",
-        body: JSON.stringify({ sql, maxRows: 500 }),
-      })
-    );
-  }
-
-  async scanRedisKeys(
-    id: string,
-    params?: { cursor?: number; limit?: number; search?: string; type?: string }
-  ): Promise<{ cursor: number; done: boolean; keys: RedisKeyRecord[] }> {
-    const query = new URLSearchParams();
-    if (params?.cursor !== undefined) query.set("cursor", String(params.cursor));
-    if (params?.limit !== undefined) query.set("limit", String(params.limit));
-    if (params?.search) query.set("search", params.search);
-    if (params?.type) query.set("type", params.type);
-    return this.unwrapData(
-      this.request<{ data: { cursor: number; done: boolean; keys: RedisKeyRecord[] } }>(
-        `/databases/${id}/redis/keys${query.toString() ? `?${query.toString()}` : ""}`
-      )
-    );
-  }
-
-  async getRedisKey(
-    id: string,
-    key: string,
-    params?: { offset?: number; limit?: number; maxStringBytes?: number }
-  ): Promise<{
-    key: string;
-    type: string;
-    ttlSeconds: number;
-    value: unknown;
-    page?: Record<string, unknown>;
-  }> {
-    const query = new URLSearchParams({ key });
-    if (params?.offset !== undefined) query.set("offset", String(params.offset));
-    if (params?.limit !== undefined) query.set("limit", String(params.limit));
-    if (params?.maxStringBytes !== undefined)
-      query.set("maxStringBytes", String(params.maxStringBytes));
-    return this.unwrapData(
-      this.request<{
-        data: {
-          key: string;
-          type: string;
-          ttlSeconds: number;
-          value: unknown;
-          page?: Record<string, unknown>;
-        };
-      }>(`/databases/${id}/redis/key?${query.toString()}`)
-    );
-  }
-
-  async setRedisKey(
-    id: string,
-    data: Record<string, unknown>
-  ): Promise<{
-    key: string;
-    type: string;
-    ttlSeconds: number;
-    value: unknown;
-  }> {
-    return this.unwrapData(
-      this.request<{
-        data: { key: string; type: string; ttlSeconds: number; value: unknown };
-      }>(`/databases/${id}/redis/key`, {
-        method: "PUT",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async deleteRedisKey(id: string, key: string): Promise<void> {
-    await this.request<{ data: { success: true } }>(`/databases/${id}/redis/key`, {
-      method: "DELETE",
-      body: JSON.stringify({ key }),
-    });
-  }
-
-  async expireRedisKey(
-    id: string,
-    key: string,
-    ttlSeconds: number
-  ): Promise<{ key: string; type: string; ttlSeconds: number; value: unknown }> {
-    return this.unwrapData(
-      this.request<{
-        data: { key: string; type: string; ttlSeconds: number; value: unknown };
-      }>(`/databases/${id}/redis/key/expire`, {
-        method: "POST",
-        body: JSON.stringify({ key, ttlSeconds }),
-      })
-    );
-  }
-
-  async executeRedisCommand(
-    id: string,
-    command: string
-  ): Promise<{
-    results: Array<{ command: string; result: unknown; truncated?: boolean }>;
-    truncated?: boolean;
-    commandLimit?: number;
-  }> {
-    return this.unwrapData(
-      this.request<{
-        data: {
-          results: Array<{ command: string; result: unknown; truncated?: boolean }>;
-          truncated?: boolean;
-          commandLimit?: number;
-        };
-      }>(`/databases/${id}/redis/command`, {
-        method: "POST",
-        body: JSON.stringify({ command }),
-      })
-    );
-  }
-
-  // ── System / Updates ──────────────────────────────────────────────
-
-  async getVersionInfo(): Promise<UpdateStatus> {
-    return this.unwrapData(this.request<{ data: UpdateStatus }>("/system/version"));
-  }
-
-  async checkForUpdates(): Promise<UpdateStatus> {
-    return this.unwrapData(
-      this.request<{ data: UpdateStatus }>("/system/check-update", { method: "POST" })
-    );
-  }
-
-  async triggerUpdate(version: string): Promise<{ status: string; targetVersion: string }> {
-    return this.unwrapData(
-      this.request<{ data: { status: string; targetVersion: string } }>("/system/update", {
-        method: "POST",
-        body: JSON.stringify({ version }),
-      })
-    );
-  }
-
-  async getReleaseNotes(version: string): Promise<string> {
-    const result = await this.unwrapData(
-      this.request<{ data: { version: string; notes: string } }>(
-        `/system/release-notes/${encodeURIComponent(version)}`
-      )
-    );
-    return result.notes;
-  }
-
-  async getAllReleaseNotes(): Promise<{ version: string; notes: string }[]> {
-    return this.unwrapData(
-      this.request<{ data: { version: string; notes: string }[] }>("/system/release-notes")
-    );
-  }
-
-  // ── Daemon Updates ──────────────────────────────────────────────
-
-  async getDaemonUpdates(): Promise<DaemonUpdateStatus[]> {
-    return this.unwrapData(this.request<{ data: DaemonUpdateStatus[] }>("/system/daemon-updates"));
-  }
-
-  async checkDaemonUpdates(): Promise<DaemonUpdateStatus[]> {
-    return this.unwrapData(
-      this.request<{ data: DaemonUpdateStatus[] }>("/system/daemon-updates/check", {
-        method: "POST",
-      })
-    );
-  }
-
-  async triggerDaemonUpdate(
-    nodeId: string
-  ): Promise<{ scheduled: boolean; targetVersion: string }> {
-    return this.unwrapData(
-      this.request<{ data: { scheduled: boolean; targetVersion: string } }>(
-        `/system/daemon-updates/${nodeId}`,
-        { method: "POST" }
-      )
-    );
-  }
-
-  // ── License ─────────────────────────────────────────────────────
-
-  async getLicenseStatus(): Promise<LicenseStatusView> {
-    return this.unwrapData(this.request<{ data: LicenseStatusView }>("/system/license/status"));
-  }
-
-  async activateLicense(licenseKey: string): Promise<LicenseStatusView> {
-    return this.unwrapData(
-      this.request<{ data: LicenseStatusView }>("/system/license/activate", {
-        method: "POST",
-        body: JSON.stringify({ licenseKey }),
-      })
-    );
-  }
-
-  async checkLicense(): Promise<LicenseStatusView> {
-    return this.unwrapData(
-      this.request<{ data: LicenseStatusView }>("/system/license/check", { method: "POST" })
-    );
-  }
-
-  async clearLicenseKey(): Promise<LicenseStatusView> {
-    return this.unwrapData(
-      this.request<{ data: LicenseStatusView }>("/system/license/key", { method: "DELETE" })
-    );
-  }
-
-  // ── Housekeeping ────────────────────────────────────────────────
-
-  async getHousekeepingConfig(): Promise<HousekeepingConfig> {
-    return this.unwrapData(this.request<{ data: HousekeepingConfig }>("/housekeeping/config"));
-  }
-
-  async updateHousekeepingConfig(config: Partial<HousekeepingConfig>): Promise<HousekeepingConfig> {
-    return this.unwrapData(
-      this.request<{ data: HousekeepingConfig }>("/housekeeping/config", {
-        method: "PUT",
-        body: JSON.stringify(config),
-      })
-    );
-  }
-
-  async getHousekeepingStats(): Promise<HousekeepingStats> {
-    return this.unwrapData(this.request<{ data: HousekeepingStats }>("/housekeeping/stats"));
-  }
-
-  async runHousekeeping(): Promise<HousekeepingRunResult> {
-    return this.unwrapData(
-      this.request<{ data: HousekeepingRunResult }>("/housekeeping/run", { method: "POST" })
-    );
-  }
-
-  async getHousekeepingHistory(): Promise<HousekeepingRunResult[]> {
-    return this.unwrapData(
-      this.request<{ data: HousekeepingRunResult[] }>("/housekeeping/history")
-    );
-  }
-
-  // ── Docker Containers ─────────────────────────────────────────────
-
-  async listDockerContainers(
-    nodeId: string,
-    options: boolean | (DockerListQuery & { noCache?: boolean }) = false
-  ): Promise<DockerContainer[]> {
-    const params = typeof options === "boolean" ? { noCache: options } : options;
-    const url = `/docker/nodes/${nodeId}/containers${dockerListQuery(params)}`;
-    return withDockerListMeta(await this.request<DockerListEnvelope<DockerContainer>>(url));
-  }
-
-  async inspectContainer(
-    nodeId: string,
-    containerId: string,
-    noCache = false
-  ): Promise<Record<string, unknown>> {
-    const url = noCache
-      ? `/docker/nodes/${nodeId}/containers/${containerId}?_t=${Date.now()}`
-      : `/docker/nodes/${nodeId}/containers/${containerId}`;
-    return this.unwrapData(this.request<{ data: Record<string, unknown> }>(url));
-  }
-
-  async createContainer(
-    nodeId: string,
-    config: ContainerCreateConfig
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(`/docker/nodes/${nodeId}/containers`, {
-        method: "POST",
-        body: JSON.stringify(config),
-      })
-    );
-  }
-
-  async listDockerDeployments(
-    nodeId: string,
-    params?: DockerListQuery
-  ): Promise<DockerDeployment[]> {
-    return withDockerListMeta(
-      await this.request<DockerListEnvelope<DockerDeployment>>(
-        `/docker/nodes/${nodeId}/deployments${dockerListQuery(params)}`
-      )
-    );
-  }
-
-  async getDockerDeployment(nodeId: string, deploymentId: string): Promise<DockerDeployment> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}`
-      )
-    );
-  }
-
-  async createDockerDeployment(
-    nodeId: string,
-    config: Record<string, unknown>
-  ): Promise<DockerDeployment> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment }>(`/docker/nodes/${nodeId}/deployments`, {
-        method: "POST",
-        body: JSON.stringify(config),
-      })
-    );
-  }
-
-  async updateDockerDeployment(
-    nodeId: string,
-    deploymentId: string,
-    config: Record<string, unknown>
-  ): Promise<DockerDeployment> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}`,
-        { method: "PUT", body: JSON.stringify(config) }
-      )
-    );
-  }
-
-  async deployDockerDeployment(
-    nodeId: string,
-    deploymentId: string,
-    config: { image?: string; tag?: string; env?: Record<string, string> }
-  ): Promise<DockerDeployment> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/deploy`,
-        { method: "POST", body: JSON.stringify(config) }
-      )
-    );
-  }
-
-  async switchDockerDeployment(
-    nodeId: string,
-    deploymentId: string,
-    slot: "blue" | "green",
-    force = false
-  ): Promise<DockerDeployment> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/switch`,
-        { method: "POST", body: JSON.stringify({ slot, force }) }
-      )
-    );
-  }
-
-  async rollbackDockerDeployment(
-    nodeId: string,
-    deploymentId: string,
-    force = false
-  ): Promise<DockerDeployment> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/rollback`,
-        { method: "POST", body: JSON.stringify({ force }) }
-      )
-    );
-  }
-
-  async stopDockerDeploymentSlot(
-    nodeId: string,
-    deploymentId: string,
-    slot: "blue" | "green"
-  ): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/deployments/${deploymentId}/slots/${slot}/stop`,
-      { method: "POST" }
-    );
-  }
-
-  async startDockerDeployment(nodeId: string, deploymentId: string): Promise<DockerDeployment> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/start`,
-        { method: "POST" }
-      )
-    );
-  }
-
-  async stopDockerDeployment(nodeId: string, deploymentId: string): Promise<DockerDeployment> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/stop`,
-        { method: "POST" }
-      )
-    );
-  }
-
-  async restartDockerDeployment(nodeId: string, deploymentId: string): Promise<DockerDeployment> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/restart`,
-        { method: "POST" }
-      )
-    );
-  }
-
-  async killDockerDeployment(nodeId: string, deploymentId: string): Promise<DockerDeployment> {
-    return this.unwrapData(
-      this.request<{ data: DockerDeployment }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/kill`,
-        { method: "POST" }
-      )
-    );
-  }
-
-  async deleteDockerDeployment(nodeId: string, deploymentId: string): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/deployments/${deploymentId}`, {
-      method: "DELETE",
-    });
-  }
-
-  async getContainerHealthCheck(nodeId: string, containerName: string): Promise<DockerHealthCheck> {
-    return this.unwrapData(
-      this.request<{ data: DockerHealthCheck }>(
-        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/health-check`
-      )
-    );
-  }
-
-  async updateContainerHealthCheck(
-    nodeId: string,
-    containerName: string,
-    data: Partial<DockerHealthCheck>
-  ): Promise<DockerHealthCheck> {
-    return this.unwrapData(
-      this.request<{ data: DockerHealthCheck }>(
-        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/health-check`,
-        { method: "PUT", body: JSON.stringify(data) }
-      )
-    );
-  }
-
-  async testContainerHealthCheck(
-    nodeId: string,
-    containerName: string,
-    data: Partial<DockerHealthCheck>
-  ): Promise<{ ok: boolean; status: string; httpStatus?: number; responseMs?: number }> {
-    return this.unwrapData(
-      this.request<{
-        data: { ok: boolean; status: string; httpStatus?: number; responseMs?: number };
-      }>(
-        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/health-check/test`,
-        { method: "POST", body: JSON.stringify(data) }
-      )
-    );
-  }
-
-  async getDeploymentHealthCheck(nodeId: string, deploymentId: string): Promise<DockerHealthCheck> {
-    return this.unwrapData(
-      this.request<{ data: DockerHealthCheck }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/health-check`
-      )
-    );
-  }
-
-  async updateDeploymentHealthCheck(
-    nodeId: string,
-    deploymentId: string,
-    data: Partial<DockerHealthCheck>
-  ): Promise<DockerHealthCheck> {
-    return this.unwrapData(
-      this.request<{ data: DockerHealthCheck }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/health-check`,
-        { method: "PUT", body: JSON.stringify(data) }
-      )
-    );
-  }
-
-  async testDeploymentHealthCheck(
-    nodeId: string,
-    deploymentId: string,
-    data: Partial<DockerHealthCheck>
-  ): Promise<{ ok: boolean; status: string; httpStatus?: number; responseMs?: number }> {
-    return this.unwrapData(
-      this.request<{
-        data: { ok: boolean; status: string; httpStatus?: number; responseMs?: number };
-      }>(`/docker/nodes/${nodeId}/deployments/${deploymentId}/health-check/test`, {
-        method: "POST",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async startContainer(nodeId: string, containerId: string): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/start`, {
-      method: "POST",
-    });
-  }
-
-  async stopContainer(nodeId: string, containerId: string, timeout?: number): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/stop`, {
-      method: "POST",
-      body: JSON.stringify(timeout === undefined ? {} : { timeout }),
-    });
-  }
-
-  async restartContainer(nodeId: string, containerId: string, timeout?: number): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/restart`, {
-      method: "POST",
-      body: JSON.stringify(timeout === undefined ? {} : { timeout }),
-    });
-  }
-
-  async killContainer(nodeId: string, containerId: string, signal = "SIGKILL"): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/kill`, {
-      method: "POST",
-      body: JSON.stringify({ signal }),
-    });
-  }
-
-  async removeContainer(nodeId: string, containerId: string, force = false): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}`, {
-      method: "DELETE",
-      body: JSON.stringify({ force }),
-    });
-  }
-
-  async renameContainer(nodeId: string, containerId: string, name: string): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/containers/${containerId}/rename`, {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    });
-  }
-
-  async duplicateContainer(
-    nodeId: string,
-    containerId: string,
-    name: string
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/duplicate`,
-        { method: "POST", body: JSON.stringify({ name }) }
-      )
-    );
-  }
-
-  async updateContainer(
-    nodeId: string,
-    containerId: string,
-    config: { tag?: string; env?: Record<string, string>; removeEnv?: string[] }
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/update`,
-        { method: "POST", body: JSON.stringify(config) }
-      )
-    );
-  }
-
-  async getContainerLogs(
-    nodeId: string,
-    containerId: string,
-    params?: { tail?: number; timestamps?: boolean }
-  ): Promise<string[]> {
-    const qs = new URLSearchParams();
-    if (params?.tail) qs.set("tail", String(params.tail));
-    if (params?.timestamps) qs.set("timestamps", "true");
-    const query = qs.toString();
-    return this.unwrapData(
-      this.request<{ data: string[] }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/logs${query ? `?${query}` : ""}`
-      )
-    );
-  }
-
-  async getContainerStats(nodeId: string, containerId: string): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/stats`
-      )
-    );
-  }
-
-  async getContainerTop(
-    nodeId: string,
-    containerId: string
-  ): Promise<{
-    Titles: string[];
-    Processes: string[][];
-    truncated?: boolean;
-    totalProcesses?: number;
-    limit?: number;
-  }> {
-    return this.unwrapData(
-      this.request<{
-        data: {
-          Titles: string[];
-          Processes: string[][];
-          truncated?: boolean;
-          totalProcesses?: number;
-          limit?: number;
-        };
-      }>(`/docker/nodes/${nodeId}/containers/${containerId}/top`)
-    );
-  }
-
-  async getContainerStatsHistory(
-    nodeId: string,
-    containerId: string
-  ): Promise<Record<string, unknown>[]> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown>[] }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/stats/history`
-      )
-    );
-  }
-
-  async getContainerEnv(nodeId: string, containerId: string): Promise<string[]> {
-    return this.unwrapData(
-      this.request<{ data: string[] }>(`/docker/nodes/${nodeId}/containers/${containerId}/env`)
-    );
-  }
-
-  async updateContainerEnv(
-    nodeId: string,
-    containerId: string,
-    env: Record<string, string>,
-    removeEnv?: string[]
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/env`,
-        { method: "PUT", body: JSON.stringify({ env, removeEnv }) }
-      )
-    );
-  }
-
-  async liveUpdateContainer(
-    nodeId: string,
-    containerId: string,
-    config: Record<string, unknown>
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/live-update`,
-        { method: "POST", body: JSON.stringify(config) }
-      )
-    );
-  }
-
-  async recreateWithConfig(
-    nodeId: string,
-    containerId: string,
-    config: Record<string, unknown>
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/recreate`,
-        { method: "POST", body: JSON.stringify(config) }
-      )
-    );
-  }
-
-  // ── Docker Secrets ────────────────────────────────────────────────
-
-  async listDockerSecrets(nodeId: string, containerId: string): Promise<DockerSecret[]> {
-    return this.unwrapData(
-      this.request<{ data: DockerSecret[] }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/secrets`
-      )
-    );
-  }
-
-  async createDockerSecret(
-    nodeId: string,
-    containerId: string,
-    key: string,
-    value: string
-  ): Promise<DockerSecret> {
-    return this.unwrapData(
-      this.request<{ data: DockerSecret }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/secrets`,
-        {
-          method: "POST",
-          body: JSON.stringify({ key, value }),
-        }
-      )
-    );
-  }
-
-  async updateDockerSecret(
-    nodeId: string,
-    containerId: string,
-    secretId: string,
-    value: string
-  ): Promise<DockerSecret> {
-    return this.unwrapData(
-      this.request<{ data: DockerSecret }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/secrets/${secretId}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ value }),
-        }
-      )
-    );
-  }
-
-  async deleteDockerSecret(nodeId: string, containerId: string, secretId: string): Promise<void> {
-    await this.request(`/docker/nodes/${nodeId}/containers/${containerId}/secrets/${secretId}`, {
-      method: "DELETE",
-    });
-  }
-
-  async listDockerDeploymentSecrets(nodeId: string, deploymentId: string): Promise<DockerSecret[]> {
-    return this.unwrapData(
-      this.request<{ data: DockerSecret[] }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/secrets`
-      )
-    );
-  }
-
-  async createDockerDeploymentSecret(
-    nodeId: string,
-    deploymentId: string,
-    key: string,
-    value: string
-  ): Promise<DockerSecret> {
-    return this.unwrapData(
-      this.request<{ data: DockerSecret }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/secrets`,
-        {
-          method: "POST",
-          body: JSON.stringify({ key, value }),
-        }
-      )
-    );
-  }
-
-  async updateDockerDeploymentSecret(
-    nodeId: string,
-    deploymentId: string,
-    secretId: string,
-    value: string
-  ): Promise<DockerSecret> {
-    return this.unwrapData(
-      this.request<{ data: DockerSecret }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/secrets/${secretId}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ value }),
-        }
-      )
-    );
-  }
-
-  async deleteDockerDeploymentSecret(
-    nodeId: string,
-    deploymentId: string,
-    secretId: string
-  ): Promise<void> {
-    await this.request(`/docker/nodes/${nodeId}/deployments/${deploymentId}/secrets/${secretId}`, {
-      method: "DELETE",
-    });
-  }
-
-  // ── Docker Images ─────────────────────────────────────────────────
-
-  async listDockerImages(nodeId: string, params?: DockerListQuery): Promise<DockerImage[]> {
-    return withDockerListMeta(
-      await this.request<DockerListEnvelope<DockerImage>>(
-        `/docker/nodes/${nodeId}/images${dockerListQuery(params)}`
-      )
-    );
-  }
-
-  async pullImage(
-    nodeId: string,
-    imageRef: string,
-    registryId?: string
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(`/docker/nodes/${nodeId}/images/pull`, {
-        method: "POST",
-        body: JSON.stringify({ imageRef, registryId }),
-      })
-    );
-  }
-
-  async removeImage(nodeId: string, imageId: string): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/images/${encodeURIComponent(imageId)}`, {
-      method: "DELETE",
-    });
-  }
-
-  async pruneImages(nodeId: string): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(`/docker/nodes/${nodeId}/images/prune`, {
-        method: "POST",
-      })
-    );
-  }
-
-  // ── Docker Volumes ────────────────────────────────────────────────
-
-  async listDockerVolumes(nodeId: string, params?: DockerListQuery): Promise<DockerVolume[]> {
-    return withDockerListMeta(
-      await this.request<DockerListEnvelope<DockerVolume>>(
-        `/docker/nodes/${nodeId}/volumes${dockerListQuery(params)}`
-      )
-    );
-  }
-
-  async createVolume(
-    nodeId: string,
-    config: { name: string; driver?: string; labels?: Record<string, string> }
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(`/docker/nodes/${nodeId}/volumes`, {
-        method: "POST",
-        body: JSON.stringify(config),
-      })
-    );
-  }
-
-  async removeVolume(nodeId: string, name: string): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}`, {
-      method: "DELETE",
-    });
-  }
-
-  // ── Docker Networks ───────────────────────────────────────────────
-
-  async listDockerNetworks(nodeId: string, params?: DockerListQuery): Promise<DockerNetwork[]> {
-    return withDockerListMeta(
-      await this.request<DockerListEnvelope<DockerNetwork>>(
-        `/docker/nodes/${nodeId}/networks${dockerListQuery(params)}`
-      )
-    );
-  }
-
-  async createNetwork(
-    nodeId: string,
-    config: { name: string; driver?: string; subnet?: string; gateway?: string }
-  ): Promise<Record<string, unknown>> {
-    return this.unwrapData(
-      this.request<{ data: Record<string, unknown> }>(`/docker/nodes/${nodeId}/networks`, {
-        method: "POST",
-        body: JSON.stringify(config),
-      })
-    );
-  }
-
-  async removeNetwork(nodeId: string, networkId: string): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/networks/${networkId}`, { method: "DELETE" });
-  }
-
-  async connectContainerToNetwork(
-    nodeId: string,
-    networkId: string,
-    containerId: string
-  ): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/networks/${networkId}/connect`, {
-      method: "POST",
-      body: JSON.stringify({ containerId }),
-    });
-  }
-
-  async disconnectContainerFromNetwork(
-    nodeId: string,
-    networkId: string,
-    containerId: string
-  ): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/networks/${networkId}/disconnect`, {
-      method: "POST",
-      body: JSON.stringify({ containerId }),
-    });
-  }
-
-  // ── Docker File Browser ───────────────────────────────────────────
-
-  async listContainerDir(nodeId: string, containerId: string, path: string): Promise<FileEntry[]> {
-    const response = await this.request<DockerListEnvelope<FileEntry>>(
-      `/docker/nodes/${nodeId}/containers/${containerId}/files?path=${encodeURIComponent(path)}`
-    );
-    return withDockerListMeta(response);
-  }
-
-  async readContainerFile(nodeId: string, containerId: string, path: string): Promise<string> {
-    return this.unwrapData(
-      this.request<{ data: string }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/files/read?path=${encodeURIComponent(path)}`
-      )
-    );
-  }
-
-  async writeContainerFile(nodeId: string, containerId: string, path: string, content: string) {
-    return this.unwrapData(
-      this.request<{ data: unknown }>(
-        `/docker/nodes/${nodeId}/containers/${containerId}/files/write`,
-        { method: "PUT", body: JSON.stringify({ path, content }) }
-      )
-    );
-  }
-
-  // ── Docker Registries ─────────────────────────────────────────────
-
-  async listDockerRegistries(): Promise<DockerRegistry[]> {
-    return this.unwrapData(this.request<{ data: DockerRegistry[] }>("/docker/registries"));
-  }
-
-  async createRegistry(config: {
-    name: string;
-    url: string;
-    username?: string;
-    password?: string;
-    trustedAuthRealm?: string;
-    scope?: string;
-    nodeId?: string;
-  }): Promise<DockerRegistry> {
-    return this.unwrapData(
-      this.request<{ data: DockerRegistry }>("/docker/registries", {
-        method: "POST",
-        body: JSON.stringify(config),
-      })
-    );
-  }
-
-  async updateRegistry(
-    id: string,
-    config: Partial<{
-      name: string;
-      url: string;
-      username?: string;
-      password?: string;
-      trustedAuthRealm?: string;
-      scope?: string;
-      nodeId?: string;
-    }>
-  ): Promise<DockerRegistry> {
-    return this.unwrapData(
-      this.request<{ data: DockerRegistry }>(`/docker/registries/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(config),
-      })
-    );
-  }
-
-  async deleteRegistry(id: string): Promise<void> {
-    await this.request<void>(`/docker/registries/${id}`, { method: "DELETE" });
-  }
-
-  async testRegistry(id: string): Promise<{ ok: boolean; error?: string }> {
-    const result = await this.unwrapData(
-      this.request<{
-        data: { success?: boolean; ok?: boolean; error?: string; statusText?: string };
-      }>(`/docker/registries/${id}/test`, { method: "POST" })
-    );
-    return { ok: result.success ?? result.ok ?? false, error: result.error || result.statusText };
-  }
-
-  async testRegistryDirect(creds: {
-    url: string;
-    username?: string;
-    password?: string;
-    trustedAuthRealm?: string;
-  }): Promise<{ ok: boolean; error?: string }> {
-    const result = await this.unwrapData(
-      this.request<{ data: { success?: boolean; error?: string; statusText?: string } }>(
-        `/docker/registries/test`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(creds),
-        }
-      )
-    );
-    return { ok: result.success ?? false, error: result.error || result.statusText };
-  }
-
-  // ── Docker Tasks ──────────────────────────────────────────────────
-
-  async listDockerTasks(params?: {
-    nodeId?: string;
-    status?: string;
-    type?: string;
-  }): Promise<DockerTask[]> {
-    const qs = new URLSearchParams();
-    if (params?.nodeId) qs.set("nodeId", params.nodeId);
-    if (params?.status) qs.set("status", params.status);
-    if (params?.type) qs.set("type", params.type);
-    const query = qs.toString();
-    return this.unwrapData(
-      this.request<{ data: DockerTask[] }>(`/docker/tasks${query ? `?${query}` : ""}`)
-    );
-  }
-
-  async getDockerTask(id: string): Promise<DockerTask> {
-    return this.unwrapData(this.request<{ data: DockerTask }>(`/docker/tasks/${id}`));
-  }
-
-  // ── Docker Exec WebSocket ─────────────────────────────────────────
-
-  createExecWebSocket(nodeId: string, containerId: string, shell = "/bin/sh"): WebSocket {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/containers/${containerId}/exec?shell=${encodeURIComponent(shell)}`;
-    return new WebSocket(url);
-  }
-
-  // ── Node Console WebSocket ─────────────────────────────────────
-
-  createNodeExecWebSocket(nodeId: string, shell = "auto"): WebSocket {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/nodes/${nodeId}/exec?shell=${encodeURIComponent(shell)}`;
-    return new WebSocket(url);
-  }
-
-  // ── Docker Webhooks ────────────────────────────────────────────
-
-  async getContainerWebhook(nodeId: string, containerName: string): Promise<DockerWebhook | null> {
-    const result = await this.request<{ data: DockerWebhook | null }>(
-      `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`
-    );
-    return result.data;
-  }
-
-  async upsertContainerWebhook(
-    nodeId: string,
-    containerName: string,
-    input: { enabled?: boolean }
-  ): Promise<DockerWebhook> {
-    return this.unwrapData(
-      this.request<{ data: DockerWebhook }>(
-        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`,
-        { method: "PUT", body: JSON.stringify(input) }
-      )
-    );
-  }
-
-  async deleteContainerWebhook(nodeId: string, containerName: string): Promise<void> {
-    await this.request<void>(
-      `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook`,
-      { method: "DELETE" }
-    );
-  }
-
-  async regenerateWebhookToken(nodeId: string, containerName: string): Promise<DockerWebhook> {
-    return this.unwrapData(
-      this.request<{ data: DockerWebhook }>(
-        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/webhook/regenerate`,
-        { method: "POST" }
-      )
-    );
-  }
-
-  async getContainerImageCleanup(
-    nodeId: string,
-    containerName: string
-  ): Promise<DockerImageCleanupSettings> {
-    return this.unwrapData(
-      this.request<{ data: DockerImageCleanupSettings }>(
-        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/image-cleanup`
-      )
-    );
-  }
-
-  async upsertContainerImageCleanup(
-    nodeId: string,
-    containerName: string,
-    input: { enabled?: boolean; retentionCount?: number }
-  ): Promise<DockerImageCleanupSettings> {
-    return this.unwrapData(
-      this.request<{ data: DockerImageCleanupSettings }>(
-        `/docker/nodes/${nodeId}/containers/${encodeURIComponent(containerName)}/image-cleanup`,
-        { method: "PUT", body: JSON.stringify(input) }
-      )
-    );
-  }
-
-  async getDeploymentWebhook(nodeId: string, deploymentId: string): Promise<DockerWebhook | null> {
-    const result = await this.request<{ data: DockerWebhook | null }>(
-      `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook`
-    );
-    return result.data;
-  }
-
-  async upsertDeploymentWebhook(
-    nodeId: string,
-    deploymentId: string,
-    input: { enabled?: boolean }
-  ): Promise<DockerWebhook> {
-    return this.unwrapData(
-      this.request<{ data: DockerWebhook }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook`,
-        { method: "PUT", body: JSON.stringify(input) }
-      )
-    );
-  }
-
-  async deleteDeploymentWebhook(nodeId: string, deploymentId: string): Promise<void> {
-    await this.request<void>(`/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook`, {
-      method: "DELETE",
-    });
-  }
-
-  async regenerateDeploymentWebhookToken(
-    nodeId: string,
-    deploymentId: string
-  ): Promise<DockerWebhook> {
-    return this.unwrapData(
-      this.request<{ data: DockerWebhook }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/webhook/regenerate`,
-        { method: "POST" }
-      )
-    );
-  }
-
-  async getDeploymentImageCleanup(
-    nodeId: string,
-    deploymentId: string
-  ): Promise<DockerImageCleanupSettings> {
-    return this.unwrapData(
-      this.request<{ data: DockerImageCleanupSettings }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/image-cleanup`
-      )
-    );
-  }
-
-  async upsertDeploymentImageCleanup(
-    nodeId: string,
-    deploymentId: string,
-    input: { enabled?: boolean; retentionCount?: number }
-  ): Promise<DockerImageCleanupSettings> {
-    return this.unwrapData(
-      this.request<{ data: DockerImageCleanupSettings }>(
-        `/docker/nodes/${nodeId}/deployments/${deploymentId}/image-cleanup`,
-        { method: "PUT", body: JSON.stringify(input) }
-      )
-    );
-  }
-
-  async pullImageSync(
-    nodeId: string,
-    imageRef: string,
-    registryId?: string
-  ): Promise<{ success: boolean; imageRef: string }> {
-    return this.unwrapData(
-      this.request<{ data: { success: boolean; imageRef: string } }>(
-        `/docker/nodes/${nodeId}/images/pull-sync`,
-        { method: "POST", body: JSON.stringify({ imageRef, registryId }) }
-      )
-    );
-  }
-
-  // ── Docker Log Stream WebSocket ─────────────────────────────────
-
-  createLogStreamWebSocket(nodeId: string, containerId: string, tail = 100): WebSocket {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/docker/nodes/${nodeId}/containers/${containerId}/logs/stream?tail=${tail}`;
-    return new WebSocket(url);
-  }
-  // ── Notification Alert Rules ──────────────────────────────────────
-
-  async listAlertRules(params?: {
-    page?: number;
-    limit?: number;
-    type?: string;
-    enabled?: boolean;
-    search?: string;
-  }): Promise<{
-    data: import("@/types").AlertRule[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  }> {
-    const query = new URLSearchParams();
-    if (params?.page) query.set("page", String(params.page));
-    if (params?.limit) query.set("limit", String(params.limit));
-    if (params?.type) query.set("type", params.type);
-    if (params?.enabled !== undefined) query.set("enabled", String(params.enabled));
-    if (params?.search) query.set("search", params.search);
-    const qs = query.toString();
-    return this.request(`/notifications/alert-rules${qs ? `?${qs}` : ""}`);
-  }
-
-  async getAlertCategories(): Promise<import("@/types").AlertCategoryDef[]> {
-    return this.unwrapData(this.request("/notifications/alert-rules/categories"));
-  }
-
-  async createAlertRule(
-    data: Omit<import("@/types").AlertRule, "id" | "createdAt" | "updatedAt" | "isBuiltin">
-  ): Promise<import("@/types").AlertRule> {
-    return this.unwrapData(
-      this.request("/notifications/alert-rules", { method: "POST", body: JSON.stringify(data) })
-    );
-  }
-
-  async updateAlertRule(
-    id: string,
-    data: Partial<Omit<import("@/types").AlertRule, "id" | "createdAt" | "updatedAt" | "isBuiltin">>
-  ): Promise<import("@/types").AlertRule> {
-    return this.unwrapData(
-      this.request(`/notifications/alert-rules/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(data),
-      })
-    );
-  }
-
-  async deleteAlertRule(id: string): Promise<void> {
-    await this.request(`/notifications/alert-rules/${id}`, { method: "DELETE" });
-  }
-
-  // ── Notification Webhooks ───────────────────────────────────────
-
-  async listWebhooks(params?: {
-    page?: number;
-    limit?: number;
-    enabled?: boolean;
-    search?: string;
-  }): Promise<{
-    data: import("@/types").NotificationWebhook[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  }> {
-    const query = new URLSearchParams();
-    if (params?.page) query.set("page", String(params.page));
-    if (params?.limit) query.set("limit", String(params.limit));
-    if (params?.enabled !== undefined) query.set("enabled", String(params.enabled));
-    if (params?.search) query.set("search", params.search);
-    const qs = query.toString();
-    return this.request(`/notifications/webhooks${qs ? `?${qs}` : ""}`);
-  }
-
-  async getWebhookPresets(): Promise<import("@/types").WebhookPreset[]> {
-    return this.unwrapData(this.request("/notifications/webhooks/presets"));
-  }
-
-  async createWebhook(
-    data: Omit<import("@/types").NotificationWebhook, "id" | "createdAt" | "updatedAt">
-  ): Promise<import("@/types").NotificationWebhook> {
-    return this.unwrapData(
-      this.request("/notifications/webhooks", { method: "POST", body: JSON.stringify(data) })
-    );
-  }
-
-  async updateWebhook(
-    id: string,
-    data: Partial<Omit<import("@/types").NotificationWebhook, "id" | "createdAt" | "updatedAt">>
-  ): Promise<import("@/types").NotificationWebhook> {
-    return this.unwrapData(
-      this.request(`/notifications/webhooks/${id}`, { method: "PUT", body: JSON.stringify(data) })
-    );
-  }
-
-  async deleteWebhook(id: string): Promise<void> {
-    await this.request(`/notifications/webhooks/${id}`, { method: "DELETE" });
-  }
-
-  async testWebhook(
-    id: string
-  ): Promise<{ success: boolean; statusCode?: number; error?: string; rendered?: string }> {
-    return this.unwrapData(this.request(`/notifications/webhooks/${id}/test`, { method: "POST" }));
-  }
-
-  async previewWebhookTemplate(
-    bodyTemplate: string
-  ): Promise<{ rendered: string; context: Record<string, unknown> }> {
-    return this.unwrapData(
-      this.request("/notifications/webhooks/preview", {
-        method: "POST",
-        body: JSON.stringify({ bodyTemplate }),
-      })
-    );
-  }
-
-  // ── Notification Deliveries ─────────────────────────────────────
-
-  async listDeliveries(params?: {
-    page?: number;
-    limit?: number;
-    webhookId?: string;
-    status?: string;
-    eventType?: string;
-  }): Promise<{
-    data: import("@/types").WebhookDelivery[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  }> {
-    const query = new URLSearchParams();
-    if (params?.page) query.set("page", String(params.page));
-    if (params?.limit) query.set("limit", String(params.limit));
-    if (params?.webhookId) query.set("webhookId", params.webhookId);
-    if (params?.status) query.set("status", params.status);
-    if (params?.eventType) query.set("eventType", params.eventType);
-    const qs = query.toString();
-    return this.request(`/notifications/deliveries${qs ? `?${qs}` : ""}`);
-  }
-
-  async getDelivery(id: string): Promise<import("@/types").WebhookDelivery> {
-    return this.unwrapData(
-      this.request<{ data: import("@/types").WebhookDelivery }>(`/notifications/deliveries/${id}`)
-    );
-  }
-
-  async getDeliveryStats(
-    webhookId?: string
-  ): Promise<{ total: number; success: number; failed: number; retrying: number }> {
-    const qs = webhookId ? `?webhookId=${webhookId}` : "";
-    return this.unwrapData(this.request(`/notifications/deliveries/stats${qs}`));
   }
 }
 

@@ -72,6 +72,7 @@ export interface CommandResult {
   success: boolean;
   error: string;
   detail: string;
+  data: Buffer;
 }
 
 export interface HealthReport {
@@ -170,6 +171,7 @@ export interface GatewayCommand {
   execInput?: ExecInput;
   nodeExec?: NodeExecCommand;
   updateDaemon?: UpdateDaemonCommand;
+  nodeFile?: NodeFileCommand;
 }
 
 export interface ApplyConfigCommand {
@@ -281,6 +283,11 @@ export interface DockerVolumeCommand {
   driver: string;
   labels: Record<string, string>;
   force: boolean;
+  path: string;
+  maxBytes: number;
+  newName: string;
+  content: Buffer;
+  targetPath: string;
 }
 
 export interface DockerNetworkCommand {
@@ -315,6 +322,7 @@ export interface DockerFileCommand {
   action: string;
   containerId: string;
   path: string;
+  targetPath: string;
   maxBytes: number;
   content?: Buffer;
 }
@@ -345,6 +353,14 @@ export interface NodeExecCommand {
   tty: boolean;
   rows: number;
   cols: number;
+}
+
+export interface NodeFileCommand {
+  action: string;
+  path: string;
+  targetPath: string;
+  maxBytes: number;
+  content?: Buffer;
 }
 
 export interface ExecInput {

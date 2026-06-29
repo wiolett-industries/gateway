@@ -1,12 +1,13 @@
-import { motion } from "framer-motion";
 import { Minus, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +45,9 @@ interface BasicAuthInput {
 
 export function AccessLists() {
   const { hasScope } = useAuthStore();
+  const canCreateAccessList = hasScope("acl:create");
+  const canEditAccessList = hasScope("acl:edit");
+  const canDeleteAccessList = hasScope("acl:delete");
   const cachedAccessLists = api.getCached<{ data: AccessList[] }>("access-lists:list");
   const [accessLists, setAccessLists] = useState<AccessList[]>(cachedAccessLists?.data ?? []);
   const [isLoading, setIsLoading] = useState(!cachedAccessLists);
@@ -104,6 +108,31 @@ export function AccessLists() {
     setDialogOpen(true);
   };
 
+  const addIpRule = () => setIpRules((prev) => [...prev, { type: "allow", value: "" }]);
+  const updateIpRule = (index: number, field: keyof IPRule, value: string) => {
+    setIpRules((prev) =>
+      prev.map((rule, candidateIndex) =>
+        candidateIndex === index ? { ...rule, [field]: value } : rule
+      )
+    );
+  };
+  const removeIpRule = (index: number) => {
+    setIpRules((prev) => prev.filter((_, candidateIndex) => candidateIndex !== index));
+  };
+  const addBasicAuthUser = () => {
+    setBasicAuthUsers((prev) => [...prev, { username: "", password: "" }]);
+  };
+  const updateBasicAuthUser = (index: number, field: keyof BasicAuthInput, value: string) => {
+    setBasicAuthUsers((prev) =>
+      prev.map((user, candidateIndex) =>
+        candidateIndex === index ? { ...user, [field]: value } : user
+      )
+    );
+  };
+  const removeBasicAuthUser = (index: number) => {
+    setBasicAuthUsers((prev) => prev.filter((_, candidateIndex) => candidateIndex !== index));
+  };
+
   const handleSave = async () => {
     if (!name.trim()) {
       toast.error("Name is required");
@@ -112,14 +141,17 @@ export function AccessLists() {
 
     setIsSaving(true);
     try {
+      const nextBasicAuthUsers = basicAuthEnabled
+        ? basicAuthUsers
+            .filter((u) => u.username.trim() !== "" && (editing || u.password.trim() !== ""))
+            .map((u) => ({ username: u.username.trim(), password: u.password }))
+        : undefined;
       const data = {
         name,
         description: description || undefined,
         ipRules: ipRules.filter((r) => r.value.trim() !== ""),
         basicAuthEnabled,
-        basicAuthUsers: basicAuthEnabled
-          ? basicAuthUsers.filter((u) => u.username.trim() !== "" && u.password.trim() !== "")
-          : undefined,
+        basicAuthUsers: nextBasicAuthUsers,
       };
 
       if (editing) {
@@ -158,18 +190,100 @@ export function AccessLists() {
     return <LoadingSpinner />;
   }
 
+  const accessListColumns: SimpleTableColumn<AccessList>[] = [
+    {
+      id: "name",
+      header: "Name",
+      render: (al) => <p className="text-sm font-medium">{al.name}</p>,
+    },
+    {
+      id: "description",
+      header: "Description",
+      render: (al) => (
+        <p className="line-clamp-1 text-sm text-muted-foreground">{al.description || "—"}</p>
+      ),
+    },
+    {
+      id: "ip-rules",
+      header: "IP Rules",
+      render: (al) => (
+        <Badge variant="secondary" className="gap-1">
+          <span>{(al.ipRules || []).length}</span>
+          <span>rules</span>
+        </Badge>
+      ),
+    },
+    {
+      id: "auth-users",
+      header: "Auth Users",
+      render: (al) => (
+        <Badge variant={al.basicAuthEnabled ? "secondary" : "outline"} className="gap-1">
+          {al.basicAuthEnabled ? (
+            <>
+              <span>{(al.basicAuthUsers || []).length}</span>
+              <span>users</span>
+            </>
+          ) : (
+            <span>Disabled</span>
+          )}
+        </Badge>
+      ),
+    },
+    {
+      id: "usage",
+      header: "Usage",
+      render: (al) => (
+        <span className="text-sm text-muted-foreground">{al.usageCount ?? 0} hosts</span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "right",
+      className: "w-12",
+      cellClassName: "w-12",
+      render: (al) =>
+        canEditAccessList ? (
+          <div onClick={(event) => event.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => openEdit(al)}>
+                  <Pencil className="h-4 w-4" />
+                  Edit
+                </DropdownMenuItem>
+                {canDeleteAccessList && (
+                  <DropdownMenuItem onClick={() => handleDelete(al)} className="text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null,
+    },
+  ];
+
   return (
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">Access Lists</h1>
-            <p className="text-sm text-muted-foreground">
-              Manage IP rules and basic authentication
-            </p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">Access Lists</h1>
+              <p className="text-sm text-muted-foreground">
+                Manage IP rules and basic authentication
+              </p>
+            </div>
           </div>
-          {hasScope("acl:create") && (
+          {canCreateAccessList && (
             <ResponsiveHeaderActions
               actions={[
                 {
@@ -190,90 +304,23 @@ export function AccessLists() {
         {/* Table */}
         {accessLists.length > 0 ? (
           <div className="border border-border bg-card">
-            <div className="overflow-x-auto -mb-px">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Name</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Description</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">IP Rules</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Auth Users</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Usage</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {accessLists.map((al) => (
-                    <tr key={al.id} className="hover:bg-accent transition-colors">
-                      <td className="p-3">
-                        <p className="text-sm font-medium">{al.name}</p>
-                      </td>
-                      <td className="p-3">
-                        <p className="text-sm text-muted-foreground line-clamp-1">
-                          {al.description || "—"}
-                        </p>
-                      </td>
-                      <td className="p-3">
-                        <Badge variant="secondary" className="text-xs">
-                          {(al.ipRules || []).length} rules
-                        </Badge>
-                      </td>
-                      <td className="p-3">
-                        {al.basicAuthEnabled ? (
-                          <Badge variant="secondary" className="text-xs">
-                            {(al.basicAuthUsers || []).length} users
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Disabled</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        <span className="text-sm text-muted-foreground">
-                          {al.usageCount ?? 0} hosts
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        {hasScope("acl:edit") && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openEdit(al)}>
-                                <Pencil className="h-4 w-4" />
-                                Edit
-                              </DropdownMenuItem>
-                              {hasScope("acl:delete") && (
-                                <DropdownMenuItem
-                                  onClick={() => handleDelete(al)}
-                                  className="text-destructive"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <SimpleTable
+              columns={accessListColumns}
+              rows={accessLists}
+              getRowKey={(al) => al.id}
+              onRowClick={canEditAccessList ? openEdit : undefined}
+            />
           </div>
         ) : (
           <EmptyState
             message="No access lists."
-            {...(hasScope("acl:create") ? { actionLabel: "Create one", onAction: openCreate } : {})}
+            {...(canCreateAccessList ? { actionLabel: "Create one", onAction: openCreate } : {})}
           />
         )}
 
         {/* Create/Edit Dialog */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>{editing ? "Edit Access List" : "Create Access List"}</DialogTitle>
               <DialogDescription>
@@ -307,51 +354,70 @@ export function AccessLists() {
               {/* IP Rules */}
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold">IP Rules</h3>
-                {ipRules.map((rule, i) => (
-                  <div key={i} className="flex gap-2">
-                    <Select
-                      value={rule.type}
-                      onValueChange={(v) => {
-                        const next = [...ipRules];
-                        next[i] = { ...next[i], type: v as "allow" | "deny" };
-                        setIpRules(next);
-                      }}
-                    >
-                      <SelectTrigger className="w-28">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="allow">Allow</SelectItem>
-                        <SelectItem value="deny">Deny</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      className="flex-1"
-                      value={rule.value}
-                      onChange={(e) => {
-                        const next = [...ipRules];
-                        next[i] = { ...next[i], value: e.target.value };
-                        setIpRules(next);
-                      }}
-                      placeholder="192.168.1.0/24 or IP address"
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setIpRules(ipRules.filter((_, j) => j !== i))}
-                    >
-                      <Minus className="h-4 w-4" />
-                    </Button>
+                <div className="overflow-hidden border border-border">
+                  <div className="grid grid-cols-[9rem_minmax(0,1fr)_2.25rem] border-b border-border bg-muted text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    <div className="px-3 py-2">Type</div>
+                    <div className="border-l border-border px-3 py-2">Address / CIDR</div>
+                    <div />
                   </div>
-                ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIpRules([...ipRules, { type: "allow", value: "" }])}
-                >
-                  <Plus className="h-4 w-4" />
-                  Add IP Rule
-                </Button>
+                  <div>
+                    {ipRules.map((rule, index) => (
+                      <div
+                        key={index}
+                        className="grid grid-cols-[9rem_minmax(0,1fr)_2.25rem] border-b border-border last:border-b-0"
+                      >
+                        <Select
+                          value={rule.type}
+                          onValueChange={(value) =>
+                            updateIpRule(index, "type", value as IPRule["type"])
+                          }
+                        >
+                          <SelectTrigger className="h-9 rounded-none border-0 shadow-none focus:ring-1 focus:ring-inset focus:ring-ring focus:ring-offset-0">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="allow">Allow</SelectItem>
+                            <SelectItem value="deny">Deny</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          value={rule.value}
+                          onChange={(event) => updateIpRule(index, "value", event.target.value)}
+                          className="h-9 rounded-none border-0 border-l border-border shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          placeholder="192.168.1.0/24 or IP address"
+                        />
+                        <div className="flex border-l border-border">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 rounded-none"
+                            onClick={() => removeIpRule(index)}
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="grid grid-cols-[minmax(0,1fr)_2.25rem] bg-muted/60 dark:bg-muted">
+                      <button
+                        type="button"
+                        className="h-9 min-w-0 cursor-pointer"
+                        aria-label="Add IP rule"
+                        onClick={addIpRule}
+                      />
+                      <div className="flex border-l border-border">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 rounded-none"
+                          onClick={addIpRule}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Basic Auth */}
@@ -362,60 +428,76 @@ export function AccessLists() {
                 </div>
 
                 {basicAuthEnabled && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-                    className="space-y-2"
-                  >
-                    {basicAuthUsers.map((user, i) => (
-                      <div key={i} className="flex gap-2">
-                        <Input
-                          placeholder="Username"
-                          value={user.username}
-                          onChange={(e) => {
-                            const next = [...basicAuthUsers];
-                            next[i] = { ...next[i], username: e.target.value };
-                            setBasicAuthUsers(next);
-                          }}
-                        />
-                        <Input
-                          type="password"
-                          placeholder={editing ? "New password (leave blank to keep)" : "Password"}
-                          value={user.password}
-                          onChange={(e) => {
-                            const next = [...basicAuthUsers];
-                            next[i] = { ...next[i], password: e.target.value };
-                            setBasicAuthUsers(next);
-                          }}
-                        />
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() =>
-                            setBasicAuthUsers(basicAuthUsers.filter((_, j) => j !== i))
-                          }
-                        >
-                          <Minus className="h-4 w-4" />
-                        </Button>
+                  <div className="space-y-3">
+                    <div className="overflow-hidden border border-border">
+                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] border-b border-border bg-muted text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        <div className="px-3 py-2">Username</div>
+                        <div className="border-l border-border px-3 py-2">Password</div>
+                        <div />
                       </div>
-                    ))}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setBasicAuthUsers([...basicAuthUsers, { username: "", password: "" }])
-                      }
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add User
-                    </Button>
-                  </motion.div>
+                      <div>
+                        {basicAuthUsers.map((user, index) => (
+                          <div
+                            key={index}
+                            className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] border-b border-border last:border-b-0"
+                          >
+                            <Input
+                              placeholder="Username"
+                              value={user.username}
+                              onChange={(event) =>
+                                updateBasicAuthUser(index, "username", event.target.value)
+                              }
+                              className="h-9 rounded-none border-0 shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                            />
+                            <Input
+                              type="password"
+                              placeholder={
+                                editing ? "New password (leave blank to keep)" : "Password"
+                              }
+                              value={user.password}
+                              onChange={(event) =>
+                                updateBasicAuthUser(index, "password", event.target.value)
+                              }
+                              className="h-9 rounded-none border-0 border-l border-border shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                            />
+                            <div className="flex border-l border-border">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 shrink-0 rounded-none"
+                                onClick={() => removeBasicAuthUser(index)}
+                              >
+                                <Minus className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="grid grid-cols-[minmax(0,1fr)_2.25rem] bg-muted/60 dark:bg-muted">
+                          <button
+                            type="button"
+                            className="h-9 min-w-0 cursor-pointer"
+                            aria-label="Add auth user"
+                            onClick={addBasicAuthUser}
+                          />
+                          <div className="flex border-l border-border">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9 shrink-0 rounded-none"
+                              onClick={addBasicAuthUser}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="shrink-0">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>

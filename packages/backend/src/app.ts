@@ -52,7 +52,9 @@ import { licenseRoutes } from '@/modules/license/license.routes.js';
 import { loggingRoutes } from '@/modules/logging/logging.routes.js';
 import { mcpRoutes } from '@/modules/mcp/mcp.routes.js';
 import { monitoringRoutes } from '@/modules/monitoring/monitoring.routes.js';
+import { createProxyLogStreamWSHandlers } from '@/modules/monitoring/proxy-logs.ws.js';
 import { createNodeExecWSHandlers } from '@/modules/nodes/node-exec.ws.js';
+import { createNodeNginxLogStreamWSHandlers } from '@/modules/nodes/node-nginx-logs.ws.js';
 import { nodesRoutes } from '@/modules/nodes/nodes.routes.js';
 import { notificationRoutes } from '@/modules/notifications/notification.routes.js';
 import { oauthMetadataRoutes, oauthRoutes } from '@/modules/oauth/oauth.routes.js';
@@ -63,6 +65,7 @@ import { templateRoutes } from '@/modules/pki/templates.routes.js';
 import { folderRoutes } from '@/modules/proxy/folder.routes.js';
 import { nginxTemplateRoutes } from '@/modules/proxy/nginx-template.routes.js';
 import { proxyRoutes } from '@/modules/proxy/proxy.routes.js';
+import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { setupApiDisabledMiddleware, setupRoutes } from '@/modules/setup/setup.routes.js';
 import { sslRoutes } from '@/modules/ssl/ssl.routes.js';
 import { publicStatusPageRoutes, statusPageRoutes } from '@/modules/status-page/status-page.routes.js';
@@ -75,12 +78,41 @@ import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/event
 
 const STATUS_PREVIEW_PREFIX = '/_status-preview';
 const HEALTH_REDIS_TIMEOUT_MS = 1000;
+const DOCKER_FILE_BODY_LIMIT_PATH =
+  /^\/api\/docker\/nodes\/[^/]+\/(?:containers\/[^/]+\/files\/(?:write|create|uploads\/[^/]+\/chunks)|volumes\/[^/]+\/files\/(?:write|create|uploads\/[^/]+\/chunks))$/;
+const NODE_FILE_BODY_LIMIT_PATH = /^\/api\/nodes\/[^/]+\/files\/(?:write|create|uploads\/[^/]+\/chunks)$/;
 
 function requestBodyLimit(maxSize: number): MiddlewareHandler<AppEnv> {
   return bodyLimit({
     maxSize,
     onError: (c) => c.json({ code: 'PAYLOAD_TOO_LARGE', message: 'Request body too large' }, 413),
   }) as MiddlewareHandler<AppEnv>;
+}
+
+function requestBodyLimitDynamic(resolveMaxSize: () => Promise<number>): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const maxSize = await resolveMaxSize();
+    return requestBodyLimit(maxSize)(c, next);
+  };
+}
+
+function requestBodyLimitExcept(maxSize: number, except: (path: string) => boolean): MiddlewareHandler<AppEnv> {
+  const limit = requestBodyLimit(maxSize);
+  return async (c, next) => {
+    if (except(c.req.path)) {
+      await next();
+      return;
+    }
+    await limit(c, next);
+  };
+}
+
+async function getFileUploadMaxBodyBytes(fallback: number): Promise<number> {
+  try {
+    return await container.resolve(GeneralSettingsService).getFileUploadMaxBodyBytes();
+  } catch {
+    return fallback;
+  }
 }
 
 const requireAnyEffectiveScope: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -175,10 +207,48 @@ export function createApp() {
   app.use('/api/logging/ingest/batch', requestBodyLimit(env.LOGGING_INGEST_MAX_BODY_BYTES));
   app.use(
     '/api/docker/nodes/:nodeId/containers/:containerId/files/write',
-    requestBodyLimit(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES)
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/docker/nodes/:nodeId/containers/:containerId/files/create',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/docker/nodes/:nodeId/containers/:containerId/files/uploads/:uploadId/chunks',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/docker/nodes/:nodeId/volumes/:name/files/write',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/docker/nodes/:nodeId/volumes/:name/files/create',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/docker/nodes/:nodeId/volumes/:name/files/uploads/:uploadId/chunks',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/nodes/:id/files/write',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/nodes/:id/files/create',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
+  );
+  app.use(
+    '/api/nodes/:id/files/uploads/:uploadId/chunks',
+    requestBodyLimitDynamic(() => getFileUploadMaxBodyBytes(env.DOCKER_FILE_WRITE_MAX_BODY_BYTES))
   );
   app.use('/api/setup/*', setupApiDisabledMiddleware);
-  app.use('/api/*', requestBodyLimit(env.REQUEST_BODY_MAX_BYTES));
+  app.use(
+    '/api/*',
+    requestBodyLimitExcept(
+      env.REQUEST_BODY_MAX_BYTES,
+      (path) => DOCKER_FILE_BODY_LIMIT_PATH.test(path) || NODE_FILE_BODY_LIMIT_PATH.test(path)
+    )
+  );
 
   // Rate limiting for API and public PKI routes
   app.use('/api/*', rateLimitMiddleware);
@@ -197,6 +267,8 @@ export function createApp() {
   app.use('/api/nodes/:nodeId/exec', streamRateLimitMiddleware);
   app.use('/api/docker/nodes/:nodeId/containers/:containerId/logs/stream', streamRateLimitMiddleware);
   app.use('/api/docker/nodes/:nodeId/compose/:project/logs/stream', streamRateLimitMiddleware);
+  app.use('/api/monitoring/logs/:hostId/ws', streamRateLimitMiddleware);
+  app.use('/api/nodes/:nodeId/nginx-logs/ws', streamRateLimitMiddleware);
 
   // Safely no-ops when user is not set (unauthenticated); route-level authMiddleware handles 401
   app.use('/api/*', requireActiveUser);
@@ -361,6 +433,40 @@ export function createApp() {
         isAllowedWebSocketOrigin
       );
       return createDockerLogStreamWSHandlers(nodeId, containerId, tail, credential);
+    })
+  );
+
+  // Proxy host log stream WebSocket endpoint
+  app.get(
+    '/api/monitoring/logs/:hostId/ws',
+    upgradeWebSocket((c) => {
+      const hostId = c.req.param('hostId') ?? '';
+      const requestedTail = Number(c.req.query('tail')) || 100;
+      const tail = Math.min(Math.max(Math.trunc(requestedTail), 1), DOCKER_LOG_TAIL_MAX);
+      const credential = getProgrammaticWebSocketCredential(
+        c.req.header('cookie'),
+        c.req.header('origin'),
+        c.req.header('authorization'),
+        isAllowedWebSocketOrigin
+      );
+      return createProxyLogStreamWSHandlers(hostId, tail, credential);
+    })
+  );
+
+  // Node-wide nginx log stream WebSocket endpoint
+  app.get(
+    '/api/nodes/:nodeId/nginx-logs/ws',
+    upgradeWebSocket((c) => {
+      const nodeId = c.req.param('nodeId') ?? '';
+      const requestedTail = Number(c.req.query('tail')) || 100;
+      const tail = Math.min(Math.max(Math.trunc(requestedTail), 1), DOCKER_LOG_TAIL_MAX);
+      const credential = getProgrammaticWebSocketCredential(
+        c.req.header('cookie'),
+        c.req.header('origin'),
+        c.req.header('authorization'),
+        isAllowedWebSocketOrigin
+      );
+      return createNodeNginxLogStreamWSHandlers(nodeId, tail, credential);
     })
   );
 

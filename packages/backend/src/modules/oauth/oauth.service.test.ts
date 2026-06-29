@@ -27,6 +27,7 @@ const USER: User = {
 function createService(options?: {
   refreshToken?: any;
   refreshTokens?: any[];
+  accessToken?: any;
   accessTokens?: any[];
   revokedRefreshRows?: any[];
   groupScopes?: string[];
@@ -63,6 +64,7 @@ function createService(options?: {
         findFirst: vi.fn().mockResolvedValue(options?.authorizationCode ?? null),
       },
       oauthAccessTokens: {
+        findFirst: vi.fn().mockResolvedValue(options?.accessToken?.revokedAt ? null : (options?.accessToken ?? null)),
         findMany: vi.fn().mockResolvedValue(accessTokens),
       },
       users: {
@@ -115,6 +117,7 @@ function createService(options?: {
             for (const token of tokens) token.scopes = values.scopes;
           }
           return Object.assign(Promise.resolve(), {
+            execute: vi.fn().mockResolvedValue(undefined),
             returning: vi
               .fn()
               .mockResolvedValue(
@@ -614,8 +617,29 @@ describe('OAuthService.exchangeToken authorization code flow', () => {
 
     expect(result.token_type).toBe('Bearer');
     expect(result.scope).toBe('nodes:details');
+    expect(result.expires_in).toBe(900);
+    expect(result.refresh_token).toMatch(/^gwr_/);
     expect(updateCalls.some((call) => call.table === oauthAuthorizationCodes)).toBe(true);
     expect(insertCalls).toHaveLength(2);
+    expect(insertCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: oauthRefreshTokens,
+          values: expect.objectContaining({
+            resource: 'https://gateway.example.com/api',
+            expiresAt: expect.any(Date),
+          }),
+        }),
+        expect.objectContaining({
+          table: oauthAccessTokens,
+          values: expect.objectContaining({
+            resource: 'https://gateway.example.com/api',
+            refreshTokenId: 'refresh-new',
+            expiresAt: expect.any(Date),
+          }),
+        }),
+      ])
+    );
   });
 
   it('issues an MCP access token without refresh metadata', async () => {
@@ -685,6 +709,55 @@ describe('OAuthService.exchangeToken authorization code flow', () => {
     ).rejects.toThrow('Invalid PKCE verifier');
 
     expect(updateCalls).toEqual([]);
+  });
+});
+
+describe('OAuthService.validateAccessToken', () => {
+  it('accepts long-lived MCP access-only tokens without refresh metadata', async () => {
+    const { service } = createService({
+      accessToken: {
+        id: 'access-1',
+        tokenHash: 'hash',
+        tokenPrefix: 'gwo_valid123',
+        clientId: 'goc_client',
+        userId: USER.id,
+        scopes: ['nodes:details'],
+        resource: 'https://gateway.example.com/api/mcp',
+        refreshTokenId: null,
+        expiresAt: null,
+        revokedAt: null,
+      },
+    });
+
+    await expect(
+      service.validateAccessToken('gwo_valid', { resource: 'https://gateway.example.com/api/mcp' })
+    ).resolves.toMatchObject({
+      tokenId: 'access-1',
+      tokenPrefix: 'gwo_valid123',
+      clientId: 'goc_client',
+      scopes: ['nodes:details'],
+    });
+  });
+
+  it('does not accept a revoked MCP access token', async () => {
+    const { service } = createService({
+      accessToken: {
+        id: 'access-1',
+        tokenHash: 'hash',
+        tokenPrefix: 'gwo_valid123',
+        clientId: 'goc_client',
+        userId: USER.id,
+        scopes: ['nodes:details'],
+        resource: 'https://gateway.example.com/api/mcp',
+        refreshTokenId: null,
+        expiresAt: null,
+        revokedAt: new Date('2026-04-29T10:00:00Z'),
+      },
+    });
+
+    await expect(
+      service.validateAccessToken('gwo_valid', { resource: 'https://gateway.example.com/api/mcp' })
+    ).resolves.toBeNull();
   });
 });
 
@@ -783,6 +856,19 @@ describe('OAuthService.revokeToken', () => {
         }),
       ])
     );
+  });
+
+  it('revokes a long-lived MCP access token directly', async () => {
+    const { service, updateCalls } = createService();
+
+    await service.revokeToken('gwo_mcp_access_token', 'goc_client');
+
+    const accessRevocations = updateCalls.filter((call) => call.table === oauthAccessTokens);
+    expect(accessRevocations).toEqual([
+      expect.objectContaining({
+        values: expect.objectContaining({ revokedAt: expect.any(Date) }),
+      }),
+    ]);
   });
 
   it('revokes access tokens issued from a revoked refresh token', async () => {

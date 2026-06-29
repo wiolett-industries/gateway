@@ -9,6 +9,14 @@ import {
   UnknownDataResponseSchema,
 } from '@/lib/openapi.js';
 import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
+import {
   CreateLoggingEnvironmentSchema,
   CreateLoggingSchemaSchema,
   CreateLoggingTokenSchema,
@@ -97,12 +105,138 @@ export const deleteLoggingEnvironmentRoute = appRoute({
   request: { params: IdParamSchema },
   responses: { 204: { description: 'No content' } },
 });
+export const listLoggingEnvironmentFoldersRoute = appRoute({
+  method: 'get',
+  path: '/environment-folders',
+  tags: ['Logging Folders'],
+  summary: 'List logging environment folders',
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const createLoggingEnvironmentFolderRoute = appRoute({
+  method: 'post',
+  path: '/environment-folders',
+  tags: ['Logging Folders'],
+  summary: 'Create a logging environment folder',
+  request: jsonBody(CreateResourceFolderSchema),
+  responses: createdJson(UnknownDataResponseSchema),
+});
+export const reorderLoggingEnvironmentFoldersRoute = appRoute({
+  method: 'put',
+  path: '/environment-folders/reorder',
+  tags: ['Logging Folders'],
+  summary: 'Reorder logging environment folders',
+  request: jsonBody(ReorderResourceFoldersSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const moveLoggingEnvironmentsToFolderRoute = appRoute({
+  method: 'post',
+  path: '/environment-folders/move-environments',
+  tags: ['Logging Folders'],
+  summary: 'Move logging environments to a folder',
+  request: jsonBody(MoveResourcesToFolderSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const reorderLoggingEnvironmentsRoute = appRoute({
+  method: 'put',
+  path: '/environment-folders/reorder-environments',
+  tags: ['Logging Folders'],
+  summary: 'Reorder logging environments',
+  request: jsonBody(ReorderResourcesSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const updateLoggingEnvironmentFolderRoute = appRoute({
+  method: 'put',
+  path: '/environment-folders/{id}',
+  tags: ['Logging Folders'],
+  summary: 'Update a logging environment folder',
+  request: { params: IdParamSchema, ...jsonBody(UpdateResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const moveLoggingEnvironmentFolderRoute = appRoute({
+  method: 'put',
+  path: '/environment-folders/{id}/move',
+  tags: ['Logging Folders'],
+  summary: 'Move a logging environment folder',
+  request: { params: IdParamSchema, ...jsonBody(MoveResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const deleteLoggingEnvironmentFolderRoute = appRoute({
+  method: 'delete',
+  path: '/environment-folders/{id}',
+  tags: ['Logging Folders'],
+  summary: 'Delete a logging environment folder',
+  request: { params: IdParamSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
 export const listLoggingSchemasRoute = appRoute({
   method: 'get',
   path: '/schemas',
   tags: ['Logging'],
   summary: 'List logging schemas',
   request: { query: z.object({ search: z.string().optional() }) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const listLoggingSchemaFoldersRoute = appRoute({
+  method: 'get',
+  path: '/schema-folders',
+  tags: ['Logging Folders'],
+  summary: 'List logging schema folders',
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const createLoggingSchemaFolderRoute = appRoute({
+  method: 'post',
+  path: '/schema-folders',
+  tags: ['Logging Folders'],
+  summary: 'Create a logging schema folder',
+  request: jsonBody(CreateResourceFolderSchema),
+  responses: createdJson(UnknownDataResponseSchema),
+});
+export const reorderLoggingSchemaFoldersRoute = appRoute({
+  method: 'put',
+  path: '/schema-folders/reorder',
+  tags: ['Logging Folders'],
+  summary: 'Reorder logging schema folders',
+  request: jsonBody(ReorderResourceFoldersSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const moveLoggingSchemasToFolderRoute = appRoute({
+  method: 'post',
+  path: '/schema-folders/move-schemas',
+  tags: ['Logging Folders'],
+  summary: 'Move logging schemas to a folder',
+  request: jsonBody(MoveResourcesToFolderSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const reorderLoggingSchemasRoute = appRoute({
+  method: 'put',
+  path: '/schema-folders/reorder-schemas',
+  tags: ['Logging Folders'],
+  summary: 'Reorder logging schemas',
+  request: jsonBody(ReorderResourcesSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const updateLoggingSchemaFolderRoute = appRoute({
+  method: 'put',
+  path: '/schema-folders/{id}',
+  tags: ['Logging Folders'],
+  summary: 'Update a logging schema folder',
+  request: { params: IdParamSchema, ...jsonBody(UpdateResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const moveLoggingSchemaFolderRoute = appRoute({
+  method: 'put',
+  path: '/schema-folders/{id}/move',
+  tags: ['Logging Folders'],
+  summary: 'Move a logging schema folder',
+  request: { params: IdParamSchema, ...jsonBody(MoveResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const deleteLoggingSchemaFolderRoute = appRoute({
+  method: 'delete',
+  path: '/schema-folders/{id}',
+  tags: ['Logging Folders'],
+  summary: 'Delete a logging schema folder',
+  request: { params: IdParamSchema },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const createLoggingSchemaRoute = appRoute({

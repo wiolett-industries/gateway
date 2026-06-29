@@ -27,6 +27,7 @@ export function buildScopedDockerNodes(
     type: "docker",
     hostname: nodeId,
     displayName: null,
+    appearanceColor: null,
     status: "online",
     serviceCreationLocked: false,
     daemonVersion: null,

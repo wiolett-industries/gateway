@@ -30,6 +30,7 @@ vi.mock('@/modules/auth/auth.middleware.js', () => ({
 vi.mock('@/modules/monitoring/log-relay.service.js', () => ({
   daemonLogRelay: {},
   getDaemonLogHistory: vi.fn(),
+  getNginxLogHistory: vi.fn(),
   logRelay: {},
 }));
 
@@ -70,6 +71,44 @@ describe('nodesRoutes list access', () => {
     expect(mocks.nodesService.list).toHaveBeenCalledWith(expect.objectContaining({ type: 'docker', limit: 100 }), {
       allowedIds: ['node-1'],
     });
+  });
+
+  it('keeps node appearance color in compact Docker node discovery rows', async () => {
+    mocks.scopes = ['docker:containers:view'];
+    mocks.nodesService.list.mockResolvedValue({
+      data: [
+        {
+          id: 'node-1',
+          type: 'docker',
+          hostname: 'docker-1.internal',
+          displayName: 'Docker 1',
+          appearanceColor: 'blue',
+          status: 'online',
+          serviceCreationLocked: false,
+          daemonVersion: '1.2.3',
+          osInfo: 'linux',
+          configVersionHash: 'hash',
+          capabilities: {},
+          lastSeenAt: null,
+          lastHealthReport: null,
+          lastStatsReport: null,
+          metadata: {},
+          isConnected: true,
+          createdAt: '',
+          updatedAt: '',
+        },
+      ],
+      page: 1,
+      limit: 100,
+      total: 1,
+      totalPages: 1,
+    });
+
+    const response = await createApp().request('/?type=docker&limit=100');
+    const body = (await response.json()) as { data: Array<{ appearanceColor?: string }> };
+
+    expect(response.status).toBe(200);
+    expect(body.data[0]).toMatchObject({ id: 'node-1', appearanceColor: 'blue' });
   });
 
   it('still rejects node listing without node or Docker access', async () => {

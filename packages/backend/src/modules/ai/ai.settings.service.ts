@@ -3,11 +3,20 @@ import type { DrizzleClient } from '@/db/client.js';
 import { settings } from '@/db/schema/settings.js';
 import { isPrivateUrl } from '@/lib/utils.js';
 import type { CryptoService } from '@/services/crypto.service.js';
-import type { AIConfig, EncryptedValue, MaxTokensField, ReasoningEffort, WebSearchProvider } from './ai.types.js';
+import type {
+  AIConfig,
+  AIEndpointMode,
+  EncryptedValue,
+  MaxTokensField,
+  ReasoningEffort,
+  WebSearchProvider,
+} from './ai.types.js';
 
 const AI_SETTINGS_DEFAULTS: Record<string, unknown> = {
   'ai:enabled': false,
   'ai:provider_url': '',
+  'ai:endpoint_mode': 'auto',
+  'ai:supports_images': false,
   'ai:api_key_encrypted': null,
   'ai:model': '',
   'ai:max_completion_tokens': 8192,
@@ -16,12 +25,14 @@ const AI_SETTINGS_DEFAULTS: Record<string, unknown> = {
   'ai:custom_system_prompt': '',
   'ai:rate_limit_max': 10,
   'ai:rate_limit_window_seconds': 60,
-  'ai:max_tool_rounds': 10,
+  'ai:max_tool_rounds': 20,
   'ai:max_context_tokens': 56000,
   'ai:disabled_tools': [],
   'ai:web_search_api_key_encrypted': null,
   'ai:web_search_provider': 'tavily',
   'ai:web_search_base_url': '',
+  'ai:sandbox_enabled': false,
+  'ai:sandbox_default_tier': 'low',
 };
 
 export class AISettingsService {
@@ -47,6 +58,8 @@ export class AISettingsService {
     return {
       enabled: getValue<boolean>('ai:enabled'),
       providerUrl: getValue<string>('ai:provider_url'),
+      endpointMode: getValue<AIEndpointMode>('ai:endpoint_mode'),
+      supportsImages: getValue<boolean>('ai:supports_images'),
       model: getValue<string>('ai:model'),
       maxCompletionTokens: getValue<number>('ai:max_completion_tokens'),
       maxTokensField: getValue<MaxTokensField>('ai:max_tokens_field'),
@@ -59,6 +72,8 @@ export class AISettingsService {
       disabledTools: getValue<string[]>('ai:disabled_tools'),
       webSearchProvider: getValue<WebSearchProvider>('ai:web_search_provider'),
       webSearchBaseUrl: getValue<string>('ai:web_search_base_url'),
+      sandboxEnabled: getValue<boolean>('ai:sandbox_enabled'),
+      sandboxDefaultTier: getValue<'low' | 'medium' | 'high'>('ai:sandbox_default_tier'),
       webSearchEnabled:
         getValue<WebSearchProvider>('ai:web_search_provider') === 'searxng'
           ? !!getValue<string>('ai:web_search_base_url')
@@ -69,7 +84,14 @@ export class AISettingsService {
   /**
    * Returns the config with masked API key info for admin display.
    */
-  async getConfigForAdmin(): Promise<AIConfig & { hasApiKey: boolean; apiKeyLast4: string; hasWebSearchKey: boolean }> {
+  async getConfigForAdmin(): Promise<
+    AIConfig & {
+      hasApiKey: boolean;
+      apiKeyLast4: string;
+      hasWebSearchKey: boolean;
+      webSearchApiKeyLast4: string;
+    }
+  > {
     const config = await this.getConfig();
     const encrypted = await this.getSetting<EncryptedValue | null>('ai:api_key_encrypted');
     const webSearchEncrypted = await this.getSetting<EncryptedValue | null>('ai:web_search_api_key_encrypted');
@@ -84,11 +106,22 @@ export class AISettingsService {
       }
     }
 
+    let webSearchApiKeyLast4 = '';
+    if (webSearchEncrypted) {
+      try {
+        const key = this.cryptoService.decryptString(webSearchEncrypted);
+        webSearchApiKeyLast4 = key.slice(-4);
+      } catch {
+        // corrupted key
+      }
+    }
+
     return {
       ...config,
       hasApiKey: !!encrypted,
       apiKeyLast4,
       hasWebSearchKey: !!webSearchEncrypted,
+      webSearchApiKeyLast4,
     };
   }
 
@@ -96,6 +129,8 @@ export class AISettingsService {
     const keyMap: Record<string, string> = {
       enabled: 'ai:enabled',
       providerUrl: 'ai:provider_url',
+      endpointMode: 'ai:endpoint_mode',
+      supportsImages: 'ai:supports_images',
       model: 'ai:model',
       customSystemPrompt: 'ai:custom_system_prompt',
       rateLimitMax: 'ai:rate_limit_max',
@@ -108,6 +143,8 @@ export class AISettingsService {
       disabledTools: 'ai:disabled_tools',
       webSearchProvider: 'ai:web_search_provider',
       webSearchBaseUrl: 'ai:web_search_base_url',
+      sandboxEnabled: 'ai:sandbox_enabled',
+      sandboxDefaultTier: 'ai:sandbox_default_tier',
     };
 
     for (const [field, value] of Object.entries(updates)) {

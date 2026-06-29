@@ -41,8 +41,8 @@ interface CreateProxyHostDialogProps {
   onOpenChange: (open: boolean) => void;
   /** When editing, pre-fill with existing host data */
   existingHost?: ProxyHost | null;
-  /** Called on successful create/update with the host ID */
-  onSuccess?: (hostId: string) => void;
+  /** Called on successful create/update with the host ID and returned host payload when available. */
+  onSuccess?: (hostId: string, host?: ProxyHost) => void;
 }
 
 interface NodeOption {
@@ -292,9 +292,15 @@ export function CreateProxyHostDialog({
       healthCheckEnabled,
       healthCheckUrl,
       healthCheckInterval,
-      healthCheckExpectedStatus: healthCheckExpectedStatus ?? undefined,
+      healthCheckExpectedStatus: isEditing
+        ? healthCheckExpectedStatus
+        : (healthCheckExpectedStatus ?? undefined),
       healthCheckExpectedBody:
-        healthCheckExpectedBody.trim() === "" ? undefined : healthCheckExpectedBody,
+        healthCheckExpectedBody.trim() === ""
+          ? isEditing
+            ? null
+            : undefined
+          : healthCheckExpectedBody,
       healthCheckBodyMatchMode:
         healthCheckExpectedBody.trim() === "" ? undefined : healthCheckBodyMatchMode,
       nodeId: nodeId || undefined,
@@ -341,9 +347,9 @@ export function CreateProxyHostDialog({
       }
 
       if (isEditing && existingHost) {
-        await api.updateProxyHost(existingHost.id, data);
+        const updated = await api.updateProxyHost(existingHost.id, data);
         toast.success("Proxy host updated");
-        onSuccess?.(existingHost.id);
+        onSuccess?.(existingHost.id, updated);
       } else {
         const created = await api.createProxyHost(data);
         toast.success("Proxy host created");
@@ -367,7 +373,7 @@ export function CreateProxyHostDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Proxy Host" : "Create Proxy Host"}</DialogTitle>
           <DialogDescription>
@@ -417,12 +423,12 @@ export function CreateProxyHostDialog({
                     {selectedNode ? (
                       <div className="flex min-w-0 items-center gap-3 pr-2">
                         <span className="min-w-0 flex-1 truncate">{selectedNode.hostname}</span>
-                        <Badge variant="secondary" className="shrink-0 text-xs">
+                        <Badge variant="secondary" className="shrink-0">
                           {selectedNode.type}
                         </Badge>
                         <Badge
                           variant={nodeStatusVariant(selectedNode.status)}
-                          className="shrink-0 text-xs"
+                          className="shrink-0"
                         >
                           {selectedNode.status}
                         </Badge>
@@ -443,12 +449,8 @@ export function CreateProxyHostDialog({
                         <SelectItem key={node.id} value={node.id} disabled={lockedForCreation}>
                           <div className="flex items-center justify-between w-full gap-3">
                             <span className="min-w-0 truncate">{node.hostname}</span>
-                            <Badge variant="secondary" className="text-xs">
-                              {node.type}
-                            </Badge>
-                            <Badge variant={nodeStatusVariant(node.status)} className="text-xs">
-                              {node.status}
-                            </Badge>
+                            <Badge variant="secondary">{node.type}</Badge>
+                            <Badge variant={nodeStatusVariant(node.status)}>{node.status}</Badge>
                           </div>
                         </SelectItem>
                       );
@@ -465,10 +467,13 @@ export function CreateProxyHostDialog({
                     {domainNames.map((domain, i) => (
                       <motion.div
                         key={`domain-${i}`}
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 4 }}
+                        transition={{
+                          opacity: { duration: 0.12 },
+                          y: { duration: 0.12, ease: [0.25, 0.1, 0.25, 1] },
+                        }}
                         className="flex gap-2"
                       >
                         <DomainAutocompleteInput
@@ -540,9 +545,7 @@ export function CreateProxyHostDialog({
                   <div className="p-4 space-y-4">
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Forward Host
-                        </label>
+                        <label className="text-xs text-muted-foreground">Forward Host</label>
                         <Input
                           value={forwardHost}
                           onChange={(e) => setForwardHost(e.target.value)}
@@ -550,9 +553,7 @@ export function CreateProxyHostDialog({
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Forward Port
-                        </label>
+                        <label className="text-xs text-muted-foreground">Forward Port</label>
                         <NumericInput
                           value={forwardPort}
                           onChange={(v) => setForwardPort(v)}
@@ -561,7 +562,7 @@ export function CreateProxyHostDialog({
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">Scheme</label>
+                        <label className="text-xs text-muted-foreground">Scheme</label>
                         <Select
                           value={forwardScheme}
                           onValueChange={(v) => setForwardScheme(v as ForwardScheme)}
@@ -595,9 +596,7 @@ export function CreateProxyHostDialog({
                   <div className="p-4">
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Redirect URL
-                        </label>
+                        <label className="text-xs text-muted-foreground">Redirect URL</label>
                         <Input
                           value={redirectUrl}
                           onChange={(e) => setRedirectUrl(e.target.value)}
@@ -605,9 +604,7 @@ export function CreateProxyHostDialog({
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Status Code
-                        </label>
+                        <label className="text-xs text-muted-foreground">Status Code</label>
                         <Select
                           value={String(redirectStatusCode)}
                           onValueChange={(v) => setRedirectStatusCode(Number(v))}
@@ -657,9 +654,7 @@ export function CreateProxyHostDialog({
                     />
                   </div>
                   <div className={cn("px-4 py-3", !sslEnabled && "opacity-50 pointer-events-none")}>
-                    <label className="text-xs font-medium text-muted-foreground">
-                      SSL Certificate
-                    </label>
+                    <label className="text-xs text-muted-foreground">SSL Certificate</label>
                     <Select
                       value={sslCertificateId || "__none__"}
                       onValueChange={(v) => setSslCertificateId(v === "__none__" ? "" : v)}
@@ -700,9 +695,7 @@ export function CreateProxyHostDialog({
                       )}
                     >
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          URL Path
-                        </label>
+                        <label className="text-xs text-muted-foreground">URL Path</label>
                         <Input
                           value={healthCheckUrl}
                           onChange={(e) => setHealthCheckUrl(e.target.value)}
@@ -711,9 +704,7 @@ export function CreateProxyHostDialog({
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Expected Status
-                        </label>
+                        <label className="text-xs text-muted-foreground">Expected Status</label>
                         <Input
                           type="number"
                           value={healthCheckExpectedStatus ?? ""}
@@ -727,9 +718,7 @@ export function CreateProxyHostDialog({
                         />
                       </div>
                       <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Expected Body
-                        </label>
+                        <label className="text-xs text-muted-foreground">Expected Body</label>
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[11rem_minmax(0,1fr)]">
                           <Select
                             value={healthCheckBodyMatchMode}
@@ -759,9 +748,7 @@ export function CreateProxyHostDialog({
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Interval (seconds)
-                        </label>
+                        <label className="text-xs text-muted-foreground">Interval (seconds)</label>
                         <NumericInput
                           value={healthCheckInterval}
                           onChange={(v) => setHealthCheckInterval(v)}
@@ -819,7 +806,7 @@ export function CreateProxyHostDialog({
               {folderList.length > 0 && (
                 <div className="border border-border bg-card">
                   <div className="px-4 py-3">
-                    <label className="text-xs font-medium text-muted-foreground">Folder</label>
+                    <label className="text-xs text-muted-foreground">Folder</label>
                     <Select
                       value={folderId || "__none__"}
                       onValueChange={(v) => setFolderId(v === "__none__" ? "" : v)}

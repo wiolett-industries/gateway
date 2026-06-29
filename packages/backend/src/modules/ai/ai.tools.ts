@@ -1,141 +1,110 @@
-import { getResourceScopedIds, hasScope, hasScopeBase } from '@/lib/permissions.js';
+import { DATABASE_AI_TOOLS } from './ai.tools.databases.js';
+import { DOCKER_AI_TOOLS } from './ai.tools.docker.js';
+import { FOLDER_AI_TOOLS } from './ai.tools.folders.js';
+import { NODE_FILE_AI_TOOLS } from './ai.tools.node-files.js';
+import { NOTIFICATION_AI_TOOLS, WEB_SEARCH_AI_TOOL } from './ai.tools.notifications.js';
+import { OPERATION_AI_TOOLS } from './ai.tools.operations.js';
+import { PKI_AI_TOOLS } from './ai.tools.pki.js';
+import { SANDBOX_AI_TOOLS } from './ai.tools.sandbox.js';
 import type { AIToolDefinition } from './ai.types.js';
-
-const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
-const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
-const DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS = new Set([
-  'query_postgres_read',
-  'execute_postgres_sql',
-  'browse_redis_keys',
-  'get_redis_key',
-  'set_redis_key',
-  'execute_redis_command',
-  'manage_postgres_data',
-  'manage_redis_data',
-]);
-const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
-  find_resource: [
-    'nodes:details',
-    'proxy:view',
-    'proxy:templates:view',
-    'ssl:cert:view',
-    'domains:view',
-    'acl:view',
-    'pki:ca:view:root',
-    'pki:ca:view:intermediate',
-    'pki:cert:view',
-    'pki:templates:view',
-    'docker:containers:view',
-    'docker:images:view',
-    'docker:volumes:view',
-    'docker:networks:view',
-    'docker:registries:view',
-    'databases:view',
-    'logs:environments:view',
-    'logs:schemas:view',
-    'status-page:view',
-    'notifications:view',
-  ],
-  list_cas: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
-  get_ca: ['pki:ca:view:root', 'pki:ca:view:intermediate'],
-  delete_ca: ['pki:ca:revoke:root', 'pki:ca:revoke:intermediate'],
-  manage_ca: ['pki:ca:create:root', 'pki:ca:create:intermediate'],
-  manage_certificate: ['pki:cert:view', 'pki:cert:issue', 'pki:cert:export'],
-  manage_template: ['pki:templates:view', 'pki:templates:edit'],
-  manage_proxy_template: [
-    'proxy:templates:view',
-    'proxy:templates:create',
-    'proxy:templates:edit',
-    'proxy:templates:delete',
-  ],
-  manage_ssl_certificate: ['ssl:cert:view', 'ssl:cert:issue', 'ssl:cert:delete'],
-  manage_domain: ['domains:view', 'domains:edit'],
-  manage_access_list: ['acl:view', 'acl:edit'],
-  manage_docker_registry: [
-    'docker:registries:view',
-    'docker:registries:create',
-    'docker:registries:edit',
-    'docker:registries:delete',
-  ],
-  manage_docker_volume: ['docker:volumes:create', 'docker:volumes:delete'],
-  manage_docker_network: ['docker:networks:create', 'docker:networks:edit', 'docker:networks:delete'],
-  manage_docker_container_config: [
-    'docker:containers:view',
-    'docker:containers:environment',
-    'docker:containers:files',
-    'docker:containers:secrets',
-    'docker:containers:webhooks',
-    'docker:containers:edit',
-  ],
-  manage_database_connection: [
-    'databases:view',
-    'databases:create',
-    'databases:edit',
-    'databases:delete',
-    'databases:credentials:reveal',
-  ],
-  manage_postgres_data: ['databases:query:read', 'databases:query:write'],
-  manage_redis_data: ['databases:query:read', 'databases:query:write', 'databases:query:admin'],
-  manage_logging: [
-    'logs:environments:view',
-    'logs:environments:create',
-    'logs:environments:edit',
-    'logs:environments:delete',
-    'logs:tokens:view',
-    'logs:tokens:create',
-    'logs:tokens:delete',
-    'logs:schemas:view',
-    'logs:schemas:create',
-    'logs:schemas:edit',
-    'logs:schemas:delete',
-    'logs:read',
-    'logs:manage',
-  ],
-  manage_status_page: [
-    'status-page:view',
-    'status-page:manage',
-    'status-page:incidents:create',
-    'status-page:incidents:update',
-    'status-page:incidents:resolve',
-    'status-page:incidents:delete',
-  ],
-};
-
-function hasDirectScopeBase(userScopes: string[], requiredScope: string): boolean {
-  return userScopes.includes(requiredScope) || userScopes.some((scope) => scope.startsWith(`${requiredScope}:`));
-}
-
-function getDirectResourceScopedIds(userScopes: string[], baseScope: string): string[] {
-  return userScopes
-    .filter((scope) => scope.startsWith(`${baseScope}:`) && scope.length > baseScope.length + 1)
-    .map((scope) => scope.slice(baseScope.length + 1));
-}
-
-function hasDirectDatabaseViewForQueryTool(userScopes: string[], queryScope: string): boolean {
-  if (!hasScopeBase(userScopes, queryScope) || !hasDirectScopeBase(userScopes, 'databases:view')) return false;
-  if (userScopes.includes('databases:view') || hasScope(userScopes, queryScope)) return true;
-
-  const queryIds = new Set(getResourceScopedIds(userScopes, queryScope));
-  return getDirectResourceScopedIds(userScopes, 'databases:view').some((databaseId) => queryIds.has(databaseId));
-}
-
-function hasAnyRequiredToolScope(userScopes: string[], toolName: string): boolean {
-  const requirements = ANY_SCOPE_TOOL_REQUIREMENTS[toolName];
-  return !!requirements && requirements.some((scope) => hasScopeBase(userScopes, scope));
-}
+import { canUseAiTool } from './ai-tool-filtering.js';
 
 export const AI_TOOLS: AIToolDefinition[] = [
   // ── Discovery ──
   {
+    name: 'discover_tools',
+    description:
+      'Discover Gateway tool groups and callable tools before choosing an operation. Use this when you are not sure which tool supports a task, or when a category-specific tool is not visible in your current context.',
+    parameters: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          description:
+            'Optional Gateway tool category to inspect, for example Docker, Logging, SSL Certificates, Administration, or Reverse Proxy.',
+        },
+        query: {
+          type: 'string',
+          description: 'Optional text to filter tool names, descriptions, categories, or required scopes.',
+        },
+        includeTools: {
+          type: 'boolean',
+          description:
+            'Set true to return matching tool details. When omitted without category/query, only category summaries are returned.',
+        },
+      },
+    },
+    destructive: false,
+    category: 'Discovery',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'get_current_context',
+    description:
+      'Return the current Gateway page context supplied by the UI: route, focused resource type, and focused resource ID. Use this when the user says "this page", "current resource", or refers to what they are viewing.',
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    destructive: false,
+    category: 'Discovery',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'wait',
+    description:
+      'Wait briefly before continuing. Use this when an operation is still pending or needs time to complete, then call the relevant status/read tool again instead of ending the conversation.',
+    parameters: {
+      type: 'object',
+      properties: {
+        seconds: {
+          type: 'number',
+          description: 'Seconds to wait before continuing. Clamped to 1-30 seconds. Default: 5.',
+        },
+        reason: {
+          type: 'string',
+          description:
+            'Short reason for waiting, for example container startup, image pull, DNS propagation, or log ingestion.',
+        },
+      },
+    },
+    destructive: false,
+    category: 'Discovery',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'end_conversation',
+    description:
+      'End this AI conversation with a localized reason. Use only when the conversation should be closed, for example after repeated unrelated requests or when continuing would be unsafe or outside scope.',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: {
+          type: 'string',
+          description: 'Short reason shown to the user in their language.',
+        },
+      },
+      required: ['reason'],
+    },
+    destructive: false,
+    category: 'Interaction',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
     name: 'find_resource',
     description:
-      'Search Gateway resources by name, hostname, domain, ID, image, or other visible identifiers across the resources this token can read. Returns compact, permission-filtered matches with resource type, id, name, nodeId when applicable, and safe summary fields.',
+      'Global resource search and type-scoped listing. Use this FIRST when the user names a resource but you need its ID, nodeId, or exact type. When the user asks to list resources of a type, pass an empty query with that type, for example { query: "", types: ["docker_container"] }. It searches across readable nodes, Docker containers/images/volumes/networks, proxy hosts, certificates, domains, logging resources, databases, notifications, and more. Do not manually list every node and then scan each node when find_resource can search the resource type directly.',
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Search text, resource name, hostname, domain, ID, image, or key fragment.',
+          description:
+            'Search text, resource name, hostname, domain, ID, image, or key fragment. Use an empty string only when types is provided and you want to list resources of that type.',
         },
         types: {
           type: 'array',
@@ -174,325 +143,111 @@ export const AI_TOOLS: AIToolDefinition[] = [
           description: 'Maximum matches to return across all resource types (default 25, max 50).',
         },
       },
-      required: ['query'],
     },
     destructive: false,
     category: 'Discovery',
-    requiredScope: 'nodes:details',
+    requiredScope: 'feat:ai:use',
     invalidateStores: [],
   },
-
-  // ── PKI - Certificate Authorities ──
   {
-    name: 'list_cas',
+    name: 'search_chats',
     description:
-      'List all Certificate Authorities with their status, type, and hierarchy. Returns id, commonName, type (root/intermediate), status, notBefore, notAfter, parentId.',
-    parameters: { type: 'object', properties: {} },
-    destructive: false,
-    category: 'PKI - Certificate Authorities',
-    requiredScope: 'pki:ca:view:root',
-    invalidateStores: [],
-  },
-  {
-    name: 'get_ca',
-    description: 'Get detailed information about a specific CA by ID, including its signing certificate details.',
+      "Search the user's previous AI chats using deterministic raw-history retrieval. Use this when the user refers to prior work, older decisions, previous bugs, commands, errors, files, projects, or missing context. Returns other chats only and excludes the current chat automatically. Returns conversation-level results with message-level snippets; use read_chat_slice for exact source details.",
     parameters: {
       type: 'object',
       properties: {
-        caId: { type: 'string', description: 'CA UUID' },
-      },
-      required: ['caId'],
-    },
-    destructive: false,
-    category: 'PKI - Certificate Authorities',
-    requiredScope: 'pki:ca:view:root',
-    invalidateStores: [],
-  },
-  {
-    name: 'create_root_ca',
-    description: 'Create a new root Certificate Authority. Returns the created CA.',
-    parameters: {
-      type: 'object',
-      properties: {
-        commonName: { type: 'string', description: 'CA common name (e.g., "My Root CA")' },
-        keyAlgorithm: {
+        query: {
           type: 'string',
-          enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'],
-          description: 'Key algorithm',
+          description: 'Search query. Keep exact identifiers, errors, file paths, commands, and tool names unchanged.',
         },
-        validityYears: { type: 'number', description: 'Validity period in years (1-30)' },
-        pathLengthConstraint: {
-          type: 'number',
-          description:
-            'Max depth of CA chain below this CA. 0 = can only issue end-entity certs, 1 = one level of intermediates, etc. Omit for unlimited.',
-        },
-        maxValidityDays: { type: 'number', description: 'Max validity for issued certs in days (default: 825)' },
-      },
-      required: ['commonName', 'keyAlgorithm', 'validityYears'],
-    },
-    destructive: true,
-    category: 'PKI - Certificate Authorities',
-    requiredScope: 'pki:ca:create:root',
-    invalidateStores: ['ca'],
-  },
-  {
-    name: 'create_intermediate_ca',
-    description: 'Create an intermediate CA signed by a parent CA.',
-    parameters: {
-      type: 'object',
-      properties: {
-        parentCaId: { type: 'string', description: 'Parent CA UUID' },
-        commonName: { type: 'string', description: 'CA common name' },
-        keyAlgorithm: {
-          type: 'string',
-          enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'],
-          description: 'Key algorithm',
-        },
-        validityYears: { type: 'number', description: 'Validity period in years' },
-        pathLengthConstraint: {
-          type: 'number',
-          description:
-            'Max depth of CA chain below this CA. 0 = can only issue end-entity certs. Omit to auto-derive from parent.',
-        },
-        maxValidityDays: { type: 'number', description: 'Max validity for issued certs in days' },
-      },
-      required: ['parentCaId', 'commonName', 'keyAlgorithm', 'validityYears'],
-    },
-    destructive: true,
-    category: 'PKI - Certificate Authorities',
-    requiredScope: 'pki:ca:create:intermediate',
-    invalidateStores: ['ca'],
-  },
-  {
-    name: 'delete_ca',
-    description: 'Permanently delete a Certificate Authority. Cannot be undone. CA must have no issued certificates.',
-    parameters: {
-      type: 'object',
-      properties: {
-        caId: { type: 'string', description: 'CA UUID to delete' },
-      },
-      required: ['caId'],
-    },
-    destructive: true,
-    category: 'PKI - Certificate Authorities',
-    requiredScope: 'pki:ca:revoke:root',
-    invalidateStores: ['ca'],
-  },
-  {
-    name: 'manage_ca',
-    description:
-      'Manage Certificate Authorities beyond create/delete. Operations: update. CA type-specific view/revoke/create scopes are enforced where needed.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: { type: 'string', enum: ['update'] },
-        caId: { type: 'string' },
-        crlDistributionUrl: { type: ['string', 'null'] },
-        caIssuersUrl: { type: ['string', 'null'] },
-        maxValidityDays: { type: 'number' },
-      },
-      required: ['operation', 'caId'],
-    },
-    destructive: true,
-    category: 'PKI - Certificate Authorities',
-    requiredScope: 'pki:ca:create:root',
-    invalidateStores: ['ca'],
-  },
-
-  // ── PKI - Certificates ──
-  {
-    name: 'list_certificates',
-    description:
-      'List PKI certificates with optional filters. Returns paginated results with id, commonName, status, type, caId, notBefore, notAfter.',
-    parameters: {
-      type: 'object',
-      properties: {
-        caId: { type: 'string', description: 'Filter by CA UUID' },
-        status: { type: 'string', enum: ['active', 'revoked', 'expired'], description: 'Filter by status' },
-        search: { type: 'string', description: 'Search by common name' },
-        page: { type: 'number', description: 'Page number (default: 1)' },
-        limit: { type: 'number', description: 'Items per page (default: 50)' },
-      },
-    },
-    destructive: false,
-    category: 'PKI - Certificates',
-    requiredScope: 'pki:cert:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'get_certificate',
-    description: 'Get detailed information about a specific certificate by ID.',
-    parameters: {
-      type: 'object',
-      properties: {
-        certificateId: { type: 'string', description: 'Certificate UUID' },
-      },
-      required: ['certificateId'],
-    },
-    destructive: false,
-    category: 'PKI - Certificates',
-    requiredScope: 'pki:cert:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'issue_certificate',
-    description:
-      'Issue a new PKI certificate from a CA. Returns the certificate. To use it with proxy hosts, you must then import it as SSL certificate using link_internal_cert.',
-    parameters: {
-      type: 'object',
-      properties: {
-        caId: { type: 'string', description: 'Issuing CA UUID' },
-        commonName: { type: 'string', description: 'Certificate common name (e.g., "server.example.com")' },
-        keyAlgorithm: {
-          type: 'string',
-          enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'],
-          description: 'Key algorithm',
-        },
-        validityDays: { type: 'number', description: 'Validity in days' },
-        type: {
-          type: 'string',
-          enum: ['tls-server', 'tls-client', 'code-signing', 'email'],
-          description: 'Certificate type. Use tls-server for web/SSL certificates.',
-        },
-        sans: {
-          type: 'array',
-          items: { type: 'string' },
-          description:
-            'Subject Alternative Names as plain values WITHOUT type prefix. Examples: "example.com", "*.example.com", "10.0.0.1". Do NOT use "DNS:" or "IP:" prefixes.',
-        },
-        templateId: { type: 'string', description: 'Optional template UUID to use' },
-        subjectDnFields: {
+        scope: {
           type: 'object',
+          description:
+            'Search boundary. Default is current project when this chat is in a project, otherwise no_project. Use all_user_chats only when the user clearly asks broadly or project-local search is insufficient for an obviously cross-project reference.',
           properties: {
-            o: { type: 'string', description: 'Organization' },
-            ou: { type: 'string', description: 'Organizational Unit' },
-            c: { type: 'string', description: 'Country (2-letter code)' },
-            st: { type: 'string', description: 'State/Province' },
-            l: { type: 'string', description: 'Locality/City' },
+            type: {
+              type: 'string',
+              enum: ['current_project', 'project', 'no_project', 'all_user_chats'],
+            },
+            projectId: {
+              type: 'string',
+              description: 'Required when type is project.',
+            },
           },
-          description: 'Optional subject DN fields beyond commonName',
         },
+        limit: { type: 'number', description: 'Maximum conversations to return. Default 10, max 20.' },
       },
-      required: ['caId', 'commonName', 'keyAlgorithm', 'validityDays', 'type'],
+      required: ['query'],
     },
-    destructive: true,
-    category: 'PKI - Certificates',
-    requiredScope: 'pki:cert:issue',
-    invalidateStores: ['certificates', 'ca'],
-  },
-  {
-    name: 'revoke_certificate',
-    description: 'Revoke a certificate. This is permanent.',
-    parameters: {
-      type: 'object',
-      properties: {
-        certificateId: { type: 'string', description: 'Certificate UUID to revoke' },
-        reason: { type: 'string', description: 'Revocation reason (e.g., "key_compromise", "unspecified")' },
-      },
-      required: ['certificateId', 'reason'],
-    },
-    destructive: true,
-    category: 'PKI - Certificates',
-    requiredScope: 'pki:cert:revoke',
-    invalidateStores: ['certificates', 'ca'],
-  },
-  {
-    name: 'manage_certificate',
-    description:
-      'Manage PKI certificates beyond generated issuance. Operations: issue_from_csr, export, chain. Operation-specific pki:cert:* scopes are enforced.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: { type: 'string', enum: ['issue_from_csr', 'export', 'chain'] },
-        certificateId: { type: 'string' },
-        caId: { type: 'string' },
-        templateId: { type: 'string' },
-        type: { type: 'string', enum: ['tls-server', 'tls-client', 'code-signing', 'email'] },
-        csrPem: { type: 'string' },
-        validityDays: { type: 'number' },
-        overrideSans: { type: 'array', items: { type: 'string' } },
-        format: { type: 'string', enum: ['pem', 'der', 'pkcs12', 'jks'] },
-        passphrase: { type: 'string' },
-      },
-      required: ['operation'],
-    },
-    destructive: true,
-    category: 'PKI - Certificates',
-    requiredScope: 'pki:cert:view',
-    invalidateStores: ['certificates', 'ca'],
-  },
-
-  // ── PKI - Templates ──
-  {
-    name: 'list_templates',
-    description: 'List all certificate templates.',
-    parameters: { type: 'object', properties: {} },
     destructive: false,
-    category: 'PKI - Templates',
-    requiredScope: 'pki:templates:view',
+    category: 'Conversation Retrieval',
+    requiredScope: 'feat:ai:use',
     invalidateStores: [],
   },
   {
-    name: 'create_template',
-    description: 'Create a new certificate template with predefined settings.',
+    name: 'find_in_chat',
+    description:
+      'Search inside a specific previous AI chat without reading the whole chat. Use after search_chats when you know the target conversation but need a more precise matching message.',
     parameters: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Template name' },
-        type: {
+        conversationId: { type: 'string', description: 'Conversation UUID to search.' },
+        query: { type: 'string', description: 'Search query within that conversation.' },
+        limit: { type: 'number', description: 'Maximum matches to return. Default 10, max 20.' },
+      },
+      required: ['conversationId', 'query'],
+    },
+    destructive: false,
+    category: 'Conversation Retrieval',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'read_chat_slice',
+    description:
+      'Read a bounded slice of raw messages from a previous AI chat for source verification. Do not use this to read entire chat histories; call search_chats or find_in_chat first unless the user named the exact chat.',
+    parameters: {
+      type: 'object',
+      properties: {
+        conversationId: { type: 'string', description: 'Conversation UUID to read.' },
+        mode: {
           type: 'string',
-          enum: ['tls-server', 'tls-client', 'code-signing', 'email'],
-          description: 'Certificate type',
+          enum: ['latest', 'first', 'around_message', 'after', 'before'],
+          description: 'Which bounded slice to read.',
         },
-        keyAlgorithm: { type: 'string', enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'] },
-        validityDays: { type: 'number', description: 'Default validity in days' },
-        keyUsage: { type: 'array', items: { type: 'string' }, description: 'Key usage flags' },
-        extendedKeyUsage: { type: 'array', items: { type: 'string' }, description: 'Extended key usage OIDs' },
+        messageId: { type: 'string', description: 'Anchor message UUID for around_message, after, or before.' },
+        cursor: { type: 'string', description: 'Cursor returned by a previous read_chat_slice call.' },
+        limit: { type: 'number', description: 'Maximum messages to return. Default 20, max 50.' },
       },
-      required: ['name', 'type', 'keyAlgorithm', 'validityDays'],
+      required: ['conversationId', 'mode'],
     },
-    destructive: true,
-    category: 'PKI - Templates',
-    requiredScope: 'pki:templates:create',
-    invalidateStores: ['templates'],
+    destructive: false,
+    category: 'Conversation Retrieval',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
   },
   {
-    name: 'delete_template',
-    description: 'Delete a certificate template. Built-in templates cannot be deleted.',
+    name: 'list_projects',
+    description:
+      'List AI chat projects as retrieval boundaries. Use when the user names or implies another project and you need the projectId before searching that project.',
     parameters: {
       type: 'object',
       properties: {
-        templateId: { type: 'string', description: 'Template UUID to delete' },
+        limit: { type: 'number', description: 'Maximum projects to return. Default 20, max 50.' },
+        cursor: { type: 'string', description: 'Pagination cursor from a previous list_projects response.' },
       },
-      required: ['templateId'],
     },
-    destructive: true,
-    category: 'PKI - Templates',
-    requiredScope: 'pki:templates:delete',
-    invalidateStores: ['templates'],
+    destructive: false,
+    category: 'Conversation Retrieval',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
   },
-  {
-    name: 'manage_template',
-    description: 'Get or update a PKI certificate template. Operations: get, update.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: { type: 'string', enum: ['get', 'update'] },
-        templateId: { type: 'string' },
-        name: { type: 'string' },
-        type: { type: 'string', enum: ['tls-server', 'tls-client', 'code-signing', 'email'] },
-        keyAlgorithm: { type: 'string', enum: ['rsa-2048', 'rsa-4096', 'ecdsa-p256', 'ecdsa-p384'] },
-        validityDays: { type: 'number' },
-        keyUsage: { type: 'array', items: { type: 'string' } },
-        extendedKeyUsage: { type: 'array', items: { type: 'string' } },
-      },
-      required: ['operation', 'templateId'],
-    },
-    destructive: true,
-    category: 'PKI - Templates',
-    requiredScope: 'pki:templates:view',
-    invalidateStores: ['templates'],
-  },
+
+  // ── PKI ──
+  ...PKI_AI_TOOLS,
+
+  // ── Folders ──
+  ...FOLDER_AI_TOOLS,
 
   // ── Reverse Proxy ──
   {
@@ -548,6 +303,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
         http2Support: { type: 'boolean', description: 'Enable HTTP/2' },
         redirectUrl: { type: 'string', description: 'Redirect target URL (for redirect type)' },
         redirectStatusCode: { type: 'number', enum: [301, 302, 307, 308], description: 'Redirect status code' },
+        internalCertificateId: { type: 'string', description: 'Linked internal PKI certificate UUID' },
         customHeaders: {
           type: 'array',
           items: {
@@ -576,7 +332,21 @@ export const AI_TOOLS: AIToolDefinition[] = [
           required: ['requestsPerSecond'],
           description: 'Rate limit configuration (requires rateLimitEnabled)',
         },
+        customRewrites: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              source: { type: 'string' },
+              destination: { type: 'string' },
+              type: { type: 'string', enum: ['permanent', 'temporary'] },
+            },
+            required: ['source', 'destination', 'type'],
+          },
+          description: 'URL rewrite rules applied before proxying',
+        },
         accessListId: { type: 'string', description: 'Access list UUID for IP/auth restrictions' },
+        folderId: { type: 'string', description: 'Folder UUID for organizing this proxy host' },
         nginxTemplateId: { type: 'string', description: 'Custom nginx config template UUID' },
         templateVariables: { type: 'object', description: 'Variables for the nginx template (key-value pairs)' },
         healthCheckEnabled: { type: 'boolean', description: 'Enable backend health checks' },
@@ -584,6 +354,12 @@ export const AI_TOOLS: AIToolDefinition[] = [
         healthCheckInterval: { type: 'number', description: 'Seconds between health checks (5-3600, default: 30)' },
         healthCheckExpectedStatus: { type: 'number', description: 'Expected HTTP status code (100-599)' },
         healthCheckExpectedBody: { type: 'string', description: 'Expected response body string' },
+        healthCheckBodyMatchMode: {
+          type: 'string',
+          enum: ['includes', 'exact', 'starts_with', 'ends_with'],
+          description: 'How to match the expected health-check response body',
+        },
+        healthCheckSlowThreshold: { type: 'number', description: 'Nx average threshold for degraded health checks' },
       },
       required: ['nodeId', 'domainNames'],
     },
@@ -599,12 +375,83 @@ export const AI_TOOLS: AIToolDefinition[] = [
       type: 'object',
       properties: {
         proxyHostId: { type: 'string', description: 'Proxy host UUID' },
+        type: {
+          type: 'string',
+          enum: ['proxy', 'redirect', '404'],
+          description: 'Host type; raw is handled by raw tools',
+        },
+        nodeId: { type: 'string', description: 'Node UUID to deploy this proxy host on' },
         domainNames: { type: 'array', items: { type: 'string' }, description: 'Domain names' },
-        forwardHost: { type: 'string', description: 'Backend host' },
-        forwardPort: { type: 'number', description: 'Backend port' },
+        forwardHost: { type: ['string', 'null'], description: 'Backend host; null clears it' },
+        forwardPort: { type: ['number', 'null'], description: 'Backend port; null clears it' },
         forwardScheme: { type: 'string', enum: ['http', 'https'] },
         sslEnabled: { type: 'boolean' },
-        sslCertificateId: { type: 'string' },
+        sslForced: { type: 'boolean', description: 'Force HTTPS redirect' },
+        http2Support: { type: 'boolean', description: 'Enable HTTP/2' },
+        websocketSupport: { type: 'boolean', description: 'Enable WebSocket proxying' },
+        sslCertificateId: { type: ['string', 'null'], description: 'SSL certificate UUID; null clears it' },
+        internalCertificateId: {
+          type: ['string', 'null'],
+          description: 'Internal PKI certificate UUID; null clears it',
+        },
+        redirectUrl: { type: ['string', 'null'], description: 'Redirect target URL; null clears it' },
+        redirectStatusCode: { type: ['number', 'null'], enum: [301, 302, 307, 308, null] },
+        customHeaders: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { name: { type: 'string' }, value: { type: 'string' } },
+            required: ['name', 'value'],
+          },
+          description: 'Full replacement list of custom HTTP headers',
+        },
+        cacheEnabled: { type: 'boolean', description: 'Enable response caching' },
+        cacheOptions: {
+          type: ['object', 'null'],
+          properties: {
+            maxAge: { type: 'number' },
+            staleWhileRevalidate: { type: 'number' },
+          },
+          description: 'Cache configuration; null clears it',
+        },
+        rateLimitEnabled: { type: 'boolean', description: 'Enable rate limiting' },
+        rateLimitOptions: {
+          type: ['object', 'null'],
+          properties: {
+            requestsPerSecond: { type: 'number' },
+            burst: { type: 'number' },
+          },
+          description: 'Rate limit configuration; null clears it',
+        },
+        customRewrites: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              source: { type: 'string' },
+              destination: { type: 'string' },
+              type: { type: 'string', enum: ['permanent', 'temporary'] },
+            },
+            required: ['source', 'destination', 'type'],
+          },
+          description: 'Full replacement list of URL rewrite rules',
+        },
+        advancedConfig: { type: ['string', 'null'], description: 'Advanced nginx snippet; requires proxy:advanced' },
+        accessListId: { type: ['string', 'null'], description: 'Access list UUID; null clears it' },
+        folderId: { type: ['string', 'null'], description: 'Folder UUID; null moves to root' },
+        nginxTemplateId: { type: ['string', 'null'], description: 'Config template UUID; null uses default' },
+        templateVariables: { type: ['object', 'null'], description: 'Template variables; null clears them' },
+        healthCheckEnabled: { type: 'boolean', description: 'Enable backend health checks' },
+        healthCheckUrl: { type: ['string', 'null'], description: 'Health check endpoint path; null clears it' },
+        healthCheckInterval: { type: ['number', 'null'], description: 'Seconds between health checks; null clears it' },
+        healthCheckExpectedStatus: { type: ['number', 'null'], description: 'Expected status; null clears it' },
+        healthCheckExpectedBody: { type: ['string', 'null'], description: 'Expected body text; null clears it' },
+        healthCheckBodyMatchMode: {
+          type: ['string', 'null'],
+          enum: ['includes', 'exact', 'starts_with', 'ends_with', null],
+          description: 'How to match the expected response body; null clears it',
+        },
+        healthCheckSlowThreshold: { type: ['number', 'null'], description: 'Nx average threshold; null clears it' },
         enabled: { type: 'boolean', description: 'Enable/disable the host' },
       },
       required: ['proxyHostId'],
@@ -642,7 +489,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       },
       required: ['name'],
     },
-    destructive: false,
+    destructive: true,
     category: 'Reverse Proxy',
     requiredScope: 'proxy:folders:manage',
     invalidateStores: ['proxy'],
@@ -658,7 +505,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       },
       required: ['hostIds', 'folderId'],
     },
-    destructive: false,
+    destructive: true,
     category: 'Reverse Proxy',
     requiredScope: 'proxy:folders:manage',
     invalidateStores: ['proxy'],
@@ -757,7 +604,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       },
       required: ['internalCertId'],
     },
-    destructive: false,
+    destructive: true,
     category: 'SSL Certificates',
     requiredScope: 'ssl:cert:issue',
     invalidateStores: ['ssl'],
@@ -812,7 +659,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
       },
       required: ['domain'],
     },
-    destructive: false,
+    destructive: true,
     category: 'Domains',
     requiredScope: 'domains:create',
     invalidateStores: ['domains'],
@@ -975,6 +822,27 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: [],
   },
   {
+    name: 'execute_node_console_command',
+    description:
+      'Run a one-shot command on a daemon node console. This is destructive by policy even for read-looking commands. Use command as argv, for example ["sh","-lc","systemctl status nginx --no-pager"]. Clearly dangerous commands are blocked; commands with risky patterns require explicit user approval.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Node UUID' },
+        command: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Command argv to execute. Use ["sh","-lc","..."] for shell syntax.',
+        },
+      },
+      required: ['nodeId', 'command'],
+    },
+    destructive: true,
+    category: 'Nodes',
+    requiredScope: 'nodes:console',
+    invalidateStores: ['nodes'],
+  },
+  {
     name: 'create_node',
     description:
       'Create a new daemon node and generate an enrollment token. IMPORTANT: The response contains enrollmentToken and gatewayCertSha256 — you MUST display both to the user and include --gateway-cert-sha256 in setup commands (curl/wget). The token is one-time-use and cannot be retrieved again.',
@@ -1027,6 +895,29 @@ export const AI_TOOLS: AIToolDefinition[] = [
     requiredScope: 'nodes:delete',
     invalidateStores: ['nodes'],
   },
+  {
+    name: 'manage_node_config',
+    description:
+      'Read, update, or test the global nginx configuration on a node. Operations: read, update, test. read requires nodes:config:view:<nodeId>; update/test require nodes:config:edit:<nodeId>.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['read', 'update', 'test'],
+          description: 'Node config operation to perform.',
+        },
+        nodeId: { type: 'string', description: 'Node UUID' },
+        content: { type: 'string', description: 'Full nginx config content for update.' },
+      },
+      required: ['operation', 'nodeId'],
+    },
+    destructive: true,
+    category: 'Nodes',
+    requiredScope: 'nodes:config:view',
+    invalidateStores: ['nodes'],
+  },
+  ...NODE_FILE_AI_TOOLS,
 
   // ── Raw Config ──
   {
@@ -1090,6 +981,24 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: [],
   },
   {
+    name: 'create_user',
+    description:
+      'Create a user before first login and assign an initial permission group. You can only assign groups within your own effective scopes.',
+    parameters: {
+      type: 'object',
+      properties: {
+        email: { type: 'string', description: 'User email address' },
+        name: { type: 'string', description: 'Optional display name' },
+        groupId: { type: 'string', description: 'Initial permission group UUID' },
+      },
+      required: ['email', 'groupId'],
+    },
+    destructive: true,
+    category: 'Administration',
+    requiredScope: 'admin:users',
+    invalidateStores: ['users'],
+  },
+  {
     name: 'update_user_role',
     description: "Change a user's permission group. Use list_users to see available groups.",
     parameters: {
@@ -1104,6 +1013,321 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Administration',
     requiredScope: 'admin:users',
     invalidateStores: ['users'],
+  },
+  {
+    name: 'set_user_blocked',
+    description:
+      'Block or unblock a user account. Cannot target yourself, the system user, or users whose scopes exceed yours.',
+    parameters: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', description: 'User UUID' },
+        blocked: { type: 'boolean', description: 'true to block, false to unblock' },
+      },
+      required: ['userId', 'blocked'],
+    },
+    destructive: true,
+    category: 'Administration',
+    requiredScope: 'admin:users',
+    invalidateStores: ['users'],
+  },
+  {
+    name: 'delete_user',
+    description: 'Delete a user account. Cannot target yourself, the system user, or users whose scopes exceed yours.',
+    parameters: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', description: 'User UUID' },
+      },
+      required: ['userId'],
+    },
+    destructive: true,
+    category: 'Administration',
+    requiredScope: 'admin:users',
+    invalidateStores: ['users'],
+  },
+
+  // ── AI Assistant Configuration ──
+  {
+    name: 'get_ai_settings',
+    description:
+      'Read AI assistant configuration, including provider, limits, disabled tools, web search, and sandbox runner settings. Secrets are returned only as masked metadata.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'AI Assistant',
+    requiredScope: 'feat:ai:configure',
+    invalidateStores: [],
+  },
+  {
+    name: 'update_ai_settings',
+    description:
+      'Update AI assistant configuration. Only pass fields that should change; API keys may be replaced or cleared with an empty string.',
+    parameters: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean', description: 'Enable or disable the AI assistant.' },
+        providerUrl: { type: 'string', description: 'OpenAI-compatible provider base URL.' },
+        endpointMode: {
+          type: 'string',
+          enum: ['auto', 'chat_completions', 'responses'],
+          description: 'Provider endpoint family.',
+        },
+        apiKey: { type: 'string', description: 'Provider API key. Empty string clears the saved key.' },
+        model: { type: 'string', description: 'Model name.' },
+        customSystemPrompt: { type: 'string', description: 'Additional system prompt instructions.' },
+        rateLimitMax: { type: 'number', description: 'Maximum assistant requests per window.' },
+        rateLimitWindowSeconds: { type: 'number', description: 'Rate limit window in seconds.' },
+        maxToolRounds: { type: 'number', description: 'Maximum sequential tool calls per assistant response.' },
+        maxContextTokens: { type: 'number', description: 'Context token budget.' },
+        maxCompletionTokens: { type: 'number', description: 'Maximum generated response tokens.' },
+        maxTokensField: {
+          type: 'string',
+          enum: ['max_tokens', 'max_completion_tokens'],
+          description: 'Provider request token field.',
+        },
+        reasoningEffort: {
+          type: 'string',
+          enum: ['low', 'medium', 'high', 'none'],
+          description: 'Reasoning effort setting.',
+        },
+        disabledTools: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Tool names disabled for the assistant.',
+        },
+        webSearchProvider: {
+          type: 'string',
+          enum: ['tavily', 'brave', 'serper', 'searxng', 'exa'],
+          description: 'Web search provider.',
+        },
+        webSearchBaseUrl: { type: 'string', description: 'Web search provider base URL, used by SearXNG.' },
+        webSearchApiKey: { type: 'string', description: 'Web search API key. Empty string clears the saved key.' },
+        sandboxEnabled: { type: 'boolean', description: 'Expose sandbox execution tools to the assistant.' },
+        sandboxDefaultTier: {
+          type: 'string',
+          enum: ['low', 'medium', 'high'],
+          description: 'Default sandbox resource tier.',
+        },
+      },
+    },
+    destructive: true,
+    category: 'AI Assistant',
+    requiredScope: 'feat:ai:configure',
+    invalidateStores: ['settings'],
+  },
+  {
+    name: 'list_ai_tools',
+    description:
+      'List AI assistant tools with categories, descriptions, scopes, and destructive metadata for configuration or auditing.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'AI Assistant',
+    requiredScope: 'feat:ai:configure',
+    invalidateStores: [],
+  },
+  {
+    name: 'get_sandbox_runtime_status',
+    description:
+      'Read sandbox runner configuration and runtime health without starting a sandbox job. Use this to diagnose whether sandbox execution is enabled and available.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'AI Assistant',
+    requiredScope: 'feat:ai:configure',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_ai_conversation',
+    description:
+      'Manage the current user AI conversations. Operations: list, get, delete, delete_by_title. This tool never creates or rewrites conversation history.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['list', 'get', 'delete', 'delete_by_title'],
+          description: 'Conversation operation to perform.',
+        },
+        conversationId: { type: 'string', description: 'Conversation UUID for get or delete.' },
+        title: { type: 'string', description: 'Conversation title for delete_by_title.' },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Conversations',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_oauth_authorization',
+    description:
+      'Manage existing OAuth authorizations for the current user. Operations: list, update_scopes, revoke. Pending browser consent is intentionally not exposed.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['list', 'update_scopes', 'revoke'],
+          description: 'OAuth authorization operation to perform.',
+        },
+        clientId: { type: 'string', description: 'OAuth client ID for update_scopes or revoke.' },
+        resource: { type: 'string', description: 'OAuth resource URL for update_scopes or revoke.' },
+        scopes: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Replacement delegated scopes for update_scopes.',
+        },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'OAuth',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_api_token',
+    description:
+      'Manage Gateway API tokens for the current browser user. Operations: list, create, update, revoke. Token secrets are returned only on create.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['list', 'create', 'update', 'revoke'],
+          description: 'API token operation to perform.',
+        },
+        tokenId: { type: 'string', description: 'Token UUID for update or revoke.' },
+        name: { type: 'string', description: 'Token name for create or update.' },
+        scopes: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'API token scopes for create or update. Must be a subset of the current user scopes.',
+        },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Settings',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: ['settings'],
+  },
+
+  // ── Maintenance and Control Plane ──
+  {
+    name: 'get_license_status',
+    description: 'Read Gateway license status, tier, installation ID, expiry, grace state, and masked key metadata.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'Maintenance',
+    requiredScope: 'license:view',
+    invalidateStores: [],
+  },
+  {
+    name: 'manage_license',
+    description:
+      'Manage the Gateway license. operation must be one of activate, check, or clear. activate requires licenseKey.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['activate', 'check', 'clear'],
+          description: 'License operation to perform.',
+        },
+        licenseKey: { type: 'string', description: 'License key for activate.' },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Maintenance',
+    requiredScope: 'license:manage',
+    invalidateStores: ['settings'],
+  },
+  {
+    name: 'manage_housekeeping',
+    description:
+      'Read or manage housekeeping. operation: get_config, get_stats, get_history, update_config, or run. update_config requires config.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['get_config', 'get_stats', 'get_history', 'update_config', 'run'],
+          description: 'Housekeeping operation to perform.',
+        },
+        config: { type: 'object', description: 'Partial housekeeping config for update_config.' },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Maintenance',
+    requiredScope: 'housekeeping:view',
+    invalidateStores: ['settings'],
+  },
+  {
+    name: 'get_gateway_settings',
+    description:
+      'Read Gateway control-plane settings: OIDC provisioning, MCP server enablement, general feature limits, network security, and outbound webhook policy.',
+    parameters: { type: 'object', properties: {} },
+    destructive: false,
+    category: 'Maintenance',
+    requiredScope: 'settings:gateway:view',
+    invalidateStores: [],
+  },
+  {
+    name: 'update_gateway_settings',
+    description:
+      'Update Gateway control-plane settings. Pass only fields to change: OIDC provisioning, MCP server enablement, generalSettings, networkSecurity, or outboundWebhookPolicy.',
+    parameters: {
+      type: 'object',
+      properties: {
+        oidcAutoCreateUsers: { type: 'boolean' },
+        oidcDefaultGroupId: { type: 'string', description: 'Default permission group UUID for auto-created users.' },
+        oidcRequireVerifiedEmail: { type: 'boolean' },
+        oauthExtendedCallbackCompatibility: { type: 'boolean' },
+        mcpServerEnabled: { type: 'boolean' },
+        generalSettings: { type: 'object' },
+        networkSecurity: { type: 'object' },
+        outboundWebhookPolicy: { type: 'object' },
+      },
+    },
+    destructive: true,
+    category: 'Maintenance',
+    requiredScope: 'settings:gateway:edit',
+    invalidateStores: ['settings'],
+  },
+  {
+    name: 'manage_system_updates',
+    description:
+      'Read or manage Gateway and daemon updates. Operations: get_gateway_status, check_gateway, get_gateway_release_notes, perform_gateway_update, list_daemon_updates, check_daemon_updates, update_daemon. Mutating operations require explicit approval unless the user bypass mode allows it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: [
+            'get_gateway_status',
+            'check_gateway',
+            'get_gateway_release_notes',
+            'perform_gateway_update',
+            'list_daemon_updates',
+            'check_daemon_updates',
+            'update_daemon',
+          ],
+          description: 'System update operation to perform.',
+        },
+        version: {
+          type: 'string',
+          description: 'Gateway version for get_gateway_release_notes or perform_gateway_update.',
+        },
+        nodeId: { type: 'string', description: 'Daemon node UUID for update_daemon.' },
+      },
+      required: ['operation'],
+    },
+    destructive: true,
+    category: 'Maintenance',
+    requiredScope: 'admin:update',
+    invalidateStores: ['settings', 'nodes'],
   },
   {
     name: 'get_audit_log',
@@ -1211,7 +1435,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'ask_question',
     description:
-      'Ask the user a clarifying question before proceeding. Use this whenever requirements are unclear, ambiguous, or missing critical details. You can provide options for the user to pick from, allow free text input, or both. Always ask rather than guess.',
+      'Ask the user a clarifying question before proceeding. Use this only when requirements are unclear, ambiguous, or missing critical details that cannot be inferred from context or tool results. You can provide options for the user to pick from, allow free text input, or both. Do not ask when there is exactly one valid applicable option.',
     parameters: {
       type: 'object',
       properties: {
@@ -1246,13 +1470,14 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'internal_documentation',
     description:
-      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, docker, databases, postgres, redis, housekeeping, permissions, api.',
+      'Get detailed internal documentation about a specific topic in this system. Use this whenever you need deeper knowledge about how something works, what fields mean, or what the correct workflow is. Topics: discovery, pki, ssl, proxy, domains, access-lists, templates, acme, users, audit, nginx, nodes, housekeeping, permissions, docker, databases, postgres, redis, logging, folders, node-files, sandbox, conversations, ai-settings, status-page, api, notifications.',
     parameters: {
       type: 'object',
       properties: {
         topic: {
           type: 'string',
           enum: [
+            'discovery',
             'pki',
             'ssl',
             'proxy',
@@ -1264,13 +1489,21 @@ export const AI_TOOLS: AIToolDefinition[] = [
             'audit',
             'nginx',
             'nodes',
+            'housekeeping',
+            'permissions',
             'docker',
             'databases',
             'postgres',
             'redis',
-            'housekeeping',
-            'permissions',
+            'logging',
+            'folders',
+            'node-files',
+            'sandbox',
+            'conversations',
+            'status-page',
             'api',
+            'ai-settings',
+            'notifications',
           ],
           description: 'The topic to get documentation about',
         },
@@ -1283,1281 +1516,62 @@ export const AI_TOOLS: AIToolDefinition[] = [
     invalidateStores: [],
   },
 
-  // ── Docker: Containers ──
-  {
-    name: 'create_docker_container',
-    description:
-      'Create and start a new Docker container on a node. Specify image, ports, volumes, env vars, networks, restart policy, and labels.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        image: { type: 'string', description: 'Image reference (e.g. nginx:latest, ubuntu:24.04)' },
-        registryId: { type: 'string', description: 'Optional Docker registry UUID for pulling the image' },
-        name: { type: 'string', description: 'Container name (optional, auto-generated if omitted)' },
-        ports: {
-          type: 'array',
-          description: 'Port mappings',
-          items: {
-            type: 'object',
-            properties: {
-              hostPort: { type: 'number' },
-              containerPort: { type: 'number' },
-              protocol: { type: 'string', enum: ['tcp', 'udp'], description: 'Default: tcp' },
-            },
-            required: ['hostPort', 'containerPort'],
-          },
-        },
-        volumes: {
-          type: 'array',
-          description: 'Volume mounts. Supplying mounts also requires docker:containers:mounts for the node.',
-          items: {
-            type: 'object',
-            properties: {
-              hostPath: { type: 'string', description: 'Host path (for bind mounts)' },
-              containerPath: { type: 'string' },
-              name: { type: 'string', description: 'Volume name (for named volumes)' },
-              readOnly: { type: 'boolean' },
-            },
-            required: ['containerPath'],
-          },
-        },
-        env: { type: 'object', description: 'Environment variables as key-value pairs' },
-        networks: { type: 'array', items: { type: 'string' }, description: 'Network names to connect to' },
-        restartPolicy: {
-          type: 'string',
-          enum: ['no', 'always', 'unless-stopped', 'on-failure'],
-          description: 'Default: no',
-        },
-        stopTimeout: {
-          type: 'integer',
-          minimum: 0,
-          maximum: 300,
-          description: 'Container stop grace period in seconds, 0-300. Default: Gateway fallback 20 seconds.',
-        },
-        labels: { type: 'object', description: 'Container labels as key-value pairs' },
-        command: { type: 'array', items: { type: 'string' }, description: 'Override container command' },
-      },
-      required: ['nodeId', 'image'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:create',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'list_docker_containers',
-    description: 'List Docker containers on a specific node with their status, image, ports, and resource usage.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID (required)' },
-        search: { type: 'string', description: 'Optional search over container ID, name, image, status, and ports' },
-      },
-      required: ['nodeId'],
-    },
-    destructive: false,
-    category: 'Docker',
-    requiredScope: 'docker:containers:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'get_docker_container',
-    description:
-      'Get detailed information about a specific Docker container including config, state, mounts, and network settings.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        containerId: { type: 'string', description: 'Container ID' },
-      },
-      required: ['nodeId', 'containerId'],
-    },
-    destructive: false,
-    category: 'Docker',
-    requiredScope: 'docker:containers:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'list_docker_deployments',
-    description:
-      'List blue/green Docker deployments on a specific node. Use this before acting on managed deployment containers; deployment rows include activeSlot, slots, routes, status, and health.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID (required)' },
-        search: { type: 'string', description: 'Optional search over deployment name, image, status, and routes' },
-      },
-      required: ['nodeId'],
-    },
-    destructive: false,
-    category: 'Docker',
-    requiredScope: 'docker:containers:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'get_docker_deployment',
-    description:
-      'Get detailed information about a blue/green Docker deployment by deployment ID. Use deploymentId, not the active slot container ID.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
-      },
-      required: ['nodeId', 'deploymentId'],
-    },
-    destructive: false,
-    category: 'Docker',
-    requiredScope: 'docker:containers:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'start_docker_deployment',
-    description:
-      'Start a stopped blue/green Docker deployment through the deployment layer. Do not start the underlying managed container directly.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
-      },
-      required: ['nodeId', 'deploymentId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'stop_docker_deployment',
-    description:
-      'Stop a blue/green Docker deployment through the deployment layer. Do not stop the underlying managed container directly.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
-      },
-      required: ['nodeId', 'deploymentId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'restart_docker_deployment',
-    description:
-      'Restart a blue/green Docker deployment through the deployment layer. Use this instead of restarting the active slot container.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
-      },
-      required: ['nodeId', 'deploymentId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'kill_docker_deployment',
-    description:
-      'Force-kill a blue/green Docker deployment through the deployment layer. Prefer stop_docker_deployment unless an immediate kill is explicitly requested.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
-      },
-      required: ['nodeId', 'deploymentId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'deploy_docker_deployment',
-    description:
-      'Deploy a new inactive slot for a blue/green Docker deployment, optionally with a full image reference or a new tag. This is the deployment-safe replacement for updating a managed slot container image.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
-        image: { type: 'string', description: 'Optional full image reference to deploy' },
-        tag: { type: 'string', description: 'Optional tag applied to the current deployment image repository' },
-        registryId: { type: 'string', description: 'Optional Docker registry UUID for pulling the image' },
-        env: { type: 'object', description: 'Optional environment overrides for the new deployment config' },
-      },
-      required: ['nodeId', 'deploymentId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers', 'tasks'],
-  },
-  {
-    name: 'switch_docker_deployment_slot',
-    description:
-      'Switch a blue/green Docker deployment to the specified slot. Use only with the Gateway deployment ID and slot name, not a container ID.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
-        slot: { type: 'string', enum: ['blue', 'green'], description: 'Target slot to make active' },
-        force: { type: 'boolean', description: 'Force switch even if health checks are not healthy (default false)' },
-      },
-      required: ['nodeId', 'deploymentId', 'slot'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'rollback_docker_deployment',
-    description: 'Rollback a blue/green Docker deployment to the inactive previous slot.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
-        force: { type: 'boolean', description: 'Force rollback even if health checks are not healthy (default false)' },
-      },
-      required: ['nodeId', 'deploymentId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'stop_docker_deployment_slot',
-    description:
-      'Stop an inactive blue/green deployment slot. The active slot cannot be stopped by this tool; use stop_docker_deployment to stop the whole deployment.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        deploymentId: { type: 'string', description: 'Gateway deployment ID' },
-        slot: { type: 'string', enum: ['blue', 'green'], description: 'Inactive slot to stop' },
-      },
-      required: ['nodeId', 'deploymentId', 'slot'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'start_docker_container',
-    description: 'Start a stopped Docker container.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        containerId: { type: 'string', description: 'Container ID' },
-      },
-      required: ['nodeId', 'containerId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'stop_docker_container',
-    description: 'Stop a running Docker container.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        containerId: { type: 'string', description: 'Container ID' },
-        timeout: {
-          type: 'integer',
-          minimum: 0,
-          maximum: 300,
-          description: 'Seconds to wait before killing. If omitted, uses the container stop grace setting, then 20.',
-        },
-      },
-      required: ['nodeId', 'containerId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'restart_docker_container',
-    description: 'Restart a Docker container.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        containerId: { type: 'string', description: 'Container ID' },
-        timeout: {
-          type: 'integer',
-          minimum: 0,
-          maximum: 300,
-          description: 'Seconds to wait before killing. If omitted, uses the container stop grace setting, then 20.',
-        },
-      },
-      required: ['nodeId', 'containerId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'remove_docker_container',
-    description: 'Remove a Docker container. The container must be stopped first unless force is true.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        containerId: { type: 'string', description: 'Container ID' },
-        force: { type: 'boolean', description: 'Force remove even if running (default false)' },
-      },
-      required: ['nodeId', 'containerId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:delete',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'update_docker_container_image',
-    description:
-      'Update a Docker container to a different image tag. Pulls the new image, then recreates the container with the new image while preserving all other settings (ports, volumes, env, etc.). Use this to upgrade/downgrade container versions.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        containerId: { type: 'string', description: 'Container ID' },
-        imageTag: { type: 'string', description: 'New image tag (e.g. "1.25", "latest", "v2.0.0")' },
-      },
-      required: ['nodeId', 'containerId', 'imageTag'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:manage',
-    invalidateStores: ['containers', 'tasks'],
-  },
-  {
-    name: 'rename_docker_container',
-    description: 'Rename a Docker container.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        containerId: { type: 'string', description: 'Container ID' },
-        name: { type: 'string', description: 'New container name' },
-      },
-      required: ['nodeId', 'containerId', 'name'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:edit',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'duplicate_docker_container',
-    description: 'Clone a Docker container with a new name. Copies config, ports, volumes, env, and secrets.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        containerId: { type: 'string', description: 'Container ID to clone' },
-        name: { type: 'string', description: 'Name for the new container' },
-      },
-      required: ['nodeId', 'containerId', 'name'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:create',
-    invalidateStores: ['containers'],
-  },
-  {
-    name: 'get_docker_container_stats',
-    description: 'Get live resource usage stats for a Docker container (CPU%, memory, network I/O, PIDs).',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        containerId: { type: 'string', description: 'Container ID' },
-      },
-      required: ['nodeId', 'containerId'],
-    },
-    destructive: false,
-    category: 'Docker',
-    requiredScope: 'docker:containers:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'get_docker_container_logs',
-    description: 'Get recent log output from a Docker container.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        containerId: { type: 'string', description: 'Container ID' },
-        tail: { type: 'number', description: 'Number of lines from the end (default 100)' },
-        timestamps: { type: 'boolean', description: 'Include timestamps (default false)' },
-      },
-      required: ['nodeId', 'containerId'],
-    },
-    destructive: false,
-    category: 'Docker',
-    requiredScope: 'docker:containers:view',
-    invalidateStores: [],
-  },
-
-  // ── Docker: Images ──
-  {
-    name: 'list_docker_images',
-    description: 'List Docker images on a specific node with their tags, size, and creation date.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID (required)' },
-        search: { type: 'string', description: 'Optional search over image ID, tags, and digests' },
-      },
-      required: ['nodeId'],
-    },
-    destructive: false,
-    category: 'Docker',
-    requiredScope: 'docker:images:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'pull_docker_image',
-    description: 'Pull a Docker image from a registry onto a node.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        imageRef: { type: 'string', description: 'Image reference (e.g. nginx:latest, ghcr.io/org/app:v2)' },
-        registryId: { type: 'string', description: 'Optional Docker registry UUID for pulling the image' },
-      },
-      required: ['nodeId', 'imageRef'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:images:pull',
-    invalidateStores: ['images'],
-  },
-
-  {
-    name: 'remove_docker_image',
-    description: 'Remove a Docker image from a node.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-        imageId: { type: 'string', description: 'Image ID or reference (e.g. sha256:abc... or nginx:1.25)' },
-        force: { type: 'boolean', description: 'Force remove even if in use (default false)' },
-      },
-      required: ['nodeId', 'imageId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:images:delete',
-    invalidateStores: ['images'],
-  },
-  {
-    name: 'prune_docker_images',
-    description: 'Remove all unused Docker images from a node to free disk space. Returns reclaimed space.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID' },
-      },
-      required: ['nodeId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:images:delete',
-    invalidateStores: ['images'],
-  },
-
-  // ── Docker: Volumes & Networks ──
-  {
-    name: 'list_docker_volumes',
-    description: 'List Docker volumes on a specific node.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID (required)' },
-        search: { type: 'string', description: 'Optional search over volume name, driver, mountpoint, and users' },
-      },
-      required: ['nodeId'],
-    },
-    destructive: false,
-    category: 'Docker',
-    requiredScope: 'docker:volumes:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'list_docker_networks',
-    description: 'List Docker networks on a specific node.',
-    parameters: {
-      type: 'object',
-      properties: {
-        nodeId: { type: 'string', description: 'Docker node ID (required)' },
-        search: { type: 'string', description: 'Optional search over network ID, name, driver, and scope' },
-      },
-      required: ['nodeId'],
-    },
-    destructive: false,
-    category: 'Docker',
-    requiredScope: 'docker:networks:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'manage_docker_registry',
-    description:
-      'Manage saved Docker registries. Operations: list, get, create, update, delete, test, test_direct. Mutating operations require the corresponding docker:registries:* scope.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: {
-          type: 'string',
-          enum: ['list', 'get', 'create', 'update', 'delete', 'test', 'test_direct'],
-        },
-        registryId: { type: 'string', description: 'Registry UUID for get/update/delete/test' },
-        nodeId: { type: 'string', description: 'Optional node filter for list, or node scoped registry owner' },
-        name: { type: 'string' },
-        url: { type: 'string' },
-        username: { type: 'string' },
-        password: { type: 'string' },
-        trustedAuthRealm: { type: 'string' },
-        scope: { type: 'string', enum: ['global', 'node'] },
-      },
-      required: ['operation'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:registries:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'manage_docker_volume',
-    description:
-      'Create or delete Docker volumes on a node. Operations: create, delete. Listing is available via list_docker_volumes.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: { type: 'string', enum: ['create', 'delete'] },
-        nodeId: { type: 'string' },
-        name: { type: 'string' },
-        driver: { type: 'string' },
-        labels: { type: 'object' },
-        force: { type: 'boolean' },
-      },
-      required: ['operation', 'nodeId', 'name'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:volumes:create',
-    invalidateStores: [],
-  },
-  {
-    name: 'manage_docker_network',
-    description:
-      'Create, delete, connect, or disconnect Docker networks on a node. Listing is available via list_docker_networks.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: { type: 'string', enum: ['create', 'delete', 'connect', 'disconnect'] },
-        nodeId: { type: 'string' },
-        networkId: { type: 'string', description: 'Network ID or name for delete/connect/disconnect' },
-        name: { type: 'string', description: 'Network name for create' },
-        driver: { type: 'string' },
-        subnet: { type: 'string' },
-        gateway: { type: 'string' },
-        containerId: { type: 'string' },
-      },
-      required: ['operation', 'nodeId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:networks:create',
-    invalidateStores: [],
-  },
-  {
-    name: 'manage_docker_task',
-    description: 'List or get Docker background tasks for image pulls, container updates, and webhook actions.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: { type: 'string', enum: ['list', 'get'] },
-        taskId: { type: 'string' },
-        nodeId: { type: 'string' },
-        status: { type: 'string' },
-        type: { type: 'string' },
-      },
-      required: ['operation'],
-    },
-    destructive: false,
-    category: 'Docker',
-    requiredScope: 'docker:tasks',
-    invalidateStores: [],
-  },
-  {
-    name: 'manage_docker_container_config',
-    description:
-      'Manage container env, files, secrets, webhooks, and HTTP health checks. Operation-specific scopes are enforced: environment/files/secrets/webhooks/edit/view.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: {
-          type: 'string',
-          enum: [
-            'get_env',
-            'update_env',
-            'list_files',
-            'read_file',
-            'write_file',
-            'list_secrets',
-            'create_secret',
-            'update_secret',
-            'delete_secret',
-            'get_webhook',
-            'upsert_webhook',
-            'delete_webhook',
-            'regenerate_webhook_token',
-            'get_health_check',
-            'upsert_health_check',
-            'test_health_check',
-          ],
-        },
-        targetType: { type: 'string', enum: ['container', 'deployment'], description: 'Defaults to container' },
-        nodeId: { type: 'string' },
-        containerId: { type: 'string' },
-        containerName: { type: 'string' },
-        deploymentId: { type: 'string' },
-        secretId: { type: 'string' },
-        key: { type: 'string' },
-        value: { type: 'string' },
-        reveal: { type: 'boolean' },
-        env: { type: 'object', description: 'Environment key/value map for update_env' },
-        removeEnv: { type: 'array', items: { type: 'string' } },
-        path: { type: 'string', description: 'Container file path' },
-        content: { type: 'string', description: 'Base64-encoded file content for write_file' },
-        enabled: { type: 'boolean', description: 'Webhook or health check enabled state' },
-        healthCheck: { type: 'object', description: 'Docker health check configuration' },
-      },
-      required: ['operation', 'nodeId'],
-    },
-    destructive: true,
-    category: 'Docker',
-    requiredScope: 'docker:containers:view',
-    invalidateStores: [],
-  },
-
+  // ── Docker ──
+  ...DOCKER_AI_TOOLS,
   // ── Databases ──
-  {
-    name: 'list_databases',
-    description: 'List saved database connections managed by Gateway.',
-    parameters: {
-      type: 'object',
-      properties: {
-        type: { type: 'string', enum: ['postgres', 'redis'], description: 'Optional provider filter' },
-        healthStatus: {
-          type: 'string',
-          enum: ['online', 'offline', 'degraded', 'unknown'],
-          description: 'Optional health status filter',
-        },
-        search: { type: 'string', description: 'Optional text search' },
-      },
-    },
-    destructive: false,
-    category: 'Databases',
-    requiredScope: 'databases:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'get_database_connection',
-    description: 'Get a saved database connection by ID, including provider, host, status, and safe config fields.',
-    parameters: {
-      type: 'object',
-      properties: {
-        databaseId: { type: 'string', description: 'Database connection UUID' },
-      },
-      required: ['databaseId'],
-    },
-    destructive: false,
-    category: 'Databases',
-    requiredScope: 'databases:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'query_postgres_read',
-    description: 'Run a single read-only SQL statement against a saved Postgres connection.',
-    parameters: {
-      type: 'object',
-      properties: {
-        databaseId: { type: 'string', description: 'Database connection UUID' },
-        sql: { type: 'string', description: 'Single read-only SQL statement' },
-      },
-      required: ['databaseId', 'sql'],
-    },
-    destructive: false,
-    category: 'Databases',
-    requiredScope: 'databases:query:read',
-    invalidateStores: [],
-  },
-  {
-    name: 'execute_postgres_sql',
-    description:
-      'Run a SQL statement against a saved Postgres connection. Required permission is inferred from the SQL intent: read, write, or admin.',
-    parameters: {
-      type: 'object',
-      properties: {
-        databaseId: { type: 'string', description: 'Database connection UUID' },
-        sql: { type: 'string', description: 'Single SQL statement' },
-      },
-      required: ['databaseId', 'sql'],
-    },
-    destructive: true,
-    category: 'Databases',
-    requiredScope: 'databases:query:read',
-    invalidateStores: [],
-  },
-  {
-    name: 'browse_redis_keys',
-    description: 'Browse keys in a saved Redis connection using SCAN.',
-    parameters: {
-      type: 'object',
-      properties: {
-        databaseId: { type: 'string', description: 'Database connection UUID' },
-        search: { type: 'string', description: 'Optional SCAN match pattern or substring search' },
-        type: { type: 'string', description: 'Optional Redis TYPE filter' },
-      },
-      required: ['databaseId'],
-    },
-    destructive: false,
-    category: 'Databases',
-    requiredScope: 'databases:query:read',
-    invalidateStores: [],
-  },
-  {
-    name: 'get_redis_key',
-    description: 'Get the value, type, and TTL of a Redis key from a saved connection.',
-    parameters: {
-      type: 'object',
-      properties: {
-        databaseId: { type: 'string', description: 'Database connection UUID' },
-        key: { type: 'string', description: 'Redis key name' },
-      },
-      required: ['databaseId', 'key'],
-    },
-    destructive: false,
-    category: 'Databases',
-    requiredScope: 'databases:query:read',
-    invalidateStores: [],
-  },
-  {
-    name: 'set_redis_key',
-    description: 'Create or replace a Redis key using the visual-editor-compatible payload format.',
-    parameters: {
-      type: 'object',
-      properties: {
-        databaseId: { type: 'string', description: 'Database connection UUID' },
-        key: { type: 'string', description: 'Redis key name' },
-        type: { type: 'string', enum: ['string', 'hash', 'list', 'set', 'zset'], description: 'Redis value type' },
-        value: {
-          type: 'object',
-          description:
-            'Value payload. Use a JSON string for string type, object for hash, array for list/set, array of {member,score} for zset.',
-        },
-        ttlSeconds: { type: 'number', description: 'Optional TTL in seconds' },
-      },
-      required: ['databaseId', 'key', 'type', 'value'],
-    },
-    destructive: true,
-    category: 'Databases',
-    requiredScope: 'databases:query:write',
-    invalidateStores: [],
-  },
-  {
-    name: 'execute_redis_command',
-    description: 'Run a single Redis command against a saved Redis connection.',
-    parameters: {
-      type: 'object',
-      properties: {
-        databaseId: { type: 'string', description: 'Database connection UUID' },
-        command: { type: 'string', description: 'Single Redis command line' },
-      },
-      required: ['databaseId', 'command'],
-    },
-    destructive: true,
-    category: 'Databases',
-    requiredScope: 'databases:query:admin',
-    invalidateStores: [],
-  },
-  {
-    name: 'manage_database_connection',
-    description:
-      'Manage saved database connections. Operations: create, update, delete, test, reveal_credentials, health_history. Operation-specific database scopes are enforced.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: {
-          type: 'string',
-          enum: ['create', 'update', 'delete', 'test', 'reveal_credentials', 'health_history'],
-        },
-        databaseId: { type: 'string', description: 'Database connection UUID for update/delete/test/reveal/history' },
-        type: { type: 'string', enum: ['postgres', 'redis'] },
-        name: { type: 'string' },
-        description: { type: 'string' },
-        tags: { type: 'array', items: { type: 'string' } },
-        manualSizeLimitMb: { type: 'number' },
-        config: {
-          type: 'object',
-          description:
-            'Connection config. Postgres: connectionString or host/port/database/username/password/sslEnabled. Redis: connectionString or host/port/username/password/db/tlsEnabled.',
-        },
-      },
-      required: ['operation'],
-    },
-    destructive: true,
-    category: 'Databases',
-    requiredScope: 'databases:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'manage_postgres_data',
-    description:
-      'Explore and edit Postgres data for a saved connection. Operations: list_schemas, list_tables, table_metadata, browse_rows, insert_row, update_row, delete_row, add_column, update_column_type, delete_column.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: {
-          type: 'string',
-          enum: [
-            'list_schemas',
-            'list_tables',
-            'table_metadata',
-            'browse_rows',
-            'insert_row',
-            'update_row',
-            'delete_row',
-            'add_column',
-            'update_column_type',
-            'delete_column',
-          ],
-        },
-        databaseId: { type: 'string' },
-        schema: { type: 'string' },
-        table: { type: 'string' },
-        page: { type: 'number' },
-        limit: { type: 'number' },
-        sortBy: { type: 'string' },
-        sortOrder: { type: 'string', enum: ['asc', 'desc'] },
-        searchColumn: { type: 'string' },
-        searchOperation: { type: 'string', enum: ['like', 'equals', 'notEquals', 'greaterThan', 'lessThan'] },
-        searchValue: { type: 'string' },
-        values: { type: 'object' },
-        primaryKey: { type: 'object' },
-        column: { type: 'string' },
-        dataType: { type: 'string' },
-      },
-      required: ['operation', 'databaseId'],
-    },
-    destructive: true,
-    category: 'Databases',
-    requiredScope: 'databases:query:read',
-    invalidateStores: [],
-  },
-  {
-    name: 'manage_redis_data',
-    description:
-      'Explore and edit Redis data for a saved connection. Operations: scan_keys, get_key, set_key, delete_key, expire_key, execute_command. Command intent controls required read/write/admin query scope.',
-    parameters: {
-      type: 'object',
-      properties: {
-        operation: {
-          type: 'string',
-          enum: ['scan_keys', 'get_key', 'set_key', 'delete_key', 'expire_key', 'execute_command'],
-        },
-        databaseId: { type: 'string' },
-        cursor: { type: 'number' },
-        limit: { type: 'number' },
-        search: { type: 'string' },
-        key: { type: 'string' },
-        type: { type: 'string' },
-        value: {},
-        ttlSeconds: { type: 'number' },
-        command: { type: 'string' },
-        offset: { type: 'number' },
-        maxStringBytes: { type: 'number' },
-      },
-      required: ['operation', 'databaseId'],
-    },
-    destructive: true,
-    category: 'Databases',
-    requiredScope: 'databases:query:read',
-    invalidateStores: [],
-  },
+  ...DATABASE_AI_TOOLS,
 
-  // ── Logging ──
-  {
-    name: 'manage_logging',
-    description:
-      'Manage external logging environments, schemas, ingest tokens, metadata, facets, and search. Operation-specific logs:* scopes are enforced.',
-    parameters: {
-      type: 'object',
-      properties: {
-        resource: { type: 'string', enum: ['environment', 'schema', 'token', 'logs', 'metadata', 'facets'] },
-        operation: {
-          type: 'string',
-          enum: ['list', 'get', 'create', 'update', 'delete', 'search', 'facets', 'metadata'],
-        },
-        environmentId: { type: 'string' },
-        schemaId: { type: 'string' },
-        tokenId: { type: 'string' },
-        search: { type: 'string' },
-        payload: { type: 'object', description: 'Create/update/search/facets body matching the logging API schema' },
-      },
-      required: ['resource', 'operation'],
-    },
-    destructive: true,
-    category: 'Logging',
-    requiredScope: 'logs:environments:view',
-    invalidateStores: [],
-  },
+  // ── Operations ──
+  ...OPERATION_AI_TOOLS,
 
-  // ── Status Page ──
-  {
-    name: 'manage_status_page',
-    description:
-      'Manage the status page settings, service list, incidents, incident updates, proxy template options, and preview. Operation-specific status-page:* scopes are enforced.',
-    parameters: {
-      type: 'object',
-      properties: {
-        resource: {
-          type: 'string',
-          enum: ['settings', 'proxy_templates', 'services', 'incidents', 'incident_updates', 'preview'],
-        },
-        operation: {
-          type: 'string',
-          enum: ['get', 'list', 'update', 'create', 'delete', 'resolve', 'promote', 'create_update', 'preview'],
-        },
-        serviceId: { type: 'string' },
-        incidentId: { type: 'string' },
-        status: { type: 'string', enum: ['active', 'resolved', 'all'] },
-        limit: { type: 'number' },
-        payload: { type: 'object', description: 'Create/update body matching the status page API schema' },
-      },
-      required: ['resource', 'operation'],
-    },
-    destructive: true,
-    category: 'Status Page',
-    requiredScope: 'status-page:view',
-    invalidateStores: [],
-  },
+  // ── Sandbox ──
+  ...SANDBOX_AI_TOOLS,
+
+  // ── Notifications ──
+  ...NOTIFICATION_AI_TOOLS,
 
   // ── Web Search (conditional) ──
-  // ── Notifications - Alert Rules ──
-  {
-    name: 'list_alert_rules',
-    description:
-      'List all notification alert rules. Returns id, name, enabled, type (threshold/event), category (node/container/proxy/certificate/database_postgres/database_redis), severity, metric, operator, thresholdValue, eventPattern, resourceIds, webhookIds, cooldownSeconds.',
-    parameters: {
-      type: 'object',
-      properties: {
-        category: {
-          type: 'string',
-          enum: ['node', 'container', 'proxy', 'certificate', 'database_postgres', 'database_redis'],
-          description: 'Filter by category',
-        },
-        enabled: { type: 'boolean', description: 'Filter by enabled/disabled' },
-      },
-    },
-    destructive: false,
-    category: 'Notifications',
-    requiredScope: 'notifications:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'get_alert_rule',
-    description: 'Get detailed information about a specific alert rule by ID.',
-    parameters: {
-      type: 'object',
-      properties: {
-        ruleId: { type: 'string', description: 'Alert rule UUID' },
-      },
-      required: ['ruleId'],
-    },
-    destructive: false,
-    category: 'Notifications',
-    requiredScope: 'notifications:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'create_alert_rule',
-    description:
-      'Create a new notification alert rule. Threshold rules fire when a metric crosses a value. Event rules fire on system events like node offline or container stopped.',
-    parameters: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Alert name (e.g., "CPU High")' },
-        type: { type: 'string', enum: ['threshold', 'event'], description: 'Rule type' },
-        category: {
-          type: 'string',
-          enum: ['node', 'container', 'proxy', 'certificate', 'database_postgres', 'database_redis'],
-          description: 'Resource category',
-        },
-        severity: { type: 'string', enum: ['info', 'warning', 'critical'], description: 'Alert severity' },
-        metric: { type: 'string', description: 'For threshold: metric name (cpu, memory, disk, days_until_expiry)' },
-        metricTarget: {
-          type: 'string',
-          description: 'For threshold: optional sub-target like a specific disk mount point',
-        },
-        operator: { type: 'string', enum: ['>', '>=', '<', '<='], description: 'For threshold: comparison operator' },
-        thresholdValue: { type: 'number', description: 'For threshold: threshold value' },
-        durationSeconds: {
-          type: 'number',
-          description: 'For threshold: observation window in seconds used for firing (0 = instant)',
-        },
-        fireThresholdPercent: {
-          type: 'number',
-          description:
-            'For threshold: percent of probes in the fire window that must breach before firing (default 100)',
-        },
-        resolveAfterSeconds: {
-          type: 'number',
-          description: 'For threshold: observation window in seconds used for resolving (default 60)',
-        },
-        resolveThresholdPercent: {
-          type: 'number',
-          description:
-            'For threshold: percent of probes in the resolve window that must be clear before resolving (default 100)',
-        },
-        eventPattern: { type: 'string', description: 'For event: event pattern (offline, stopped, oom_killed, etc.)' },
-        resourceIds: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Scope to specific resources (empty = all)',
-        },
-        messageTemplate: {
-          type: 'string',
-          description: 'Handlebars message template (e.g., "CPU at {{value}}% on {{resource.name}}")',
-        },
-        webhookIds: { type: 'array', items: { type: 'string' }, description: 'Webhook IDs to deliver to' },
-        cooldownSeconds: { type: 'number', description: 'Cooldown between repeated firings (default 900)' },
-        enabled: { type: 'boolean', description: 'Whether the rule is active (default true)' },
-      },
-      required: ['name', 'type', 'category', 'severity', 'webhookIds'],
-    },
-    destructive: true,
-    category: 'Notifications',
-    requiredScope: 'notifications:manage',
-    invalidateStores: [],
-  },
-  {
-    name: 'update_alert_rule',
-    description: 'Update an existing alert rule. Only include fields to change.',
-    parameters: {
-      type: 'object',
-      properties: {
-        ruleId: { type: 'string', description: 'Alert rule UUID' },
-        name: { type: 'string', description: 'New name' },
-        enabled: { type: 'boolean', description: 'Enable/disable' },
-        severity: { type: 'string', enum: ['info', 'warning', 'critical'] },
-        metric: { type: 'string' },
-        metricTarget: { type: 'string' },
-        operator: { type: 'string', enum: ['>', '>=', '<', '<='] },
-        thresholdValue: { type: 'number' },
-        durationSeconds: { type: 'number' },
-        fireThresholdPercent: { type: 'number' },
-        resolveAfterSeconds: { type: 'number' },
-        resolveThresholdPercent: { type: 'number' },
-        eventPattern: { type: 'string' },
-        resourceIds: { type: 'array', items: { type: 'string' } },
-        messageTemplate: { type: 'string' },
-        webhookIds: { type: 'array', items: { type: 'string' } },
-        cooldownSeconds: { type: 'number' },
-      },
-      required: ['ruleId'],
-    },
-    destructive: true,
-    category: 'Notifications',
-    requiredScope: 'notifications:manage',
-    invalidateStores: [],
-  },
-  {
-    name: 'delete_alert_rule',
-    description: 'Delete a notification alert rule.',
-    parameters: {
-      type: 'object',
-      properties: {
-        ruleId: { type: 'string', description: 'Alert rule UUID' },
-      },
-      required: ['ruleId'],
-    },
-    destructive: true,
-    category: 'Notifications',
-    requiredScope: 'notifications:manage',
-    invalidateStores: [],
-  },
-  // ── Notifications - Webhooks ──
-  {
-    name: 'list_webhooks',
-    description: 'List all notification webhooks. Returns id, name, url, method, enabled, templatePreset, headers.',
-    parameters: { type: 'object', properties: {} },
-    destructive: false,
-    category: 'Notifications',
-    requiredScope: 'notifications:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'create_webhook',
-    description:
-      'Create a notification webhook endpoint. Webhooks define where and how alert notifications are delivered (Discord, Slack, Telegram, or custom HTTP). Use template presets for quick setup.',
-    parameters: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Webhook name (e.g., "Discord Alerts")' },
-        url: { type: 'string', description: 'HTTP URL to POST to' },
-        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH'], description: 'HTTP method (default POST)' },
-        templatePreset: {
-          type: 'string',
-          enum: ['discord', 'slack', 'telegram', 'json', 'plain'],
-          description: 'Built-in template preset',
-        },
-        bodyTemplate: { type: 'string', description: 'Custom Handlebars body template (overrides preset)' },
-        signingSecret: { type: 'string', description: 'HMAC-SHA256 signing secret (optional)' },
-        signingHeader: { type: 'string', description: 'HMAC header name (default X-Signature-256)' },
-      },
-      required: ['name', 'url'],
-    },
-    destructive: true,
-    category: 'Notifications',
-    requiredScope: 'notifications:manage',
-    invalidateStores: [],
-  },
-  {
-    name: 'update_webhook',
-    description: 'Update an existing webhook. Only include fields to change.',
-    parameters: {
-      type: 'object',
-      properties: {
-        webhookId: { type: 'string', description: 'Webhook UUID' },
-        name: { type: 'string' },
-        url: { type: 'string' },
-        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH'] },
-        enabled: { type: 'boolean' },
-        templatePreset: { type: 'string' },
-        bodyTemplate: { type: 'string' },
-        signingSecret: { type: 'string' },
-        signingHeader: { type: 'string' },
-      },
-      required: ['webhookId'],
-    },
-    destructive: true,
-    category: 'Notifications',
-    requiredScope: 'notifications:manage',
-    invalidateStores: [],
-  },
-  {
-    name: 'delete_webhook',
-    description: 'Delete a notification webhook.',
-    parameters: {
-      type: 'object',
-      properties: {
-        webhookId: { type: 'string', description: 'Webhook UUID' },
-      },
-      required: ['webhookId'],
-    },
-    destructive: true,
-    category: 'Notifications',
-    requiredScope: 'notifications:manage',
-    invalidateStores: [],
-  },
-  {
-    name: 'test_webhook',
-    description:
-      'Send a test notification to a webhook to verify it works. Returns success status, HTTP status code, and any error.',
-    parameters: {
-      type: 'object',
-      properties: {
-        webhookId: { type: 'string', description: 'Webhook UUID' },
-      },
-      required: ['webhookId'],
-    },
-    destructive: false,
-    category: 'Notifications',
-    requiredScope: 'notifications:manage',
-    invalidateStores: [],
-  },
-  // ── Notifications - Delivery Log ──
-  {
-    name: 'list_webhook_deliveries',
-    description:
-      'List recent webhook delivery attempts. Returns delivery status, HTTP response code, timing, retry info. Use to diagnose delivery failures.',
-    parameters: {
-      type: 'object',
-      properties: {
-        webhookId: { type: 'string', description: 'Filter by webhook UUID' },
-        status: {
-          type: 'string',
-          enum: ['success', 'failed', 'retrying', 'pending'],
-          description: 'Filter by delivery status',
-        },
-        limit: { type: 'number', description: 'Max results (default 50)' },
-      },
-    },
-    destructive: false,
-    category: 'Notifications',
-    requiredScope: 'notifications:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'get_delivery_stats',
-    description: 'Get delivery statistics (total, success, failed, retrying counts). Optionally filter by webhook.',
-    parameters: {
-      type: 'object',
-      properties: {
-        webhookId: { type: 'string', description: 'Filter by webhook UUID' },
-      },
-    },
-    destructive: false,
-    category: 'Notifications',
-    requiredScope: 'notifications:view',
-    invalidateStores: [],
-  },
-  {
-    name: 'web_search',
-    description:
-      "Search the web for current information about PKI, certificates, protocols, or any topic. Use when the user asks about something you don't know or needs up-to-date information.",
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search query' },
-        maxResults: { type: 'number', description: 'Max results (default 5, max 10)' },
-      },
-      required: ['query'],
-    },
-    destructive: false,
-    category: 'Web Search',
-    requiredScope: 'feat:ai:use',
-    invalidateStores: [],
-  },
+  WEB_SEARCH_AI_TOOL,
 ];
 
 const destructiveSet = new Set(AI_TOOLS.filter((t) => t.destructive).map((t) => t.name));
+const BASE_AI_TOOL_NAMES = new Set([
+  'discover_tools',
+  'get_current_context',
+  'wait',
+  'end_conversation',
+  'find_resource',
+  'ask_question',
+  'internal_documentation',
+  'fetch',
+  'web_search',
+]);
+
+const TOOL_NAME_BOUNDARY = '[^a-zA-Z0-9_]';
 
 export function isDestructiveTool(name: string): boolean {
   return destructiveSet.has(name);
+}
+
+export function inferDiscoveredToolsetsFromText(text: string): string[] {
+  const discovered = new Set<string>();
+  for (const tool of AI_TOOLS) {
+    if (BASE_AI_TOOL_NAMES.has(tool.name)) continue;
+    if (matchesToolName(text, tool.name)) discovered.add(tool.category);
+  }
+  return [...discovered].sort((a, b) => a.localeCompare(b));
+}
+
+function matchesToolName(text: string, toolName: string): boolean {
+  const escapedName = escapeRegExp(toolName);
+  if (new RegExp(`(^|${TOOL_NAME_BOUNDARY})${escapedName}($|${TOOL_NAME_BOUNDARY})`, 'i').test(text)) return true;
+
+  const readableName = escapeRegExp(toolName.replaceAll('_', ' '));
+  return new RegExp(`(^|${TOOL_NAME_BOUNDARY})${readableName}($|${TOOL_NAME_BOUNDARY})`, 'i').test(text);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
@@ -2576,21 +1590,18 @@ export const TOOL_STORE_INVALIDATION_MAP: Record<string, string[]> = Object.from
 export function getOpenAITools(
   disabledTools: string[],
   userScopes: string[],
-  webSearchEnabled: boolean
+  webSearchEnabled: boolean,
+  options: { discoveredToolsets?: string[]; sandboxEnabled?: boolean } = {}
 ): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
+  const discoveredToolsets = options.discoveredToolsets === undefined ? undefined : new Set(options.discoveredToolsets);
   return AI_TOOLS.filter((t) => {
     if (disabledTools.includes(t.name)) return false;
     if (t.name === 'web_search' && !webSearchEnabled) return false;
+    if (t.category === 'Sandbox' && options.sandboxEnabled !== true) return false;
+    if (discoveredToolsets && !BASE_AI_TOOL_NAMES.has(t.name) && !discoveredToolsets.has(t.category)) return false;
     // Every tool must have a requiredScope — reject tools without one
     if (!t.requiredScope) return false;
-    if (DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS.has(t.name)) {
-      return hasDirectDatabaseViewForQueryTool(userScopes, t.requiredScope);
-    }
-    if (ANY_SCOPE_TOOL_REQUIREMENTS[t.name]) return hasAnyRequiredToolScope(userScopes, t.name);
-    if (DIRECT_DATABASE_VIEW_TOOLS.has(t.name)) return hasDirectScopeBase(userScopes, t.requiredScope);
-    return BROAD_ONLY_TOOL_SCOPES.has(t.name)
-      ? hasScope(userScopes, t.requiredScope)
-      : hasScopeBase(userScopes, t.requiredScope);
+    return canUseAiTool(t.name, t.requiredScope, userScopes);
   }).map((t) => ({
     type: 'function' as const,
     function: {

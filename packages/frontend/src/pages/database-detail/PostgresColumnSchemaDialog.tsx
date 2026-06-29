@@ -1,0 +1,273 @@
+import { Minus, Plus } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { PostgresTableMetadata } from "@/types";
+import {
+  createNewColumnDraft,
+  currentColumnTypeValue,
+  type NewColumnDraft,
+  POSTGRES_COLUMN_TYPE_OPTIONS,
+  secondaryColumnTypeLabel,
+} from "./postgres-explorer-state";
+
+export function PostgresColumnSchemaDialog({
+  open,
+  onOpenChange,
+  metadata,
+  canChangeColumnTypes,
+  currentTableType,
+  columnTypeDrafts,
+  setColumnTypeDrafts,
+  newColumnDrafts,
+  setNewColumnDrafts,
+  deletedColumnNames,
+  setDeletedColumnNames,
+  invalidNewColumnIds,
+  changingColumn,
+  schemaChangeCount,
+  canSaveColumnSchemaChanges,
+  onReset,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  metadata: PostgresTableMetadata | null;
+  canChangeColumnTypes: boolean;
+  currentTableType: string | undefined;
+  columnTypeDrafts: Record<string, string>;
+  setColumnTypeDrafts: Dispatch<SetStateAction<Record<string, string>>>;
+  newColumnDrafts: NewColumnDraft[];
+  setNewColumnDrafts: Dispatch<SetStateAction<NewColumnDraft[]>>;
+  deletedColumnNames: string[];
+  setDeletedColumnNames: Dispatch<SetStateAction<string[]>>;
+  invalidNewColumnIds: Set<string>;
+  changingColumn: string | null;
+  schemaChangeCount: number;
+  canSaveColumnSchemaChanges: boolean;
+  onReset: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader className="shrink-0">
+          <DialogTitle>Column Types</DialogTitle>
+        </DialogHeader>
+        {metadata ? (
+          <div className="overflow-x-auto border border-border">
+            <div
+              className={`grid ${
+                canChangeColumnTypes
+                  ? "grid-cols-[minmax(0,1fr)_220px_36px]"
+                  : "grid-cols-[minmax(0,1fr)_220px]"
+              } border-b border-border bg-muted/40 text-xs font-medium uppercase tracking-wider text-muted-foreground`}
+            >
+              <div className="px-3 py-2">Column</div>
+              <div className="border-l border-border px-3 py-2">Data type</div>
+              {canChangeColumnTypes && <div className="border-l border-border" />}
+            </div>
+            {metadata.columns.map((column) => {
+              const currentType = currentColumnTypeValue(column);
+              const markedDeleted = deletedColumnNames.includes(column.name);
+              const secondaryTypeLabel = secondaryColumnTypeLabel(column);
+              const typeOptions = POSTGRES_COLUMN_TYPE_OPTIONS.includes(currentType)
+                ? POSTGRES_COLUMN_TYPE_OPTIONS
+                : [currentType, ...POSTGRES_COLUMN_TYPE_OPTIONS];
+              return (
+                <div
+                  key={column.name}
+                  className={`grid ${
+                    canChangeColumnTypes
+                      ? "grid-cols-[minmax(0,1fr)_220px_36px]"
+                      : "grid-cols-[minmax(0,1fr)_220px]"
+                  } border-b border-border last:border-b-0 ${markedDeleted ? "bg-destructive/10 opacity-70" : ""}`}
+                >
+                  <div className="flex h-9 min-w-0 items-center gap-2 px-3">
+                    <span
+                      className={`truncate font-mono text-sm ${markedDeleted ? "line-through" : ""}`}
+                    >
+                      {column.name}
+                    </span>
+                    {column.isPrimaryKey && <Badge variant="secondary">PK</Badge>}
+                    <span className="ml-auto truncate text-xs text-muted-foreground">
+                      {secondaryTypeLabel}
+                    </span>
+                  </div>
+                  <div className="border-l border-border">
+                    <Select
+                      value={columnTypeDrafts[column.name] ?? currentType}
+                      onValueChange={(nextType) =>
+                        setColumnTypeDrafts((prev) => ({ ...prev, [column.name]: nextType }))
+                      }
+                      disabled={!canChangeColumnTypes || changingColumn !== null || markedDeleted}
+                    >
+                      <SelectTrigger className="h-9 rounded-none border-0 shadow-none focus:ring-1 focus:ring-inset">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {typeOptions.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {canChangeColumnTypes && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 rounded-none border-l border-border"
+                      onClick={() =>
+                        setDeletedColumnNames((prev) =>
+                          prev.includes(column.name)
+                            ? prev.filter((name) => name !== column.name)
+                            : [...prev, column.name]
+                        )
+                      }
+                      title={markedDeleted ? "Undo column removal" : "Remove column"}
+                      disabled={changingColumn !== null}
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+            {newColumnDrafts.map((draft) => {
+              const invalid = invalidNewColumnIds.has(draft.id);
+              return (
+                <div
+                  key={draft.id}
+                  className="grid grid-cols-[minmax(0,1fr)_220px_36px] border-b border-border bg-emerald-500/5 last:border-b-0"
+                >
+                  <Input
+                    value={draft.name}
+                    onChange={(event) =>
+                      setNewColumnDrafts((prev) =>
+                        prev.map((candidate) =>
+                          candidate.id === draft.id
+                            ? { ...candidate, name: event.target.value }
+                            : candidate
+                        )
+                      )
+                    }
+                    className={`h-9 rounded-none border-0 font-mono text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
+                      invalid ? "bg-red-500/15 text-red-400" : ""
+                    }`}
+                    placeholder="new_column"
+                    disabled={changingColumn !== null}
+                  />
+                  <div className="border-l border-border">
+                    <Select
+                      value={draft.dataType}
+                      onValueChange={(dataType) =>
+                        setNewColumnDrafts((prev) =>
+                          prev.map((candidate) =>
+                            candidate.id === draft.id ? { ...candidate, dataType } : candidate
+                          )
+                        )
+                      }
+                      disabled={changingColumn !== null}
+                    >
+                      <SelectTrigger className="h-9 rounded-none border-0 shadow-none focus:ring-1 focus:ring-inset">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {POSTGRES_COLUMN_TYPE_OPTIONS.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 rounded-none border-l border-border"
+                    onClick={() =>
+                      setNewColumnDrafts((prev) =>
+                        prev.filter((candidate) => candidate.id !== draft.id)
+                      )
+                    }
+                    title="Remove pending column"
+                    disabled={changingColumn !== null}
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              );
+            })}
+            {canChangeColumnTypes && (
+              <div className="grid grid-cols-[minmax(0,1fr)_220px_36px] bg-muted/40">
+                <div className="h-9" />
+                <div className="h-9" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 rounded-none border-l border-border"
+                  onClick={() => setNewColumnDrafts((prev) => [...prev, createNewColumnDraft()])}
+                  disabled={changingColumn !== null}
+                  title="Add column"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+            {!canChangeColumnTypes &&
+              metadata.columns.length === 0 &&
+              newColumnDrafts.length === 0 && (
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  No columns.
+                </div>
+              )}
+          </div>
+        ) : (
+          <div className="border border-border px-4 py-8 text-center text-sm text-muted-foreground">
+            No table metadata loaded.
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+          <p className="min-w-0">
+            {canChangeColumnTypes
+              ? "Saving runs PostgreSQL ALTER TABLE. PostgreSQL may reject incompatible or dependent changes."
+              : currentTableType === "view"
+                ? "Views are read-only in this editor."
+                : "You can inspect column types, but changing them requires database admin query permission."}
+          </p>
+          {canChangeColumnTypes && (
+            <div className="flex shrink-0 justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onReset}
+                disabled={changingColumn !== null || schemaChangeCount === 0}
+              >
+                Reset
+              </Button>
+              <Button type="button" onClick={onSave} disabled={!canSaveColumnSchemaChanges}>
+                {changingColumn
+                  ? "Saving..."
+                  : `Save${schemaChangeCount > 0 ? ` (${schemaChangeCount})` : ""}`}
+              </Button>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

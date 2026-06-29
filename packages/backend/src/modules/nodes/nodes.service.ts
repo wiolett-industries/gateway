@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { count, eq, ilike, inArray, type SQL } from 'drizzle-orm';
+import { asc, count, eq, ilike, inArray, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificates, nodes, proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
@@ -10,7 +10,21 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { GrpcIdentityService } from '@/services/grpc-identity.service.js';
+import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
+import {
+  abortNodeFileUpload,
+  appendNodeFileUploadChunk,
+  completeNodeFileUpload,
+  createNodeDirectory,
+  createNodeFile,
+  deleteNodeFile,
+  initNodeFileUpload,
+  listNodeFiles,
+  moveNodeFile,
+  readNodeFile,
+  writeNodeFile,
+} from './node-file-operations.js';
 import type {
   CreateNodeInput,
   NodeListQuery,
@@ -32,7 +46,8 @@ export class NodesService {
     private db: DrizzleClient,
     private auditService: AuditService,
     private registry: NodeRegistryService,
-    private grpcIdentityService: GrpcIdentityService
+    private grpcIdentityService: GrpcIdentityService,
+    private nodeDispatch: NodeDispatchService
   ) {}
 
   private eventBus?: EventBusService;
@@ -44,6 +59,36 @@ export class NodesService {
   }
   private emitNode(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('node.changed', { id, action });
+  }
+
+  private nodeFileOperationContext() {
+    return {
+      nodeDispatch: this.nodeDispatch,
+      auditService: this.auditService,
+      eventBus: this.eventBus,
+      parseResult: (result: { success: boolean; error?: string; detail?: string }) => this.parseResult(result),
+    };
+  }
+
+  private parseResult(result: { success: boolean; error?: string; detail?: string }) {
+    if (!result.success) {
+      throw new AppError(502, 'DISPATCH_ERROR', result.error || 'Command failed on daemon');
+    }
+    try {
+      return result.detail ? JSON.parse(result.detail) : null;
+    } catch {
+      return result.detail;
+    }
+  }
+
+  private async validateConnectedNode(id: string) {
+    const [node] = await this.db.select({ id: nodes.id }).from(nodes).where(eq(nodes.id, id)).limit(1);
+    if (!node) {
+      throw new AppError(404, 'NOT_FOUND', 'Node not found');
+    }
+    if (!this.registry.getNode(id)) {
+      throw new AppError(502, 'NODE_OFFLINE', 'Node is offline');
+    }
   }
 
   async list(query: NodeListQuery, options?: { allowedIds?: string[] }) {
@@ -84,6 +129,7 @@ export class NodesService {
         type: nodes.type,
         hostname: nodes.hostname,
         displayName: nodes.displayName,
+        appearanceColor: nodes.appearanceColor,
         status: nodes.status,
         serviceCreationLocked: nodes.serviceCreationLocked,
         daemonVersion: nodes.daemonVersion,
@@ -94,12 +140,14 @@ export class NodesService {
         lastHealthReport: nodes.lastHealthReport,
         lastStatsReport: nodes.lastStatsReport,
         metadata: nodes.metadata,
+        folderId: nodes.folderId,
+        sortOrder: nodes.sortOrder,
         createdAt: nodes.createdAt,
         updatedAt: nodes.updatedAt,
       })
       .from(nodes)
       .where(where)
-      .orderBy(nodes.createdAt)
+      .orderBy(asc(nodes.sortOrder), asc(nodes.createdAt))
       .limit(query.limit)
       .offset(offset);
 
@@ -204,7 +252,8 @@ export class NodesService {
     const [updated] = await this.db
       .update(nodes)
       .set({
-        displayName: input.displayName,
+        displayName: input.displayName === undefined ? existing.displayName : input.displayName,
+        appearanceColor: input.appearanceColor === undefined ? existing.appearanceColor : input.appearanceColor,
         updatedAt: new Date(),
       })
       .where(eq(nodes.id, id))
@@ -215,7 +264,10 @@ export class NodesService {
       action: 'node.update',
       resourceType: 'node',
       resourceId: id,
-      details: { displayName: input.displayName },
+      details: {
+        ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+        ...(input.appearanceColor !== undefined ? { appearanceColor: input.appearanceColor } : {}),
+      },
     });
     this.emitNode(id, 'updated');
 
@@ -317,5 +369,60 @@ export class NodesService {
 
     logger.info('Node removed', { nodeId: id, hostname: node.hostname });
     this.emitNode(id, 'deleted');
+  }
+
+  async listFiles(nodeId: string, path: string) {
+    await this.validateConnectedNode(nodeId);
+    return listNodeFiles(this.nodeFileOperationContext(), nodeId, path);
+  }
+
+  async readFile(nodeId: string, path: string) {
+    await this.validateConnectedNode(nodeId);
+    return readNodeFile(this.nodeFileOperationContext(), nodeId, path);
+  }
+
+  async writeFile(nodeId: string, path: string, content: string | Buffer, userId: string) {
+    await this.validateConnectedNode(nodeId);
+    await writeNodeFile(this.nodeFileOperationContext(), nodeId, path, content, userId);
+  }
+
+  async createFile(nodeId: string, path: string, content: string | Buffer | undefined, userId: string) {
+    await this.validateConnectedNode(nodeId);
+    await createNodeFile(this.nodeFileOperationContext(), nodeId, path, content, userId);
+  }
+
+  async initFileUpload(nodeId: string, path: string, totalBytes: number, userId: string) {
+    await this.validateConnectedNode(nodeId);
+    return initNodeFileUpload(this.nodeFileOperationContext(), nodeId, path, totalBytes, userId);
+  }
+
+  async appendFileUploadChunk(nodeId: string, uploadId: string, offset: number, content: Buffer) {
+    await this.validateConnectedNode(nodeId);
+    return appendNodeFileUploadChunk(this.nodeFileOperationContext(), nodeId, uploadId, offset, content);
+  }
+
+  async completeFileUpload(nodeId: string, uploadId: string, path: string, totalBytes: number) {
+    await this.validateConnectedNode(nodeId);
+    await completeNodeFileUpload(this.nodeFileOperationContext(), nodeId, uploadId, path, totalBytes);
+  }
+
+  async abortFileUpload(nodeId: string, uploadId: string) {
+    await this.validateConnectedNode(nodeId);
+    await abortNodeFileUpload(this.nodeFileOperationContext(), nodeId, uploadId);
+  }
+
+  async createDirectory(nodeId: string, path: string, userId: string) {
+    await this.validateConnectedNode(nodeId);
+    await createNodeDirectory(this.nodeFileOperationContext(), nodeId, path, userId);
+  }
+
+  async deleteFile(nodeId: string, path: string, userId: string) {
+    await this.validateConnectedNode(nodeId);
+    await deleteNodeFile(this.nodeFileOperationContext(), nodeId, path, userId);
+  }
+
+  async moveFile(nodeId: string, fromPath: string, toPath: string, userId: string) {
+    await this.validateConnectedNode(nodeId);
+    await moveNodeFile(this.nodeFileOperationContext(), nodeId, fromPath, toPath, userId);
   }
 }

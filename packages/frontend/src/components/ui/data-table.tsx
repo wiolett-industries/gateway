@@ -127,13 +127,13 @@ export function DataTable<T>({
         >
           {/* Sticky header — sibling of the virtualized body, sharing the same grid template */}
           <div
-            className="sticky top-0 bg-card z-10 shadow-[inset_0_-1px_0_var(--color-border)] grid text-xs font-medium text-muted-foreground uppercase tracking-wider"
+            className="sticky top-0 z-10 grid bg-muted text-xs font-medium uppercase tracking-wider text-muted-foreground shadow-[inset_0_-1px_0_var(--color-border)]"
             style={{ gridTemplateColumns }}
           >
             {columns.map((col) => (
               <div
                 key={col.key}
-                className={`${col.align === "right" ? "text-right" : "text-left"} px-4 py-2 font-medium`}
+                className={`${col.align === "right" ? "text-right" : "text-left"} px-4 py-3 font-medium`}
               >
                 {col.header}
               </div>

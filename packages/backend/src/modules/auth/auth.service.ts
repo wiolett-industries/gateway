@@ -8,6 +8,7 @@ import { permissionGroups, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { canManageUser, isScopeSubset } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
+import type { AISandboxService } from '@/modules/ai/ai.sandbox.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CacheService } from '@/services/cache.service.js';
 import type { SessionService } from '@/services/session.service.js';
@@ -21,6 +22,8 @@ const PKCE_STATE_PREFIX = 'oidc:pkce:';
 const PRECREATED_SUBJECT_PREFIX = 'manual:';
 const SYSTEM_SUBJECT_PREFIX = 'system:';
 const GATEWAY_SYSTEM_OIDC_SUBJECT = 'system:gateway-setup';
+export const AI_APPROVAL_MODES = ['always-ask', 'normal', 'bypass-non-destructive', 'bypass-everything'] as const;
+export type AIApprovalMode = (typeof AI_APPROVAL_MODES)[number];
 
 export interface NormalizedOidcClaims {
   oidcSubject: string;
@@ -69,14 +72,21 @@ export class AuthService {
   ) {}
 
   private eventBus?: import('@/services/event-bus.service.js').EventBusService;
+  private sandboxService?: AISandboxService;
   setEventBus(bus: import('@/services/event-bus.service.js').EventBusService) {
     this.eventBus = bus;
+  }
+  setSandboxService(service: AISandboxService) {
+    this.sandboxService = service;
   }
   private emitUser(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('user.changed', { id, action });
   }
-  private emitPermissions(userId: string, scopes: string[], groupId: string | null) {
+  private emitPermissions(userId: string, scopes: string[], groupId: string | null, reason = 'permissions_changed') {
     this.eventBus?.publish(`permissions.changed.${userId}`, { scopes, groupId });
+    void this.sandboxService?.revokeUserAccess(userId, scopes, reason).catch((error) => {
+      logger.warn('Failed to revoke sandbox jobs after permission change', { userId, reason, error });
+    });
   }
 
   private async getOIDCConfig(): Promise<client.Configuration> {
@@ -400,6 +410,7 @@ export class AuthService {
       groupName: effective.groupName,
       scopes: effective.scopes,
       isBlocked: dbUser.isBlocked,
+      aiApprovalMode: dbUser.aiApprovalMode,
     };
   }
 
@@ -431,9 +442,39 @@ export class AuthService {
     return dbUser ? this.mapDbUserToUser(dbUser) : null;
   }
 
+  async getUserPreferences(userId: string): Promise<{ aiApprovalMode: AIApprovalMode } | null> {
+    const dbUser = await this.db.query.users.findFirst({
+      columns: { aiApprovalMode: true },
+      where: eq(users.id, userId),
+    });
+
+    return dbUser ? { aiApprovalMode: dbUser.aiApprovalMode } : null;
+  }
+
+  async updateUserPreferences(
+    userId: string,
+    input: { aiApprovalMode: AIApprovalMode }
+  ): Promise<{ aiApprovalMode: AIApprovalMode }> {
+    const [updated] = await this.db
+      .update(users)
+      .set({
+        aiApprovalMode: input.aiApprovalMode,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning({ aiApprovalMode: users.aiApprovalMode });
+
+    if (!updated) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+    }
+
+    this.emitUser(userId, 'updated');
+    return updated;
+  }
+
   async listUsers(): Promise<User[]> {
     const allUsers = await this.db.query.users.findMany({
-      orderBy: (users, { asc }) => [asc(users.createdAt)],
+      orderBy: (users, { asc }) => [asc(users.sortOrder), asc(users.createdAt)],
     });
 
     const groupMap = await fetchGroupScopeMap(this.db);
@@ -450,6 +491,9 @@ export class AuthService {
         groupName: effective.groupName,
         scopes: effective.scopes,
         isBlocked: u.isBlocked,
+        aiApprovalMode: u.aiApprovalMode,
+        folderId: u.folderId,
+        sortOrder: u.sortOrder,
       };
     });
   }
@@ -528,7 +572,7 @@ export class AuthService {
     }
 
     this.emitUser(userId, 'updated');
-    this.emitPermissions(userId, [], null);
+    this.emitPermissions(userId, [], null, 'user_blocked');
     return this.mapDbUserToUser(updatedUser);
   }
 
@@ -561,7 +605,7 @@ export class AuthService {
 
     logger.info('User deleted', { userId });
     this.emitUser(userId, 'deleted');
-    this.emitPermissions(userId, [], null);
+    this.emitPermissions(userId, [], null, 'user_deleted');
   }
 
   async validateSession(sessionId: string): Promise<User | null> {

@@ -2,32 +2,70 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { streamSSE } from 'hono/streaming';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { getResourceScopedIds, hasScope } from '@/lib/permissions.js';
+import { getResourceScopedIds, hasScope, hasScopeBase } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireScope, requireScopeForResource, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import {
+  FileBrowseSchema,
+  FileMoveSchema,
+  FileUploadChunkQuerySchema,
+  FileUploadCompleteSchema,
+  FileUploadInitSchema,
+} from '@/modules/docker/docker.schemas.js';
+import {
   daemonLogRelay,
   getDaemonLogHistory,
+  getNginxLogHistory,
   logRelay,
   type RelayedDaemonLogEntry,
   type RelayedLogEntry,
 } from '@/modules/monitoring/log-relay.service.js';
+import { subscribeNginxHostLogs } from '@/modules/monitoring/nginx-log-subscriptions.js';
+import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
+import { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { AppEnv } from '@/types.js';
+import { NodeFolderService } from './node-folders.service.js';
 import { NodeMonitoringService } from './node-monitoring.service.js';
 import {
+  abortNodeFileUploadRoute,
+  completeNodeFileUploadRoute,
+  createNodeDirectoryRoute,
+  createNodeFileRoute,
+  createNodeFolderRoute,
   createNodeRoute,
+  deleteNodeFileRoute,
+  deleteNodeFolderRoute,
   deleteNodeRoute,
   getNodeConfigRoute,
   getNodeHealthHistoryRoute,
   getNodeRoute,
+  initNodeFileUploadRoute,
+  listNodeFilesRoute,
+  listNodeFoldersRoute,
   listNodesRoute,
+  moveNodeFileRoute,
+  moveNodeFolderRoute,
+  moveNodesToFolderRoute,
   nodeDaemonLogsRoute,
   nodeMonitoringStreamRoute,
   nodeNginxLogsRoute,
+  readNodeFileRoute,
+  reorderNodeFoldersRoute,
+  reorderNodesRoute,
   testNodeConfigRoute,
   updateNodeConfigRoute,
+  updateNodeFolderRoute,
   updateNodeRoute,
   updateNodeServiceCreationLockRoute,
+  uploadNodeFileChunkRoute,
+  writeNodeFileRoute,
 } from './nodes.docs.js';
 import {
   CreateNodeSchema,
@@ -40,6 +78,14 @@ import { NodesService } from './nodes.service.js';
 export const nodesRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 nodesRoutes.use('*', authMiddleware);
+
+const NODE_FILE_LIST_MAX = 1000;
+
+async function parseFileContentRequest(c: Parameters<Parameters<OpenAPIHono<AppEnv>['openapi']>[1]>[0]) {
+  const path = FileBrowseSchema.parse(c.req.query()).path;
+  const content = Buffer.from(await c.req.arrayBuffer());
+  return { path, content };
+}
 
 const BROAD_DOCKER_VIEW_SCOPES = [
   'docker:containers:view',
@@ -65,11 +111,28 @@ const RESOURCE_SCOPED_DOCKER_NODE_SCOPES = [
   'docker:volumes:view',
   'docker:volumes:create',
   'docker:volumes:delete',
+  'docker:volumes:files:read',
+  'docker:volumes:files:write',
   'docker:networks:view',
   'docker:networks:create',
   'docker:networks:delete',
   'docker:networks:edit',
 ] as const;
+
+function nginxLogEntryKey(entry: RelayedLogEntry): string {
+  return [
+    entry.hostId,
+    entry.logType,
+    entry.timestamp,
+    entry.remoteAddr,
+    entry.method,
+    entry.path,
+    entry.status,
+    entry.bodyBytesSent,
+    entry.raw,
+    entry.level,
+  ].join('\u0000');
+}
 
 function hasBroadDockerNodeListAccess(scopes: string[]) {
   return BROAD_DOCKER_VIEW_SCOPES.some((scope) => hasScope(scopes, scope));
@@ -91,6 +154,7 @@ function compactDockerNodeForDockerAccess(node: Record<string, unknown>) {
     type: node.type,
     hostname: node.hostname,
     displayName: node.displayName,
+    appearanceColor: node.appearanceColor,
     status: node.status,
     serviceCreationLocked: node.serviceCreationLocked,
     daemonVersion: node.daemonVersion,
@@ -163,11 +227,12 @@ nodesRoutes.openapi(listNodesRoute, async (c) => {
   const query = NodeListQuerySchema.parse(c.req.query());
   const scopes = c.get('effectiveScopes') || [];
   const hasNodeDetails = hasScope(scopes, 'nodes:details');
+  const canManageFolders = hasScope(scopes, 'nodes:folders:manage');
   const allowedNodeIds = getResourceScopedIds(scopes, 'nodes:details');
   const dockerScopedNodeIds = query.type === 'docker' ? getDockerResourceScopedNodeIds(scopes) : [];
   const canListAllDockerNodes = query.type === 'docker' && hasBroadDockerNodeListAccess(scopes);
   const canListDockerNodes = canListAllDockerNodes || dockerScopedNodeIds.length > 0;
-  if (!hasNodeDetails && allowedNodeIds.length === 0 && !canListDockerNodes) {
+  if (!hasNodeDetails && !canManageFolders && allowedNodeIds.length === 0 && !canListDockerNodes) {
     throw new AppError(403, 'FORBIDDEN', 'Missing required node access scope');
   }
   const scopedNodeIds =
@@ -176,12 +241,82 @@ nodesRoutes.openapi(listNodesRoute, async (c) => {
       : allowedNodeIds;
   const result = await service.list(
     query,
-    hasNodeDetails || canListAllDockerNodes ? undefined : { allowedIds: scopedNodeIds }
+    hasNodeDetails || canManageFolders || canListAllDockerNodes ? undefined : { allowedIds: scopedNodeIds }
   );
   if (query.type === 'docker' && canListDockerNodes && !hasNodeDetails) {
     return c.json({ ...result, data: result.data.map((node) => compactDockerNodeForDockerAccess(node as any)) });
   }
   return c.json(result);
+});
+
+nodesRoutes.openapi(listNodeFoldersRoute, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const scopes = c.get('effectiveScopes') || [];
+  const canManageFolders = hasScope(scopes, 'nodes:folders:manage');
+  const hasNodeDetails = hasScope(scopes, 'nodes:details');
+  const allowedNodeIds = getResourceScopedIds(scopes, 'nodes:details');
+  if (!canManageFolders && !hasScopeBase(scopes, 'nodes:details')) {
+    throw new AppError(403, 'FORBIDDEN', 'Missing required scope: nodes:details or nodes:folders:manage');
+  }
+  const data = await service.getFolderTree(
+    canManageFolders || hasNodeDetails
+      ? { includeAllFolders: canManageFolders }
+      : { allowedResourceIds: allowedNodeIds }
+  );
+  return c.json({ data });
+});
+
+nodesRoutes.openapi({ ...createNodeFolderRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const user = c.get('user')!;
+  const input = CreateResourceFolderSchema.parse(await c.req.json());
+  const data = await service.createFolder(input, user.id);
+  return c.json({ data }, 201);
+});
+
+nodesRoutes.openapi({ ...reorderNodeFoldersRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const input = ReorderResourceFoldersSchema.parse(await c.req.json());
+  await service.reorderFolders(input);
+  return c.json({ success: true });
+});
+
+nodesRoutes.openapi({ ...moveNodesToFolderRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const user = c.get('user')!;
+  const input = MoveResourcesToFolderSchema.parse(await c.req.json());
+  await service.moveResourcesToFolder(input, user.id);
+  return c.json({ success: true });
+});
+
+nodesRoutes.openapi({ ...reorderNodesRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const input = ReorderResourcesSchema.parse(await c.req.json());
+  await service.reorderResources(input);
+  return c.json({ success: true });
+});
+
+nodesRoutes.openapi({ ...updateNodeFolderRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const user = c.get('user')!;
+  const input = UpdateResourceFolderSchema.parse(await c.req.json());
+  const data = await service.updateFolder(c.req.param('id')!, input, user.id);
+  return c.json({ data });
+});
+
+nodesRoutes.openapi({ ...moveNodeFolderRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const user = c.get('user')!;
+  const input = MoveResourceFolderSchema.parse(await c.req.json());
+  const data = await service.moveFolder(c.req.param('id')!, input, user.id);
+  return c.json({ data });
+});
+
+nodesRoutes.openapi({ ...deleteNodeFolderRoute, middleware: requireScope('nodes:folders:manage') }, async (c) => {
+  const service = container.resolve(NodeFolderService);
+  const user = c.get('user')!;
+  await service.deleteFolder(c.req.param('id')!, user.id);
+  return c.json({ success: true });
 });
 
 nodesRoutes.openapi({ ...getNodeRoute, middleware: requireScopeForResource('nodes:details', 'id') }, async (c) => {
@@ -198,6 +333,148 @@ nodesRoutes.openapi(
     const id = c.req.param('id')!;
     const healthHistory = await service.getHealthHistory(id);
     return c.json({ data: healthHistory });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...listNodeFilesRoute, middleware: requireScopeForResource('nodes:files:read', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const { path } = FileBrowseSchema.parse(c.req.query());
+    const data = await service.listFiles(id, path);
+    const truncated = Array.isArray(data) && data.length > NODE_FILE_LIST_MAX;
+    return c.json({
+      data: truncated ? data.slice(0, NODE_FILE_LIST_MAX) : data,
+      total: Array.isArray(data) ? data.length : undefined,
+      limit: NODE_FILE_LIST_MAX,
+      truncated,
+    });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...readNodeFileRoute, middleware: requireScopeForResource('nodes:files:read', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const { path } = FileBrowseSchema.parse(c.req.query());
+    const data = await service.readFile(id, path);
+    return new Response(new Uint8Array(data), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(data.byteLength),
+      },
+    });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...writeNodeFileRoute, middleware: requireScopeForResource('nodes:files:write', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const user = c.get('user')!;
+    const { path, content } = await parseFileContentRequest(c);
+    await service.writeFile(id, path, content, user.id);
+    return c.json({ success: true });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...createNodeFileRoute, middleware: requireScopeForResource('nodes:files:write', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const user = c.get('user')!;
+    const { path, content } = await parseFileContentRequest(c);
+    await service.createFile(id, path, content, user.id);
+    return c.json({ success: true });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...initNodeFileUploadRoute, middleware: requireScopeForResource('nodes:files:write', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const user = c.get('user')!;
+    const { path, totalBytes } = FileUploadInitSchema.parse(await c.req.json());
+    const data = await service.initFileUpload(id, path, totalBytes, user.id);
+    return c.json({ data });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...uploadNodeFileChunkRoute, middleware: requireScopeForResource('nodes:files:write', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const uploadId = c.req.param('uploadId')!;
+    const { offset } = FileUploadChunkQuerySchema.parse(c.req.query());
+    const content = Buffer.from(await c.req.arrayBuffer());
+    const data = await service.appendFileUploadChunk(id, uploadId, offset, content);
+    return c.json({ data });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...completeNodeFileUploadRoute, middleware: requireScopeForResource('nodes:files:write', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const uploadId = c.req.param('uploadId')!;
+    const { path, totalBytes } = FileUploadCompleteSchema.parse(await c.req.json());
+    await service.completeFileUpload(id, uploadId, path, totalBytes);
+    return c.json({ success: true });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...abortNodeFileUploadRoute, middleware: requireScopeForResource('nodes:files:write', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const uploadId = c.req.param('uploadId')!;
+    await service.abortFileUpload(id, uploadId);
+    return c.json({ success: true });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...createNodeDirectoryRoute, middleware: requireScopeForResource('nodes:files:write', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const user = c.get('user')!;
+    const { path } = FileBrowseSchema.parse(await c.req.json());
+    await service.createDirectory(id, path, user.id);
+    return c.json({ success: true });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...deleteNodeFileRoute, middleware: requireScopeForResource('nodes:files:write', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const user = c.get('user')!;
+    const { path } = FileBrowseSchema.parse(c.req.query());
+    await service.deleteFile(id, path, user.id);
+    return c.json({ success: true });
+  }
+);
+
+nodesRoutes.openapi(
+  { ...moveNodeFileRoute, middleware: requireScopeForResource('nodes:files:write', 'id') },
+  async (c) => {
+    const service = container.resolve(NodesService);
+    const id = c.req.param('id')!;
+    const user = c.get('user')!;
+    const { fromPath, toPath } = FileMoveSchema.parse(await c.req.json());
+    await service.moveFile(id, fromPath, toPath, user.id);
+    return c.json({ success: true });
   }
 );
 
@@ -439,13 +716,8 @@ nodesRoutes.openapi({ ...nodeNginxLogsRoute, middleware: requireScopeForResource
   const { proxyHosts } = await import('@/db/schema/index.js');
   const { TOKENS } = await import('@/container.js');
   const db = container.resolve(TOKENS.DrizzleClient) as any;
-  const scopes = c.get('effectiveScopes') || [];
   const hosts = await db.select({ id: proxyHosts.id }).from(proxyHosts).where(eq(proxyHosts.nodeId, nodeId));
-  const visibleHostIds = new Set(
-    hosts
-      .map((h: any) => h.id as string)
-      .filter((hostId: string) => hasScope(scopes, 'proxy:view') || hasScope(scopes, `proxy:view:${hostId}`))
-  );
+  const visibleHostIds = new Set<string>(hosts.map((h: any) => h.id as string));
 
   const matchesFilter = (entry: RelayedLogEntry): boolean => {
     if (!visibleHostIds.has(entry.hostId)) return false;
@@ -479,12 +751,44 @@ nodesRoutes.openapi({ ...nodeNginxLogsRoute, middleware: requireScopeForResource
       event: 'connected',
     });
 
+    if (visibleHostIds.size === 0) {
+      await stream.writeSSE({
+        data: JSON.stringify({ message: 'No proxy hosts are assigned to this nginx node' }),
+        event: 'log-error',
+      });
+    }
+
+    const nodeRegistry = container.resolve(NodeRegistryService);
+    const sentKeys = new Set<string>();
+    const writeLog = async (entry: RelayedLogEntry) => {
+      if (!matchesFilter(entry)) return;
+      const key = nginxLogEntryKey(entry);
+      if (sentKeys.has(key)) return;
+      sentKeys.add(key);
+      await stream.writeSSE({ data: JSON.stringify(entry), event: 'log' });
+    };
+
     const onLog = (entry: RelayedLogEntry) => {
-      if (matchesFilter(entry)) {
-        stream.writeSSE({ data: JSON.stringify(entry), event: 'log' }).catch(() => {});
-      }
+      writeLog(entry).catch(() => {});
     };
     logRelay.on('log', onLog);
+
+    for (const hostId of visibleHostIds) {
+      for (const entry of getNginxLogHistory(hostId)) {
+        await writeLog(entry);
+      }
+    }
+
+    const subscriptions = Array.from(visibleHostIds, (hostId) =>
+      subscribeNginxHostLogs(nodeRegistry, nodeId, hostId, 200)
+    );
+    const subscriptionErrors = subscriptions.filter((subscription) => !subscription.ok);
+    if (visibleHostIds.size > 0 && subscriptionErrors.length === subscriptions.length) {
+      await stream.writeSSE({
+        data: JSON.stringify({ message: subscriptionErrors[0]?.message ?? 'Nginx log stream is not connected' }),
+        event: 'log-error',
+      });
+    }
 
     const keepalive = setInterval(() => {
       stream.writeSSE({ data: '', event: 'ping' }).catch(() => clearInterval(keepalive));
@@ -493,6 +797,9 @@ nodesRoutes.openapi({ ...nodeNginxLogsRoute, middleware: requireScopeForResource
     stream.onAbort(() => {
       clearInterval(keepalive);
       logRelay.off('log', onLog);
+      for (const subscription of subscriptions) {
+        if (subscription.ok) subscription.cleanup();
+      }
     });
 
     await new Promise(() => {});

@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  ArrowLeft,
   Copy,
   Download,
   MoreVertical,
@@ -15,9 +14,13 @@ import { toast } from "sonner";
 import { CACreateDialog } from "@/components/ca/CACreateDialog";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { DetailRow } from "@/components/common/DetailRow";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
+import { PanelShell } from "@/components/common/PanelShell";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -170,9 +173,52 @@ export function CADetail() {
   };
   const childCAs = (cas || []).filter((c) => c.parentId === ca.id);
   const canCreateIntermediate = hasScope(`pki:ca:create:intermediate:${ca.id}`);
+  const canIssueCertificate = hasScope("pki:cert:issue");
   const canRevokeCA = hasScope(
     ca.type === "root" ? "pki:ca:revoke:root" : "pki:ca:revoke:intermediate"
   );
+  const issuedCertificateColumns: SimpleTableColumn<Certificate>[] = [
+    {
+      id: "common-name",
+      header: "Common Name",
+      render: (cert) => (
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">{cert.commonName}</span>
+          {cert.isSystem && <Badge variant="outline">System</Badge>}
+        </div>
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      render: (cert) => <span className="text-sm text-muted-foreground">{cert.type}</span>,
+    },
+    {
+      id: "expires",
+      header: "Expires",
+      render: (cert) => (
+        <span className="text-sm text-muted-foreground">{formatDate(cert.notAfter)}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      render: (cert) => <StatusBadge status={cert.status} />,
+    },
+  ];
+  const childCAColumns: SimpleTableColumn<(typeof childCAs)[number]>[] = [
+    {
+      id: "common-name",
+      header: "Common Name",
+      render: (child) => <span className="text-sm font-medium">{child.commonName}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      align: "right",
+      render: (child) => <StatusBadge status={child.status} />,
+    },
+  ];
 
   return (
     <PageTransition>
@@ -180,9 +226,7 @@ export function CADetail() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/cas")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate("/cas")} />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{ca.commonName}</h1>
@@ -201,7 +245,7 @@ export function CADetail() {
                 Create Intermediate
               </Button>
             )}
-            {hasScope("pki:cert:issue") && ca.status === "active" && !ca.isSystem && (
+            {canIssueCertificate && ca.status === "active" && !ca.isSystem && (
               <Button onClick={() => setIssueDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Issue Certificate
@@ -287,38 +331,90 @@ export function CADetail() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
           {/* Left: Details + Certs */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="border border-border bg-card">
-              <div className="border-b border-border p-4">
-                <h2 className="font-semibold">Certificate Details</h2>
-              </div>
-              <div className="p-4 space-y-3">
-                <InfoRow label="Common Name" value={ca.commonName} />
-                {ca.subjectDn && <InfoRow label="Subject DN" value={ca.subjectDn} />}
-                {ca.issuerDn && <InfoRow label="Issuer DN" value={ca.issuerDn} />}
-                <InfoRow label="Serial Number" value={formatSerialNumber(ca.serialNumber)} />
-                <InfoRow label="Key Algorithm" value={ca.keyAlgorithm} />
-                <InfoRow label="Valid From" value={formatDate(ca.notBefore)} />
-                <InfoRow label="Valid Until" value={formatDate(ca.notAfter)} />
-                <InfoRow
-                  label="Path Length"
-                  value={
-                    ca.pathLengthConstraint != null
-                      ? ca.pathLengthConstraint.toString()
-                      : "Unlimited"
-                  }
-                />
-                <InfoRow label="Max Cert Validity" value={`${ca.maxValidityDays} days`} />
-              </div>
-            </div>
+            <PanelShell
+              title="Certificate Details"
+              description="Identity and issuance metadata for this certificate authority."
+              bodyClassName="divide-y divide-border"
+            >
+              <DetailRow label="Common Name" value={ca.commonName} />
+              {ca.subjectDn && <DetailRow label="Subject DN" value={ca.subjectDn} />}
+              {ca.issuerDn && <DetailRow label="Issuer DN" value={ca.issuerDn} />}
+              <DetailRow label="Serial Number" value={formatSerialNumber(ca.serialNumber)} />
+              <DetailRow label="Key Algorithm" value={ca.keyAlgorithm} />
+              <DetailRow label="Valid From" value={formatDate(ca.notBefore)} />
+              <DetailRow label="Valid Until" value={formatDate(ca.notAfter)} />
+              <DetailRow
+                label="Path Length"
+                value={
+                  ca.pathLengthConstraint != null ? ca.pathLengthConstraint.toString() : "Unlimited"
+                }
+              />
+              <DetailRow label="Max Cert Validity" value={`${ca.maxValidityDays} days`} />
+            </PanelShell>
 
-            {/* Distribution Endpoints */}
-            <div className="border border-border bg-card">
-              <div className="flex items-center justify-between border-b border-border p-4">
-                <h2 className="font-semibold">Distribution Endpoints</h2>
-                {hasScope("pki:ca:create:root") && !ca.isSystem && (
+            {/* Issued Certificates — same column */}
+            <PanelShell
+              title="Issued Certificates"
+              description="Leaf certificates issued and signed by this CA."
+              actions={<Badge variant="secondary">{certificates.length}</Badge>}
+            >
+              {certificates.length > 0 ? (
+                <SimpleTable
+                  columns={issuedCertificateColumns}
+                  rows={certificates}
+                  getRowKey={(cert) => cert.id}
+                  onRowClick={(cert) => navigate(`/certificates/${cert.id}`)}
+                />
+              ) : (
+                <EmptyState
+                  message="No certificates issued yet."
+                  {...(!ca.isSystem && canIssueCertificate
+                    ? {
+                        actionLabel: "Issue one",
+                        actionHref: `/certificates?ca=${ca.id}`,
+                      }
+                    : {})}
+                />
+              )}
+            </PanelShell>
+          </div>
+
+          {/* Right: Summary + Child CAs */}
+          <div className="space-y-4">
+            <PanelShell
+              title="Summary"
+              description="Current CA state, limits, and certificate counts."
+              bodyClassName="divide-y divide-border"
+            >
+              <DetailRow label="Certificates" value={ca.certCount.toString()} />
+              <DetailRow
+                label="Expires in"
+                value={
+                  <span
+                    className={
+                      expiryDays <= 30 ? "text-yellow-600 dark:text-yellow-400" : undefined
+                    }
+                  >
+                    {expiryDays > 0
+                      ? `${expiryDays} days`
+                      : hoursUntil(ca.notAfter) > 0
+                        ? `${hoursUntil(ca.notAfter)} hours`
+                        : "Expired"}
+                  </span>
+                }
+              />
+              <DetailRow label="Type" value={<span className="capitalize">{ca.type}</span>} />
+              <DetailRow label="CRL Number" value={ca.crlNumber.toString()} />
+            </PanelShell>
+
+            <PanelShell
+              title="Distribution Endpoints"
+              description="URLs embedded into certificates issued under this CA."
+              actions={
+                hasScope("pki:ca:create:root") && !ca.isSystem ? (
                   <Button
                     variant="ghost"
                     size="icon"
@@ -327,100 +423,13 @@ export function CADetail() {
                   >
                     <Pencil className="h-4 w-4" />
                   </Button>
-                )}
-              </div>
-              <div className="p-4 space-y-3">
-                <InfoRow label="CRL Distribution URL" value={ca.crlDistributionUrl || "—"} />
-                <InfoRow label="CA Issuers URL" value={ca.caIssuersUrl || "—"} />
-                <p className="text-xs text-muted-foreground">
-                  These URLs are automatically embedded into certificates issued under this CA.
-                </p>
-              </div>
-            </div>
-
-            {/* Issued Certificates — same column */}
-            <div className="border border-border bg-card">
-              <div className="flex items-center justify-between border-b border-border p-4">
-                <h2 className="font-semibold">Issued Certificates</h2>
-                <Badge variant="secondary">{certificates.length}</Badge>
-              </div>
-              {certificates.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border text-left">
-                        <th className="p-3 text-xs font-medium text-muted-foreground">
-                          Common Name
-                        </th>
-                        <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
-                        <th className="p-3 text-xs font-medium text-muted-foreground">Expires</th>
-                        <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {certificates.map((cert) => (
-                        <tr
-                          key={cert.id}
-                          className="hover:bg-accent transition-colors cursor-pointer"
-                          onClick={() => navigate(`/certificates/${cert.id}`)}
-                        >
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">{cert.commonName}</span>
-                              {cert.isSystem && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                  System
-                                </Badge>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-3 text-sm text-muted-foreground">{cert.type}</td>
-                          <td className="p-3 text-sm text-muted-foreground">
-                            {formatDate(cert.notAfter)}
-                          </td>
-                          <td className="p-3 align-middle">
-                            <StatusBadge status={cert.status} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <EmptyState
-                  message="No certificates issued yet."
-                  {...(!ca.isSystem
-                    ? {
-                        actionLabel: "Issue one",
-                        actionHref: `/certificates?ca=${ca.id}`,
-                      }
-                    : {})}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Right: Summary + Child CAs */}
-          <div className="space-y-4">
-            <div className="border border-border bg-card p-4 space-y-3">
-              <h3 className="font-semibold text-sm">Summary</h3>
-              <div className="space-y-2">
-                <SummaryRow label="Certificates" value={ca.certCount.toString()} />
-                <SummaryRow
-                  label="Expires in"
-                  value={
-                    expiryDays > 0
-                      ? `${expiryDays} days`
-                      : hoursUntil(ca.notAfter) > 0
-                        ? `${hoursUntil(ca.notAfter)} hours`
-                        : "Expired"
-                  }
-                  warn={expiryDays <= 30}
-                />
-                <SummaryRow label="Type" value={ca.type} capitalize />
-                <SummaryRow label="CRL Number" value={ca.crlNumber.toString()} />
-              </div>
-            </div>
+                ) : null
+              }
+              bodyClassName="divide-y divide-border"
+            >
+              <DetailRow label="CRL Distribution URL" value={ca.crlDistributionUrl || "—"} />
+              <DetailRow label="CA Issuers URL" value={ca.caIssuersUrl || "—"} />
+            </PanelShell>
 
             {expiryDays <= 30 && expiryDays > 0 && (
               <div className="flex items-start gap-2 border border-yellow-600/30 bg-yellow-600/5 p-3">
@@ -433,23 +442,17 @@ export function CADetail() {
             )}
 
             {childCAs.length > 0 && (
-              <div className="border border-border bg-card">
-                <div className="border-b border-border p-3">
-                  <h3 className="font-semibold text-sm">Child CAs</h3>
-                </div>
-                <div className="divide-y divide-border">
-                  {childCAs.map((child) => (
-                    <div
-                      key={child.id}
-                      onClick={() => navigate(`/cas/${child.id}`)}
-                      className="flex items-center justify-between p-3 hover:bg-accent transition-colors cursor-pointer"
-                    >
-                      <span className="text-sm">{child.commonName}</span>
-                      <StatusBadge status={child.status} />
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <PanelShell
+                title="Child CAs"
+                description="Intermediate certificate authorities issued under this CA."
+              >
+                <SimpleTable
+                  columns={childCAColumns}
+                  rows={childCAs}
+                  getRowKey={(child) => child.id}
+                  onRowClick={(child) => navigate(`/cas/${child.id}`)}
+                />
+              </PanelShell>
             )}
           </div>
         </div>
@@ -475,7 +478,7 @@ export function CADetail() {
             <DialogHeader>
               <DialogTitle>Install Root CA — {ca.commonName}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 text-sm max-h-96 overflow-y-auto">
+            <div className="space-y-4 text-sm">
               <div>
                 <p className="font-medium mb-1">macOS</p>
                 <code className="block bg-muted p-2 text-xs font-mono whitespace-pre-wrap">
@@ -553,37 +556,5 @@ export function CADetail() {
         </Dialog>
       </div>
     </PageTransition>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <span className="text-sm text-muted-foreground shrink-0">{label}</span>
-      <span className="text-sm font-medium text-right break-all">{value}</span>
-    </div>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  warn,
-  capitalize,
-}: {
-  label: string;
-  value: string;
-  warn?: boolean;
-  capitalize?: boolean;
-}) {
-  return (
-    <div className="flex justify-between text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span
-        className={`font-medium ${warn ? "text-yellow-600 dark:text-yellow-400" : ""} ${capitalize ? "capitalize" : ""}`}
-      >
-        {value}
-      </span>
-    </div>
   );
 }

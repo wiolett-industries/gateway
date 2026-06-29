@@ -1,0 +1,1053 @@
+import {
+  DndContext,
+  type DragEndEvent,
+  DragOverlay,
+  type DragStartEvent,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  CircleAlert,
+  Folder,
+  FolderOpen,
+  Loader2,
+  Lock,
+  LogOut,
+  MessageSquare,
+  MoreHorizontal,
+  PanelLeft,
+  PanelLeftClose,
+  Pencil,
+  Pin,
+  PinOff,
+  Plus,
+  Settings,
+  Shield,
+  Trash2,
+} from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { ResizeHandle } from "@/components/ui/resize-handle";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn, getInitials } from "@/lib/utils";
+import type { AIConversationFolder, AIConversationSummary } from "@/services/ai-conversations";
+import { api } from "@/services/api";
+import { useAIStore } from "@/stores/ai";
+import { useAuthStore } from "@/stores/auth";
+import { useUIStore } from "@/stores/ui";
+
+const EXPANDED_PROJECT_IDS_STORAGE_KEY = "gateway-ai-lite-expanded-project-ids";
+
+function formatConversationDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    const diffMs = Math.max(0, now.getTime() - date.getTime());
+    const diffMinutes = Math.floor(diffMs / 60000);
+    if (diffMinutes < 1) return "now";
+    if (diffMinutes < 60) return `${diffMinutes} min ago`;
+    return `${Math.floor(diffMinutes / 60)} h ago`;
+  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function readExpandedProjectIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(EXPANDED_PROJECT_IDS_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((value): value is string => typeof value === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeExpandedProjectIds(ids: Set<string>) {
+  try {
+    localStorage.setItem(EXPANDED_PROJECT_IDS_STORAGE_KEY, JSON.stringify([...ids]));
+  } catch {
+    // Ignore unavailable storage; project expansion still works for the current session.
+  }
+}
+
+interface AILiteSidebarProps {
+  sidebarWidth?: number;
+  onSidebarWidthChange?: (width: number) => void;
+  isResizing?: boolean;
+  onResizeStart?: () => void;
+  onResizeEnd?: () => void;
+}
+
+export function AILiteSidebar({
+  sidebarWidth = 260,
+  onSidebarWidthChange,
+  isResizing = false,
+  onResizeStart,
+  onResizeEnd,
+}: AILiteSidebarProps) {
+  const navigate = useNavigate();
+  const { user, hasAnyScope, logout } = useAuthStore();
+  const {
+    sidebarOpen,
+    toggleSidebar,
+    pinnedAIConversationIds,
+    togglePinnedAIConversation,
+    showAILiteModeCTA,
+    setAILiteMode,
+  } = useUIStore();
+  const {
+    messages,
+    sidebarActiveConversationId,
+    recentConversations,
+    conversationFolders,
+    isLoadingRecentConversations,
+    clearMessages,
+    createConversationFolder,
+    deleteConversation,
+    deleteConversationFolder,
+    fetchConversationFolders,
+    fetchRecentConversations,
+    loadConversation,
+    moveConversationsToFolder,
+    reorderConversationFolders,
+    updateConversationFolder,
+  } = useAIStore();
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(readExpandedProjectIds);
+  const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(null);
+  const [dragOverlayConversationId, setDragOverlayConversationId] = useState<string | null>(null);
+  const canAccessAdministration = hasAnyScope("admin:audit", "admin:users", "admin:groups");
+  const isExpanded = sidebarOpen;
+  const pinnedConversationSet = new Set(pinnedAIConversationIds);
+  const pinnedConversations = pinnedAIConversationIds
+    .map((id) => recentConversations.find((conversation) => conversation.id === id))
+    .filter((conversation): conversation is AIConversationSummary => Boolean(conversation));
+  const chatConversations = recentConversations.filter(
+    (conversation) => !pinnedConversationSet.has(conversation.id)
+  );
+  const sortedFolders = [...conversationFolders].sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder;
+    return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+  });
+  const conversationsByFolder = new Map<string | null, AIConversationSummary[]>();
+  conversationsByFolder.set(null, []);
+  for (const folder of sortedFolders) conversationsByFolder.set(folder.id, []);
+  for (const conversation of chatConversations) {
+    const folderId =
+      conversation.folderId && conversationsByFolder.has(conversation.folderId)
+        ? conversation.folderId
+        : null;
+    conversationsByFolder.get(folderId)?.push(conversation);
+  }
+  const rootConversations = conversationsByFolder.get(null) ?? [];
+  const dragOverlayConversation = dragOverlayConversationId
+    ? recentConversations.find((conversation) => conversation.id === dragOverlayConversationId)
+    : null;
+  const visibleActiveConversationId = messages.length > 0 ? sidebarActiveConversationId : null;
+
+  useEffect(() => {
+    void fetchRecentConversations();
+    void fetchConversationFolders();
+  }, [fetchConversationFolders, fetchRecentConversations]);
+
+  useEffect(() => {
+    writeExpandedProjectIds(expandedFolderIds);
+  }, [expandedFolderIds]);
+
+  const handleNewChat = () => {
+    useAIStore.setState({ sidebarActiveConversationId: null });
+    clearMessages();
+    navigate("/");
+  };
+
+  const handleLoadConversation = async (conversationId: string) => {
+    await loadConversation(conversationId);
+    navigate("/");
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // Local auth state still needs to clear if the server session is already gone.
+    } finally {
+      logout();
+      navigate("/login");
+    }
+  };
+
+  const handleSwitchToDefaultMode = () => {
+    setAILiteMode(false);
+  };
+
+  const handleToggleFolder = (folderId: string) => {
+    setExpandedFolderIds((current) => {
+      const next = new Set(current);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  };
+
+  const handleCreateFolder = async (name: string, description: string) => {
+    const folder = await createConversationFolder({ name, description });
+    if (folder) {
+      setExpandedFolderIds((current) => new Set([...current, folder.id]));
+      setFolderDialog(null);
+    }
+  };
+
+  const handleUpdateFolder = async (folderId: string, name: string, description: string) => {
+    await updateConversationFolder(folderId, { name, description });
+    setFolderDialog(null);
+  };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const activeData = event.active.data.current;
+    setDragOverlayConversationId(
+      activeData?.type === "conversation" && typeof activeData.conversationId === "string"
+        ? activeData.conversationId
+        : null
+    );
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setDragOverlayConversationId(null);
+    const activeData = event.active.data.current;
+    const overData = event.over?.data.current;
+    if (!activeData || !overData) return;
+
+    if (activeData.type === "folder" && overData.type === "folder") {
+      const oldIndex = sortedFolders.findIndex((folder) => folder.id === activeData.folderId);
+      const newIndex = sortedFolders.findIndex((folder) => folder.id === overData.folderId);
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+      void reorderConversationFolders(
+        arrayMove(sortedFolders, oldIndex, newIndex).map((folder) => folder.id)
+      );
+      return;
+    }
+
+    if (activeData.type === "conversation") {
+      const targetFolderId =
+        overData.type === "root"
+          ? null
+          : typeof overData.folderId === "string"
+            ? overData.folderId
+            : null;
+      if (activeData.folderId === targetFolderId) return;
+      void moveConversationsToFolder([activeData.conversationId], targetFolderId);
+    }
+  };
+
+  return (
+    <aside
+      style={{ width: isExpanded ? sidebarWidth : 48 }}
+      className={cn(
+        "relative flex h-full shrink-0 flex-col overflow-visible border-r border-sidebar-border bg-sidebar-background",
+        !isResizing && "transition-[width] duration-200 ease-out"
+      )}
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        {!isExpanded ? (
+          <motion.div
+            key="collapsed"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="flex h-full flex-col items-center gap-2 py-3"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleSidebar}>
+                  <PanelLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Open sidebar</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleNewChat}
+                  aria-label="New chat"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">New chat</TooltipContent>
+            </Tooltip>
+
+            <div className="flex-1" />
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Avatar className="h-6 w-6">
+                    <AvatarImage src={user?.avatarUrl ?? undefined} />
+                    <AvatarFallback className="text-xs">
+                      {getInitials(user?.name || user?.email || "?")}
+                    </AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="right" className="w-56">
+                <AccountDropdownContent
+                  canAccessAdministration={canAccessAdministration}
+                  handleLogout={handleLogout}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="expanded"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="flex h-full w-full min-w-0 flex-col"
+          >
+            {onSidebarWidthChange && (
+              <ResizeHandle
+                side="left"
+                onResize={onSidebarWidthChange}
+                onResizeStart={onResizeStart}
+                onResizeEnd={onResizeEnd}
+                minWidth={200}
+                maxWidth={480}
+              />
+            )}
+
+            <div
+              className="flex items-center justify-between px-2"
+              style={{ paddingTop: 10, paddingBottom: 10, paddingLeft: 10 }}
+            >
+              <span className="flex items-center gap-1.5 whitespace-nowrap pl-1 text-sm font-semibold text-foreground/80">
+                <img src="/android-chrome-192x192.png" alt="Gateway" className="h-5 w-5" />
+                Gateway AI
+              </span>
+              <div className="flex items-center gap-0.5">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 md:h-7 md:w-7"
+                      aria-label="Create"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuItem onClick={handleNewChat}>
+                      <MessageSquare className="mr-2 h-4 w-4" />
+                      New chat
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setFolderDialog({ mode: "create", name: "", description: "" })}
+                    >
+                      <Folder className="mr-2 h-4 w-4" />
+                      New project
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 md:h-7 md:w-7"
+                      onClick={toggleSidebar}
+                    >
+                      <PanelLeftClose className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Close sidebar</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+
+            <div className="flex min-h-0 flex-1 flex-col border-t border-border">
+              <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto dashboard-scrollbar">
+                {isLoadingRecentConversations && recentConversations.length === 0 ? (
+                  <div className="px-3 py-3 text-xs text-muted-foreground">Loading...</div>
+                ) : (
+                  <>
+                    {pinnedConversations.length > 0 && (
+                      <nav className="space-y-0.5 px-2 py-2">
+                        <p className="px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Pinned
+                        </p>
+                        {pinnedConversations.map((conversation) => (
+                          <ConversationMenuItem
+                            key={conversation.id}
+                            conversation={conversation}
+                            active={visibleActiveConversationId === conversation.id}
+                            pinned
+                            disableLayoutAnimation={isResizing}
+                            onLoad={() => void handleLoadConversation(conversation.id)}
+                            onTogglePin={() => togglePinnedAIConversation(conversation.id)}
+                            onDelete={() => void deleteConversation(conversation.id)}
+                          />
+                        ))}
+                      </nav>
+                    )}
+
+                    <DndContext
+                      sensors={sensors}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      onDragCancel={() => setDragOverlayConversationId(null)}
+                    >
+                      {sortedFolders.length > 0 && (
+                        <nav className="space-y-0.5 px-2 py-2">
+                          <p className="px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Projects
+                          </p>
+                          <SortableContext
+                            items={sortedFolders.map((folder) => folder.id)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            {sortedFolders.map((folder) => {
+                              const folderConversations =
+                                conversationsByFolder.get(folder.id) ?? [];
+                              const isFolderExpanded = expandedFolderIds.has(folder.id);
+                              return (
+                                <div key={folder.id} className="space-y-0.5">
+                                  <FolderMenuItem
+                                    folder={folder}
+                                    conversations={folderConversations}
+                                    expanded={isFolderExpanded}
+                                    onToggle={() => handleToggleFolder(folder.id)}
+                                    onEdit={() =>
+                                      setFolderDialog({
+                                        mode: "edit",
+                                        folderId: folder.id,
+                                        name: folder.name,
+                                        description: folder.description,
+                                      })
+                                    }
+                                    onDelete={() => void deleteConversationFolder(folder.id)}
+                                  />
+                                  {folderConversations.length > 0 && (
+                                    <AnimatePresence initial={false}>
+                                      {isFolderExpanded && (
+                                        <motion.div
+                                          key={`${folder.id}-conversations`}
+                                          initial={{ height: 0, opacity: 0 }}
+                                          animate={{ height: "auto", opacity: 1 }}
+                                          exit={{ height: 0, opacity: 0 }}
+                                          transition={{ duration: 0.16, ease: "easeOut" }}
+                                          className="overflow-hidden"
+                                        >
+                                          <div className="space-y-0.5 pl-4">
+                                            {folderConversations.map((conversation) => (
+                                              <DraggableConversationMenuItem
+                                                key={conversation.id}
+                                                conversation={conversation}
+                                                folderId={folder.id}
+                                                active={
+                                                  visibleActiveConversationId === conversation.id
+                                                }
+                                                pinned={false}
+                                                disableLayoutAnimation={isResizing}
+                                                onLoad={() =>
+                                                  void handleLoadConversation(conversation.id)
+                                                }
+                                                onTogglePin={() =>
+                                                  togglePinnedAIConversation(conversation.id)
+                                                }
+                                                onDelete={() =>
+                                                  void deleteConversation(conversation.id)
+                                                }
+                                              />
+                                            ))}
+                                          </div>
+                                        </motion.div>
+                                      )}
+                                    </AnimatePresence>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </SortableContext>
+                        </nav>
+                      )}
+
+                      <nav className="space-y-0.5 px-2 py-2">
+                        <p className="px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Chats
+                        </p>
+                        {recentConversations.length === 0 && sortedFolders.length === 0 ? (
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 overflow-hidden whitespace-nowrap bg-sidebar-accent px-3 py-2 text-left text-sm font-medium text-sidebar-accent-foreground"
+                            onClick={handleNewChat}
+                          >
+                            <MessageSquare className="h-4 w-4 shrink-0" />
+                            <span className="truncate">New chat</span>
+                          </button>
+                        ) : (
+                          <RootConversationDropZone>
+                            {rootConversations.map((conversation) => (
+                              <DraggableConversationMenuItem
+                                key={conversation.id}
+                                conversation={conversation}
+                                folderId={null}
+                                active={visibleActiveConversationId === conversation.id}
+                                pinned={false}
+                                disableLayoutAnimation={isResizing}
+                                onLoad={() => void handleLoadConversation(conversation.id)}
+                                onTogglePin={() => togglePinnedAIConversation(conversation.id)}
+                                onDelete={() => void deleteConversation(conversation.id)}
+                              />
+                            ))}
+                          </RootConversationDropZone>
+                        )}
+                      </nav>
+                      <DragOverlay dropAnimation={null}>
+                        {dragOverlayConversation ? (
+                          <ConversationDragOverlayItem
+                            conversation={dragOverlayConversation}
+                            width={Math.max(160, Math.min(sidebarWidth - 32, 360))}
+                          />
+                        ) : null}
+                      </DragOverlay>
+                    </DndContext>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-border">
+              {showAILiteModeCTA && (
+                <>
+                  <div className="px-2 py-2">
+                    <button
+                      type="button"
+                      onClick={handleSwitchToDefaultMode}
+                      className="flex w-full items-center gap-2 bg-sidebar-accent px-3 py-2 text-left text-sm font-medium text-sidebar-accent-foreground/80 transition-colors hover:bg-muted hover:text-sidebar-accent-foreground"
+                    >
+                      <PanelLeft className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Switch to default mode</span>
+                    </button>
+                  </div>
+                  <Separator />
+                </>
+              )}
+              <div className="p-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="flex h-auto w-full items-center justify-start gap-2 px-1 py-1.5"
+                    >
+                      <Avatar className="h-7 w-7 shrink-0">
+                        <AvatarImage src={user?.avatarUrl ?? undefined} />
+                        <AvatarFallback className="text-xs">
+                          {getInitials(user?.name || user?.email || "?")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="truncate text-sm font-medium">{user?.name || "User"}</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="top" className="w-56">
+                    <AccountDropdownContent
+                      canAccessAdministration={canAccessAdministration}
+                      handleLogout={handleLogout}
+                    />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {folderDialog && (
+        <ConversationFolderDialog
+          state={folderDialog}
+          onOpenChange={(open) => {
+            if (!open) setFolderDialog(null);
+          }}
+          onCreate={(name, description) => handleCreateFolder(name, description)}
+          onUpdate={(folderId, name, description) =>
+            handleUpdateFolder(folderId, name, description)
+          }
+        />
+      )}
+    </aside>
+  );
+}
+
+type FolderDialogState =
+  | { mode: "create"; name: string; description: string }
+  | { mode: "edit"; folderId: string; name: string; description: string };
+
+function ConversationFolderDialog({
+  state,
+  onOpenChange,
+  onCreate,
+  onUpdate,
+}: {
+  state: FolderDialogState;
+  onOpenChange: (open: boolean) => void;
+  onCreate: (name: string, description: string) => Promise<void>;
+  onUpdate: (folderId: string, name: string, description: string) => Promise<void>;
+}) {
+  const [draftName, setDraftName] = useState(state.name);
+  const [draftDescription, setDraftDescription] = useState(state.description);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const canSubmit = draftName.trim().length > 0;
+
+  useEffect(() => {
+    setDraftName(state.name);
+    setDraftDescription(state.description);
+    setIsSubmitting(false);
+  }, [state]);
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setIsSubmitting(true);
+    try {
+      if (state.mode === "create") {
+        await onCreate(draftName.trim(), draftDescription.trim());
+      } else {
+        await onUpdate(state.folderId, draftName.trim(), draftDescription.trim());
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{state.mode === "create" ? "New project" : "Edit project"}</DialogTitle>
+          <DialogDescription>Group related AI chats in a sidebar project.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label htmlFor="ai-folder-name" className="text-sm font-medium text-foreground">
+              Name
+            </label>
+            <Input
+              id="ai-folder-name"
+              value={draftName}
+              onChange={(event) => setDraftName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+              placeholder="Project name"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="ai-folder-description" className="text-sm font-medium text-foreground">
+              Description
+            </label>
+            <Textarea
+              id="ai-folder-description"
+              value={draftDescription}
+              onChange={(event) => setDraftDescription(event.target.value)}
+              placeholder="Optional description"
+              className="min-h-20 resize-none"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button onClick={() => void submit()} disabled={isSubmitting || !canSubmit}>
+            {state.mode === "create" ? "Create" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FolderMenuItem({
+  folder,
+  conversations,
+  expanded,
+  onToggle,
+  onEdit,
+  onDelete,
+}: {
+  folder: AIConversationFolder;
+  conversations: AIConversationSummary[];
+  expanded: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: folder.id,
+    data: { type: "folder", folderId: folder.id },
+  });
+  const StatusIcon = getFolderStatusIcon(conversations, expanded);
+  const statusClassName = cn(
+    "h-4 w-4 shrink-0",
+    StatusIcon === Loader2
+      ? "animate-spin text-primary"
+      : StatusIcon === CircleAlert
+        ? "text-yellow-600 dark:text-yellow-400"
+        : ""
+  );
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(
+        "group flex max-w-full items-center overflow-hidden whitespace-nowrap text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        isDragging && "opacity-60"
+      )}
+      {...attributes}
+      {...listeners}
+    >
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden px-3 py-2 pr-1 text-left text-sm"
+        onClick={onToggle}
+      >
+        <StatusIcon className={statusClassName} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">{folder.name}</span>
+          {folder.description.trim() && (
+            <span className="truncate text-xs font-normal text-muted-foreground">
+              {folder.description}
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">{conversations.length}</span>
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="mr-2 flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-sidebar-accent-foreground"
+            aria-label={`Folder actions for ${folder.name}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem onClick={onEdit}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit
+          </DropdownMenuItem>
+          <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function RootConversationDropZone({ children }: { children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: "conversation-root",
+    data: { type: "root", folderId: null },
+  });
+  return (
+    <div ref={setNodeRef} className={cn("min-h-2 space-y-0.5", isOver && "bg-sidebar-accent/50")}>
+      {children}
+    </div>
+  );
+}
+
+function DraggableConversationMenuItem({
+  conversation,
+  folderId,
+  active,
+  pinned,
+  disableLayoutAnimation,
+  onLoad,
+  onTogglePin,
+  onDelete,
+}: {
+  conversation: AIConversationSummary;
+  folderId: string | null;
+  active: boolean;
+  pinned: boolean;
+  disableLayoutAnimation?: boolean;
+  onLoad: () => void;
+  onTogglePin: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `conversation:${conversation.id}`,
+    data: { type: "conversation", conversationId: conversation.id, folderId },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform) }}
+      className={cn(isDragging && "opacity-60")}
+      {...attributes}
+      {...listeners}
+    >
+      <ConversationMenuItem
+        conversation={conversation}
+        active={active}
+        pinned={pinned}
+        disableLayoutAnimation={disableLayoutAnimation}
+        onLoad={onLoad}
+        onTogglePin={onTogglePin}
+        onDelete={onDelete}
+      />
+    </div>
+  );
+}
+
+function ConversationDragOverlayItem({
+  conversation,
+  width,
+}: {
+  conversation: AIConversationSummary;
+  width: number;
+}) {
+  const StatusIcon = getConversationStatusIcon(conversation);
+  const statusIconClassName = cn(
+    "h-4 w-4 shrink-0",
+    conversation.activeRunStatus === "queued" || conversation.activeRunStatus === "running"
+      ? "animate-spin text-primary"
+      : conversation.activeRunStatus === "waiting_for_approval" ||
+          conversation.activeRunStatus === "waiting_for_answer"
+        ? "text-yellow-600 dark:text-yellow-400"
+        : ""
+  );
+
+  return (
+    <div
+      style={{ width }}
+      className="flex max-w-[calc(100vw-2rem)] items-center gap-3 overflow-hidden whitespace-nowrap border border-sidebar-border bg-sidebar-background px-3 py-2 text-sm font-medium text-sidebar-foreground shadow-lg"
+    >
+      <StatusIcon className={statusIconClassName} />
+      <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
+    </div>
+  );
+}
+
+function ConversationMenuItem({
+  conversation,
+  active,
+  pinned,
+  disableLayoutAnimation,
+  onLoad,
+  onTogglePin,
+  onDelete,
+}: {
+  conversation: AIConversationSummary;
+  active: boolean;
+  pinned: boolean;
+  disableLayoutAnimation?: boolean;
+  onLoad: () => void;
+  onTogglePin: () => void;
+  onDelete: () => void;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const StatusIcon = getConversationStatusIcon(conversation);
+  const statusIconClassName = cn(
+    "h-4 w-4 shrink-0",
+    conversation.activeRunStatus === "queued" || conversation.activeRunStatus === "running"
+      ? "animate-spin text-primary"
+      : conversation.activeRunStatus === "waiting_for_approval" ||
+          conversation.activeRunStatus === "waiting_for_answer"
+        ? "text-yellow-600 dark:text-yellow-400"
+        : ""
+  );
+
+  return (
+    <div
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className={cn(
+        "group flex max-w-full items-center overflow-hidden whitespace-nowrap transition-colors",
+        active
+          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+          : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      )}
+    >
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden px-3 py-2 pr-1 text-left text-sm"
+        onClick={onLoad}
+      >
+        <StatusIcon className={statusIconClassName} />
+        <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
+      </button>
+      <motion.div
+        layout={!disableLayoutAnimation}
+        className="mr-2 flex h-6 shrink-0 items-center justify-end overflow-hidden"
+        transition={{ duration: 0.16, ease: "easeOut" }}
+      >
+        <AnimatePresence initial={false} mode="popLayout">
+          {isHovered ? (
+            <motion.div
+              key="actions"
+              layout={!disableLayoutAnimation}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              className="flex items-center gap-0.5"
+            >
+              <button
+                type="button"
+                aria-label={`${pinned ? "Unpin" : "Pin"} ${conversation.title}`}
+                className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-sidebar-accent-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onTogglePin();
+                }}
+              >
+                {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                type="button"
+                aria-label={`Delete ${conversation.title}`}
+                className="flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-destructive"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete();
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </motion.div>
+          ) : (
+            <motion.span
+              key="time"
+              layout={!disableLayoutAnimation}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              className="text-xs text-muted-foreground"
+            >
+              {formatConversationDate(conversation.lastUserMessageAt ?? conversation.createdAt)}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </div>
+  );
+}
+
+function getConversationStatusIcon(conversation: AIConversationSummary) {
+  switch (conversation.activeRunStatus) {
+    case "queued":
+    case "running":
+      return Loader2;
+    case "waiting_for_approval":
+    case "waiting_for_answer":
+      return CircleAlert;
+    default:
+      return conversation.status === "active" ? MessageSquare : Lock;
+  }
+}
+
+function getFolderStatusIcon(conversations: AIConversationSummary[], expanded: boolean) {
+  if (
+    conversations.some(
+      (conversation) =>
+        conversation.activeRunStatus === "waiting_for_approval" ||
+        conversation.activeRunStatus === "waiting_for_answer"
+    )
+  ) {
+    return CircleAlert;
+  }
+  if (
+    conversations.some(
+      (conversation) =>
+        conversation.activeRunStatus === "queued" || conversation.activeRunStatus === "running"
+    )
+  ) {
+    return Loader2;
+  }
+  return expanded ? FolderOpen : Folder;
+}
+
+function AccountDropdownContent({
+  canAccessAdministration,
+  handleLogout,
+}: {
+  canAccessAdministration: boolean;
+  handleLogout: () => void;
+}) {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+
+  return (
+    <>
+      <div className="px-2 py-1.5">
+        <p className="text-sm font-medium">{user?.name || "User"}</p>
+        <p className="text-xs text-muted-foreground">{user?.email}</p>
+        <p className="mt-0.5 text-xs capitalize text-muted-foreground">{user?.groupName}</p>
+      </div>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={() => navigate("/settings")}>
+        <Settings className="mr-2 h-4 w-4" />
+        Settings
+      </DropdownMenuItem>
+      {canAccessAdministration && (
+        <DropdownMenuItem onClick={() => navigate("/administration")}>
+          <Shield className="mr-2 h-4 w-4" />
+          Administration
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={handleLogout}>
+        <LogOut className="mr-2 h-4 w-4" />
+        Log out
+      </DropdownMenuItem>
+    </>
+  );
+}

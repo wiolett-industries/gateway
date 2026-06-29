@@ -13,9 +13,5 @@ const statusConfig: Record<
 
 export function DnsStatusBadge({ status }: { status: DnsStatus }) {
   const { variant, label } = statusConfig[status];
-  return (
-    <Badge variant={variant} className="text-xs">
-      {label}
-    </Badge>
-  );
+  return <Badge variant={variant}>{label}</Badge>;
 }

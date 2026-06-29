@@ -39,20 +39,26 @@ interface QuickStatsCardProps {
   displayStats: DashboardStats;
   nodesList: Node[];
   hasScope: (scope: string) => boolean;
+  pkiEnabled?: boolean;
 }
 
-export function QuickStatsCard({ displayStats, nodesList, hasScope }: QuickStatsCardProps) {
+export function QuickStatsCard({
+  displayStats,
+  nodesList,
+  hasScope,
+  pkiEnabled = true,
+}: QuickStatsCardProps) {
   if (
     !hasScope("proxy:view") &&
     !hasScope("ssl:cert:view") &&
-    !hasScope("pki:cert:view") &&
+    !(pkiEnabled && hasScope("pki:cert:view")) &&
     !hasScope("nodes:details")
   ) {
     return null;
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]">
       {hasScope("proxy:view") && (
         <StatCard
           title="Proxy Hosts"
@@ -75,7 +81,7 @@ export function QuickStatsCard({ displayStats, nodesList, hasScope }: QuickStats
           href="/ssl-certificates"
         />
       )}
-      {hasScope("pki:cert:view") && (
+      {pkiEnabled && hasScope("pki:cert:view") && (
         <StatCard
           title="PKI Certificates"
           value={displayStats.pkiCertificates.active}

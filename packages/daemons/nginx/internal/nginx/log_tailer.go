@@ -2,8 +2,11 @@ package nginx
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strconv"
@@ -77,20 +80,29 @@ func TailFile(ctx context.Context, path string, lines chan<- string) error {
 		return fmt.Errorf("seek to end: %w", err)
 	}
 
-	scanner := bufio.NewScanner(f)
+	reader := bufio.NewReader(f)
 	for {
-		for scanner.Scan() {
+		line, err := reader.ReadString('\n')
+		if len(line) > 0 {
+			line = strings.TrimRight(line, "\r\n")
 			select {
 			case <-ctx.Done():
 				return nil
-			case lines <- scanner.Text():
+			case lines <- line:
 			}
 		}
-		// No more data — poll
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(200 * time.Millisecond):
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, io.EOF) {
+			return fmt.Errorf("read log file: %w", err)
+		}
+		if len(line) == 0 {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(200 * time.Millisecond):
+			}
 		}
 	}
 }
@@ -101,19 +113,62 @@ func TailLastN(path string, n int) ([]string, error) {
 		return nil, nil
 	}
 
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
+	defer f.Close()
 
-	allLines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if stat.Size() == 0 {
+		return nil, nil
+	}
+
+	const chunkSize int64 = 64 * 1024
+	pos := stat.Size()
+	newlineCount := 0
+	tail := make([]byte, 0, minInt64(stat.Size(), chunkSize))
+
+	for pos > 0 && newlineCount <= n {
+		readSize := minInt64(pos, chunkSize)
+		pos -= readSize
+
+		chunk := make([]byte, readSize)
+		read, err := f.ReadAt(chunk, pos)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, err
+		}
+		chunk = chunk[:read]
+		newlineCount += bytes.Count(chunk, []byte{'\n'})
+
+		next := make([]byte, 0, len(chunk)+len(tail))
+		next = append(next, chunk...)
+		next = append(next, tail...)
+		tail = next
+	}
+
+	trimmed := strings.TrimRight(string(tail), "\r\n")
+	if trimmed == "" {
+		return nil, nil
+	}
+	allLines := strings.Split(trimmed, "\n")
 	if len(allLines) <= n {
 		return allLines, nil
 	}
 	return allLines[len(allLines)-n:], nil
+}
+
+func minInt64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // ParseErrorLevel extracts the severity level from an nginx error log line.

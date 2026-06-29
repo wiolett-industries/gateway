@@ -58,6 +58,57 @@ describe('AuthService.blockUser', () => {
   });
 });
 
+describe('AuthService user preferences', () => {
+  it('reads the current AI approval mode', async () => {
+    const findFirst = vi.fn().mockResolvedValue({ aiApprovalMode: 'bypass-non-destructive' });
+    const service = new AuthService(
+      { query: { users: { findFirst } } } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any
+    );
+
+    await expect(service.getUserPreferences('user-1')).resolves.toEqual({
+      aiApprovalMode: 'bypass-non-destructive',
+    });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        columns: { aiApprovalMode: true },
+      })
+    );
+  });
+
+  it('updates the current AI approval mode and emits a user update', async () => {
+    const returning = vi.fn().mockResolvedValue([{ aiApprovalMode: 'always-ask' }]);
+    const where = vi.fn(() => ({ returning }));
+    const set = vi.fn(() => ({ where }));
+    const eventBus = { publish: vi.fn() };
+    const service = new AuthService(
+      { update: vi.fn(() => ({ set })) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any
+    );
+    service.setEventBus(eventBus as any);
+
+    await expect(service.updateUserPreferences('user-1', { aiApprovalMode: 'always-ask' })).resolves.toEqual({
+      aiApprovalMode: 'always-ask',
+    });
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aiApprovalMode: 'always-ask',
+        updatedAt: expect.any(Date),
+      })
+    );
+    expect(eventBus.publish).toHaveBeenCalledWith('user.changed', {
+      id: 'user-1',
+      action: 'updated',
+    });
+  });
+});
+
 describe('normalizeOidcClaims', () => {
   it('requires a subject claim', () => {
     expect(() => normalizeOidcClaims({ email: 'user@example.com' })).toThrow('No subject claim in ID token');

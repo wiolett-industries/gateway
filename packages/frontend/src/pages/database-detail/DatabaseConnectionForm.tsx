@@ -279,9 +279,7 @@ export function DatabaseConnectionForm({
                   onChange={(e) => set("password", e.target.value)}
                 />
                 {draft.hasStoredPassword && draft.password === "" && (
-                  <Badge variant="secondary" className="text-xs">
-                    Existing password preserved
-                  </Badge>
+                  <Badge variant="secondary">Existing password preserved</Badge>
                 )}
               </div>
             </>
@@ -328,9 +326,7 @@ export function DatabaseConnectionForm({
                   onChange={(e) => set("password", e.target.value)}
                 />
                 {draft.hasStoredPassword && draft.password === "" && (
-                  <Badge variant="secondary" className="text-xs">
-                    Existing password preserved
-                  </Badge>
+                  <Badge variant="secondary">Existing password preserved</Badge>
                 )}
               </div>
             </>

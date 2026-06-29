@@ -2,12 +2,14 @@ import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { container, TOKENS } from '@/container.js';
 import { RATE_LIMIT_REDIS_TIMEOUT_MS } from '@/lib/rate-limit-timeout.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
+import { EventBusService } from '@/services/event-bus.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
-import { AIService } from './ai.service.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { authenticateWSConnection, createWSHandlers } from './ai.ws.js';
+import { AIRunService, aiUserConversationsChangedChannel } from './ai-run.service.js';
 
 const USER: User = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -29,6 +31,7 @@ function createWs() {
 }
 
 function registerAiWsDependencies(user: User) {
+  container.registerInstance(EventBusService, new EventBusService());
   container.registerInstance(SessionService, {
     getSession: vi.fn().mockResolvedValue({ user }),
   } as unknown as SessionService);
@@ -44,18 +47,7 @@ function registerAiWsDependencies(user: User) {
   } as unknown as AISettingsService);
 }
 
-function throwingRedis() {
-  const pipeline = {
-    zremrangebyscore: vi.fn(() => pipeline),
-    zcard: vi.fn(() => pipeline),
-    zadd: vi.fn(() => pipeline),
-    expire: vi.fn(() => pipeline),
-    exec: vi.fn().mockRejectedValue(new Error('redis down')),
-  };
-  return { pipeline };
-}
-
-function truncatedRedis() {
+function allowingRedis() {
   const pipeline = {
     zremrangebyscore: vi.fn(() => pipeline),
     zcard: vi.fn(() => pipeline),
@@ -64,7 +56,20 @@ function truncatedRedis() {
     exec: vi.fn().mockResolvedValue([
       [null, 0],
       [null, 0],
+      [null, 1],
+      [null, 1],
     ]),
+  };
+  return { pipeline: vi.fn(() => pipeline) };
+}
+
+function throwingRedis() {
+  const pipeline = {
+    zremrangebyscore: vi.fn(() => pipeline),
+    zcard: vi.fn(() => pipeline),
+    zadd: vi.fn(() => pipeline),
+    expire: vi.fn(() => pipeline),
+    exec: vi.fn().mockRejectedValue(new Error('redis down')),
   };
   return { pipeline };
 }
@@ -80,8 +85,58 @@ function hangingRedis() {
   return { pipeline };
 }
 
+function createRun() {
+  return {
+    id: 'run-1',
+    conversationId: 'conversation-1',
+    userId: USER.id,
+    status: 'queued',
+    activeMessageId: 'message-1',
+    clientCommandId: 'cmd-1',
+  };
+}
+
+function createSnapshot(run: ReturnType<typeof createRun> | null = createRun()) {
+  return {
+    conversation: {
+      id: 'conversation-1',
+      title: 'hello',
+      createdAt: new Date('2026-06-26T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-26T00:00:00.000Z'),
+      folderId: null,
+      lastUserMessageAt: new Date('2026-06-26T00:00:00.000Z'),
+      messageCount: 1,
+      status: 'active' as const,
+      blockReason: null,
+      lastContext: { route: '/nodes' },
+      discoveredToolsets: [],
+      checkpoint: null,
+    },
+    messages: [{ id: 'message-1', role: 'user', content: 'hello' }],
+    runtime: {
+      activeRun: run,
+      pendingApprovals: [],
+      pendingQuestion: null,
+      pendingQuestions: [],
+      toolCalls: [],
+    },
+  };
+}
+
+async function openAuthenticatedWs(user: User = USER) {
+  registerAiWsDependencies(user);
+  const ws = createWs();
+  const handlers = createWSHandlers();
+
+  handlers.onOpen(new Event('open'), ws as any);
+  const authenticated = await authenticateWSConnection(ws as any, 'session-1');
+  expect(authenticated).toBe(true);
+  return { ws, handlers };
+}
+
 afterEach(() => {
   container.reset();
+  vi.useRealTimers();
 });
 
 describe('AI websocket authentication', () => {
@@ -97,119 +152,406 @@ describe('AI websocket authentication', () => {
     expect(authenticated).toBe(false);
     expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'auth_error', message: 'Account is blocked' }));
   });
+});
 
-  it('fails closed when the chat rate limiter cannot reach Redis', async () => {
-    registerAiWsDependencies(USER);
+describe('AI websocket backend runtime commands', () => {
+  it('fails closed when the runtime send-message rate limiter cannot reach Redis', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
     container.registerInstance(TOKENS.RedisClient, throwingRedis() as any);
-    const streamChat = vi.fn();
-    container.registerInstance(AIService, { streamChat } as unknown as AIService);
-    const ws = createWs();
-    const handlers = createWSHandlers();
-
-    handlers.onOpen(new Event('open'), ws as any);
-    const authenticated = await authenticateWSConnection(ws as any, 'session-1');
-    expect(authenticated).toBe(true);
+    const startUserRun = vi.fn();
+    container.registerInstance(AIRunService, { startUserRun } as unknown as AIRunService);
 
     await handlers.onMessage(
       new MessageEvent('message', {
         data: JSON.stringify({
-          type: 'chat',
-          requestId: 'request-1',
-          messages: [{ role: 'user', content: 'hello' }],
+          type: 'conversation.send_message',
+          clientCommandId: 'cmd-rate-limit',
+          content: 'hello',
         }),
       }),
       ws as any
     );
     handlers.onClose(new Event('close'), ws as any);
 
-    expect(streamChat).not.toHaveBeenCalled();
+    expect(startUserRun).not.toHaveBeenCalled();
     expect(ws.send).toHaveBeenCalledWith(
       JSON.stringify({
-        type: 'error',
-        requestId: 'request-1',
+        type: 'command.error',
+        commandType: 'conversation.send_message',
+        clientCommandId: 'cmd-rate-limit',
         code: 'RATE_LIMIT_UNAVAILABLE',
         message: 'Gateway is temporarily unavailable',
+        statusCode: 503,
       })
     );
-    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'done', requestId: 'request-1' }));
   });
 
-  it('fails closed when the chat rate limiter gets incomplete Redis results', async () => {
-    registerAiWsDependencies(USER);
-    container.registerInstance(TOKENS.RedisClient, truncatedRedis() as any);
-    const streamChat = vi.fn();
-    container.registerInstance(AIService, { streamChat } as unknown as AIService);
-    const ws = createWs();
-    const handlers = createWSHandlers();
-
-    handlers.onOpen(new Event('open'), ws as any);
-    const authenticated = await authenticateWSConnection(ws as any, 'session-1');
-    expect(authenticated).toBe(true);
-
-    await handlers.onMessage(
-      new MessageEvent('message', {
-        data: JSON.stringify({
-          type: 'chat',
-          requestId: 'request-2',
-          messages: [{ role: 'user', content: 'hello' }],
-        }),
-      }),
-      ws as any
-    );
-    handlers.onClose(new Event('close'), ws as any);
-
-    expect(streamChat).not.toHaveBeenCalled();
-    expect(ws.send).toHaveBeenCalledWith(
-      JSON.stringify({
-        type: 'error',
-        requestId: 'request-2',
-        code: 'RATE_LIMIT_UNAVAILABLE',
-        message: 'Gateway is temporarily unavailable',
-      })
-    );
-    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'done', requestId: 'request-2' }));
-  });
-
-  it('fails closed when the chat rate limiter stalls', async () => {
+  it('fails closed when the runtime send-message rate limiter stalls', async () => {
     vi.useFakeTimers();
-    try {
-      registerAiWsDependencies(USER);
-      container.registerInstance(TOKENS.RedisClient, hangingRedis() as any);
-      const streamChat = vi.fn();
-      container.registerInstance(AIService, { streamChat } as unknown as AIService);
-      const ws = createWs();
-      const handlers = createWSHandlers();
+    const { ws, handlers } = await openAuthenticatedWs();
+    container.registerInstance(TOKENS.RedisClient, hangingRedis() as any);
+    const startUserRun = vi.fn();
+    container.registerInstance(AIRunService, { startUserRun } as unknown as AIRunService);
 
-      handlers.onOpen(new Event('open'), ws as any);
-      const authenticated = await authenticateWSConnection(ws as any, 'session-1');
-      expect(authenticated).toBe(true);
-
-      const messagePromise = handlers.onMessage(
-        new MessageEvent('message', {
-          data: JSON.stringify({
-            type: 'chat',
-            requestId: 'request-3',
-            messages: [{ role: 'user', content: 'hello' }],
-          }),
+    const messagePromise = handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'conversation.send_message',
+          clientCommandId: 'cmd-timeout',
+          content: 'hello',
         }),
-        ws as any
-      );
-      await vi.advanceTimersByTimeAsync(RATE_LIMIT_REDIS_TIMEOUT_MS);
-      await messagePromise;
-      handlers.onClose(new Event('close'), ws as any);
+      }),
+      ws as any
+    );
+    await vi.advanceTimersByTimeAsync(RATE_LIMIT_REDIS_TIMEOUT_MS);
+    await messagePromise;
+    handlers.onClose(new Event('close'), ws as any);
 
-      expect(streamChat).not.toHaveBeenCalled();
-      expect(ws.send).toHaveBeenCalledWith(
-        JSON.stringify({
-          type: 'error',
-          requestId: 'request-3',
-          code: 'RATE_LIMIT_UNAVAILABLE',
-          message: 'Gateway is temporarily unavailable',
-        })
-      );
-      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'done', requestId: 'request-3' }));
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(startUserRun).not.toHaveBeenCalled();
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'command.error',
+        commandType: 'conversation.send_message',
+        clientCommandId: 'cmd-timeout',
+        code: 'RATE_LIMIT_UNAVAILABLE',
+        message: 'Gateway is temporarily unavailable',
+        statusCode: 503,
+      })
+    );
+  });
+
+  it('starts a backend-owned run and sends a conversation snapshot', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    container.registerInstance(TOKENS.RedisClient, allowingRedis() as any);
+
+    const run = createRun();
+    const snapshot = createSnapshot(run);
+    const startUserRun = vi.fn().mockResolvedValue({
+      conversationId: 'conversation-1',
+      userMessageId: 'message-1',
+      run,
+      duplicate: false,
+    });
+    const getConversationSnapshot = vi.fn().mockResolvedValue(snapshot);
+    const startRunExecution = vi.fn();
+    container.registerInstance(AIRunService, {
+      startUserRun,
+      getConversationSnapshot,
+      startRunExecution,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'conversation.send_message',
+          clientCommandId: 'cmd-1',
+          content: ' hello ',
+          context: { route: '/nodes' },
+        }),
+      }),
+      ws as any
+    );
+
+    expect(startUserRun).toHaveBeenCalledWith({
+      conversationId: null,
+      userId: USER.id,
+      title: 'hello',
+      userMessage: { role: 'user', content: 'hello' },
+      clientCommandId: 'cmd-1',
+      lastContext: { route: '/nodes' },
+    });
+    expect(getConversationSnapshot).toHaveBeenCalledWith(USER.id, 'conversation-1');
+    expect(startRunExecution).toHaveBeenCalledWith(USER, 'run-1');
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'command.ack',
+        commandType: 'conversation.send_message',
+        clientCommandId: 'cmd-1',
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+        duplicate: false,
+      })
+    );
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'conversation.snapshot', conversationId: 'conversation-1', snapshot })
+    );
+
+    container.resolve(EventBusService).publish(aiUserConversationsChangedChannel(USER.id), {
+      userId: USER.id,
+      conversationId: 'conversation-1',
+    });
+    await Promise.resolve();
+    expect(getConversationSnapshot).toHaveBeenCalledTimes(2);
+    handlers.onClose(new Event('close'), ws as any);
+  });
+
+  it('forwards assistant deltas without fetching a fresh conversation snapshot', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    const getConversationSnapshot = vi.fn().mockResolvedValue(createSnapshot(createRun()));
+    container.registerInstance(AIRunService, {
+      getConversationSnapshot,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'conversation.subscribe',
+          conversationId: 'conversation-1',
+          clientCommandId: 'cmd-subscribe',
+        }),
+      }),
+      ws as any
+    );
+    vi.mocked(ws.send).mockClear();
+
+    container.resolve(EventBusService).publish(aiUserConversationsChangedChannel(USER.id), {
+      type: 'assistant.delta',
+      userId: USER.id,
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      content: 'hello',
+      version: 1,
+    });
+    container.resolve(EventBusService).publish(aiUserConversationsChangedChannel(USER.id), {
+      type: 'assistant.delta',
+      userId: USER.id,
+      conversationId: 'conversation-2',
+      runId: 'run-2',
+      content: 'ignored',
+      version: 1,
+    });
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(getConversationSnapshot).toHaveBeenCalledTimes(1);
+    expect(ws.send).toHaveBeenCalledTimes(1);
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'assistant.delta',
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+        content: 'hello',
+        version: 1,
+      })
+    );
+  });
+
+  it('returns command.error when a conversation already has an active run', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    container.registerInstance(TOKENS.RedisClient, allowingRedis() as any);
+    container.registerInstance(AIRunService, {
+      startUserRun: vi
+        .fn()
+        .mockRejectedValue(new AppError(409, 'AI_RUN_ACTIVE', 'Conversation already has an active AI run')),
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'conversation.send_message',
+          conversationId: 'conversation-1',
+          clientCommandId: 'cmd-2',
+          content: 'second',
+        }),
+      }),
+      ws as any
+    );
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'command.error',
+        commandType: 'conversation.send_message',
+        clientCommandId: 'cmd-2',
+        conversationId: 'conversation-1',
+        code: 'AI_RUN_ACTIVE',
+        message: 'Conversation already has an active AI run',
+        statusCode: 409,
+      })
+    );
+  });
+
+  it('routes approval decisions through the backend run service', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    const toolCall = {
+      id: 'approval-1',
+      runId: 'run-1',
+      conversationId: 'conversation-1',
+      status: 'approved',
+      decision: 'approved',
+    };
+    const decideToolCall = vi.fn().mockResolvedValue({ toolCall, duplicate: false });
+    const getConversationSnapshot = vi.fn().mockResolvedValue(createSnapshot(null));
+    const startApprovalContinuation = vi.fn();
+    container.registerInstance(AIRunService, {
+      decideToolCall,
+      getConversationSnapshot,
+      startApprovalContinuation,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'approval.decide',
+          conversationId: 'conversation-1',
+          runId: 'run-1',
+          approvalId: 'approval-1',
+          decision: 'approved',
+          clientCommandId: 'cmd-3',
+        }),
+      }),
+      ws as any
+    );
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(decideToolCall).toHaveBeenCalledWith({
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      toolCallId: 'approval-1',
+      userId: USER.id,
+      clientCommandId: 'cmd-3',
+      decision: 'approved',
+    });
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'approval.updated',
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+        approval: toolCall,
+        duplicate: false,
+      })
+    );
+    expect(startApprovalContinuation).toHaveBeenCalledWith(USER, {
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      toolCall,
+      approved: true,
+    });
+  });
+
+  it('routes question answers through the backend run service', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    const question = {
+      id: 'question-1',
+      runId: 'run-1',
+      conversationId: 'conversation-1',
+      question: 'Which node?',
+      status: 'answered',
+      answer: 'node-1',
+    };
+    const answerQuestion = vi.fn().mockResolvedValue({ question, duplicate: false, remainingPendingQuestions: [] });
+    const getConversationSnapshot = vi.fn().mockResolvedValue(createSnapshot(null));
+    const startQuestionContinuation = vi.fn();
+    container.registerInstance(AIRunService, {
+      answerQuestion,
+      getConversationSnapshot,
+      startQuestionContinuation,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'question.answer',
+          conversationId: 'conversation-1',
+          runId: 'run-1',
+          questionId: 'question-1',
+          answer: 'node-1',
+          clientCommandId: 'cmd-4',
+        }),
+      }),
+      ws as any
+    );
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(answerQuestion).toHaveBeenCalledWith({
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      questionId: 'question-1',
+      userId: USER.id,
+      clientCommandId: 'cmd-4',
+      answer: 'node-1',
+    });
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'question.answered',
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+        question,
+        duplicate: false,
+      })
+    );
+    expect(startQuestionContinuation).toHaveBeenCalledWith(USER, {
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      question,
+    });
+  });
+
+  it('stops a backend-owned run idempotently', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    const stoppedRun = {
+      id: 'run-1',
+      conversationId: 'conversation-1',
+      userId: USER.id,
+      status: 'stopped',
+    };
+    const stopRun = vi.fn().mockResolvedValue({ run: stoppedRun, duplicate: true });
+    const getConversationSnapshot = vi.fn().mockResolvedValue(createSnapshot(null));
+    container.registerInstance(AIRunService, {
+      stopRun,
+      getConversationSnapshot,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'run.stop',
+          conversationId: 'conversation-1',
+          runId: 'run-1',
+          clientCommandId: 'cmd-5',
+        }),
+      }),
+      ws as any
+    );
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(stopRun).toHaveBeenCalledWith({
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      userId: USER.id,
+    });
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'run.status_changed',
+        conversationId: 'conversation-1',
+        run: stoppedRun,
+      })
+    );
+  });
+
+  it('rejects removed legacy websocket commands', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'chat',
+          requestId: 'legacy-request',
+          messages: [{ role: 'user', content: 'hello' }],
+        }),
+      }),
+      ws as any
+    );
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'command.error',
+        commandType: 'chat',
+        clientCommandId: 'legacy-request',
+        code: 'AI_UNKNOWN_COMMAND',
+        message: 'Unknown AI websocket command',
+        statusCode: 400,
+      })
+    );
   });
 });

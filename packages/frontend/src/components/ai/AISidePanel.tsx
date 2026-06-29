@@ -1,16 +1,62 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Send, Sparkles, Square, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import {
+  CircleAlert,
+  Expand,
+  Loader2,
+  Lock,
+  MessageSquare,
+  Pencil,
+  Pin,
+  PinOff,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useAIStore } from "@/stores/ai";
+import { type AIApprovalMode, formatAIApprovalModeLabel } from "@/lib/ai-approval-mode";
+import {
+  confirmBypassEverythingMode,
+  updateAIApprovalModeOptimistically,
+} from "@/lib/ai-user-preferences";
+import { api } from "@/services/api";
+import { getConversationBlock, useAIStore } from "@/stores/ai";
 import { useUIStore } from "@/stores/ui";
-import type { PageContext } from "@/types/ai";
+import type {
+  AIComposerAttachment,
+  AIComposerLocalImageAttachment,
+  AIConfig,
+  AIConversationStatus,
+  AIMessageAttachment,
+  AIRunStatus,
+  PageContext,
+} from "@/types/ai";
+import { AIComposer } from "./AIComposer";
+import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
 import { AIMessage } from "./AIMessage";
 import { QuestionBlock } from "./AIToolCallBlock";
+import { confirmAILiteMode } from "./confirm-lite-mode";
 import { QuickActionChips } from "./QuickActionChips";
+import {
+  composerAttachmentToFile,
+  filesToComposerAttachments,
+  getComposerAttachmentId,
+  getComposerAttachmentPreviewUrl,
+  useAIComposerAttachmentsDraft,
+  useAIComposerDraft,
+} from "./useAIComposerDraft";
 
 function autoResizeTextarea(el: HTMLTextAreaElement, maxRows = 6) {
   const style = getComputedStyle(el);
@@ -28,10 +74,34 @@ function autoResizeTextarea(el: HTMLTextAreaElement, maxRows = 6) {
   el.style.height = `${targetHeight}px`;
 }
 
+async function uploadComposerAttachments(
+  attachments: AIComposerAttachment[],
+  conversationId: string | null
+): Promise<AIMessageAttachment[]> {
+  const uploaded: AIMessageAttachment[] = [];
+  for (const attachment of attachments) {
+    if ("artifactId" in attachment) {
+      uploaded.push(attachment);
+      continue;
+    }
+    uploaded.push(await uploadLocalComposerAttachment(attachment, conversationId));
+  }
+  return uploaded;
+}
+
+async function uploadLocalComposerAttachment(
+  attachment: AIComposerLocalImageAttachment,
+  conversationId: string | null
+): Promise<AIMessageAttachment> {
+  const file = await composerAttachmentToFile(attachment);
+  return api.uploadAIChatArtifact(file, conversationId);
+}
+
 const PANEL_WIDTH_KEY = "gateway-ai-panel-width";
 const DEFAULT_WIDTH = 360;
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 560;
+const BOTTOM_SCROLL_THRESHOLD = 48;
 
 function readPanelWidth(): number {
   try {
@@ -65,66 +135,284 @@ function usePageContext(): PageContext {
 }
 
 const SLASH_COMMANDS = [
+  { name: "new", description: "Start new conversation" },
   { name: "clear", description: "Clear conversation" },
   { name: "context", description: "Show token usage" },
-  { name: "save", description: "Save conversation" },
-  { name: "restore", description: "Restore conversation" },
-  { name: "drop", description: "Delete saved conversation" },
 ];
 
-function PanelContent({ onClose }: { onClose: () => void }) {
+function formatConversationDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    const diffMs = Math.max(0, now.getTime() - date.getTime());
+    const diffMinutes = Math.floor(diffMs / 60000);
+    if (diffMinutes < 1) return "now";
+    if (diffMinutes < 60) return `${diffMinutes} min ago`;
+    return `${Math.floor(diffMinutes / 60)} h ago`;
+  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function getConversationStatusIcon(conversation: {
+  activeRunStatus?: AIRunStatus | null;
+  status: AIConversationStatus;
+}) {
+  switch (conversation.activeRunStatus) {
+    case "queued":
+    case "running":
+      return Loader2;
+    case "waiting_for_approval":
+    case "waiting_for_answer":
+      return CircleAlert;
+    default:
+      return conversation.status === "active" ? MessageSquare : Lock;
+  }
+}
+
+interface AIChatSurfaceProps {
+  active?: boolean;
+  onClose?: () => void;
+  onEnterLiteMode?: () => void;
+}
+
+export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AIChatSurfaceProps) {
   const {
     messages,
     isStreaming,
     isConnected,
+    isConnecting,
+    connectionError,
+    recentConversations,
+    isLoadingRecentConversations,
     retryAfter,
+    savedName,
+    activeConversationId,
+    activeRunId,
     sendMessage,
     approveTool,
     rejectTool,
     answerQuestion,
     stopStreaming,
+    clearMessages,
     handleSlashCommand,
+    loadConversation,
+    deleteConversation,
+    renameConversation,
+    rollbackToMessage,
+    connect,
   } = useAIStore();
 
-  const [input, setInput] = useState("");
+  const [input, setInput] = useAIComposerDraft(activeConversationId);
+  const [attachments, setAttachments] = useAIComposerAttachmentsDraft(activeConversationId);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [canAttachImages, setCanAttachImages] = useState(false);
   const [slashResults, setSlashResults] = useState<typeof SLASH_COMMANDS>([]);
   const [slashIndex, setSlashIndex] = useState(0);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const context = usePageContext();
+  const {
+    aiApprovalMode: approvalMode,
+    pinnedAIConversationIds,
+    togglePinnedAIConversation,
+  } = useUIStore();
+  const approvalModeLabel = formatAIApprovalModeLabel(approvalMode);
+  const conversationBlock = getConversationBlock(messages);
+  const isNewConversationDraft = messages.length === 0;
+  const currentConversationStreaming = !isNewConversationDraft && isStreaming;
+  const currentConversation = activeConversationId
+    ? recentConversations.find((conversation) => conversation.id === activeConversationId)
+    : null;
+  const currentChatTitle = activeConversationId
+    ? (savedName ?? currentConversation?.title ?? "New chat")
+    : "New chat";
+  const isCurrentChatPinned = activeConversationId
+    ? pinnedAIConversationIds.includes(activeConversationId)
+    : false;
 
-  // WS lifecycle managed by store subscription to aiPanelOpen — no connect/disconnect here
+  const openRenameDialog = () => {
+    if (!activeConversationId) return;
+    setRenameDraft(currentChatTitle);
+    setRenameDialogOpen(true);
+  };
 
-  // Auto-scroll to bottom on new messages or streaming updates
-  const scrollKey = `${messages[messages.length - 1]?.id ?? ""}:${isStreaming ? "streaming" : "idle"}`;
+  const submitRename = async () => {
+    if (!activeConversationId) return;
+    const nextTitle = renameDraft.trim();
+    if (!nextTitle) return;
+    setIsRenaming(true);
+    try {
+      await renameConversation(activeConversationId, nextTitle);
+      setRenameDialogOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to rename chat");
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const setApprovalMode = useCallback(
+    async (mode: AIApprovalMode) => {
+      if (
+        mode === "bypass-everything" &&
+        approvalMode !== "bypass-everything" &&
+        !(await confirmBypassEverythingMode())
+      ) {
+        return;
+      }
+      try {
+        await updateAIApprovalModeOptimistically(mode, approvalMode);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to update AI mode");
+      }
+    },
+    [approvalMode]
+  );
+
   useEffect(() => {
-    if (!scrollKey) return;
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [scrollKey]);
+    if (!active) return;
+    void connect();
+  }, [active, connect]);
+
+  useEffect(() => {
+    if (!active) return;
+    const cached = api.getCached<AIConfig>("settings:ai-config");
+    if (cached) setCanAttachImages(Boolean(cached.supportsImages));
+    let cancelled = false;
+    void api
+      .getAIConfig()
+      .then((config) => {
+        if (!cancelled) setCanAttachImages(Boolean((config as unknown as AIConfig).supportsImages));
+      })
+      .catch(() => {
+        if (!cancelled) setCanAttachImages(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
+
+  const updateStickToBottom = useCallback(() => {
+    const node = scrollViewportRef.current;
+    if (!node) {
+      shouldStickToBottomRef.current = true;
+      return;
+    }
+    shouldStickToBottomRef.current =
+      node.scrollHeight - node.scrollTop - node.clientHeight < BOTTOM_SCROLL_THRESHOLD;
+  }, []);
+
+  const scrollSignature = messages
+    .map((message) =>
+      [
+        message.id,
+        message.content.length,
+        message.isStreaming ? "streaming" : "idle",
+        (message.toolCalls ?? [])
+          .map((toolCall) => `${toolCall.id}:${toolCall.status}:${toolCall.error ?? ""}`)
+          .join(","),
+      ].join(":")
+    )
+    .join("|");
+
+  useLayoutEffect(() => {
+    if (!scrollSignature) return;
+    const node = scrollViewportRef.current;
+    if (!node || !shouldStickToBottomRef.current) return;
+    node.scrollTop = node.scrollHeight;
+    const frame = window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [scrollSignature]);
 
   useEffect(() => {
     const timer = setTimeout(() => textareaRef.current?.focus(), 150);
     return () => clearTimeout(timer);
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: input changes must re-measure restored composer drafts.
+  useLayoutEffect(() => {
+    if (textareaRef.current) autoResizeTextarea(textareaRef.current);
+  }, [input]);
+
+  const previewAttachment = useCallback((attachment: AIComposerAttachment) => {
+    if ("artifactId" in attachment) {
+      const params = new URLSearchParams({ filename: attachment.filename });
+      params.set("mediaType", attachment.mediaType);
+      window.open(
+        `/ai/artifact/${encodeURIComponent(attachment.artifactId)}?${params.toString()}`,
+        `artifact-${attachment.artifactId}`,
+        "width=900,height=600,menubar=no,toolbar=no"
+      );
+      return;
+    }
+    window.open(getComposerAttachmentPreviewUrl(attachment), "_blank", "noopener,noreferrer");
+  }, []);
+
+  const handleAttachFiles = useCallback(
+    async (files: File[]) => {
+      if (!canAttachImages || files.length === 0) return;
+      try {
+        const nextAttachments = await filesToComposerAttachments(files);
+        setAttachments([...attachments, ...nextAttachments]);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to attach image");
+      }
+    },
+    [attachments, canAttachImages, setAttachments]
+  );
+
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text && attachments.length === 0) return;
+    if (currentConversationStreaming) return;
 
-    if (text.startsWith("/")) {
+    if (attachments.length === 0 && text.startsWith("/")) {
       const handled = await handleSlashCommand(text);
       if (handled) {
         setInput("");
+        setAttachments([]);
         setSlashResults([]);
         return;
       }
     }
 
-    setInput("");
-    setSlashResults([]);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-    sendMessage(text, context);
-  }, [input, context, sendMessage, handleSlashCommand]);
+    setUploadingAttachments(true);
+    try {
+      const uploadedAttachments = await uploadComposerAttachments(
+        attachments,
+        activeConversationId
+      );
+      setInput("");
+      setAttachments([]);
+      setSlashResults([]);
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      sendMessage(text, context, uploadedAttachments, {
+        startNewConversation: isNewConversationDraft,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to attach image");
+    } finally {
+      setUploadingAttachments(false);
+    }
+  }, [
+    activeConversationId,
+    attachments,
+    context,
+    currentConversationStreaming,
+    handleSlashCommand,
+    input,
+    isNewConversationDraft,
+    sendMessage,
+    setAttachments,
+    setInput,
+  ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Slash command navigation
@@ -141,15 +429,11 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       }
       if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
         e.preventDefault();
+        if (currentConversationStreaming) return;
         const cmd = slashResults[slashIndex];
-        if (cmd.name === "clear" || cmd.name === "context") {
-          handleSlashCommand(`/${cmd.name}`);
-          setInput("");
-          setSlashResults([]);
-        } else {
-          setInput(`/${cmd.name} `);
-          setSlashResults([]);
-        }
+        handleSlashCommand(`/${cmd.name}`);
+        setInput("");
+        setSlashResults([]);
         return;
       }
       if (e.key === "Escape") {
@@ -160,13 +444,34 @@ function PanelContent({ onClose }: { onClose: () => void }) {
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!isStreaming) handleSend();
+      if (!currentConversationStreaming) handleSend();
     }
   };
 
   const handleQuickAction = (prompt: string) => {
-    sendMessage(prompt, context);
+    sendMessage(prompt, context, [], { startNewConversation: messages.length === 0 });
   };
+
+  const handleEditUserMessage = useCallback(
+    async (messageId: string, content: string, nextAttachments: AIMessageAttachment[]) => {
+      try {
+        const message = await rollbackToMessage(messageId);
+        if (!message) return;
+        setInput(content);
+        setAttachments(nextAttachments);
+        setSlashResults([]);
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          if (!textarea) return;
+          textarea.focus();
+          autoResizeTextarea(textarea);
+        });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to edit message");
+      }
+    },
+    [rollbackToMessage, setAttachments, setInput]
+  );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -212,12 +517,100 @@ function PanelContent({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <span className="text-sm font-semibold">AI Assistant</span>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
+      <div className="flex h-[49px] shrink-0 items-center justify-between border-b border-border px-3">
+        <span
+          className="min-w-0 flex-1 truncate pr-2 text-sm font-semibold"
+          title={currentChatTitle}
+        >
+          {currentChatTitle}
+        </span>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => activeConversationId && togglePinnedAIConversation(activeConversationId)}
+            disabled={!activeConversationId}
+            title={isCurrentChatPinned ? "Unpin chat" : "Pin chat"}
+            aria-label={isCurrentChatPinned ? "Unpin chat" : "Pin chat"}
+          >
+            {isCurrentChatPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={openRenameDialog}
+            disabled={!activeConversationId}
+            title="Rename chat"
+            aria-label="Rename chat"
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => activeConversationId && void deleteConversation(activeConversationId)}
+            disabled={!activeConversationId}
+            title="Delete chat"
+            aria-label="Delete chat"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+          {onEnterLiteMode && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              onClick={onEnterLiteMode}
+              title="Full screen"
+              aria-label="Full screen"
+            >
+              <Expand className="h-4 w-4" />
+            </Button>
+          )}
+          {onClose && (
+            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename chat</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameDraft}
+            onChange={(event) => setRenameDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void submitRename();
+              }
+            }}
+            placeholder="Chat name"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRenameDialogOpen(false)}
+              disabled={isRenaming}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void submitRename()}
+              disabled={isRenaming || !renameDraft.trim()}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Messages */}
       {messages.length === 0 ? (
@@ -227,20 +620,90 @@ function PanelContent({ onClose }: { onClose: () => void }) {
             Ask me anything about your infrastructure
           </p>
           <QuickActionChips onSelect={handleQuickAction} />
+          {(isLoadingRecentConversations || recentConversations.length > 0) && (
+            <div className="mt-4 w-full max-w-[340px] border border-border">
+              <div className="border-b border-border px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                Recent
+              </div>
+              {isLoadingRecentConversations && recentConversations.length === 0 ? (
+                <div className="px-3 py-3 text-xs text-muted-foreground">Loading...</div>
+              ) : (
+                recentConversations.map((conversation) => (
+                  <div
+                    key={conversation.id}
+                    className="group flex items-center border-b border-border last:border-b-0 hover:bg-muted/50 focus-within:bg-muted/50"
+                  >
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
+                      onClick={() => void loadConversation(conversation.id)}
+                    >
+                      {(() => {
+                        const StatusIcon = getConversationStatusIcon(conversation);
+                        return (
+                          <StatusIcon
+                            className={`h-4 w-4 shrink-0 text-muted-foreground ${
+                              conversation.activeRunStatus === "queued" ||
+                              conversation.activeRunStatus === "running"
+                                ? "animate-spin text-primary"
+                                : conversation.activeRunStatus === "waiting_for_approval" ||
+                                    conversation.activeRunStatus === "waiting_for_answer"
+                                  ? "text-yellow-600 dark:text-yellow-400"
+                                  : ""
+                            }`}
+                          />
+                        );
+                      })()}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs text-foreground">
+                          {conversation.title}
+                        </span>
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {conversation.messageCount} messages
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {formatConversationDate(
+                          conversation.lastUserMessageAt ?? conversation.createdAt
+                        )}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${conversation.title}`}
+                      className="mr-0 flex h-6 w-0 shrink-0 translate-x-1 items-center justify-center overflow-hidden text-muted-foreground opacity-0 transition-[width,margin,opacity,transform,color] duration-150 hover:text-destructive group-hover:mr-2 group-hover:w-6 group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:mr-2 group-focus-within:w-6 group-focus-within:translate-x-0 group-focus-within:opacity-100"
+                      onClick={() => void deleteConversation(conversation.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto dashboard-scrollbar px-3 pt-3">
+        <div
+          ref={scrollViewportRef}
+          role="log"
+          aria-label="AI messages"
+          className="flex-1 min-h-0 overflow-y-auto dashboard-scrollbar px-3 pt-3"
+          onScroll={updateStickToBottom}
+        >
           <div className="space-y-3">
-            {messages.map((msg) => (
+            {messages.map((msg, index) => (
               <AIMessage
-                key={msg.id}
+                key={msg.id || `${msg.role}-${index}`}
                 message={msg}
                 onApprove={approveTool}
                 onReject={rejectTool}
                 onAnswer={answerQuestion}
+                onEditUserMessage={
+                  !currentConversationStreaming && !activeRunId ? handleEditUserMessage : undefined
+                }
               />
             ))}
-            <div ref={messagesEndRef} className="pb-4" />
+            <div className="pb-4" />
           </div>
         </div>
       )}
@@ -253,9 +716,9 @@ function PanelContent({ onClose }: { onClose: () => void }) {
       )}
 
       {/* Connection status */}
-      {!isConnected && (
+      {!isConnected && (isConnecting || connectionError) && (
         <div className="text-xs text-muted-foreground text-center py-1.5 border-t border-border">
-          Connecting...
+          {isConnecting ? "Connecting..." : connectionError}
         </div>
       )}
 
@@ -269,64 +732,46 @@ function PanelContent({ onClose }: { onClose: () => void }) {
           )}
           <QuestionBlock toolCall={activeQuestion} onAnswer={answerQuestion} />
         </div>
+      ) : conversationBlock ? (
+        <AIConversationBlockedBlock block={conversationBlock} onNewChat={clearMessages} />
       ) : (
-        <div className="shrink-0 border-t border-border relative">
-          {/* Slash command popup */}
-          <AnimatePresence>
-            {slashResults.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }}
-                transition={{ duration: 0.12 }}
-                className="absolute left-0 right-0 border-t border-border bg-background shadow-md z-10"
-                style={{ bottom: "calc(100% + 1px)" }}
-              >
-                {slashResults.map((cmd, i) => (
-                  <button
-                    key={cmd.name}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${i === slashIndex ? "bg-muted" : "hover:bg-muted/50"}`}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      if (cmd.name === "clear" || cmd.name === "context") {
-                        handleSlashCommand(`/${cmd.name}`);
-                        setInput("");
-                        setSlashResults([]);
-                      } else {
-                        setInput(`/${cmd.name} `);
-                        setSlashResults([]);
-                      }
-                    }}
-                  >
-                    <span className="font-mono text-muted-foreground">/{cmd.name}</span>
-                    <span className="text-muted-foreground/60 ml-auto shrink-0">
-                      {cmd.description}
-                    </span>
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <div className="relative flex">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={isStreaming ? "AI is responding..." : "Ask anything... (/ commands)"}
-              disabled={!isConnected || !!retryAfter}
-              rows={1}
-              className="block w-full resize-none bg-background px-3 py-2.5 pr-10 text-sm leading-5 placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
-            />
-            <button
-              className="absolute right-1.5 p-1.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
-              style={{ bottom: "calc(50% - 14px)" }}
-              onClick={isStreaming ? stopStreaming : handleSend}
-              disabled={!isStreaming && (!input.trim() || !isConnected || !!retryAfter)}
-            >
-              {isStreaming ? <Square className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-            </button>
-          </div>
+        <div className="relative shrink-0">
+          <AIComposer
+            textareaRef={textareaRef}
+            input={input}
+            onInputChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            onSend={() => void handleSend()}
+            onStop={stopStreaming}
+            onSlashCommandSelect={(command) => {
+              void handleSlashCommand(`/${command.name}`);
+              setInput("");
+              setAttachments([]);
+              setSlashResults([]);
+            }}
+            slashResults={slashResults}
+            slashIndex={slashIndex}
+            messages={messages}
+            isStreaming={currentConversationStreaming}
+            isConnected={isConnected}
+            retryAfter={retryAfter}
+            approvalMode={approvalMode}
+            approvalModeLabel={approvalModeLabel}
+            setApprovalMode={setApprovalMode}
+            attachments={attachments}
+            canAttachImages={canAttachImages}
+            uploadingAttachments={uploadingAttachments}
+            onAttachFiles={handleAttachFiles}
+            onRemoveAttachment={(artifactId) =>
+              setAttachments(
+                attachments.filter(
+                  (attachment) => getComposerAttachmentId(attachment) !== artifactId
+                )
+              )
+            }
+            onPreviewAttachment={previewAttachment}
+            surfaceClassName="border-x-0 border-b-0 focus-within:ring-0"
+          />
         </div>
       )}
     </div>
@@ -338,11 +783,19 @@ interface AISidePanelProps {
 }
 
 export function AISidePanel({ isMobile = false }: AISidePanelProps) {
-  const { aiPanelOpen, setAIPanelOpen } = useUIStore();
+  const { aiPanelOpen, setAIPanelOpen, setAILiteMode } = useUIStore();
+  const navigate = useNavigate();
   const [panelWidth, setPanelWidth] = useState(readPanelWidth);
   const [isResizing, setIsResizing] = useState(false);
 
   const handleClose = () => setAIPanelOpen(false);
+  const handleEnterLiteMode = async () => {
+    const confirmed = await confirmAILiteMode();
+    if (!confirmed) return;
+    setAILiteMode(true);
+    setAIPanelOpen(false);
+    navigate("/");
+  };
 
   const handleResizeEnd = useCallback(() => {
     setIsResizing(false);
@@ -363,7 +816,7 @@ export function AISidePanel({ isMobile = false }: AISidePanelProps) {
           <SheetHeader className="sr-only">
             <SheetTitle>AI Assistant</SheetTitle>
           </SheetHeader>
-          <PanelContent onClose={handleClose} />
+          <AIChatSurface active={aiPanelOpen} onClose={handleClose} />
         </SheetContent>
       </Sheet>
     );
@@ -378,19 +831,21 @@ export function AISidePanel({ isMobile = false }: AISidePanelProps) {
           animate={{ width: panelWidth }}
           exit={{ width: 0 }}
           transition={isResizing ? { duration: 0 } : { duration: 0.15, ease: "easeOut" }}
-          className="relative h-full shrink-0 overflow-hidden border-l border-border"
+          className="relative h-full shrink-0 overflow-visible"
         >
-          {/* Inner content pinned to panelWidth so it never reflows */}
-          <div style={{ width: panelWidth }} className="h-full flex flex-col bg-background">
-            <ResizeHandle
-              side="right"
-              onResize={setPanelWidth}
-              onResizeStart={() => setIsResizing(true)}
-              onResizeEnd={handleResizeEnd}
-              minWidth={MIN_WIDTH}
-              maxWidth={MAX_WIDTH}
-            />
-            <PanelContent onClose={handleClose} />
+          <ResizeHandle
+            side="right"
+            onResize={setPanelWidth}
+            onResizeStart={() => setIsResizing(true)}
+            onResizeEnd={handleResizeEnd}
+            minWidth={MIN_WIDTH}
+            maxWidth={MAX_WIDTH}
+          />
+          <div className="h-full overflow-hidden border-l border-border">
+            {/* Inner content pinned to panelWidth so it never reflows */}
+            <div style={{ width: panelWidth }} className="h-full flex flex-col bg-background">
+              <AIChatSurface onClose={handleClose} onEnterLiteMode={handleEnterLiteMode} />
+            </div>
           </div>
         </motion.div>
       )}

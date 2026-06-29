@@ -229,16 +229,25 @@ export class NodeDispatchService {
       driver?: string;
       labels?: Record<string, string>;
       force?: boolean;
+      path?: string;
+      maxBytes?: number;
+      newName?: string;
+      content?: string | Buffer;
+      targetPath?: string;
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {
     if (action !== 'list') {
       await this.assertNodeMutable(nodeId);
     }
+    const payload = {
+      ...options,
+      content: typeof options.content === 'string' ? Buffer.from(options.content) : options.content,
+    };
     return this.registry.sendCommand(
       nodeId,
       {
-        dockerVolume: { action, ...options } as any,
+        dockerVolume: { action, ...payload } as any,
       },
       timeoutMs
     );
@@ -302,12 +311,17 @@ export class NodeDispatchService {
       rows?: number;
       cols?: number;
       user?: string;
-    } = {}
+    } = {},
+    timeoutMs?: number
   ): Promise<CommandResult> {
     await this.assertNodeMutable(nodeId);
-    return this.registry.sendCommand(nodeId, {
-      dockerExec: { action, ...options } as any,
-    });
+    return this.registry.sendCommand(
+      nodeId,
+      {
+        dockerExec: { action, ...options } as any,
+      },
+      timeoutMs
+    );
   }
 
   async sendNodeExecCommand(
@@ -318,11 +332,41 @@ export class NodeDispatchService {
       tty?: boolean;
       rows?: number;
       cols?: number;
-    } = {}
+    } = {},
+    timeoutMs?: number
   ): Promise<CommandResult> {
     await this.assertNodeMutable(nodeId);
+    return this.registry.sendCommand(
+      nodeId,
+      {
+        nodeExec: { action, ...options } as any,
+      },
+      timeoutMs
+    );
+  }
+
+  async sendNodeFileCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      path?: string;
+      targetPath?: string;
+      maxBytes?: number;
+      content?: string | Buffer;
+    } = {}
+  ): Promise<CommandResult> {
+    if (!['list', 'read'].includes(action)) {
+      await this.assertNodeMutable(nodeId);
+    }
+    const { content, ...rest } = options;
+    const payload: Record<string, unknown> = { action, ...rest };
+    if (Buffer.isBuffer(content)) {
+      payload.content = content;
+    } else if (content != null) {
+      payload.content = Buffer.from(content);
+    }
     return this.registry.sendCommand(nodeId, {
-      nodeExec: { action, ...options } as any,
+      nodeFile: payload as any,
     });
   }
 
@@ -332,8 +376,9 @@ export class NodeDispatchService {
     options: {
       containerId?: string;
       path?: string;
+      targetPath?: string;
       maxBytes?: number;
-      content?: string;
+      content?: string | Buffer;
     } = {}
   ): Promise<CommandResult> {
     if (!['list', 'read'].includes(action)) {
@@ -341,9 +386,10 @@ export class NodeDispatchService {
     }
     const { content, ...rest } = options;
     const payload: Record<string, unknown> = { action, ...rest };
-    if (content != null) {
-      // Content arrives as base64 from the frontend — decode to raw bytes for the proto bytes field
-      payload.content = Buffer.from(content, 'base64');
+    if (Buffer.isBuffer(content)) {
+      payload.content = content;
+    } else if (content != null) {
+      payload.content = Buffer.from(content);
     }
     return this.registry.sendCommand(nodeId, {
       dockerFile: payload as any,

@@ -19,6 +19,41 @@ describe('UpdateAuthProvisioningSettingsSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts general file upload limit settings', () => {
+    const result = UpdateAuthProvisioningSettingsSchema.safeParse({
+      generalSettings: {
+        fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts general feature visibility settings', () => {
+    const result = UpdateAuthProvisioningSettingsSchema.safeParse({
+      generalSettings: {
+        features: {
+          pkiEnabled: false,
+          domainsEnabled: true,
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid general file upload limit settings', () => {
+    const result = UpdateAuthProvisioningSettingsSchema.safeParse({
+      generalSettings: {
+        fileUploadMaxBytes: 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('rejects invalid trusted proxy CIDRs', () => {
     const result = UpdateAuthProvisioningSettingsSchema.safeParse({
       networkSecurity: {

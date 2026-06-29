@@ -1,6 +1,5 @@
 import {
-  ChevronLeft,
-  ChevronRight,
+  FolderPlus,
   Globe,
   MoreVertical,
   Pencil,
@@ -9,14 +8,15 @@ import {
   Shield,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { FolderedResourceList } from "@/components/common/FolderedResourceList";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
+import type { ResourceListColumn } from "@/components/common/ResourceListLayout";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
-import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { AddDomainDialog } from "@/components/domains/AddDomainDialog";
 import { DnsStatusBadge } from "@/components/domains/DnsStatusBadge";
 import { DomainDetailDialog } from "@/components/domains/DomainDetailDialog";
@@ -42,21 +42,20 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { DnsStatus, Domain } from "@/types";
 
+const DOMAIN_FOLDER_LIST_CACHE_KEY = "domains:list:folder-view";
+
 export function Domains() {
   const { hasScope } = useAuthStore();
   const canEdit = hasScope("domains:edit");
   const isAdmin = hasScope("domains:delete");
   const canIssueCert = canEdit && hasScope("ssl:cert:issue");
 
-  const cachedDomains = api.getCached<{ data: Domain[]; pagination: { totalPages: number } }>(
-    "domains:list"
-  );
+  const cachedDomains = api.getCached<{ data: Domain[] }>(DOMAIN_FOLDER_LIST_CACHE_KEY);
   const [domains, setDomains] = useState<Domain[]>(cachedDomains?.data ?? []);
   const [isLoading, setIsLoading] = useState(!cachedDomains);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DnsStatus | "all">("all");
+  const [createFolderAction, setCreateFolderAction] = useState<(() => void) | null>(null);
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -65,20 +64,17 @@ export function Domains() {
   const loadDomains = useCallback(async () => {
     try {
       const result = await api.listDomains({
-        page,
-        limit: 20,
-        search: search || undefined,
-        dnsStatus: statusFilter !== "all" ? statusFilter : undefined,
+        page: 1,
+        limit: 1000,
       });
       setDomains(result.data);
-      setTotalPages(result.pagination.totalPages);
-      if (page === 1 && !search && statusFilter === "all") api.setCache("domains:list", result);
+      api.setCache(DOMAIN_FOLDER_LIST_CACHE_KEY, result);
     } catch {
       toast.error("Failed to load domains");
     } finally {
       setIsLoading(false);
     }
-  }, [page, search, statusFilter]);
+  }, []);
 
   useEffect(() => {
     loadDomains();
@@ -145,24 +141,148 @@ export function Domains() {
     setDetailOpen(true);
   };
 
-  if (isLoading) {
-    return <LoadingSpinner />;
-  }
+  const hasActiveFilters = search.trim() !== "" || statusFilter !== "all";
+  const filteredDomains = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return domains.filter((domain) => {
+      if (statusFilter !== "all" && domain.dnsStatus !== statusFilter) return false;
+      if (!query) return true;
+      return [domain.domain, domain.description].some((value) =>
+        value?.toLowerCase().includes(query)
+      );
+    });
+  }, [domains, search, statusFilter]);
+  const canManageFolders = hasScope("domains:folders:manage");
+  const domainColumns: ResourceListColumn<Domain>[] = [
+    {
+      id: "domain",
+      label: "Domain",
+      width: "minmax(16rem, 1fr)",
+      renderCell: (d) => (
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate text-sm font-medium">{d.domain}</span>
+            {d.isSystem && <Badge variant="outline">System</Badge>}
+          </div>
+          {d.description && (
+            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{d.description}</p>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "dns",
+      label: "DNS",
+      width: "8rem",
+      renderCell: (d) => <DnsStatusBadge status={d.dnsStatus} />,
+    },
+    {
+      id: "ssl",
+      label: "SSL",
+      width: "6rem",
+      renderCell: (d) =>
+        d.sslCertCount ? (
+          <Badge variant="secondary">{d.sslCertCount}</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        ),
+    },
+    {
+      id: "proxyHosts",
+      label: "Proxy Hosts",
+      width: "8rem",
+      renderCell: (d) =>
+        d.proxyHostCount ? (
+          <Badge variant="secondary">{d.proxyHostCount}</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        ),
+    },
+    {
+      id: "added",
+      label: "Added",
+      width: "8rem",
+      renderCell: (d) => (
+        <span className="text-xs text-muted-foreground">{formatRelativeDate(d.createdAt)}</span>
+      ),
+    },
+    {
+      id: "actions",
+      label: "Actions",
+      align: "right",
+      width: "5rem",
+      renderCell: (d) => (
+        <div
+          className="flex justify-end"
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {canEdit && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleCheckDns(d)}>
+                  <RefreshCw className="h-4 w-4" />
+                  Check DNS
+                </DropdownMenuItem>
+                {canIssueCert && d.dnsStatus === "valid" && !d.sslCertCount && (
+                  <DropdownMenuItem onClick={() => handleIssueCert(d)}>
+                    <Shield className="h-4 w-4" />
+                    Issue Cert
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => openDetail(d.id)}>
+                  <Pencil className="h-4 w-4" />
+                  Details
+                </DropdownMenuItem>
+                {isAdmin && !d.isSystem && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleDelete(d)} className="text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-bold">Domains</h1>
-            <p className="text-sm text-muted-foreground">
-              Manage domains, track DNS status, and issue certificates
-            </p>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <LiteModeBackButton />
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold">Domains</h1>
+              <p className="text-sm text-muted-foreground">
+                Manage domains, track DNS status, and issue certificates
+              </p>
+            </div>
           </div>
           <ResponsiveHeaderActions
-            actions={
-              canEdit
+            actions={[
+              ...(canManageFolders && createFolderAction
+                ? [
+                    {
+                      label: "Add Folder",
+                      icon: <FolderPlus className="h-4 w-4" />,
+                      onClick: createFolderAction,
+                    },
+                  ]
+                : []),
+              ...(canEdit
                 ? [
                     {
                       label: "Add Domain",
@@ -170,9 +290,15 @@ export function Domains() {
                       onClick: () => setAddDialogOpen(true),
                     },
                   ]
-                : []
-            }
+                : []),
+            ]}
           >
+            {canManageFolders && (
+              <Button variant="outline" onClick={() => createFolderAction?.()}>
+                <FolderPlus className="h-4 w-4" />
+                Add Folder
+              </Button>
+            )}
             {canEdit && (
               <Button onClick={() => setAddDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
@@ -182,30 +308,26 @@ export function Domains() {
           </ResponsiveHeaderActions>
         </div>
 
-        {/* Search and filters */}
-        <SearchFilterBar
-          placeholder="Search domains..."
-          search={search}
-          onSearchChange={(v) => {
-            setSearch(v);
-            setPage(1);
-          }}
-          hasActiveFilters={statusFilter !== "all"}
-          onReset={() => {
-            setSearch("");
-            setStatusFilter("all");
-            setPage(1);
-          }}
-          filters={
-            <div className="w-40">
+        <FolderedResourceList<Domain>
+          resourceType="domain"
+          realtimeChannel="domain.changed"
+          resources={filteredDomains}
+          columns={domainColumns}
+          search={{
+            placeholder: "Search domains...",
+            search,
+            onSearchChange: setSearch,
+            hasActiveFilters,
+            onReset: () => {
+              setSearch("");
+              setStatusFilter("all");
+            },
+            filters: (
               <Select
                 value={statusFilter}
-                onValueChange={(v) => {
-                  setStatusFilter(v as DnsStatus | "all");
-                  setPage(1);
-                }}
+                onValueChange={(v) => setStatusFilter(v as DnsStatus | "all")}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-40">
                   <SelectValue placeholder="DNS Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -216,151 +338,30 @@ export function Domains() {
                   <SelectItem value="unknown">Unknown</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            ),
+          }}
+          loading={isLoading}
+          loadingLabel="Loading domains..."
+          emptyState={
+            <EmptyState
+              message="No domains."
+              actionLabel={canEdit ? "Add one" : undefined}
+              onAction={canEdit ? () => setAddDialogOpen(true) : undefined}
+              hasActiveFilters={hasActiveFilters}
+              onReset={() => {
+                setSearch("");
+                setStatusFilter("all");
+              }}
+            />
           }
+          minWidth={800}
+          canManageFolders={canManageFolders}
+          canReorganizeItem={() => canManageFolders}
+          getResourceLabel={(domain) => domain.domain}
+          onItemClick={(domain) => openDetail(domain.id)}
+          onRefresh={loadDomains}
+          onCreateFolderRef={(fn) => setCreateFolderAction(() => fn)}
         />
-
-        {/* Table */}
-        {domains.length > 0 ? (
-          <div className="border border-border bg-card">
-            <div className="overflow-x-auto -mb-px">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Domain</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">DNS</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">SSL</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Proxy Hosts</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Added</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground w-10" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {domains.map((d) => (
-                    <tr
-                      key={d.id}
-                      className="hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() => openDetail(d.id)}
-                    >
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                          <span className="text-sm font-medium">{d.domain}</span>
-                          {d.isSystem && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                              System
-                            </Badge>
-                          )}
-                        </div>
-                        {d.description && (
-                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                            {d.description}
-                          </p>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        <DnsStatusBadge status={d.dnsStatus} />
-                      </td>
-                      <td className="p-3">
-                        {d.sslCertCount ? (
-                          <Badge variant="secondary">{d.sslCertCount}</Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {d.proxyHostCount ? (
-                          <Badge variant="secondary">{d.proxyHostCount}</Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        <span className="text-xs text-muted-foreground">
-                          {formatRelativeDate(d.createdAt)}
-                        </span>
-                      </td>
-                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                        {canEdit && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleCheckDns(d)}>
-                                <RefreshCw className="h-4 w-4" />
-                                Check DNS
-                              </DropdownMenuItem>
-                              {canIssueCert && d.dnsStatus === "valid" && !d.sslCertCount && (
-                                <DropdownMenuItem onClick={() => handleIssueCert(d)}>
-                                  <Shield className="h-4 w-4" />
-                                  Issue Cert
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem onClick={() => openDetail(d.id)}>
-                                <Pencil className="h-4 w-4" />
-                                Details
-                              </DropdownMenuItem>
-                              {isAdmin && !d.isSystem && (
-                                <>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onClick={() => handleDelete(d)}
-                                    className="text-destructive"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-border px-4 py-3">
-                <p className="text-sm text-muted-foreground">
-                  Page {page} of {totalPages}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page <= 1}
-                    onClick={() => setPage(page - 1)}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage(page + 1)}
-                  >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <EmptyState
-            message="No domains."
-            actionLabel="Add one"
-            onAction={() => setAddDialogOpen(true)}
-          />
-        )}
 
         <AddDomainDialog
           open={addDialogOpen}

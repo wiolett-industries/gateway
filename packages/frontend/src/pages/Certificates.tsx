@@ -3,10 +3,12 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CertificateIssueDialog } from "@/components/certificates/CertificateIssueDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +25,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useCertificatesStore } from "@/stores/certificates";
 import { useUIStore } from "@/stores/ui";
-import type { CertificateStatus, CertificateType } from "@/types";
+import type { Certificate, CertificateStatus, CertificateType } from "@/types";
 
 const statusOptions: { value: CertificateStatus | "all"; label: string }[] = [
   { value: "all", label: "All statuses" },
@@ -86,15 +88,72 @@ export function Certificates() {
     filters.type !== "all" ||
     filters.caId !== "all" ||
     filters.search !== "";
+  const certificateColumns: SimpleTableColumn<Certificate>[] = [
+    {
+      id: "common-name",
+      header: "Common Name",
+      render: (cert) => (
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium">{cert.commonName}</p>
+            {cert.isSystem && <Badge variant="outline">System</Badge>}
+          </div>
+          {(cert.sans?.length ?? 0) > 0 && (
+            <p className="text-xs text-muted-foreground">+{cert.sans.length} SANs</p>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      render: (cert) => <span className="text-sm text-muted-foreground">{cert.type}</span>,
+    },
+    {
+      id: "issuing-ca",
+      header: "Issuing CA",
+      render: (cert) => (
+        <span className="text-sm text-muted-foreground">{cert.issuerDn || cert.caId}</span>
+      ),
+    },
+    {
+      id: "expires",
+      header: "Expires",
+      render: (cert) => {
+        const expDays = daysUntil(cert.notAfter);
+        return (
+          <span
+            className={`text-sm ${
+              expDays <= 30 && expDays > 0
+                ? "text-yellow-600 dark:text-yellow-400"
+                : expDays <= 0
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+            }`}
+          >
+            {formatDate(cert.notAfter)}
+          </span>
+        );
+      },
+    },
+    {
+      id: "status",
+      header: "Status",
+      render: (cert) => <StatusBadge status={cert.status} />,
+    },
+  ];
 
   return (
     <PageTransition>
-      <div className="h-full overflow-y-auto p-6 space-y-4">
+      <div className="h-full overflow-y-auto p-6 space-y-3">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">Certificates</h1>
-            <p className="text-sm text-muted-foreground">{total} certificates total</p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">Certificates</h1>
+              <p className="text-sm text-muted-foreground">{total} certificates total</p>
+            </div>
           </div>
           <ResponsiveHeaderActions
             actions={
@@ -194,63 +253,12 @@ export function Certificates() {
           </div>
         ) : (certificates || []).length > 0 ? (
           <div className="border border-border bg-card">
-            <div className="overflow-x-auto -mb-px">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Common Name</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Type</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Issuing CA</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Expires</th>
-                    <th className="p-3 text-xs font-medium text-muted-foreground">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {certificates.map((cert) => {
-                    const expDays = daysUntil(cert.notAfter);
-                    return (
-                      <tr
-                        key={cert.id}
-                        className="hover:bg-accent transition-colors cursor-pointer"
-                        onClick={() => navigate(`/certificates/${cert.id}`)}
-                      >
-                        <td className="p-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium">{cert.commonName}</p>
-                              {cert.isSystem && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                  System
-                                </Badge>
-                              )}
-                            </div>
-                            {(cert.sans?.length ?? 0) > 0 && (
-                              <p className="text-xs text-muted-foreground">
-                                +{cert.sans.length} SANs
-                              </p>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3 text-sm text-muted-foreground">{cert.type}</td>
-                        <td className="p-3 text-sm text-muted-foreground">
-                          {cert.issuerDn || cert.caId}
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`text-sm ${expDays <= 30 && expDays > 0 ? "text-yellow-600 dark:text-yellow-400" : expDays <= 0 ? "text-destructive" : "text-muted-foreground"}`}
-                          >
-                            {formatDate(cert.notAfter)}
-                          </span>
-                        </td>
-                        <td className="p-3 align-middle">
-                          <StatusBadge status={cert.status} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <SimpleTable
+              columns={certificateColumns}
+              rows={certificates}
+              getRowKey={(cert) => cert.id}
+              onRowClick={(cert) => navigate(`/certificates/${cert.id}`)}
+            />
 
             {/* Pagination */}
             {totalPages > 1 && (

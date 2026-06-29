@@ -1,4 +1,6 @@
 import { Minus, Plus } from "lucide-react";
+import { EmptyState } from "@/components/common/EmptyState";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,26 +40,23 @@ export function VolumeMountsSection({
     setMounts((m) => m.map((entry, idx) => (idx === i ? { ...entry, [field]: val } : entry)));
 
   return (
-    <div
-      className="border bg-card overflow-hidden"
-      style={mountsChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-    >
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div>
-          <h3 className="text-sm font-semibold">Volume Mounts</h3>
-          <p className="text-xs text-muted-foreground">Requires container recreation</p>
-        </div>
-        {canEdit && (
-          <Button size="sm" onClick={addMount}>
+    <PanelShell
+      title="Volume Mounts"
+      description="Requires container recreation"
+      dirty={mountsChanged}
+      actions={
+        canEdit ? (
+          <Button onClick={addMount}>
             <Plus className="h-3.5 w-3.5" />
             Add
           </Button>
-        )}
-      </div>
+        ) : null
+      }
+    >
       {mounts.length > 0 ? (
         <>
           <div
-            className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
+            className={`grid ${canEdit ? "grid-cols-[1fr_1fr_100px_36px]" : "grid-cols-[1fr_1fr_100px]"} border-b border-border bg-muted text-xs font-medium text-muted-foreground uppercase tracking-wider`}
           >
             <div className="px-3 py-2">Source</div>
             <div className="px-3 py-2 border-l border-border">Container Path</div>
@@ -101,7 +100,7 @@ export function VolumeMountsSection({
                     onValueChange={(v) => updateMount(i, "readOnly", v === "ro")}
                     disabled={!canEdit}
                   >
-                    <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                    <SelectTrigger className="h-9 border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -125,8 +124,8 @@ export function VolumeMountsSection({
           </div>
         </>
       ) : (
-        <div className="py-8 text-center text-muted-foreground text-sm">No volume mounts</div>
+        <EmptyState message="No volume mounts" embedded />
       )}
-    </div>
+    </PanelShell>
   );
 }

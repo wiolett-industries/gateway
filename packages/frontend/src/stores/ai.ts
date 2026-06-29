@@ -1,57 +1,151 @@
 import { create } from "zustand";
 import {
-  dropConversation,
+  type AIConversationFolder,
+  type AIConversationSummary,
+  createConversationFolder,
+  deleteConversation,
+  deleteConversationFolder,
+  getConversation,
+  listConversationFolders,
   listConversations,
-  restoreConversation,
-  saveConversation,
+  moveConversationsToFolder,
+  renameConversation,
+  reorderConversationFolders,
+  rollbackConversationToMessage,
+  updateConversationFolder,
 } from "@/services/ai-conversations";
 import { AIWebSocketClient } from "@/services/ai-websocket";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import { useCAStore } from "@/stores/ca";
-import { useCertificatesStore } from "@/stores/certificates";
-import { useDockerStore } from "@/stores/docker";
-import { useFolderStore } from "@/stores/folders";
-import { useNodesStore } from "@/stores/nodes";
-import { useProxyStore } from "@/stores/proxy";
-import { useSSLStore } from "@/stores/ssl";
 import { useUIStore } from "@/stores/ui";
 import type {
+  AIConfig,
+  AIConversationRuntimeSnapshot,
+  AIConversationStatus,
   AIMessage,
+  AIRunToolCall,
   AIToolCall,
   ChatMessage,
   PageContext,
-  ToolActionType,
   WSServerMessage,
 } from "@/types/ai";
 
-function getToolActionType(toolName: string): ToolActionType {
-  if (
-    toolName.startsWith("create_") ||
-    toolName.startsWith("issue_") ||
-    toolName.startsWith("request_") ||
-    toolName === "link_internal_cert"
-  )
-    return "create";
-  if (
-    toolName.startsWith("update_") ||
-    toolName.startsWith("revoke_") ||
-    toolName.startsWith("start_") ||
-    toolName.startsWith("stop_") ||
-    toolName.startsWith("restart_")
-  )
-    return "edit";
-  if (toolName.startsWith("delete_") || toolName.startsWith("remove_")) return "delete";
-  return "other";
+const DEFAULT_CONTEXT_TOKEN_LIMIT = 56000;
+const DEFAULT_REASONING_EFFORT: AIConfig["reasoningEffort"] = "none";
+
+async function resolveContextSettings(): Promise<{
+  limit: number;
+  source: "settings" | "fallback";
+  reasoningEffort: AIConfig["reasoningEffort"];
+}> {
+  const cached = api.getCached<AIConfig>("settings:ai-config");
+  if (cached?.maxContextTokens) {
+    return {
+      limit: cached.maxContextTokens,
+      source: "settings",
+      reasoningEffort: cached.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
+    };
+  }
+
+  try {
+    const config = (await api.getAIConfig()) as unknown as AIConfig;
+    api.setCache("settings:ai-config", config);
+    if (config.maxContextTokens) {
+      return {
+        limit: config.maxContextTokens,
+        source: "settings",
+        reasoningEffort: config.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
+      };
+    }
+  } catch {
+    // Fall through to the legacy estimate when settings are unavailable.
+  }
+
+  return {
+    limit: DEFAULT_CONTEXT_TOKEN_LIMIT,
+    source: "fallback",
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+  };
 }
 
-function shouldAutoApprove(toolName: string): boolean {
-  const ui = useUIStore.getState();
-  const action = getToolActionType(toolName);
-  if (action === "create" && ui.aiBypassCreateApprovals) return true;
-  if (action === "edit" && ui.aiBypassEditApprovals) return true;
-  if (action === "delete" && ui.aiBypassDeleteApprovals) return true;
-  return false;
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function compactToolResultForModel(toolName: string, value: unknown): unknown {
+  if (value == null) return value;
+  if (toolName === "get_docker_container_logs")
+    return compactLogLikeResult(value, "Docker container logs");
+  if (toolName === "send_artifact" && typeof value === "object" && value !== null) {
+    const { artifactId, filename, mediaType, sizeBytes, sourcePath, downloadUrl } = value as Record<
+      string,
+      unknown
+    >;
+    return { artifactId, filename, mediaType, sizeBytes, sourcePath, downloadUrl };
+  }
+  if (
+    (toolName === "fetch" || toolName === "read_artifact") &&
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { content?: unknown }).content === "string" &&
+    (value as { content: string }).content.length > 4000
+  ) {
+    const content = (value as { content: string }).content;
+    return {
+      ...(value as Record<string, unknown>),
+      content: undefined,
+      contentPreview: content.slice(0, 2000),
+      contentOmitted: true,
+    };
+  }
+  if (
+    toolName === "manage_logging" &&
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { rows?: unknown }).rows)
+  ) {
+    return compactLogLikeResult(
+      (value as { rows: unknown[] }).rows,
+      "Structured log search results"
+    );
+  }
+  if (typeof value === "string" && value.length > 4000) {
+    return compactLogText(value, "Large text tool output");
+  }
+  if (Array.isArray(value) && value.length > 25) {
+    return {
+      summary: `Large array tool output omitted from model context (${value.length} items).`,
+      count: value.length,
+      sample: [...value.slice(0, 5), ...value.slice(-5)],
+      fullOutputOmitted: true,
+    };
+  }
+  return value;
+}
+
+function compactLogLikeResult(value: unknown, label: string): unknown {
+  if (typeof value === "string") return compactLogText(value, label);
+  if (!Array.isArray(value)) return value;
+  return {
+    summary: `${label} omitted from model context (${value.length} entries).`,
+    count: value.length,
+    sample: [...value.slice(0, 3), ...value.slice(-5)],
+    fullOutputOmitted: true,
+  };
+}
+
+function compactLogText(value: string, label: string): unknown {
+  const lines = value.split(/\r?\n/).filter(Boolean);
+  return {
+    summary: `${label} omitted from model context (${lines.length} lines, ${value.length} chars).`,
+    lineCount: lines.length,
+    sample: [...lines.slice(0, 3), ...lines.slice(-5)],
+    fullOutputOmitted: true,
+  };
 }
 
 function invalidateStore(storeName: string): void {
@@ -61,21 +155,18 @@ function invalidateStore(storeName: string): void {
       api.invalidateCache("cas:list:");
       api.invalidateCache("req:/api/monitoring/dashboard");
       api.invalidateCache("dashboard:stats:");
-      useCAStore.getState().fetchCAs();
       break;
     case "certificates":
       api.invalidateCache("req:/api/certificates");
       api.invalidateCache("certificates:list:");
       api.invalidateCache("req:/api/monitoring/dashboard");
       api.invalidateCache("dashboard:stats:");
-      useCertificatesStore.getState().fetchCertificates();
       break;
     case "ssl":
       api.invalidateCache("req:/api/ssl-certificates");
       api.invalidateCache("ssl:list:");
       api.invalidateCache("req:/api/monitoring/dashboard");
       api.invalidateCache("dashboard:stats:");
-      useSSLStore.getState().fetchCertificates();
       break;
     case "proxy":
       api.invalidateCache("req:/api/proxy-hosts");
@@ -87,8 +178,6 @@ function invalidateStore(storeName: string): void {
       api.invalidateCache("req:/api/monitoring/health-status");
       api.invalidateCache("dashboard:stats:");
       api.invalidateCache("dashboard:health");
-      useProxyStore.getState().fetchProxyHosts();
-      useFolderStore.getState().fetchGroupedHosts();
       break;
     case "templates":
       api.invalidateCache("req:/api/templates");
@@ -106,7 +195,6 @@ function invalidateStore(storeName: string): void {
       api.invalidateCache("req:/api/nodes");
       api.invalidateCache("req:/api/monitoring/dashboard");
       api.invalidateCache("dashboard:stats:");
-      useNodesStore.getState().fetchNodes();
       break;
     case "groups":
       api.invalidateCache("req:/api/admin/groups");
@@ -118,57 +206,150 @@ function invalidateStore(storeName: string): void {
       api.invalidateCache("admin:users");
       break;
     case "containers":
-      useDockerStore.getState().invalidate("containers");
+      api.invalidateCache("req:/api/docker");
       break;
     case "images":
-      useDockerStore.getState().invalidate("images");
+      api.invalidateCache("req:/api/docker");
       break;
     case "volumes":
-      useDockerStore.getState().invalidate("volumes");
+      api.invalidateCache("req:/api/docker");
       break;
     case "networks":
-      useDockerStore.getState().invalidate("networks");
+      api.invalidateCache("req:/api/docker");
       break;
   }
 }
 
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
 interface AIState {
   messages: AIMessage[];
+  recentConversations: AIConversationSummary[];
+  conversationFolders: AIConversationFolder[];
+  isLoadingRecentConversations: boolean;
+  isLoadingConversationFolders: boolean;
   isStreaming: boolean;
   isConnected: boolean;
+  isConnecting: boolean;
+  connectionError: string | null;
   isEnabled: boolean | null;
   retryAfter: number | null;
   savedName: string | null;
+  activeConversationId: string | null;
+  sidebarActiveConversationId: string | null;
+  activeRunId: string | null;
+  lastContext: PageContext | null;
   pendingApprovalToolCallId: string | null;
 
   // Actions
   connect: () => Promise<boolean>;
   disconnect: () => void;
-  sendMessage: (content: string, context?: PageContext) => void;
+  sendMessage: (
+    content: string,
+    context?: PageContext,
+    attachments?: AIMessage["attachments"],
+    options?: SendMessageOptions
+  ) => void;
   approveTool: (toolCallId: string) => void;
   rejectTool: (toolCallId: string) => void;
   answerQuestion: (toolCallId: string, answer: string) => void;
   stopStreaming: () => void;
   clearMessages: () => void;
+  fetchRecentConversations: () => Promise<void>;
+  fetchConversationFolders: () => Promise<void>;
+  createConversationFolder: (input: {
+    name: string;
+    description?: string;
+  }) => Promise<AIConversationFolder | null>;
+  updateConversationFolder: (
+    id: string,
+    input: { name?: string; description?: string }
+  ) => Promise<AIConversationFolder | null>;
+  deleteConversationFolder: (id: string) => Promise<void>;
+  reorderConversationFolders: (folderIds: string[]) => Promise<void>;
+  moveConversationsToFolder: (conversationIds: string[], folderId: string | null) => Promise<void>;
+  loadConversation: (conversationId: string) => Promise<void>;
+  deleteConversation: (conversationId: string) => Promise<void>;
+  renameConversation: (conversationId: string, title: string) => Promise<void>;
+  rollbackToMessage: (messageId: string) => Promise<AIMessage | null>;
   setEnabled: (enabled: boolean) => void;
   handleSlashCommand: (input: string) => Promise<boolean>;
   setMessages: (messages: AIMessage[]) => void;
 }
 
 let wsClient: AIWebSocketClient | null = null;
-let currentRequestId: string | null = null;
-let retryTimer: ReturnType<typeof setInterval> | null = null;
+let conversationLoadGeneration = 0;
+const pendingToolCommands = new Map<
+  string,
+  {
+    toolCallId: string;
+    previousStatus: AIToolCall["status"];
+    previousResult?: unknown;
+    decision: "approval" | "question";
+  }
+>();
+
+function updateToolCallById(
+  messages: AIMessage[],
+  toolCallId: string,
+  update: (toolCall: AIToolCall) => AIToolCall
+): AIMessage[] {
+  return messages.map((msg) => ({
+    ...msg,
+    toolCalls: msg.toolCalls?.map((tc) => (tc.id === toolCallId ? update(tc) : tc)),
+  }));
+}
+
+function appendLocalAssistantError(messages: AIMessage[], content: string): AIMessage[] {
+  return [
+    ...messages,
+    {
+      id: generateId(),
+      role: "assistant",
+      content,
+      createdAt: nowIso(),
+      localOnly: true,
+    },
+  ];
+}
+
+function sendWSMessage(msg: Parameters<AIWebSocketClient["send"]>[0]): void {
+  if (!wsClient) throw new Error("AI connection is not open");
+  wsClient.send(msg);
+}
+
+function trySendWSMessage(msg: Parameters<AIWebSocketClient["send"]>[0]): boolean {
+  try {
+    sendWSMessage(msg);
+    return true;
+  } catch {
+    return false;
+  }
+}
+const assistantDraftVersions = new Map<string, number>();
+
+export interface AIConversationBlock {
+  status: Exclude<AIConversationStatus, "active">;
+  reason: string;
+}
+
+export function getConversationBlock(messages: AIMessage[]): AIConversationBlock | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.conversationStatus) {
+      return {
+        status: message.conversationStatus,
+        reason: message.blockReason || "This conversation cannot continue.",
+      };
+    }
+  }
+  return null;
+}
 
 function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
   const result: ChatMessage[] = [];
   for (const msg of messages) {
-    if (msg.localOnly) continue;
+    if (msg.localOnly || msg.conversationStatus) continue;
     if (msg.role === "user") {
-      result.push({ role: "user", content: msg.content });
+      result.push({ role: "user", content: msg.content, attachments: msg.attachments });
     } else if (msg.role === "assistant") {
       const chatMsg: ChatMessage = { role: "assistant", content: msg.content || null };
 
@@ -192,7 +373,7 @@ function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
             const content = tc.error
               ? JSON.stringify({ error: tc.error })
               : tc.result !== undefined
-                ? JSON.stringify(tc.result)
+                ? JSON.stringify(compactToolResultForModel(tc.name, tc.result))
                 : "{}";
             result.push({
               role: "tool",
@@ -208,20 +389,76 @@ function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
   return result;
 }
 
+export interface AIContextUsage {
+  messageCount: number;
+  estimatedTokens: number;
+  limit: number;
+  percent: number;
+  chatTokens: number;
+  overheadTokens: number;
+  source: "settings" | "fallback";
+  reasoningEffort: AIConfig["reasoningEffort"];
+}
+
+interface SendMessageOptions {
+  startNewConversation?: boolean;
+}
+
+export async function getAIContextUsage(messages: AIMessage[]): Promise<AIContextUsage> {
+  const chatMessages = buildChatMessages(messages);
+  const charCount = chatMessages.reduce((sum, message) => sum + (message.content?.length || 0), 0);
+  const chatTokens = Math.ceil(charCount / 4);
+  const overheadTokens = 3000;
+  const estimatedTokens = chatTokens + overheadTokens;
+  const { limit, source, reasoningEffort } = await resolveContextSettings();
+
+  return {
+    messageCount: chatMessages.length,
+    estimatedTokens,
+    limit,
+    percent: Math.round((estimatedTokens / limit) * 100),
+    chatTokens,
+    overheadTokens,
+    source,
+    reasoningEffort,
+  };
+}
+
 export const useAIStore = create<AIState>()((set, get) => ({
   messages: [],
+  recentConversations: [],
+  conversationFolders: [],
+  isLoadingRecentConversations: false,
+  isLoadingConversationFolders: false,
   isStreaming: false,
   isConnected: false,
+  isConnecting: false,
+  connectionError: null,
   isEnabled: null,
   retryAfter: null,
   savedName: null,
+  activeConversationId: null,
+  sidebarActiveConversationId: null,
+  activeRunId: null,
+  lastContext: null,
   pendingApprovalToolCallId: null,
 
   connect: async () => {
-    if (!useAuthStore.getState().user) return false;
+    const auth = useAuthStore.getState();
+    if (!auth.user && auth.isLoading) {
+      set({ isConnecting: true, connectionError: null });
+      return false;
+    }
+    if (!auth.user) {
+      set({ isConnecting: false, connectionError: "Not authenticated" });
+      return false;
+    }
     if (wsClient?.isConnected) {
-      set({ isConnected: true });
+      set({ isConnected: true, isConnecting: false, connectionError: null });
       return true;
+    }
+    if (wsClient && get().isConnecting) {
+      return false;
     }
     if (wsClient) {
       wsClient.disconnect();
@@ -229,153 +466,243 @@ export const useAIStore = create<AIState>()((set, get) => ({
     }
 
     wsClient = new AIWebSocketClient();
+    set({ isConnecting: true, connectionError: null });
     wsClient.onMessage((msg: WSServerMessage) => {
       handleWSMessage(msg, set, get);
     });
     wsClient.onStatusChange((connected) => {
-      set({ isConnected: connected });
+      set({
+        isConnected: connected,
+        isConnecting: false,
+        connectionError: connected ? null : get().connectionError,
+      });
+      const activeConversationId = get().activeConversationId;
+      if (connected && activeConversationId) {
+        trySendWSMessage({ type: "conversation.subscribe", conversationId: activeConversationId });
+      }
       if (!connected) set({ isStreaming: false });
+    });
+    wsClient.onConnectionError((message) => {
+      set({ connectionError: message, isConnecting: false });
     });
 
     const ok = await wsClient.connect();
+    if (!ok) {
+      set((state) => ({
+        isConnecting: false,
+        isConnected: false,
+        connectionError:
+          state.connectionError ??
+          (useAuthStore.getState().isLoading ? null : "AI connection failed"),
+      }));
+    }
     return ok;
   },
 
   disconnect: () => {
     wsClient?.disconnect();
     wsClient = null;
-    set({ isConnected: false, isStreaming: false });
+    set({ isConnected: false, isConnecting: false, connectionError: null, isStreaming: false });
   },
 
-  sendMessage: (content: string, context?: PageContext) => {
-    const { messages } = get();
+  sendMessage: (
+    content: string,
+    context?: PageContext,
+    attachments: AIMessage["attachments"] = [],
+    options: SendMessageOptions = {}
+  ) => {
+    const state = get();
+    const baseMessages = options.startNewConversation ? [] : state.messages;
+    if ((!options.startNewConversation && state.isStreaming) || getConversationBlock(baseMessages))
+      return;
+    if (options.startNewConversation && state.activeConversationId) {
+      trySendWSMessage({
+        type: "conversation.unsubscribe",
+        conversationId: state.activeConversationId,
+      });
+    }
+    if (options.startNewConversation) conversationLoadGeneration += 1;
 
-    const userMsg: AIMessage = {
-      id: generateId(),
-      role: "user",
-      content,
-    };
-
-    const assistantMsg: AIMessage = {
-      id: generateId(),
-      role: "assistant",
-      content: "",
+    set({
       isStreaming: true,
-    };
-
-    set({ messages: [...messages, userMsg, assistantMsg], isStreaming: true });
-
-    const requestId = generateId();
-    currentRequestId = requestId;
-
-    const chatMessages = buildChatMessages([...messages, userMsg]);
-
-    wsClient?.send({
-      type: "chat",
-      requestId,
-      messages: chatMessages,
-      context,
+      lastContext: context ?? null,
+      pendingApprovalToolCallId: null,
+      ...(options.startNewConversation
+        ? {
+            messages: [],
+            savedName: null,
+            activeConversationId: null,
+            sidebarActiveConversationId: null,
+            activeRunId: null,
+          }
+        : {}),
     });
+
+    const clientCommandId = generateId();
+    try {
+      sendWSMessage({
+        type: "conversation.send_message",
+        clientCommandId,
+        content,
+        attachments,
+        context,
+        conversationId: options.startNewConversation
+          ? undefined
+          : (state.activeConversationId ?? undefined),
+      });
+    } catch (error) {
+      set((state) => ({
+        isStreaming: false,
+        messages: appendLocalAssistantError(
+          state.messages,
+          `**Error:** ${error instanceof Error ? error.message : "Failed to send message"}`
+        ),
+      }));
+    }
   },
 
   approveTool: (toolCallId: string) => {
-    if (!currentRequestId) return;
-    wsClient?.send({
-      type: "tool_approval",
-      requestId: currentRequestId,
-      toolCallId,
-      approved: true,
-    });
+    const state = get();
+    if (!state.activeConversationId || !state.activeRunId) return;
+    const previous = state.messages
+      .flatMap((message) => message.toolCalls ?? [])
+      .find((toolCall) => toolCall.id === toolCallId);
+    const clientCommandId = generateId();
 
-    // Update tool status
     set((state) => ({
-      messages: state.messages.map((msg) => ({
-        ...msg,
-        toolCalls: msg.toolCalls?.map((tc) =>
-          tc.id === toolCallId ? { ...tc, status: "running" as const } : tc
-        ),
+      messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+        ...tc,
+        status: "running",
+        error: undefined,
       })),
     }));
+    pendingToolCommands.set(clientCommandId, {
+      toolCallId,
+      previousStatus: previous?.status ?? "awaiting_approval",
+      previousResult: previous?.result,
+      decision: "approval",
+    });
+    try {
+      sendWSMessage({
+        type: "approval.decide",
+        conversationId: state.activeConversationId,
+        runId: state.activeRunId,
+        approvalId: toolCallId,
+        decision: "approved",
+        clientCommandId,
+      });
+    } catch (error) {
+      pendingToolCommands.delete(clientCommandId);
+      set((state) => ({
+        messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+          ...tc,
+          status: "awaiting_approval",
+          result: previous?.result,
+          error: error instanceof Error ? error.message : "Failed to send approval",
+        })),
+      }));
+    }
   },
 
   rejectTool: (toolCallId: string) => {
-    if (!currentRequestId) return;
-    wsClient?.send({
-      type: "tool_approval",
-      requestId: currentRequestId,
-      toolCallId,
-      approved: false,
-    });
+    const state = get();
+    if (!state.activeConversationId || !state.activeRunId) return;
+    const previous = state.messages
+      .flatMap((message) => message.toolCalls ?? [])
+      .find((toolCall) => toolCall.id === toolCallId);
+    const clientCommandId = generateId();
 
     set((state) => ({
-      messages: state.messages.map((msg) => ({
-        ...msg,
-        toolCalls: msg.toolCalls?.map((tc) =>
-          tc.id === toolCallId ? { ...tc, status: "rejected" as const } : tc
-        ),
+      messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+        ...tc,
+        status: "rejected",
+        error: undefined,
       })),
     }));
+    pendingToolCommands.set(clientCommandId, {
+      toolCallId,
+      previousStatus: previous?.status ?? "awaiting_approval",
+      previousResult: previous?.result,
+      decision: "approval",
+    });
+    try {
+      sendWSMessage({
+        type: "approval.decide",
+        conversationId: state.activeConversationId,
+        runId: state.activeRunId,
+        approvalId: toolCallId,
+        decision: "rejected",
+        clientCommandId,
+      });
+    } catch (error) {
+      pendingToolCommands.delete(clientCommandId);
+      set((state) => ({
+        messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+          ...tc,
+          status: "awaiting_approval",
+          result: previous?.result,
+          error: error instanceof Error ? error.message : "Failed to send rejection",
+        })),
+      }));
+    }
   },
 
   answerQuestion: (toolCallId: string, answer: string) => {
-    if (!currentRequestId) return;
+    const state = get();
+    if (!state.activeConversationId || !state.activeRunId) return;
 
-    // Mark this question as answered + promote next question to awaiting_approval
-    set((state) => {
-      let promoted = false;
-      return {
-        messages: state.messages.map((msg) => ({
-          ...msg,
-          toolCalls: msg.toolCalls?.map((tc) => {
-            if (tc.id === toolCallId) {
-              return { ...tc, status: "completed" as const, result: { answer } };
-            }
-            // Promote the next running ask_question to awaiting_approval
-            if (!promoted && tc.name === "ask_question" && tc.status === "running") {
-              promoted = true;
-              return { ...tc, status: "awaiting_approval" as const };
-            }
-            return tc;
-          }),
-        })),
-      };
+    const previous = state.messages
+      .flatMap((message) => message.toolCalls ?? [])
+      .find((toolCall) => toolCall.id === toolCallId);
+    const clientCommandId = generateId();
+
+    set((state) => ({
+      messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+        ...tc,
+        status: "running",
+        result: { answer },
+        error: undefined,
+      })),
+      pendingApprovalToolCallId: null,
+    }));
+    pendingToolCommands.set(clientCommandId, {
+      toolCallId,
+      previousStatus: previous?.status ?? "awaiting_approval",
+      previousResult: previous?.result,
+      decision: "question",
     });
-
-    // Check if there are more unanswered questions in the same batch
-    // (questions that are still "running" — not yet promoted/answered)
-    const { messages: msgs } = get();
-    const msg = msgs.find((m) => m.toolCalls?.some((tc) => tc.id === toolCallId));
-    const pendingQuestions =
-      msg?.toolCalls?.filter(
-        (tc) =>
-          tc.name === "ask_question" &&
-          (tc.status === "running" || tc.status === "awaiting_approval")
-      ) || [];
-
-    if (pendingQuestions.length === 0) {
-      // All questions in this batch answered — send all answers
-      const allQuestions = msg?.toolCalls?.filter((tc) => tc.name === "ask_question") || [];
-      const answers: Record<string, string> = {};
-      for (const tc of allQuestions) {
-        const ans = (tc.result as { answer?: string })?.answer;
-        if (ans) answers[tc.id] = ans;
-      }
-      // Use the toolCallId that the backend is actually pending on
-      const backendPendingId = get().pendingApprovalToolCallId || toolCallId;
-      wsClient?.send({
-        type: "tool_approval",
-        requestId: currentRequestId,
-        toolCallId: backendPendingId,
-        approved: true,
-        answers,
+    try {
+      sendWSMessage({
+        type: "question.answer",
+        conversationId: state.activeConversationId,
+        runId: state.activeRunId,
+        questionId: toolCallId,
+        answer,
+        clientCommandId,
       });
-      set({ pendingApprovalToolCallId: null });
+    } catch (error) {
+      pendingToolCommands.delete(clientCommandId);
+      set((state) => ({
+        messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
+          ...tc,
+          status: "awaiting_approval",
+          result: previous?.result,
+          error: error instanceof Error ? error.message : "Failed to send answer",
+        })),
+        pendingApprovalToolCallId: toolCallId,
+      }));
     }
   },
 
   stopStreaming: () => {
-    if (currentRequestId) {
-      wsClient?.send({ type: "cancel", requestId: currentRequestId });
+    const state = get();
+    if (state.activeConversationId && state.activeRunId) {
+      trySendWSMessage({
+        type: "run.stop",
+        conversationId: state.activeConversationId,
+        runId: state.activeRunId,
+        clientCommandId: generateId(),
+      });
     }
     set((state) => ({
       isStreaming: false,
@@ -386,7 +713,285 @@ export const useAIStore = create<AIState>()((set, get) => ({
   },
 
   clearMessages: () => {
-    set({ messages: [], savedName: null });
+    conversationLoadGeneration += 1;
+    const activeConversationId = get().activeConversationId;
+    if (activeConversationId) {
+      trySendWSMessage({ type: "conversation.unsubscribe", conversationId: activeConversationId });
+    }
+    set({
+      messages: [],
+      savedName: null,
+      activeConversationId: null,
+      sidebarActiveConversationId: null,
+      activeRunId: null,
+      lastContext: null,
+    });
+  },
+
+  fetchRecentConversations: async () => {
+    if (!useAuthStore.getState().user) return;
+    set((state) => ({
+      isLoadingRecentConversations: state.recentConversations.length === 0,
+    }));
+    try {
+      const conversations = await listConversations();
+      set({ recentConversations: conversations, isLoadingRecentConversations: false });
+    } catch {
+      set({ isLoadingRecentConversations: false });
+    }
+  },
+
+  fetchConversationFolders: async () => {
+    if (!useAuthStore.getState().user) return;
+    set((state) => ({
+      isLoadingConversationFolders: state.conversationFolders.length === 0,
+    }));
+    try {
+      const folders = await listConversationFolders();
+      set({
+        conversationFolders: sortConversationFolders(folders),
+        isLoadingConversationFolders: false,
+      });
+    } catch {
+      set({ isLoadingConversationFolders: false });
+    }
+  },
+
+  createConversationFolder: async (input) => {
+    const created = await createConversationFolder(input);
+    set((state) => ({
+      conversationFolders: sortConversationFolders([...state.conversationFolders, created]),
+    }));
+    return created;
+  },
+
+  updateConversationFolder: async (id, input) => {
+    const previousFolders = get().conversationFolders;
+    set((state) => ({
+      conversationFolders: state.conversationFolders.map((folder) =>
+        folder.id === id
+          ? {
+              ...folder,
+              ...input,
+              updatedAt: nowIso(),
+            }
+          : folder
+      ),
+    }));
+    try {
+      const updated = await updateConversationFolder(id, input);
+      set((state) => ({
+        conversationFolders: sortConversationFolders(
+          state.conversationFolders.map((folder) => (folder.id === id ? updated : folder))
+        ),
+      }));
+      return updated;
+    } catch (error) {
+      set({ conversationFolders: previousFolders });
+      throw error;
+    }
+  },
+
+  deleteConversationFolder: async (id) => {
+    const previousFolders = get().conversationFolders;
+    const previousConversations = get().recentConversations;
+    set((state) => ({
+      conversationFolders: state.conversationFolders.filter((folder) => folder.id !== id),
+      recentConversations: state.recentConversations.map((conversation) =>
+        conversation.folderId === id ? { ...conversation, folderId: null } : conversation
+      ),
+    }));
+    try {
+      await deleteConversationFolder(id);
+    } catch (error) {
+      set({ conversationFolders: previousFolders, recentConversations: previousConversations });
+      throw error;
+    }
+  },
+
+  reorderConversationFolders: async (folderIds) => {
+    const previousFolders = get().conversationFolders;
+    const orderById = new Map(folderIds.map((id, index) => [id, index]));
+    const nextFolders = sortConversationFolders(
+      previousFolders.map((folder) =>
+        orderById.has(folder.id) ? { ...folder, sortOrder: orderById.get(folder.id)! } : folder
+      )
+    );
+    set({ conversationFolders: nextFolders });
+    try {
+      const folders = await reorderConversationFolders(
+        nextFolders.map((folder, index) => ({ id: folder.id, sortOrder: index }))
+      );
+      set({ conversationFolders: sortConversationFolders(folders) });
+    } catch (error) {
+      set({ conversationFolders: previousFolders });
+      throw error;
+    }
+  },
+
+  moveConversationsToFolder: async (conversationIds, folderId) => {
+    const ids = new Set(conversationIds);
+    const previousConversations = get().recentConversations;
+    set((state) => ({
+      recentConversations: state.recentConversations.map((conversation) =>
+        ids.has(conversation.id) ? { ...conversation, folderId } : conversation
+      ),
+    }));
+    try {
+      await moveConversationsToFolder(conversationIds, folderId);
+    } catch (error) {
+      set({ recentConversations: previousConversations });
+      throw error;
+    }
+  },
+
+  loadConversation: async (conversationId: string) => {
+    const loadGeneration = (conversationLoadGeneration += 1);
+    try {
+      const previousConversationId = get().activeConversationId;
+      if (previousConversationId && previousConversationId !== conversationId) {
+        trySendWSMessage({
+          type: "conversation.unsubscribe",
+          conversationId: previousConversationId,
+        });
+      }
+      set({
+        messages: [],
+        savedName: null,
+        activeConversationId: conversationId,
+        sidebarActiveConversationId: conversationId,
+        activeRunId: null,
+        lastContext: null,
+        pendingApprovalToolCallId: null,
+      });
+      const conversation = await getConversation(conversationId);
+      if (loadGeneration !== conversationLoadGeneration) return;
+      set({
+        messages: normalizeConversationMessages(conversation.messages, conversation.id),
+        savedName: conversation.title,
+        activeConversationId: conversation.id,
+        sidebarActiveConversationId: conversation.id,
+        activeRunId: null,
+        lastContext: conversation.lastContext,
+      });
+      trySendWSMessage({ type: "conversation.subscribe", conversationId });
+    } catch {
+      if (loadGeneration !== conversationLoadGeneration) return;
+      const localMsg: AIMessage = {
+        id: generateId(),
+        role: "assistant",
+        content: "Failed to load conversation.",
+        createdAt: nowIso(),
+        localOnly: true,
+      };
+      set({
+        messages: [localMsg],
+        savedName: null,
+        activeConversationId: null,
+        sidebarActiveConversationId: null,
+        activeRunId: null,
+        lastContext: null,
+        pendingApprovalToolCallId: null,
+      });
+    }
+  },
+
+  deleteConversation: async (conversationId: string) => {
+    try {
+      await deleteConversation(conversationId);
+      if (get().activeConversationId === conversationId) {
+        trySendWSMessage({ type: "conversation.unsubscribe", conversationId });
+      }
+      set((state) => ({
+        recentConversations: state.recentConversations.filter(
+          (conversation) => conversation.id !== conversationId
+        ),
+        ...(state.activeConversationId === conversationId
+          ? {
+              messages: [],
+              savedName: null,
+              activeConversationId: null,
+              sidebarActiveConversationId: null,
+              activeRunId: null,
+              lastContext: null,
+            }
+          : {}),
+      }));
+    } catch {
+      const localMsg: AIMessage = {
+        id: generateId(),
+        role: "assistant",
+        content: "Failed to delete conversation.",
+        createdAt: nowIso(),
+        localOnly: true,
+      };
+      set((state) => ({ messages: [...state.messages, localMsg] }));
+    }
+  },
+
+  renameConversation: async (conversationId: string, title: string) => {
+    const conversation = await renameConversation(conversationId, title);
+    set((state) => ({
+      savedName:
+        state.activeConversationId === conversationId ? conversation.title : state.savedName,
+      recentConversations: sortConversationSummaries(
+        state.recentConversations.map((item) =>
+          item.id === conversationId
+            ? {
+                ...item,
+                title: conversation.title,
+                updatedAt: conversation.updatedAt,
+                lastUserMessageAt: conversation.lastUserMessageAt,
+                status: conversation.status,
+                blockReason: conversation.blockReason,
+                activeRunStatus: conversation.activeRunStatus,
+              }
+            : item
+        )
+      ),
+    }));
+  },
+
+  rollbackToMessage: async (messageId: string) => {
+    const state = get();
+    if (!state.activeConversationId || state.isStreaming || state.activeRunId) return null;
+    const existing = state.messages.find((message) => message.id === messageId);
+    if (!existing || existing.role !== "user") return null;
+
+    const result = await rollbackConversationToMessage(state.activeConversationId, messageId);
+    const messages = normalizeConversationMessages(
+      result.conversation.messages,
+      result.conversation.id
+    );
+    set((state) => ({
+      messages,
+      savedName: result.conversation.title,
+      activeConversationId: result.conversation.id,
+      sidebarActiveConversationId: result.conversation.id,
+      activeRunId: null,
+      lastContext: result.conversation.lastContext,
+      pendingApprovalToolCallId: null,
+      isStreaming: false,
+      recentConversations: sortConversationSummaries(
+        state.recentConversations.map((item) =>
+          item.id === result.conversation.id
+            ? {
+                ...item,
+                title: result.conversation.title,
+                updatedAt: result.conversation.updatedAt,
+                lastUserMessageAt: result.conversation.lastUserMessageAt,
+                folderId: result.conversation.folderId,
+                messageCount: result.conversation.messages.length,
+                status: result.conversation.status,
+                blockReason: result.conversation.blockReason,
+                activeRunStatus: result.conversation.activeRunStatus,
+              }
+            : item
+        )
+      ),
+    }));
+    trySendWSMessage({ type: "conversation.sync", conversationId: result.conversation.id });
+    return result.message;
   },
 
   setEnabled: (enabled: boolean) => {
@@ -398,149 +1003,43 @@ export const useAIStore = create<AIState>()((set, get) => ({
   },
 
   handleSlashCommand: async (input: string): Promise<boolean> => {
+    if (get().isStreaming) return true;
     const parts = input.trim().split(/\s+/);
     const cmd = parts[0]?.toLowerCase();
-    const arg = parts.slice(1).join(" ");
 
-    if (cmd === "/clear") {
-      set({ messages: [] });
+    if (cmd === "/clear" || cmd === "/new") {
+      const activeConversationId = get().activeConversationId;
+      if (activeConversationId) {
+        trySendWSMessage({
+          type: "conversation.unsubscribe",
+          conversationId: activeConversationId,
+        });
+      }
+      set({
+        messages: [],
+        savedName: null,
+        activeConversationId: null,
+        sidebarActiveConversationId: null,
+        activeRunId: null,
+        lastContext: null,
+      });
       return true;
     }
 
     if (cmd === "/context") {
       const { messages } = get();
-      const chatMessages = buildChatMessages(messages);
-      const charCount = chatMessages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
-      const tokenEstimate = Math.ceil(charCount / 4);
-      const overhead = 3000;
-      const total = tokenEstimate + overhead;
-      const limit = 56000;
+      const usage = await getAIContextUsage(messages);
+      const sourceNote =
+        usage.source === "fallback" ? "\n- Limit source: fallback (AI settings unavailable)" : "";
 
       const localMsg: AIMessage = {
         id: generateId(),
         role: "assistant",
-        content: `**Context Usage**\n- Messages: ${chatMessages.length}\n- Estimated tokens: ${total.toLocaleString()} / ${limit.toLocaleString()} (${Math.round((total / limit) * 100)}%)\n- Chat: ~${tokenEstimate.toLocaleString()} tokens\n- System overhead: ~${overhead.toLocaleString()} tokens`,
+        content: `**Context Usage**\n- Messages: ${usage.messageCount}\n- Estimated tokens: ${usage.estimatedTokens.toLocaleString()} / ${usage.limit.toLocaleString()} (${usage.percent}%)\n- Chat: ~${usage.chatTokens.toLocaleString()} tokens\n- System overhead: ~${usage.overheadTokens.toLocaleString()} tokens\n- Reasoning: ${usage.reasoningEffort}${sourceNote}`,
+        createdAt: nowIso(),
         localOnly: true,
       };
       set((state) => ({ messages: [...state.messages, localMsg] }));
-      return true;
-    }
-
-    if (cmd === "/save") {
-      if (!arg) {
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: "Usage: `/save <name>`",
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-        return true;
-      }
-      try {
-        await saveConversation(
-          arg,
-          get().messages.filter((m) => !m.localOnly)
-        );
-        set({ savedName: arg });
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: `Conversation saved as **${arg}** — will auto-save on new messages`,
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-      } catch {
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: "Failed to save conversation.",
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-      }
-      return true;
-    }
-
-    if (cmd === "/restore") {
-      if (!arg) {
-        const convos = await listConversations();
-        const list =
-          convos.length > 0
-            ? convos
-                .map((c) => `- **${c.name}** (${new Date(c.savedAt).toLocaleDateString()})`)
-                .join("\n")
-            : "No saved conversations.";
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: `**Saved conversations:**\n${list}\n\nUsage: \`/restore <name>\``,
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-        return true;
-      }
-      try {
-        const messages = await restoreConversation(arg);
-        if (messages) {
-          set({ messages, savedName: arg });
-          const localMsg: AIMessage = {
-            id: generateId(),
-            role: "assistant",
-            content: `Restored **${arg}** (${messages.length} messages)`,
-            localOnly: true,
-          };
-          set((state) => ({ messages: [...state.messages, localMsg] }));
-        } else {
-          const localMsg: AIMessage = {
-            id: generateId(),
-            role: "assistant",
-            content: `Conversation **${arg}** not found.`,
-            localOnly: true,
-          };
-          set((state) => ({ messages: [...state.messages, localMsg] }));
-        }
-      } catch {
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: "Failed to restore conversation.",
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-      }
-      return true;
-    }
-
-    if (cmd === "/drop") {
-      if (!arg) {
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: "Usage: `/drop <name>`",
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-        return true;
-      }
-      try {
-        await dropConversation(arg);
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: `Deleted **${arg}**`,
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-      } catch {
-        const localMsg: AIMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: "Failed to delete conversation.",
-          localOnly: true,
-        };
-        set((state) => ({ messages: [...state.messages, localMsg] }));
-      }
       return true;
     }
 
@@ -549,19 +1048,27 @@ export const useAIStore = create<AIState>()((set, get) => ({
 }));
 
 export function resetAIStateForAuthChange() {
-  if (retryTimer) {
-    clearInterval(retryTimer);
-    retryTimer = null;
-  }
-  currentRequestId = null;
   wsClient?.disconnect();
   wsClient = null;
+  conversationLoadGeneration += 1;
+  assistantDraftVersions.clear();
+  pendingToolCommands.clear();
   useAIStore.setState({
     messages: [],
+    recentConversations: [],
+    conversationFolders: [],
+    isLoadingRecentConversations: false,
+    isLoadingConversationFolders: false,
     isStreaming: false,
     isConnected: false,
+    isConnecting: false,
+    connectionError: null,
     retryAfter: null,
     savedName: null,
+    activeConversationId: null,
+    sidebarActiveConversationId: null,
+    activeRunId: null,
+    lastContext: null,
     pendingApprovalToolCallId: null,
   });
 }
@@ -572,141 +1079,586 @@ function handleWSMessage(
   get: () => AIState
 ) {
   switch (msg.type) {
-    case "text_delta":
-      set((state) => ({
-        messages: state.messages.map((m) =>
-          m.isStreaming && m.role === "assistant" ? { ...m, content: m.content + msg.content } : m
-        ),
-      }));
-      break;
-
-    case "tool_call_start": {
-      const toolCall: AIToolCall = {
-        id: msg.id,
-        name: msg.name,
-        arguments: msg.arguments,
-        status: "running",
-      };
-      set((state) => ({
-        messages: state.messages.map((m) =>
-          m.isStreaming && m.role === "assistant"
-            ? { ...m, toolCalls: [...(m.toolCalls || []), toolCall] }
-            : m
-        ),
-      }));
-      break;
-    }
-
-    case "tool_approval_required":
-      if (shouldAutoApprove(msg.name)) {
-        if (currentRequestId) {
-          wsClient?.send({
-            type: "tool_approval",
-            requestId: currentRequestId,
-            toolCallId: msg.id,
-            approved: true,
-          });
-        }
-      } else {
-        set((state) => ({
-          pendingApprovalToolCallId: msg.id,
-          messages: state.messages.map((m) =>
-            m.isStreaming && m.role === "assistant"
-              ? {
-                  ...m,
-                  toolCalls: (m.toolCalls || []).map((tc) =>
-                    tc.id === msg.id ? { ...tc, status: "awaiting_approval" as const } : tc
-                  ),
-                }
-              : m
-          ),
-        }));
-      }
-      break;
-
-    case "tool_result":
-      set((state) => ({
-        messages: state.messages.map((m) =>
-          m.role === "assistant" && m.toolCalls?.some((tc) => tc.id === msg.id)
+    case "command.ack":
+      if (msg.clientCommandId) pendingToolCommands.delete(msg.clientCommandId);
+      set((state) => {
+        const selectsConversation = msg.commandType === "conversation.send_message";
+        const matchesCurrentConversation =
+          !!msg.conversationId && state.activeConversationId === msg.conversationId;
+        return {
+          ...(selectsConversation && msg.conversationId
             ? {
-                ...m,
-                toolCalls: m.toolCalls!.map((tc) =>
-                  tc.id === msg.id
-                    ? {
-                        ...tc,
-                        status: msg.error ? ("failed" as const) : ("completed" as const),
-                        result: msg.result,
-                        error: msg.error,
-                      }
-                    : tc
-                ),
+                activeConversationId: msg.conversationId,
+                sidebarActiveConversationId: msg.conversationId,
               }
-            : m
-        ),
-      }));
+            : {}),
+          ...(msg.runId && (selectsConversation || matchesCurrentConversation)
+            ? { activeRunId: msg.runId }
+            : {}),
+        };
+      });
       break;
 
-    case "invalidate_stores":
-      for (const store of msg.stores) {
-        invalidateStore(store);
+    case "command.error":
+      {
+        const pending = msg.clientCommandId
+          ? pendingToolCommands.get(msg.clientCommandId)
+          : undefined;
+        if (pending) {
+          if (msg.clientCommandId) pendingToolCommands.delete(msg.clientCommandId);
+          set((state) => ({
+            isStreaming: false,
+            messages: updateToolCallById(state.messages, pending.toolCallId, (tc) => ({
+              ...tc,
+              status: pending.previousStatus,
+              result: pending.previousResult,
+              error: msg.message,
+            })),
+            pendingApprovalToolCallId: pending.toolCallId,
+          }));
+          break;
+        }
       }
-      break;
-
-    case "done": {
       set((state) => ({
         isStreaming: false,
-        messages: state.messages.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)),
+        messages: appendLocalAssistantError(state.messages, `**Error:** ${msg.message}`),
       }));
-      currentRequestId = null;
-      // Auto-save if conversation was previously saved
-      const { savedName, messages: msgs } = get();
-      if (savedName) {
-        saveConversation(
-          savedName,
-          msgs.filter((m) => !m.localOnly)
-        ).catch(() => {});
-      }
       break;
-    }
 
-    case "error":
+    case "conversation.snapshot":
       set((state) => ({
-        messages: state.messages.map((m) =>
-          m.isStreaming && m.role === "assistant"
-            ? { ...m, content: `${m.content + (m.content ? "\n\n" : "")}**Error:** ${msg.message}` }
-            : m
+        recentConversations: patchRecentConversationFromSnapshot(
+          state.recentConversations,
+          msg.snapshot
+        ),
+      }));
+      if (get().activeConversationId !== msg.conversationId) return;
+      set((state) => projectConversationSnapshot(msg.snapshot, state.messages));
+      break;
+
+    case "assistant.delta":
+      if (get().activeConversationId !== msg.conversationId) return;
+      set((state) => ({
+        activeRunId: msg.runId,
+        isStreaming: true,
+        messages: applyAssistantDeltaToMessages(state.messages, msg),
+        recentConversations: patchRecentConversationRunStatus(
+          state.recentConversations,
+          msg.conversationId,
+          "running"
         ),
       }));
       break;
 
-    case "rate_limited":
-      set({ retryAfter: msg.retryAfter });
-      if (retryTimer) clearInterval(retryTimer);
-      retryTimer = setInterval(() => {
-        const current = get().retryAfter;
-        if (current && current > 1) {
-          set({ retryAfter: current - 1 });
-        } else {
-          set({ retryAfter: null });
-          if (retryTimer) clearInterval(retryTimer);
-          retryTimer = null;
-        }
-      }, 1000);
+    case "run.status_changed":
+      set((state) => ({
+        recentConversations: patchRecentConversationRunStatus(
+          state.recentConversations,
+          msg.conversationId,
+          msg.run?.status ?? null
+        ),
+        ...(state.activeConversationId === msg.conversationId
+          ? {
+              activeRunId: msg.run?.id ?? null,
+              isStreaming: isActiveRunStatus(msg.run?.status),
+            }
+          : {}),
+      }));
+      break;
+
+    case "stores.invalidated":
+      for (const storeName of msg.stores) invalidateStore(storeName);
+      break;
+
+    case "approval.updated":
+    case "question.answered":
       break;
   }
 }
 
-// Auto-manage WS lifecycle based on AI panel open state.
+function projectConversationSnapshot(
+  snapshot: AIConversationRuntimeSnapshot,
+  currentMessages: AIMessage[] = []
+): Partial<AIState> {
+  const activeRunId = snapshot.runtime.activeRun?.id ?? null;
+  const snapshotDraftVersion = snapshot.runtime.assistantDraftVersion;
+  const currentDraftVersion = activeRunId ? (assistantDraftVersions.get(activeRunId) ?? -1) : -1;
+  const snapshotDraftIsStale = Boolean(
+    activeRunId &&
+      typeof snapshotDraftVersion === "number" &&
+      snapshotDraftVersion < currentDraftVersion
+  );
+
+  if (activeRunId && typeof snapshotDraftVersion === "number" && !snapshotDraftIsStale) {
+    assistantDraftVersions.set(activeRunId, snapshotDraftVersion);
+  }
+  const runtimeToolCalls = snapshot.runtime.toolCalls.map(runtimeToolCallToUI);
+  const pendingQuestions =
+    snapshot.runtime.pendingQuestions.length > 0
+      ? snapshot.runtime.pendingQuestions
+      : snapshot.runtime.pendingQuestion
+        ? [snapshot.runtime.pendingQuestion]
+        : [];
+  const pendingQuestionToolCalls = pendingQuestions.map(pendingQuestionToToolCall);
+  const messages = preserveFreshRuntimeDraft(
+    attachRuntimeToolCallsToMessages(
+      normalizeSnapshotMessages(snapshot),
+      [...runtimeToolCalls, ...pendingQuestionToolCalls],
+      Boolean(snapshot.runtime.activeRun),
+      snapshot.runtime.activeRun?.id ?? null
+    ),
+    currentMessages,
+    snapshotDraftIsStale ? activeRunId : null
+  );
+
+  return {
+    messages,
+    savedName: snapshot.conversation.title,
+    activeConversationId: snapshot.conversation.id,
+    sidebarActiveConversationId: snapshot.conversation.id,
+    activeRunId: snapshot.runtime.activeRun?.id ?? null,
+    lastContext: snapshot.conversation.lastContext,
+    pendingApprovalToolCallId:
+      snapshot.runtime.pendingApprovals[0]?.toolCallId ?? pendingQuestions[0]?.toolCallId ?? null,
+    isStreaming: isActiveRunStatus(snapshot.runtime.activeRun?.status),
+  };
+}
+
+function preserveFreshRuntimeDraft(
+  snapshotMessages: AIMessage[],
+  currentMessages: AIMessage[],
+  activeRunId: string | null
+): AIMessage[] {
+  if (!activeRunId) return snapshotMessages;
+  const currentIndex = findActiveRuntimeAssistantIndex(currentMessages, activeRunId);
+  if (currentIndex === -1) return snapshotMessages;
+  const snapshotIndex = findActiveRuntimeAssistantIndex(snapshotMessages, activeRunId);
+  if (snapshotIndex === -1) return snapshotMessages;
+  const currentDraft = currentMessages[currentIndex];
+  const nextMessages = [...snapshotMessages];
+  nextMessages[snapshotIndex] = {
+    ...nextMessages[snapshotIndex],
+    content: currentDraft.content,
+    isStreaming: currentDraft.isStreaming,
+  };
+  return nextMessages;
+}
+
+function applyAssistantDeltaToMessages(
+  messages: AIMessage[],
+  delta: Extract<WSServerMessage, { type: "assistant.delta" }>
+): AIMessage[] {
+  const previousVersion = assistantDraftVersions.get(delta.runId) ?? 0;
+  if (delta.version <= previousVersion) return messages;
+  assistantDraftVersions.set(delta.runId, delta.version);
+
+  const nextMessages = [...messages];
+  let targetIndex = findActiveRuntimeAssistantIndex(nextMessages, delta.runId);
+  if (targetIndex === -1) {
+    targetIndex = nextMessages.length;
+    nextMessages.push({
+      id: `${delta.runId}:runtime`,
+      role: "assistant",
+      content: "",
+      sequence: nextMessageSequence(nextMessages),
+      createdAt: nowIso(),
+      isStreaming: true,
+    });
+  }
+
+  const current = nextMessages[targetIndex];
+  nextMessages[targetIndex] = {
+    ...current,
+    content: `${current.content}${delta.content}`,
+    isStreaming: true,
+  };
+  return sortMessagesBySequence(nextMessages);
+}
+
+function normalizeSnapshotMessages(snapshot: AIConversationRuntimeSnapshot): AIMessage[] {
+  return normalizeConversationMessages(snapshot.messages, snapshot.conversation.id);
+}
+
+function normalizeConversationMessages(messages: unknown[], conversationId: string): AIMessage[] {
+  return sortMessagesBySequence(
+    messages
+      .map((message, index) => normalizeConversationMessage(message, conversationId, index))
+      .filter((message): message is AIMessage => message !== null)
+  );
+}
+
+function normalizeConversationMessage(
+  value: unknown,
+  conversationId: string,
+  index: number
+): AIMessage | null {
+  if (!value || typeof value !== "object") return null;
+  const message = value as Record<string, unknown>;
+  const role = message.role;
+  if (role !== "user" && role !== "assistant") return null;
+  const id =
+    typeof message.id === "string" && message.id.length > 0
+      ? message.id
+      : `${conversationId}:message:${index}`;
+  return {
+    id,
+    role,
+    content: typeof message.content === "string" ? message.content : "",
+    sequence: typeof message.sequence === "number" ? message.sequence : index,
+    attachments: Array.isArray(message.attachments)
+      ? (message.attachments as AIMessage["attachments"])
+      : undefined,
+    createdAt:
+      typeof message.createdAt === "string" && message.createdAt.length > 0
+        ? message.createdAt
+        : undefined,
+    toolCalls: Array.isArray(message.toolCalls)
+      ? normalizeMessageToolCalls(message.toolCalls, id)
+      : undefined,
+    isStreaming: false,
+  };
+}
+
+function normalizeMessageToolCalls(value: unknown[], messageId: string): AIToolCall[] {
+  return value
+    .map((toolCall, index) => normalizeMessageToolCall(toolCall, messageId, index))
+    .filter((toolCall): toolCall is AIToolCall => toolCall !== null);
+}
+
+function normalizeMessageToolCall(
+  value: unknown,
+  messageId: string,
+  index: number
+): AIToolCall | null {
+  if (!value || typeof value !== "object") return null;
+  const toolCall = value as Record<string, unknown>;
+  const functionCall =
+    toolCall.function && typeof toolCall.function === "object" && !Array.isArray(toolCall.function)
+      ? (toolCall.function as Record<string, unknown>)
+      : null;
+  const id =
+    typeof toolCall.id === "string" && toolCall.id.length > 0
+      ? toolCall.id
+      : `${messageId}:tool:${index}`;
+  const name =
+    typeof toolCall.name === "string" && toolCall.name.length > 0
+      ? toolCall.name
+      : typeof functionCall?.name === "string" && functionCall.name.length > 0
+        ? functionCall.name
+        : "tool";
+  const rawArguments = toolCall.arguments ?? functionCall?.arguments;
+  return {
+    id,
+    name,
+    arguments: normalizeToolCallArguments(rawArguments),
+    status: normalizeToolCallStatus(toolCall.status),
+    assistantMessageId:
+      typeof toolCall.assistantMessageId === "string" ? toolCall.assistantMessageId : undefined,
+    result: toolCall.result,
+    error: typeof toolCall.error === "string" ? toolCall.error : undefined,
+  };
+}
+
+function normalizeToolCallStatus(value: unknown): AIToolCall["status"] {
+  if (
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "awaiting_approval" ||
+    value === "rejected"
+  ) {
+    return value;
+  }
+  return "completed";
+}
+
+function runtimeToolCallToUI(toolCall: AIRunToolCall): AIToolCall {
+  return {
+    id: toolCall.toolCallId,
+    name: toolCall.toolName,
+    arguments: toolCall.toolArgs,
+    status: runtimeToolStatusToUI(toolCall.status),
+    assistantMessageId: toolCall.assistantMessageId,
+    result: toolCall.result ?? undefined,
+    error: toolCall.error ?? undefined,
+  };
+}
+
+function pendingQuestionToToolCall(
+  question: AIConversationRuntimeSnapshot["runtime"]["pendingQuestions"][number]
+): AIToolCall {
+  return {
+    id: question.toolCallId || question.id,
+    name: "ask_question",
+    arguments: { question: question.question },
+    status: "awaiting_approval",
+    result: question.answer ? { answer: question.answer } : undefined,
+  };
+}
+
+function runtimeToolStatusToUI(status: AIRunToolCall["status"]): AIToolCall["status"] {
+  if (status === "pending_approval") return "awaiting_approval";
+  if (status === "approved" || status === "running" || status === "created") return "running";
+  if (status === "rejected") return "rejected";
+  if (status === "failed" || status === "stopped") return "failed";
+  return "completed";
+}
+
+function attachRuntimeToolCallsToMessages(
+  messages: AIMessage[],
+  toolCalls: AIToolCall[],
+  active: boolean,
+  activeRunId: string | null
+): AIMessage[] {
+  if (toolCalls.length === 0 && !active) return messages;
+  const nextMessages = [...messages];
+  const unassignedToolCalls: AIToolCall[] = [];
+
+  for (const toolCall of toolCalls) {
+    const existingToolCallMessageIndex = nextMessages.findIndex((message) =>
+      message.toolCalls?.some((existingToolCall) => existingToolCall.id === toolCall.id)
+    );
+    if (existingToolCallMessageIndex !== -1) {
+      nextMessages[existingToolCallMessageIndex] = {
+        ...nextMessages[existingToolCallMessageIndex],
+        toolCalls: mergeToolCalls(nextMessages[existingToolCallMessageIndex].toolCalls ?? [], [
+          toolCall,
+        ]),
+      };
+      continue;
+    }
+
+    if (!toolCall.assistantMessageId) {
+      unassignedToolCalls.push(toolCall);
+      continue;
+    }
+    const targetIndex = nextMessages.findIndex(
+      (message) => message.id === toolCall.assistantMessageId
+    );
+    if (targetIndex === -1 || nextMessages[targetIndex].role !== "assistant") {
+      unassignedToolCalls.push(toolCall);
+      continue;
+    }
+    nextMessages[targetIndex] = {
+      ...nextMessages[targetIndex],
+      toolCalls: mergeToolCalls(nextMessages[targetIndex].toolCalls ?? [], [toolCall]),
+    };
+  }
+
+  let targetIndex =
+    active && activeRunId ? findActiveRuntimeAssistantIndex(nextMessages, activeRunId) : -1;
+  if (targetIndex === -1 && active && activeRunId) {
+    const sequence = nextMessageSequence(nextMessages);
+    nextMessages.push({
+      id: `${activeRunId}:runtime`,
+      role: "assistant",
+      content: "",
+      sequence,
+      createdAt: nowIso(),
+      isStreaming: active,
+    });
+    targetIndex = nextMessages.length - 1;
+  }
+  if (targetIndex === -1) {
+    targetIndex = findLastAssistantIndex(nextMessages);
+  }
+  if (targetIndex === -1) {
+    const sequence = nextMessageSequence(nextMessages);
+    nextMessages.push({
+      id: activeRunId ? `${activeRunId}:runtime` : generateId(),
+      role: "assistant",
+      content: "",
+      sequence,
+      createdAt: nowIso(),
+      isStreaming: active,
+    });
+    targetIndex = nextMessages.length - 1;
+  }
+
+  nextMessages[targetIndex] = {
+    ...nextMessages[targetIndex],
+    isStreaming: active,
+    toolCalls: mergeToolCalls(nextMessages[targetIndex].toolCalls ?? [], unassignedToolCalls),
+  };
+  return sortMessagesBySequence(nextMessages);
+}
+
+function findActiveRuntimeAssistantIndex(messages: AIMessage[], activeRunId: string): number {
+  const runtimeIds = new Set([`${activeRunId}:draft`, `${activeRunId}:runtime`]);
+  return messages.findIndex(
+    (message) => message.role === "assistant" && runtimeIds.has(message.id)
+  );
+}
+
+function mergeToolCalls(existing: AIToolCall[], incoming: AIToolCall[]): AIToolCall[] {
+  const byId = new Map(existing.map((toolCall) => [toolCall.id, toolCall]));
+  for (const toolCall of incoming) {
+    const previous = byId.get(toolCall.id);
+    byId.set(toolCall.id, {
+      ...previous,
+      ...toolCall,
+      arguments: { ...(previous?.arguments ?? {}), ...toolCall.arguments },
+    });
+  }
+  return [...byId.values()];
+}
+
+function normalizeToolCallArguments(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== "string" || value.trim().length === 0) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function patchRecentConversationFromSnapshot(
+  conversations: AIConversationSummary[],
+  snapshot: AIConversationRuntimeSnapshot
+): AIConversationSummary[] {
+  const existing = conversations.find(
+    (conversation) => conversation.id === snapshot.conversation.id
+  );
+  const nextConversation: AIConversationSummary = {
+    id: snapshot.conversation.id,
+    title: snapshot.conversation.title,
+    createdAt: snapshot.conversation.createdAt,
+    updatedAt: snapshot.conversation.updatedAt,
+    lastUserMessageAt:
+      snapshot.conversation.lastUserMessageAt ??
+      snapshotLastUserMessageAt(snapshot.messages) ??
+      existing?.lastUserMessageAt ??
+      snapshot.conversation.createdAt,
+    folderId: snapshot.conversation.folderId ?? existing?.folderId ?? null,
+    messageCount: snapshot.conversation.messageCount ?? snapshot.messages.length,
+    status: snapshot.conversation.status ?? existing?.status ?? "active",
+    blockReason: snapshot.conversation.blockReason ?? existing?.blockReason ?? null,
+    activeRunStatus: snapshot.runtime.activeRun?.status ?? null,
+  };
+  const found = Boolean(existing);
+  const next = found
+    ? conversations.map((conversation) =>
+        conversation.id === nextConversation.id
+          ? { ...conversation, ...nextConversation }
+          : conversation
+      )
+    : [nextConversation, ...conversations];
+  return sortConversationSummaries(next);
+}
+
+function patchRecentConversationRunStatus(
+  conversations: AIConversationSummary[],
+  conversationId: string,
+  activeRunStatus: AIConversationSummary["activeRunStatus"]
+): AIConversationSummary[] {
+  let changed = false;
+  const nextConversations = conversations.map((conversation) => {
+    if (conversation.id !== conversationId) return conversation;
+    if (conversation.activeRunStatus === activeRunStatus) return conversation;
+    changed = true;
+    return { ...conversation, activeRunStatus };
+  });
+  return changed ? nextConversations : conversations;
+}
+
+function sortConversationFolders(folders: AIConversationFolder[]): AIConversationFolder[] {
+  return [...folders].sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder;
+    return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+  });
+}
+
+function sortConversationSummaries(
+  conversations: AIConversationSummary[]
+): AIConversationSummary[] {
+  return [...conversations].sort((left, right) => {
+    const rightTime = Date.parse(right.lastUserMessageAt ?? right.createdAt);
+    const leftTime = Date.parse(left.lastUserMessageAt ?? left.createdAt);
+    return rightTime - leftTime;
+  });
+}
+
+function snapshotLastUserMessageAt(messages: unknown[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+    const record = message as Record<string, unknown>;
+    if (record.role !== "user") continue;
+    return typeof record.createdAt === "string" ? record.createdAt : null;
+  }
+  return null;
+}
+
+function findLastAssistantIndex(messages: AIMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "assistant") return index;
+  }
+  return -1;
+}
+
+function nextMessageSequence(messages: AIMessage[]): number {
+  return (
+    messages.reduce(
+      (max, message, index) =>
+        Math.max(max, typeof message.sequence === "number" ? message.sequence : index),
+      -1
+    ) + 1
+  );
+}
+
+function sortMessagesBySequence(messages: AIMessage[]): AIMessage[] {
+  return [...messages].sort((left, right) => {
+    const leftSequence = typeof left.sequence === "number" ? left.sequence : messages.indexOf(left);
+    const rightSequence =
+      typeof right.sequence === "number" ? right.sequence : messages.indexOf(right);
+    if (leftSequence !== rightSequence) return leftSequence - rightSequence;
+    return messages.indexOf(left) - messages.indexOf(right);
+  });
+}
+
+function isActiveRunStatus(status: string | null | undefined): boolean {
+  return (
+    status === "queued" ||
+    status === "running" ||
+    status === "waiting_for_approval" ||
+    status === "waiting_for_answer"
+  );
+}
+
+// Auto-manage WS lifecycle based on visible AI surfaces.
 // This runs outside React — no component mount/unmount issues.
-let prevAIPanelOpen = false;
+let prevAIActive = false;
 useUIStore.subscribe((state) => {
-  const open = state.aiPanelOpen;
-  if (open !== prevAIPanelOpen) {
-    prevAIPanelOpen = open;
-    if (open) {
+  const active = state.aiPanelOpen || state.aiLiteMode;
+  if (active !== prevAIActive) {
+    prevAIActive = active;
+    if (active) {
       useAIStore.getState().connect();
     } else {
       useAIStore.getState().disconnect();
     }
+  }
+});
+
+let prevAuthUserId: string | null = useAuthStore.getState().user?.id ?? null;
+let prevAuthLoading = useAuthStore.getState().isLoading;
+useAuthStore.subscribe((state) => {
+  const nextUserId = state.user?.id ?? null;
+  const authChanged = prevAuthUserId !== nextUserId || prevAuthLoading !== state.isLoading;
+  prevAuthUserId = nextUserId;
+  prevAuthLoading = state.isLoading;
+
+  const aiActive = useUIStore.getState().aiPanelOpen || useUIStore.getState().aiLiteMode;
+  if (!authChanged || !aiActive) return;
+  if (state.user) {
+    void useAIStore.getState().connect();
+  } else if (!state.isLoading) {
+    useAIStore.setState({ isConnecting: false, connectionError: "Not authenticated" });
   }
 });

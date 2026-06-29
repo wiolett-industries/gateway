@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { asc, count, eq, ilike, inArray, or, type SQL } from 'drizzle-orm';
 import Redis from 'ioredis';
 import pg from 'pg';
@@ -11,135 +10,61 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { PaginatedResponse } from '@/types.js';
+import {
+  buildDatabaseConnectionString,
+  type DatabaseConnectionConfig,
+  type DatabaseConnectionView,
+  type DatabaseHealthStatus,
+  type PostgresConnectionConfig,
+  type RedisConnectionConfig,
+  toDatabaseConnectionView,
+} from './database-connection-view.js';
 import { type DatabaseOperation, type DatabaseType, mapDatabaseDriverError } from './database-error-mapping.js';
+import {
+  type DatabaseQueryExecutionContext,
+  executePostgresSql as executePostgresSqlOperation,
+  executeRedisCommand as executeRedisCommandOperation,
+} from './database-query-execution.js';
 import type {
   CreateDatabaseConnectionInput,
   DatabaseListQuery,
   UpdateDatabaseConnectionInput,
 } from './databases.schemas.js';
-import { postgresParameterSql, quoteIdent } from './postgres-row-sql.js';
+import {
+  ensurePostgresBaseTable,
+  normalizePostgresColumnType,
+  postgresColumnTypeSql,
+} from './postgres-column-operations.js';
+import {
+  deletePostgresRow as deletePostgresRowOperation,
+  insertPostgresRow as insertPostgresRowOperation,
+  type PostgresRowOperationContext,
+  updatePostgresRow as updatePostgresRowOperation,
+} from './postgres-row-operations.js';
+import { quoteIdent } from './postgres-row-sql.js';
+import {
+  getPostgresTableMetadata as getPostgresTableMetadataOperation,
+  listPostgresSchemas as listPostgresSchemasOperation,
+  listPostgresTables as listPostgresTablesOperation,
+  type PostgresSchemaOperationContext,
+} from './postgres-schema-operations.js';
+import {
+  getRedisKey as getRedisKeyOperation,
+  type RedisKeyValueType,
+  scanRedisKeys as scanRedisKeysOperation,
+  setRedisKey as setRedisKeyOperation,
+} from './redis-key-operations.js';
 
 const { Pool } = pg;
 const DATABASE_HEALTH_HISTORY_MIN_INTERVAL_MS = 30_000;
-const POSTGRES_QUERY_TIMEOUT_MS = 15_000;
-const POSTGRES_RESULT_MAX_BYTES = 512 * 1024;
-const POSTGRES_RESULT_SET_MAX = 10;
-const POSTGRES_RESPONSE_MAX_BYTES = 768 * 1024;
-const REDIS_COMMAND_MAX_ITEMS = 500;
-const REDIS_COMMAND_MAX_BYTES = 256 * 1024;
-const REDIS_COMMAND_MAX_COUNT = 20;
-const REDIS_RESPONSE_MAX_BYTES = 512 * 1024;
 
-function truncateUtf8(value: string, maxBytes: number) {
-  if (Buffer.byteLength(value, 'utf8') <= maxBytes) {
-    return { value, truncated: false };
-  }
-  let low = 0;
-  let high = value.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    if (Buffer.byteLength(value.slice(0, mid), 'utf8') <= maxBytes) {
-      low = mid;
-    } else {
-      high = mid - 1;
-    }
-  }
-  return { value: value.slice(0, low), truncated: true };
-}
-
-function stringifyForPreview(value: unknown) {
-  try {
-    const json = JSON.stringify(value);
-    return json === undefined ? String(value) : json;
-  } catch {
-    return String(value);
-  }
-}
-
-function estimateJsonBytes(value: unknown) {
-  return Buffer.byteLength(stringifyForPreview(value), 'utf8');
-}
-
-function compactCommandResult(value: unknown): { result: unknown; truncated: boolean } {
-  let result = value;
-  let truncated = false;
-  if (Array.isArray(result) && result.length > REDIS_COMMAND_MAX_ITEMS) {
-    result = result.slice(0, REDIS_COMMAND_MAX_ITEMS);
-    truncated = true;
-  }
-  if (estimateJsonBytes(result) > REDIS_COMMAND_MAX_BYTES) {
-    const preview = truncateUtf8(stringifyForPreview(result), REDIS_COMMAND_MAX_BYTES);
-    result = {
-      preview: preview.value,
-      truncated: true,
-    };
-    truncated = true;
-  }
-  return { result, truncated };
-}
-
-function compactForJsonBudget(value: unknown, maxBytes: number, depth = 0): { value: unknown; truncated: boolean } {
-  if (maxBytes <= 0) return { value: null, truncated: true };
-  if (estimateJsonBytes(value) <= maxBytes) return { value, truncated: false };
-  if (typeof value === 'string') return truncateUtf8(value, maxBytes);
-  if (depth >= 4 || value == null || typeof value !== 'object') {
-    const preview = truncateUtf8(stringifyForPreview(value), maxBytes);
-    return { value: { preview: preview.value, truncated: true }, truncated: true };
-  }
-  if (Array.isArray(value)) {
-    const output: unknown[] = [];
-    for (const item of value) {
-      const remaining = maxBytes - estimateJsonBytes(output) - 2;
-      if (remaining <= 0) {
-        break;
-      }
-      const compact = compactForJsonBudget(item, remaining, depth + 1);
-      output.push(compact.value);
-      if (estimateJsonBytes(output) > maxBytes) {
-        output.pop();
-        break;
-      }
-    }
-    return { value: output, truncated: true };
-  }
-  const output: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
-    const remaining = maxBytes - estimateJsonBytes(output) - Buffer.byteLength(key, 'utf8') - 8;
-    if (remaining <= 0) {
-      break;
-    }
-    const compact = compactForJsonBudget(item, remaining, depth + 1);
-    output[key] = compact.value;
-    if (estimateJsonBytes(output) > maxBytes) {
-      delete output[key];
-      break;
-    }
-  }
-  return { value: output, truncated: true };
-}
-
-function compactPostgresRows(rows: Record<string, unknown>[], maxRows: number) {
-  const output: Record<string, unknown>[] = [];
-  let truncated = rows.length > maxRows;
-  for (const row of rows.slice(0, maxRows)) {
-    const remaining = POSTGRES_RESULT_MAX_BYTES - estimateJsonBytes(output) - 2;
-    if (remaining <= 0) {
-      truncated = true;
-      break;
-    }
-    const compact = compactForJsonBudget(row, remaining) as { value: Record<string, unknown>; truncated: boolean };
-    output.push(compact.value);
-    if (estimateJsonBytes(output) > POSTGRES_RESULT_MAX_BYTES) {
-      output.pop();
-      truncated = true;
-      break;
-    }
-    truncated ||= compact.truncated;
-  }
-  return { rows: output, truncated };
-}
-
-export type DatabaseHealthStatus = 'online' | 'offline' | 'degraded' | 'unknown';
+export type {
+  DatabaseConnectionConfig,
+  DatabaseConnectionView,
+  DatabaseHealthStatus,
+  PostgresConnectionConfig,
+  RedisConnectionConfig,
+} from './database-connection-view.js';
 export type { DatabaseOperation, DatabaseType } from './database-error-mapping.js';
 export { mapDatabaseDriverError } from './database-error-mapping.js';
 
@@ -151,467 +76,7 @@ interface PostgresRowSearchFilter {
   value: string;
 }
 
-export interface PostgresConnectionConfig {
-  type: 'postgres';
-  host: string;
-  port: number;
-  database: string;
-  username: string;
-  password: string;
-  sslEnabled: boolean;
-}
-
-export interface RedisConnectionConfig {
-  type: 'redis';
-  host: string;
-  port: number;
-  username: string | null;
-  password: string;
-  db: number;
-  tlsEnabled: boolean;
-}
-
-export type DatabaseConnectionConfig = PostgresConnectionConfig | RedisConnectionConfig;
-
-export interface DatabaseConnectionView {
-  id: string;
-  name: string;
-  type: DatabaseType;
-  description: string | null;
-  tags: string[];
-  manualSizeLimitMb: number | null;
-  host: string;
-  port: number;
-  databaseName: string | null;
-  username: string | null;
-  tlsEnabled: boolean;
-  healthStatus: DatabaseHealthStatus;
-  lastHealthCheckAt: string | null;
-  lastError: string | null;
-  healthHistory?: DatabaseHealthEntry[];
-  hasStoredPassword: boolean;
-  config: Record<string, unknown>;
-  createdById: string;
-  updatedById: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-const POSTGRES_COLUMN_TYPE_SQL = new Map<string, string>([
-  ['text', 'text'],
-  ['varchar(255)', 'varchar(255)'],
-  ['varchar(1024)', 'varchar(1024)'],
-  ['char(1)', 'char(1)'],
-  ['boolean', 'boolean'],
-  ['smallint', 'smallint'],
-  ['integer', 'integer'],
-  ['bigint', 'bigint'],
-  ['numeric', 'numeric'],
-  ['numeric(12,2)', 'numeric(12,2)'],
-  ['real', 'real'],
-  ['double precision', 'double precision'],
-  ['date', 'date'],
-  ['time', 'time'],
-  ['time with time zone', 'time with time zone'],
-  ['timestamp', 'timestamp'],
-  ['timestamp with time zone', 'timestamp with time zone'],
-  ['uuid', 'uuid'],
-  ['json', 'json'],
-  ['jsonb', 'jsonb'],
-  ['bytea', 'bytea'],
-  ['inet', 'inet'],
-  ['cidr', 'cidr'],
-  ['macaddr', 'macaddr'],
-  ['xml', 'xml'],
-]);
-
-function normalizePostgresColumnType(dataType: string): string {
-  return dataType.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-async function ensurePostgresBaseTable(pool: pg.Pool, schema: string, table: string) {
-  const tableInfo = await pool.query<{ table_type: string }>(
-    `select table_type
-       from information_schema.tables
-      where table_schema = $1 and table_name = $2`,
-    [schema, table]
-  );
-  const tableType = tableInfo.rows[0]?.table_type;
-  if (!tableType) {
-    throw new AppError(404, 'TABLE_NOT_FOUND', 'Table not found');
-  }
-  if (tableType === 'VIEW') {
-    throw new AppError(400, 'VIEW_NOT_EDITABLE', 'Columns cannot be changed for views');
-  }
-}
-
-function maskValue(value: string | null | undefined): string {
-  return value ? '••••••••' : '';
-}
-
-function hashPreview(input: string): string {
-  return createHash('sha256').update(input).digest('hex').slice(0, 16);
-}
-
-function splitPostgresStatements(sql: string): string[] {
-  const statements: string[] = [];
-  let current = '';
-  let i = 0;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let inLineComment = false;
-  let inBlockComment = false;
-  let dollarQuoteTag: string | null = null;
-
-  while (i < sql.length) {
-    const char = sql[i]!;
-    const next = sql[i + 1];
-
-    if (inLineComment) {
-      current += char;
-      if (char === '\n') inLineComment = false;
-      i += 1;
-      continue;
-    }
-
-    if (inBlockComment) {
-      current += char;
-      if (char === '*' && next === '/') {
-        current += next;
-        inBlockComment = false;
-        i += 2;
-      } else {
-        i += 1;
-      }
-      continue;
-    }
-
-    if (dollarQuoteTag) {
-      if (sql.startsWith(dollarQuoteTag, i)) {
-        current += dollarQuoteTag;
-        i += dollarQuoteTag.length;
-        dollarQuoteTag = null;
-      } else {
-        current += char;
-        i += 1;
-      }
-      continue;
-    }
-
-    if (inSingleQuote) {
-      current += char;
-      if (char === "'" && next === "'") {
-        current += next;
-        i += 2;
-        continue;
-      }
-      if (char === "'") inSingleQuote = false;
-      i += 1;
-      continue;
-    }
-
-    if (inDoubleQuote) {
-      current += char;
-      if (char === '"' && next === '"') {
-        current += next;
-        i += 2;
-        continue;
-      }
-      if (char === '"') inDoubleQuote = false;
-      i += 1;
-      continue;
-    }
-
-    if (char === '-' && next === '-') {
-      current += char + next;
-      inLineComment = true;
-      i += 2;
-      continue;
-    }
-
-    if (char === '/' && next === '*') {
-      current += char + next;
-      inBlockComment = true;
-      i += 2;
-      continue;
-    }
-
-    if (char === "'") {
-      current += char;
-      inSingleQuote = true;
-      i += 1;
-      continue;
-    }
-
-    if (char === '"') {
-      current += char;
-      inDoubleQuote = true;
-      i += 1;
-      continue;
-    }
-
-    if (char === '$') {
-      const match = sql.slice(i).match(/^\$[A-Za-z0-9_]*\$/);
-      if (match) {
-        const tag = match[0];
-        current += tag;
-        dollarQuoteTag = tag;
-        i += tag.length;
-        continue;
-      }
-    }
-
-    if (char === ';') {
-      const statement = current.trim();
-      if (statement) statements.push(statement);
-      current = '';
-      i += 1;
-      continue;
-    }
-
-    current += char;
-    i += 1;
-  }
-
-  const finalStatement = current.trim();
-  if (finalStatement) statements.push(finalStatement);
-  if (statements.length === 0) {
-    throw new AppError(400, 'INVALID_SQL', 'SQL statement is required');
-  }
-  return statements;
-}
-
-function splitRedisCommands(commandText: string): string[] {
-  const commands: string[] = [];
-  let current = '';
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let escaped = false;
-
-  for (let i = 0; i < commandText.length; i += 1) {
-    const char = commandText[i]!;
-
-    if (escaped) {
-      current += char;
-      escaped = false;
-      continue;
-    }
-
-    if (char === '\\') {
-      current += char;
-      escaped = true;
-      continue;
-    }
-
-    if (inSingleQuote) {
-      current += char;
-      if (char === "'") inSingleQuote = false;
-      continue;
-    }
-
-    if (inDoubleQuote) {
-      current += char;
-      if (char === '"') inDoubleQuote = false;
-      continue;
-    }
-
-    if (char === "'") {
-      current += char;
-      inSingleQuote = true;
-      continue;
-    }
-
-    if (char === '"') {
-      current += char;
-      inDoubleQuote = true;
-      continue;
-    }
-
-    if (char === ';' || char === '\n') {
-      const trimmed = current.trim();
-      if (trimmed) commands.push(trimmed);
-      current = '';
-      continue;
-    }
-
-    current += char;
-  }
-
-  const trimmed = current.trim();
-  if (trimmed) commands.push(trimmed);
-  if (commands.length === 0) {
-    throw new AppError(400, 'INVALID_COMMAND', 'Redis command is required');
-  }
-  if (inSingleQuote || inDoubleQuote || escaped) {
-    throw new AppError(400, 'INVALID_COMMAND', 'Unterminated quoted Redis command');
-  }
-  return commands;
-}
-
-function tokenizeRedisCommand(command: string): string[] {
-  const tokens: string[] = [];
-  let current = '';
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let escaped = false;
-
-  const pushCurrent = () => {
-    if (current.length > 0) {
-      tokens.push(current);
-      current = '';
-    }
-  };
-
-  for (let i = 0; i < command.length; i += 1) {
-    const char = command[i]!;
-
-    if (escaped) {
-      current += char;
-      escaped = false;
-      continue;
-    }
-
-    if (char === '\\') {
-      escaped = true;
-      continue;
-    }
-
-    if (inSingleQuote) {
-      if (char === "'") {
-        inSingleQuote = false;
-      } else {
-        current += char;
-      }
-      continue;
-    }
-
-    if (inDoubleQuote) {
-      if (char === '"') {
-        inDoubleQuote = false;
-      } else {
-        current += char;
-      }
-      continue;
-    }
-
-    if (char === "'") {
-      inSingleQuote = true;
-      continue;
-    }
-
-    if (char === '"') {
-      inDoubleQuote = true;
-      continue;
-    }
-
-    if (/\s/.test(char)) {
-      pushCurrent();
-      continue;
-    }
-
-    current += char;
-  }
-
-  if (escaped || inSingleQuote || inDoubleQuote) {
-    throw new AppError(400, 'INVALID_COMMAND', 'Unterminated quoted Redis command');
-  }
-
-  pushCurrent();
-  if (tokens.length === 0) {
-    throw new AppError(400, 'INVALID_COMMAND', 'Redis command is required');
-  }
-  return tokens;
-}
-
-function inferPostgresStatementIntent(sql: string): 'read' | 'write' | 'admin' {
-  const normalized = sql.trim().replace(/^\s+/, '').toLowerCase();
-  const token = normalized.split(/\s+/, 1)[0] ?? '';
-  if (['select', 'show', 'explain', 'values'].includes(token) || normalized.startsWith('with ')) {
-    if (
-      /\b(insert|update|delete|merge|alter|drop|create|truncate|grant|revoke|vacuum|reindex|comment|refresh|cluster|copy|lock|call|do)\b/i.test(
-        normalized
-      )
-    ) {
-      return 'admin';
-    }
-    return 'read';
-  }
-  if (['insert', 'update', 'delete', 'merge', 'copy', 'lock'].includes(token)) return 'write';
-  return 'admin';
-}
-
-export function inferPostgresIntent(sql: string): 'read' | 'write' | 'admin' {
-  const intents = splitPostgresStatements(sql).map(inferPostgresStatementIntent);
-  if (intents.includes('admin')) return 'admin';
-  if (intents.includes('write')) return 'write';
-  return 'read';
-}
-
-function inferRedisSingleCommandIntent(command: string): 'read' | 'write' | 'admin' {
-  const token = command.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? '';
-  if (
-    [
-      'get',
-      'mget',
-      'hget',
-      'hgetall',
-      'lrange',
-      'llen',
-      'smembers',
-      'scard',
-      'zrange',
-      'zrevrange',
-      'zcard',
-      'ttl',
-      'pttl',
-      'type',
-      'exists',
-      'scan',
-      'info',
-      'xrange',
-      'xrevrange',
-      'keys',
-      'dbsize',
-      'ping',
-    ].includes(token)
-  ) {
-    return 'read';
-  }
-  if (
-    [
-      'set',
-      'mset',
-      'del',
-      'unlink',
-      'expire',
-      'persist',
-      'rename',
-      'hset',
-      'hdel',
-      'lpush',
-      'rpush',
-      'ltrim',
-      'sadd',
-      'srem',
-      'zadd',
-      'zrem',
-      'incr',
-      'decr',
-      'xadd',
-      'xdel',
-    ].includes(token)
-  ) {
-    return 'write';
-  }
-  return 'admin';
-}
-
-export function inferRedisIntent(commandText: string): 'read' | 'write' | 'admin' {
-  const intents = splitRedisCommands(commandText).map(inferRedisSingleCommandIntent);
-  if (intents.includes('admin')) return 'admin';
-  if (intents.includes('write')) return 'write';
-  return 'read';
-}
+export { inferPostgresIntent, inferRedisIntent } from './database-query-intent.js';
 
 export class DatabaseConnectionService {
   private eventBus?: EventBusService;
@@ -626,6 +91,30 @@ export class DatabaseConnectionService {
 
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
+  }
+
+  private queryExecutionContext(): DatabaseQueryExecutionContext {
+    return {
+      withPostgresPool: (id, operation, fn) => this.withPostgresPool(id, operation, fn),
+      withRedisClient: (id, operation, fn) => this.withRedisClient(id, operation, fn),
+      auditLog: (entry) => this.auditService.log(entry),
+      emitChange: (id, action, extra) => this.emitChange(id, action, extra),
+    };
+  }
+
+  private postgresRowOperationContext(): PostgresRowOperationContext {
+    return {
+      withPostgresPool: (id, operation, fn) => this.withPostgresPool(id, operation, fn),
+      getPostgresTableMetadata: (id, schema, table) => this.getPostgresTableMetadata(id, schema, table),
+      auditLog: (entry) => this.auditService.log(entry),
+      emitChange: (id, action, extra) => this.emitChange(id, action, extra),
+    };
+  }
+
+  private postgresSchemaOperationContext(): PostgresSchemaOperationContext {
+    return {
+      withPostgresPool: (id, operation, fn) => this.withPostgresPool(id, operation, fn),
+    };
   }
 
   async list(
@@ -667,13 +156,15 @@ export class DatabaseConnectionService {
         .select()
         .from(databaseConnections)
         .where(where)
-        .orderBy(asc(databaseConnections.name), asc(databaseConnections.id))
+        .orderBy(asc(databaseConnections.sortOrder), asc(databaseConnections.name), asc(databaseConnections.id))
         .limit(query.limit)
         .offset((query.page - 1) * query.limit),
       this.db.select({ count: count() }).from(databaseConnections).where(where),
     ]);
 
-    const data = rows.map((row) => this.toView(row, this.decryptConfig(row.encryptedConfig), false, false));
+    const data = rows.map((row) =>
+      toDatabaseConnectionView(row, this.decryptConfig(row.encryptedConfig), false, false)
+    );
     const total = Number(totalCount);
     return {
       data,
@@ -688,7 +179,7 @@ export class DatabaseConnectionService {
 
   async get(id: string, revealCredentials = false): Promise<DatabaseConnectionView> {
     const row = await this.getRow(id);
-    return this.toView(row, this.decryptConfig(row.encryptedConfig), revealCredentials, false);
+    return toDatabaseConnectionView(row, this.decryptConfig(row.encryptedConfig), revealCredentials, false);
   }
 
   async getHealthHistory(id: string): Promise<DatabaseHealthEntry[]> {
@@ -701,7 +192,7 @@ export class DatabaseConnectionService {
     const config = this.decryptConfig(row.encryptedConfig);
     return {
       ...config,
-      connectionString: this.buildConnectionString(config),
+      connectionString: buildDatabaseConnectionString(config),
     };
   }
 
@@ -748,36 +239,51 @@ export class DatabaseConnectionService {
       details: { name: row.name, type: row.type, host: row.host, port: row.port },
     });
     this.emitChange(row.id, 'created', { name: row.name, type: row.type, healthStatus: row.healthStatus });
-    return this.toView(row, normalized, false, false);
+    return toDatabaseConnectionView(row, normalized, false, false);
   }
 
   async update(id: string, input: UpdateDatabaseConnectionInput, userId: string): Promise<DatabaseConnectionView> {
     const existing = await this.getRow(id);
     const currentConfig = this.decryptConfig(existing.encryptedConfig);
-    const nextPassword =
-      input.config && 'password' in input.config
-        ? (input.config.password ?? currentConfig.password)
-        : currentConfig.password;
+    const replacementPassword = this.extractReplacementPassword(input.config);
+    const nextPassword = replacementPassword !== undefined ? replacementPassword : currentConfig.password;
+    const inputConfig = input.config ?? {};
     const mergedConfig =
       currentConfig.type === 'postgres'
-        ? this.normalizePostgres({
-            host: currentConfig.host,
-            port: currentConfig.port,
-            database: currentConfig.database,
-            username: currentConfig.username,
-            sslEnabled: currentConfig.sslEnabled,
-            ...(input.config ?? {}),
-            password: nextPassword,
-          })
-        : this.normalizeRedis({
-            host: currentConfig.host,
-            port: currentConfig.port,
-            username: currentConfig.username ?? undefined,
-            db: currentConfig.db,
-            tlsEnabled: currentConfig.tlsEnabled,
-            ...(input.config ?? {}),
-            password: nextPassword,
-          });
+        ? this.normalizePostgres(
+            inputConfig.connectionString
+              ? {
+                  ...inputConfig,
+                  password: nextPassword,
+                }
+              : {
+                  host: currentConfig.host,
+                  port: currentConfig.port,
+                  database: currentConfig.database,
+                  username: currentConfig.username,
+                  sslEnabled: currentConfig.sslEnabled,
+                  ...inputConfig,
+                  password: nextPassword,
+                }
+          )
+        : this.normalizeRedis(
+            inputConfig.connectionString
+              ? {
+                  ...inputConfig,
+                  password: nextPassword,
+                }
+              : {
+                  host: currentConfig.host,
+                  port: currentConfig.port,
+                  username: currentConfig.username ?? undefined,
+                  db: currentConfig.db,
+                  tlsEnabled: currentConfig.tlsEnabled,
+                  ...inputConfig,
+                  password: nextPassword,
+                }
+          );
+
+    this.assertOriginChangeHasReplacementPassword(currentConfig, mergedConfig, replacementPassword);
 
     const connectionFieldsChanged = JSON.stringify(currentConfig) !== JSON.stringify(mergedConfig);
     let statusUpdate: Partial<typeof databaseConnections.$inferInsert> = {};
@@ -830,7 +336,7 @@ export class DatabaseConnectionService {
       },
     });
     this.emitChange(id, 'updated', { name: row.name, type: row.type, healthStatus: row.healthStatus });
-    return this.toView(row, mergedConfig, false, false);
+    return toDatabaseConnectionView(row, mergedConfig, false, false);
   }
 
   async delete(id: string, userId: string): Promise<void> {
@@ -903,90 +409,15 @@ export class DatabaseConnectionService {
   }
 
   async listPostgresSchemas(id: string) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const result = await pool.query<{ schema_name: string }>(
-        `select distinct table_schema as schema_name
-           from information_schema.tables
-         where table_schema not in ('information_schema', 'pg_catalog')
-         order by schema_name asc`
-      );
-      return result.rows.map((row) => row.schema_name);
-    });
+    return listPostgresSchemasOperation(this.postgresSchemaOperationContext(), id);
   }
 
   async listPostgresTables(id: string, schema: string) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const result = await pool.query<{
-        table_name: string;
-        table_type: string;
-      }>(
-        `select table_name, table_type
-           from information_schema.tables
-          where table_schema = $1
-          order by table_name asc`,
-        [schema]
-      );
-      return result.rows.map((row) => ({
-        name: row.table_name,
-        type: row.table_type === 'VIEW' ? 'view' : 'table',
-      }));
-    });
+    return listPostgresTablesOperation(this.postgresSchemaOperationContext(), id, schema);
   }
 
   async getPostgresTableMetadata(id: string, schema: string, table: string) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const columns = await pool.query<{
-        column_name: string;
-        data_type: string;
-        udt_name: string;
-        udt_schema: string;
-        is_nullable: 'YES' | 'NO';
-        column_default: string | null;
-        is_identity: 'YES' | 'NO';
-        is_generated: 'ALWAYS' | 'NEVER';
-        ordinal_position: number;
-      }>(
-        `select column_name, data_type, udt_name, udt_schema, is_nullable, column_default, is_identity, is_generated, ordinal_position
-           from information_schema.columns
-          where table_schema = $1 and table_name = $2
-          order by ordinal_position asc`,
-        [schema, table]
-      );
-      if (columns.rows.length === 0) {
-        throw new AppError(404, 'TABLE_NOT_FOUND', 'Table or view not found');
-      }
-
-      const primaryKeys = await pool.query<{ column_name: string }>(
-        `select kcu.column_name
-           from information_schema.table_constraints tc
-           join information_schema.key_column_usage kcu
-             on tc.constraint_name = kcu.constraint_name
-            and tc.table_schema = kcu.table_schema
-          where tc.constraint_type = 'PRIMARY KEY'
-            and tc.table_schema = $1
-            and tc.table_name = $2
-          order by kcu.ordinal_position asc`,
-        [schema, table]
-      );
-
-      const pkSet = new Set(primaryKeys.rows.map((row) => row.column_name));
-      return {
-        schema,
-        table,
-        columns: columns.rows.map((column) => ({
-          name: column.column_name,
-          dataType: column.data_type,
-          udtName: column.udt_name,
-          udtSchema: column.udt_schema,
-          nullable: column.is_nullable === 'YES',
-          isPrimaryKey: pkSet.has(column.column_name),
-          hasDefault:
-            column.column_default !== null || column.is_identity === 'YES' || column.is_generated === 'ALWAYS',
-        })),
-        primaryKey: primaryKeys.rows.map((row) => row.column_name),
-        hasPrimaryKey: primaryKeys.rows.length > 0,
-      };
-    });
+    return getPostgresTableMetadataOperation(this.postgresSchemaOperationContext(), id, schema, table);
   }
 
   async browsePostgresRows(
@@ -1048,33 +479,7 @@ export class DatabaseConnectionService {
   }
 
   async insertPostgresRow(id: string, schema: string, table: string, values: Record<string, unknown>, userId: string) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const metadata = await this.getPostgresTableMetadata(id, schema, table);
-      const columnByName = new Map(metadata.columns.map((column) => [column.name, column]));
-      const allowedColumns = metadata.columns.map((column) => column.name).filter((name) => name in values);
-      if (allowedColumns.length === 0) {
-        throw new AppError(400, 'INVALID_ROW', 'At least one column value is required');
-      }
-
-      const params = allowedColumns.map((column) => values[column]);
-      const schemaSql = quoteIdent(schema);
-      const tableSql = quoteIdent(table);
-      const sql = `insert into ${schemaSql}.${tableSql} (${allowedColumns.map(quoteIdent).join(', ')})
-        values (${allowedColumns
-          .map((column, index) => postgresParameterSql(index + 1, columnByName.get(column)!))
-          .join(', ')})
-        returning *`;
-      const result = await pool.query(sql, params);
-      await this.auditService.log({
-        userId,
-        action: 'database.postgres.row.insert',
-        resourceType: 'database',
-        resourceId: id,
-        details: { schema, table, columns: allowedColumns },
-      });
-      this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
-      return result.rows[0] ?? null;
-    });
+    return insertPostgresRowOperation(this.postgresRowOperationContext(), id, schema, table, values, userId);
   }
 
   async updatePostgresRow(
@@ -1085,61 +490,15 @@ export class DatabaseConnectionService {
     values: Record<string, unknown>,
     userId: string
   ) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const metadata = await this.getPostgresTableMetadata(id, schema, table);
-      const columnByName = new Map(metadata.columns.map((column) => [column.name, column]));
-      if (!metadata.hasPrimaryKey) {
-        throw new AppError(400, 'PRIMARY_KEY_REQUIRED', 'Row updates require a primary key');
-      }
-
-      const keyColumns = metadata.primaryKey;
-      for (const keyColumn of keyColumns) {
-        if (!(keyColumn in primaryKey)) {
-          throw new AppError(400, 'PRIMARY_KEY_REQUIRED', `Missing primary key column "${keyColumn}"`);
-        }
-      }
-
-      const updateColumns = metadata.columns
-        .map((column) => column.name)
-        .filter((column) => column in values && !keyColumns.includes(column));
-      if (updateColumns.length === 0) {
-        throw new AppError(400, 'INVALID_ROW', 'No editable columns provided');
-      }
-
-      const params = [
-        ...updateColumns.map((column) => values[column]),
-        ...keyColumns.map((column) => primaryKey[column]),
-      ];
-      const setSql = updateColumns
-        .map((column, index) => `${quoteIdent(column)} = ${postgresParameterSql(index + 1, columnByName.get(column)!)}`)
-        .join(', ');
-      const whereSql = keyColumns
-        .map(
-          (column, index) =>
-            `${quoteIdent(column)} = ${postgresParameterSql(
-              updateColumns.length + index + 1,
-              columnByName.get(column)!
-            )}`
-        )
-        .join(' and ');
-
-      const result = await pool.query(
-        `update ${quoteIdent(schema)}.${quoteIdent(table)}
-            set ${setSql}
-          where ${whereSql}
-        returning *`,
-        params
-      );
-      await this.auditService.log({
-        userId,
-        action: 'database.postgres.row.update',
-        resourceType: 'database',
-        resourceId: id,
-        details: { schema, table, primaryKey: Object.keys(primaryKey), columns: updateColumns },
-      });
-      this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
-      return result.rows[0] ?? null;
-    });
+    return updatePostgresRowOperation(
+      this.postgresRowOperationContext(),
+      id,
+      schema,
+      table,
+      primaryKey,
+      values,
+      userId
+    );
   }
 
   async deletePostgresRow(
@@ -1149,33 +508,7 @@ export class DatabaseConnectionService {
     primaryKey: Record<string, unknown>,
     userId: string
   ) {
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const metadata = await this.getPostgresTableMetadata(id, schema, table);
-      const columnByName = new Map(metadata.columns.map((column) => [column.name, column]));
-      if (!metadata.hasPrimaryKey) {
-        throw new AppError(400, 'PRIMARY_KEY_REQUIRED', 'Row deletes require a primary key');
-      }
-      const keyColumns = metadata.primaryKey;
-      for (const keyColumn of keyColumns) {
-        if (!(keyColumn in primaryKey)) {
-          throw new AppError(400, 'PRIMARY_KEY_REQUIRED', `Missing primary key column "${keyColumn}"`);
-        }
-      }
-      const params = keyColumns.map((column) => primaryKey[column]);
-      const whereSql = keyColumns
-        .map((column, index) => `${quoteIdent(column)} = ${postgresParameterSql(index + 1, columnByName.get(column)!)}`)
-        .join(' and ');
-      await pool.query(`delete from ${quoteIdent(schema)}.${quoteIdent(table)} where ${whereSql}`, params);
-      await this.auditService.log({
-        userId,
-        action: 'database.postgres.row.delete',
-        resourceType: 'database',
-        resourceId: id,
-        details: { schema, table, primaryKey: Object.keys(primaryKey) },
-      });
-      this.emitChange(id, 'data.updated', { provider: 'postgres', schema, table });
-      return { success: true };
-    });
+    return deletePostgresRowOperation(this.postgresRowOperationContext(), id, schema, table, primaryKey, userId);
   }
 
   async updatePostgresColumnType(
@@ -1188,7 +521,7 @@ export class DatabaseConnectionService {
   ) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const normalizedType = normalizePostgresColumnType(dataType);
-      const typeSql = POSTGRES_COLUMN_TYPE_SQL.get(normalizedType);
+      const typeSql = postgresColumnTypeSql(normalizedType);
       if (!typeSql) {
         throw new AppError(400, 'INVALID_COLUMN_TYPE', 'Unsupported PostgreSQL column data type');
       }
@@ -1221,7 +554,7 @@ export class DatabaseConnectionService {
   async addPostgresColumn(id: string, schema: string, table: string, column: string, dataType: string, userId: string) {
     return this.withPostgresPool(id, 'query', async (pool) => {
       const normalizedType = normalizePostgresColumnType(dataType);
-      const typeSql = POSTGRES_COLUMN_TYPE_SQL.get(normalizedType);
+      const typeSql = postgresColumnTypeSql(normalizedType);
       if (!typeSql) {
         throw new AppError(400, 'INVALID_COLUMN_TYPE', 'Unsupported PostgreSQL column data type');
       }
@@ -1265,93 +598,11 @@ export class DatabaseConnectionService {
   }
 
   async executePostgresSql(id: string, sqlText: string, userId: string, options: { maxRows?: number } = {}) {
-    const maxRows = Math.min(Math.max(Math.trunc(options.maxRows ?? 500), 1), 2000);
-    const statements = splitPostgresStatements(sqlText);
-    if (statements.length > POSTGRES_RESULT_SET_MAX) {
-      throw new AppError(
-        400,
-        'POSTGRES_STATEMENT_LIMIT_EXCEEDED',
-        `Postgres SQL execution is limited to ${POSTGRES_RESULT_SET_MAX} statements per request`
-      );
-    }
-
-    return this.withPostgresPool(id, 'query', async (pool) => {
-      const client = await pool.connect();
-      const entries: Array<pg.QueryResult & { durationMs: number }> = [];
-      let responseTruncated = false;
-      try {
-        await client.query(`SET statement_timeout = ${POSTGRES_QUERY_TIMEOUT_MS}`);
-        for (const [index, statement] of statements.entries()) {
-          const start = Date.now();
-          const entry = await client.query(statement);
-          if (index < POSTGRES_RESULT_SET_MAX) {
-            entries.push({ ...entry, durationMs: Date.now() - start });
-          }
-        }
-      } finally {
-        await client.query('RESET statement_timeout').catch(() => {});
-        client.release();
-      }
-      const results = [];
-      for (const entry of entries) {
-        const compacted = compactPostgresRows(entry.rows, maxRows);
-        const next = {
-          command: entry.command,
-          rowCount: entry.rowCount ?? 0,
-          durationMs: entry.durationMs,
-          fields: entry.fields?.map((field: { name: string }) => field.name) ?? [],
-          rows: compacted.rows,
-          truncated: compacted.truncated,
-          maxRows,
-        };
-        if (estimateJsonBytes([...results, next]) > POSTGRES_RESPONSE_MAX_BYTES) {
-          responseTruncated = true;
-          break;
-        }
-        results.push(next);
-      }
-      const intent = inferPostgresIntent(sqlText);
-      await this.auditService.log({
-        userId,
-        action: 'database.postgres.query',
-        resourceType: 'database',
-        resourceId: id,
-        details: {
-          intent,
-          statementCount: statements.length,
-          statementHash: hashPreview(sqlText),
-          statementPreview: sqlText.trim().slice(0, 160),
-        },
-      });
-      this.emitChange(id, 'query.executed', {
-        provider: 'postgres',
-        intent,
-        statementCount: statements.length,
-      });
-      return { results, truncated: responseTruncated, resultLimit: POSTGRES_RESULT_SET_MAX };
-    });
+    return executePostgresSqlOperation(this.queryExecutionContext(), id, sqlText, userId, options);
   }
 
   async scanRedisKeys(id: string, cursor: number, limit: number, search?: string, type?: string) {
-    return this.withRedisClient(id, 'query', async (client) => {
-      const args = [`${cursor}`];
-      if (search) args.push('MATCH', search.includes('*') ? search : `*${search}*`);
-      args.push('COUNT', `${limit}`);
-      if (type) args.push('TYPE', type);
-      const [nextCursor, keys] = (await (client as any).scan(...args)) as [string, string[]];
-      const rows = await Promise.all(
-        keys.map(async (key) => ({
-          key,
-          type: await client.type(key),
-          ttlSeconds: await client.ttl(key),
-        }))
-      );
-      return {
-        cursor: Number(nextCursor),
-        done: nextCursor === '0',
-        keys: rows,
-      };
-    });
+    return this.withRedisClient(id, 'query', (client) => scanRedisKeysOperation(client, cursor, limit, search, type));
   }
 
   async getRedisKey(
@@ -1359,116 +610,19 @@ export class DatabaseConnectionService {
     key: string,
     options: { offset?: number; limit?: number; maxStringBytes?: number } = {}
   ) {
-    return this.withRedisClient(id, 'query', async (client) => {
-      const offset = Math.max(Math.trunc(options.offset ?? 0), 0);
-      const limit = Math.min(Math.max(Math.trunc(options.limit ?? 100), 1), 500);
-      const maxStringBytes = Math.min(Math.max(Math.trunc(options.maxStringBytes ?? 64 * 1024), 1), 1024 * 1024);
-      const type = await client.type(key);
-      if (type === 'none') throw new AppError(404, 'KEY_NOT_FOUND', 'Redis key not found');
-      const ttlSeconds = await client.ttl(key);
-      let value: unknown;
-      let page: Record<string, unknown> | undefined;
-      switch (type) {
-        case 'string': {
-          const total = await client.strlen(key);
-          const raw = (await client.getrange(key, offset, offset + maxStringBytes - 1)) ?? '';
-          const truncated = truncateUtf8(raw, maxStringBytes);
-          value = truncated.value;
-          page = {
-            offset,
-            limit: maxStringBytes,
-            returned: Buffer.byteLength(truncated.value, 'utf8'),
-            total,
-            truncated: truncated.truncated || offset + Buffer.byteLength(truncated.value, 'utf8') < total,
-          };
-          break;
-        }
-        case 'hash': {
-          const [cursor, entries] = (await client.hscan(key, String(offset), 'COUNT', limit)) as [string, string[]];
-          value = Object.fromEntries(
-            Array.from({ length: Math.floor(entries.length / 2) }, (_, index) => [
-              entries[index * 2]!,
-              entries[index * 2 + 1]!,
-            ])
-          );
-          page = { cursor: Number(cursor), limit, returned: entries.length / 2, total: await client.hlen(key) };
-          break;
-        }
-        case 'list':
-          value = await client.lrange(key, offset, offset + limit - 1);
-          page = { offset, limit, returned: Array.isArray(value) ? value.length : 0, total: await client.llen(key) };
-          break;
-        case 'set': {
-          const [cursor, members] = (await client.sscan(key, String(offset), 'COUNT', limit)) as [string, string[]];
-          value = members;
-          page = { cursor: Number(cursor), limit, returned: members.length, total: await client.scard(key) };
-          break;
-        }
-        case 'zset': {
-          const pairs = await client.zrange(key, offset, offset + limit - 1, 'WITHSCORES');
-          value = pairs.reduce<Array<{ member: string; score: number }>>((acc, item, index, list) => {
-            if (index % 2 === 0) acc.push({ member: item, score: Number(list[index + 1] ?? 0) });
-            return acc;
-          }, []);
-          page = {
-            offset,
-            limit,
-            returned: Array.isArray(value) ? value.length : 0,
-            total: await client.zcard(key),
-          };
-          break;
-        }
-        case 'stream':
-          value = await client.xrange(key, '-', '+', 'COUNT', limit);
-          page = { offset: 0, limit, returned: Array.isArray(value) ? value.length : 0 };
-          break;
-        default:
-          value = await client.call('DUMP', key);
-          break;
-      }
-      if (type !== 'string') {
-        const compacted = compactForJsonBudget(value, REDIS_COMMAND_MAX_BYTES);
-        value = compacted.value;
-        page = { ...(page ?? {}), truncated: Boolean(page?.truncated) || compacted.truncated };
-      }
-      return { key, type, ttlSeconds, value, page };
-    });
+    return this.withRedisClient(id, 'query', (client) => getRedisKeyOperation(client, key, options));
   }
 
   async setRedisKey(
     id: string,
     key: string,
-    valueType: 'string' | 'hash' | 'list' | 'set' | 'zset',
+    valueType: RedisKeyValueType,
     value: unknown,
     ttlSeconds: number | undefined,
     userId: string
   ) {
     return this.withRedisClient(id, 'query', async (client) => {
-      const multi = client.multi();
-      multi.del(key);
-      switch (valueType) {
-        case 'string':
-          multi.set(key, String(value ?? ''));
-          break;
-        case 'hash':
-          multi.hset(key, value as Record<string, string>);
-          break;
-        case 'list':
-          multi.rpush(key, ...(Array.isArray(value) ? value : []).map((item) => String(item)));
-          break;
-        case 'set':
-          multi.sadd(key, ...(Array.isArray(value) ? value : []).map((item) => String(item)));
-          break;
-        case 'zset': {
-          const members = Array.isArray(value) ? (value as Array<{ member: string; score: number }>) : [];
-          if (members.length > 0) {
-            multi.zadd(key, ...members.flatMap((entry) => [`${entry.score ?? 0}`, `${entry.member ?? ''}`]));
-          }
-          break;
-        }
-      }
-      if (ttlSeconds !== undefined && ttlSeconds >= 0) multi.expire(key, ttlSeconds);
-      await multi.exec();
+      await setRedisKeyOperation(client, key, valueType, value, ttlSeconds);
       await this.auditService.log({
         userId,
         action: 'database.redis.key.set',
@@ -1516,46 +670,7 @@ export class DatabaseConnectionService {
   }
 
   async executeRedisCommand(id: string, commandText: string, userId: string) {
-    return this.withRedisClient(id, 'query', async (client) => {
-      const commands = splitRedisCommands(commandText);
-      const results = [];
-      const intents = new Set<'read' | 'write' | 'admin'>();
-      let responseTruncated = commands.length > REDIS_COMMAND_MAX_COUNT;
-      for (const command of commands.slice(0, REDIS_COMMAND_MAX_COUNT)) {
-        const parts = tokenizeRedisCommand(command);
-        const commandName = parts[0]!.toUpperCase();
-        const rawResult = await client.call(parts[0]!, ...parts.slice(1));
-        const { result, truncated } = compactCommandResult(rawResult);
-        const next = { command: commandName, result, truncated };
-        if (estimateJsonBytes([...results, next]) > REDIS_RESPONSE_MAX_BYTES) {
-          responseTruncated = true;
-          break;
-        }
-        results.push(next);
-        intents.add(inferRedisSingleCommandIntent(command));
-      }
-      const intent = intents.has('admin') ? 'admin' : intents.has('write') ? 'write' : 'read';
-      await this.auditService.log({
-        userId,
-        action: 'database.redis.command.execute',
-        resourceType: 'database',
-        resourceId: id,
-        details: {
-          intent,
-          commandCount: commands.length,
-          commands: results.slice(0, 5).map((entry) => entry.command),
-          commandHash: hashPreview(commandText),
-          commandPreview: commandText.slice(0, 160),
-        },
-      });
-      this.emitChange(id, 'query.executed', {
-        provider: 'redis',
-        intent,
-        commandCount: commands.length,
-        commands: results.slice(0, 5).map((entry) => entry.command),
-      });
-      return { results, truncated: responseTruncated, commandLimit: REDIS_COMMAND_MAX_COUNT };
-    });
+    return executeRedisCommandOperation(this.queryExecutionContext(), id, commandText, userId);
   }
 
   async getDecryptedConfig(id: string): Promise<DatabaseConnectionConfig> {
@@ -1653,53 +768,58 @@ export class DatabaseConnectionService {
     return JSON.parse(this.cryptoService.decryptString(parsed)) as DatabaseConnectionConfig;
   }
 
-  private toView(
-    row: typeof databaseConnections.$inferSelect,
-    config: DatabaseConnectionConfig,
-    revealCredentials: boolean,
-    includeHealthHistory = true
-  ): DatabaseConnectionView {
-    const view = {
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      description: row.description,
-      tags: (row.tags as string[] | null) ?? [],
-      manualSizeLimitMb: row.manualSizeLimitMb,
-      host: row.host,
-      port: row.port,
-      databaseName: row.databaseName,
-      username: row.username,
-      tlsEnabled: row.tlsEnabled,
-      healthStatus: row.healthStatus,
-      lastHealthCheckAt: row.lastHealthCheckAt?.toISOString() ?? null,
-      lastError: row.lastError,
-      ...(includeHealthHistory ? { healthHistory: (row.healthHistory as DatabaseHealthEntry[] | null) ?? [] } : {}),
-      hasStoredPassword: !!config.password,
-      config:
-        config.type === 'postgres'
-          ? {
-              host: config.host,
-              port: config.port,
-              database: config.database,
-              username: config.username,
-              password: revealCredentials ? config.password : maskValue(config.password),
-              sslEnabled: config.sslEnabled,
-            }
-          : {
-              host: config.host,
-              port: config.port,
-              username: config.username,
-              password: revealCredentials ? config.password : maskValue(config.password),
-              db: config.db,
-              tlsEnabled: config.tlsEnabled,
-            },
-      createdById: row.createdById,
-      updatedById: row.updatedById,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
+  private extractReplacementPassword(inputConfig: UpdateDatabaseConnectionInput['config']): string | undefined {
+    if (!inputConfig) return undefined;
+    if ('password' in inputConfig) return inputConfig.password;
+    if (!inputConfig.connectionString) return undefined;
+
+    try {
+      const url = new URL(inputConfig.connectionString);
+      return url.password ? decodeURIComponent(url.password) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private databaseCredentialOrigin(config: DatabaseConnectionConfig): Record<string, string | number | boolean | null> {
+    if (config.type === 'postgres') {
+      return {
+        type: config.type,
+        host: config.host.trim().toLowerCase(),
+        port: config.port,
+        database: config.database,
+        username: config.username,
+        sslEnabled: config.sslEnabled,
+      };
+    }
+
+    return {
+      type: config.type,
+      host: config.host.trim().toLowerCase(),
+      port: config.port,
+      db: config.db,
+      username: config.username ?? null,
+      tlsEnabled: config.tlsEnabled,
     };
-    return view as DatabaseConnectionView;
+  }
+
+  private assertOriginChangeHasReplacementPassword(
+    currentConfig: DatabaseConnectionConfig,
+    mergedConfig: DatabaseConnectionConfig,
+    replacementPassword: string | undefined
+  ) {
+    if (!currentConfig.password) return;
+
+    const currentOrigin = this.databaseCredentialOrigin(currentConfig);
+    const nextOrigin = this.databaseCredentialOrigin(mergedConfig);
+    const originChanged = Object.keys(currentOrigin).some((key) => currentOrigin[key] !== nextOrigin[key]);
+    if (!originChanged || replacementPassword?.length) return;
+
+    throw new AppError(
+      400,
+      'CREDENTIAL_REENTRY_REQUIRED',
+      'Database connection target changed. Re-enter the database password to avoid reusing saved credentials against a different target.'
+    );
   }
 
   private normalizePostgres(
@@ -1842,19 +962,6 @@ export class DatabaseConnectionService {
     }
     const responseMs = Date.now() - started;
     return { status: responseMs >= 1_000 ? 'degraded' : 'online', responseMs };
-  }
-
-  private buildConnectionString(config: DatabaseConnectionConfig): string {
-    if (config.type === 'postgres') {
-      const protocol = 'postgresql';
-      const sslMode = config.sslEnabled ? '?sslmode=require' : '';
-      return `${protocol}://${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}@${config.host}:${config.port}/${encodeURIComponent(config.database)}${sslMode}`;
-    }
-    const protocol = config.tlsEnabled ? 'rediss' : 'redis';
-    const auth = config.username
-      ? `${encodeURIComponent(config.username)}:${encodeURIComponent(config.password)}`
-      : `:${encodeURIComponent(config.password)}`;
-    return `${protocol}://${auth}@${config.host}:${config.port}/${config.db}`;
   }
 
   async getPostgresPool(id: string): Promise<pg.Pool> {

@@ -158,6 +158,8 @@ Gateway intentionally treats the two OAuth resources differently:
 - Gateway API OAuth keeps expiring access tokens and refresh-token renewal.
 - Gateway MCP OAuth is intended for long-lived MCP and AI clients. MCP authorizations issue a long-lived access token and do not depend on refresh-token renewal during normal use.
 
+MCP authorizations should be removed explicitly when access is no longer needed; revocation immediately stops the corresponding MCP token from being accepted.
+
 OAuth authorizations are managed in **Settings > OAuth Applications**. If the same client has grants for both API and MCP resources, Gateway displays them as separate rows.
 
 ### MCP
@@ -295,8 +297,10 @@ To use it:
 Operational notes:
 
 - No data is sent to an AI provider until an admin enables the assistant.
-- Tool calls are permission-gated.
-- Destructive operations require approval unless an admin configures bypass rules.
+- Chat execution is backend-owned. Closing the AI panel or reconnecting the browser does not make an active assistant run depend on that WebSocket connection.
+- Saved conversation history is loaded over REST, while active chat turns, approvals, questions, stops, and live snapshots use the AI WebSocket.
+- Tool calls are permission-gated and scopes are checked by the backend before execution.
+- Destructive operations require approval unless the user's AI approval mode allows the backend to auto-approve that class of tool.
 - AI-initiated actions are flagged in audit logs.
 - The assistant can use Gateway-specific context from its knowledge base.
 

@@ -1,0 +1,114 @@
+import type * as React from "react";
+import { EmptyState } from "@/components/common/EmptyState";
+import { cn } from "@/lib/utils";
+
+export interface SimpleTableColumn<TRow> {
+  id: string;
+  header: React.ReactNode;
+  align?: "left" | "center" | "right";
+  className?: string;
+  cellClassName?: string;
+  render: (row: TRow) => React.ReactNode;
+}
+
+interface SimpleTableProps<TRow> {
+  columns: SimpleTableColumn<TRow>[];
+  rows: TRow[];
+  getRowKey: (row: TRow, index: number) => React.Key;
+  loading?: boolean;
+  loadingMessage?: React.ReactNode;
+  emptyMessage?: string;
+  onRowClick?: (row: TRow, index: number) => void;
+  isRowClickable?: (row: TRow, index: number) => boolean;
+  rowClassName?: string | ((row: TRow, index: number) => string | undefined);
+  className?: string;
+  tableClassName?: string;
+  headerRowClassName?: string;
+  bodyClassName?: string;
+}
+
+function alignClass(align: SimpleTableColumn<unknown>["align"]) {
+  if (align === "right") return "text-right";
+  if (align === "center") return "text-center";
+  return "text-left";
+}
+
+export function SimpleTable<TRow>({
+  columns,
+  rows,
+  getRowKey,
+  loading,
+  loadingMessage = "Loading...",
+  emptyMessage = "No items",
+  onRowClick,
+  isRowClickable,
+  rowClassName,
+  className,
+  tableClassName,
+  headerRowClassName,
+  bodyClassName,
+}: SimpleTableProps<TRow>) {
+  if (loading) {
+    return <div className="px-4 py-6 text-sm text-muted-foreground">{loadingMessage}</div>;
+  }
+
+  if (rows.length === 0) {
+    return <EmptyState message={emptyMessage} embedded />;
+  }
+
+  return (
+    <div className={cn("min-w-0 max-w-full overflow-x-auto", className)}>
+      <table className={cn("w-full text-sm", tableClassName)}>
+        <thead>
+          <tr
+            className={cn(
+              "border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground",
+              headerRowClassName
+            )}
+          >
+            {columns.map((column) => (
+              <th
+                key={column.id}
+                className={cn("px-4 py-3 font-medium", alignClass(column.align), column.className)}
+              >
+                {column.header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className={bodyClassName}>
+          {rows.map((row, index) => {
+            const interactive = Boolean(onRowClick && (isRowClickable?.(row, index) ?? true));
+            const resolvedRowClassName =
+              typeof rowClassName === "function" ? rowClassName(row, index) : rowClassName;
+
+            return (
+              <tr
+                key={getRowKey(row, index)}
+                className={cn(
+                  "border-b border-border last:border-b-0",
+                  interactive && "cursor-pointer transition-colors hover:bg-accent",
+                  resolvedRowClassName
+                )}
+                onClick={interactive ? () => onRowClick?.(row, index) : undefined}
+              >
+                {columns.map((column) => (
+                  <td
+                    key={column.id}
+                    className={cn(
+                      "px-4 py-3 align-middle",
+                      alignClass(column.align),
+                      column.cellClassName
+                    )}
+                  >
+                    {column.render(row)}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}

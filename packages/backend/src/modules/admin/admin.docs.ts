@@ -1,6 +1,14 @@
 import { z } from '@hono/zod-openapi';
 import { appRoute, createdJson, IdParamSchema, jsonBody, okJson, UnknownDataResponseSchema } from '@/lib/openapi.js';
 import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
+import {
   CreateUserSchema,
   UpdateAuthProvisioningSettingsSchema,
   UpdateBlockSchema,
@@ -12,6 +20,77 @@ export const listAdminUsersRoute = appRoute({
   path: '/users',
   tags: ['Admin'],
   summary: 'List users',
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const listAdminUserFoldersRoute = appRoute({
+  method: 'get',
+  path: '/user-folders',
+  tags: ['Admin Folders'],
+  summary: 'List user folders',
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const createAdminUserFolderRoute = appRoute({
+  method: 'post',
+  path: '/user-folders',
+  tags: ['Admin Folders'],
+  summary: 'Create a user folder',
+  request: jsonBody(CreateResourceFolderSchema),
+  responses: createdJson(UnknownDataResponseSchema),
+});
+
+export const reorderAdminUserFoldersRoute = appRoute({
+  method: 'put',
+  path: '/user-folders/reorder',
+  tags: ['Admin Folders'],
+  summary: 'Reorder user folders',
+  request: jsonBody(ReorderResourceFoldersSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const moveAdminUsersToFolderRoute = appRoute({
+  method: 'post',
+  path: '/user-folders/move-users',
+  tags: ['Admin Folders'],
+  summary: 'Move users to a folder',
+  request: jsonBody(MoveResourcesToFolderSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const reorderAdminUsersRoute = appRoute({
+  method: 'put',
+  path: '/user-folders/reorder-users',
+  tags: ['Admin Folders'],
+  summary: 'Reorder users',
+  request: jsonBody(ReorderResourcesSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const updateAdminUserFolderRoute = appRoute({
+  method: 'put',
+  path: '/user-folders/{id}',
+  tags: ['Admin Folders'],
+  summary: 'Update a user folder',
+  request: { params: IdParamSchema, ...jsonBody(UpdateResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const moveAdminUserFolderRoute = appRoute({
+  method: 'put',
+  path: '/user-folders/{id}/move',
+  tags: ['Admin Folders'],
+  summary: 'Move a user folder',
+  request: { params: IdParamSchema, ...jsonBody(MoveResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const deleteAdminUserFolderRoute = appRoute({
+  method: 'delete',
+  path: '/user-folders/{id}',
+  tags: ['Admin Folders'],
+  summary: 'Delete a user folder',
+  request: { params: IdParamSchema },
   responses: okJson(UnknownDataResponseSchema),
 });
 

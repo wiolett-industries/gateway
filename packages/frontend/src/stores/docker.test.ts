@@ -7,6 +7,7 @@ function dockerNode(id: string) {
     type: "docker" as const,
     hostname: id,
     displayName: null,
+    appearanceColor: null,
     status: "online" as const,
     serviceCreationLocked: false,
     daemonVersion: null,
@@ -37,5 +38,45 @@ describe("docker store", () => {
     useDockerStore.getState().setDockerNodes([dockerNode("node-b")]);
 
     expect(useDockerStore.getState().selectedNodeId).toBeNull();
+  });
+
+  it("updates cached node-tagged Docker rows when node appearance changes", () => {
+    useDockerStore.setState({
+      dockerNodes: [dockerNode("node-a")],
+      containers: [
+        { id: "container-a", name: "app", image: "busybox", state: "running", _nodeId: "node-a" },
+      ] as never,
+      containersByScope: {
+        node_a: [
+          {
+            id: "container-a",
+            name: "app",
+            image: "busybox",
+            state: "running",
+            _nodeId: "node-a",
+          },
+        ] as never,
+      },
+    });
+
+    useDockerStore.getState().syncNodeAppearance({
+      id: "node-a",
+      hostname: "node-a",
+      displayName: "Blue Node",
+      appearanceColor: "blue",
+    });
+
+    expect(useDockerStore.getState().dockerNodes[0]).toMatchObject({
+      displayName: "Blue Node",
+      appearanceColor: "blue",
+    });
+    expect(useDockerStore.getState().containers[0]).toMatchObject({
+      _nodeName: "Blue Node",
+      _nodeColor: "blue",
+    });
+    expect(useDockerStore.getState().containersByScope.node_a?.[0]).toMatchObject({
+      _nodeName: "Blue Node",
+      _nodeColor: "blue",
+    });
   });
 });

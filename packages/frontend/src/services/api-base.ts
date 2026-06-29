@@ -36,13 +36,46 @@ export class ApiRequestError extends Error {
 
 function extractApiErrorMessage(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") return fallback;
-  const candidate = payload as { message?: unknown; error?: unknown };
+  const candidate = payload as {
+    code?: unknown;
+    message?: unknown;
+    error?: unknown;
+    details?: unknown;
+  };
+  const firstDetailMessage = Array.isArray(candidate.details)
+    ? candidate.details.find(
+        (detail): detail is { message: string } =>
+          !!detail &&
+          typeof detail === "object" &&
+          typeof (detail as { message?: unknown }).message === "string" &&
+          Boolean((detail as { message: string }).message.trim())
+      )?.message
+    : undefined;
+
+  if (
+    candidate.code === "VALIDATION_ERROR" &&
+    typeof firstDetailMessage === "string" &&
+    firstDetailMessage.trim()
+  ) {
+    return firstDetailMessage;
+  }
   if (typeof candidate.message === "string" && candidate.message.trim()) {
     return candidate.message;
   }
   if (typeof candidate.error === "string" && candidate.error.trim()) {
     return candidate.error;
   }
+  if (candidate.error && typeof candidate.error === "object") {
+    const nested = candidate.error as { message?: unknown; error?: unknown };
+    if (typeof nested.message === "string" && nested.message.trim()) {
+      return nested.message;
+    }
+    if (typeof nested.error === "string" && nested.error.trim()) {
+      return nested.error;
+    }
+  }
+  if (typeof firstDetailMessage === "string" && firstDetailMessage.trim())
+    return firstDetailMessage;
   return fallback;
 }
 
@@ -51,6 +84,18 @@ function getRetryAfterSeconds(response: Response): number {
   if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter;
 
   const resetAt = Number(response.headers.get("X-RateLimit-Reset"));
+  if (Number.isFinite(resetAt) && resetAt > 0) {
+    return Math.max(1, Math.ceil(resetAt - Date.now() / 1000));
+  }
+
+  return 60;
+}
+
+function getXhrRetryAfterSeconds(xhr: XMLHttpRequest): number {
+  const retryAfter = Number(xhr.getResponseHeader("Retry-After"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter;
+
+  const resetAt = Number(xhr.getResponseHeader("X-RateLimit-Reset"));
   if (Number.isFinite(resetAt) && resetAt > 0) {
     return Math.max(1, Math.ceil(resetAt - Date.now() / 1000));
   }
@@ -196,6 +241,9 @@ export class ApiClientBase {
     if (options.headers) {
       new Headers(options.headers).forEach((value, key) => headers.set(key, value));
     }
+    if (options.body instanceof FormData) {
+      headers.delete("Content-Type");
+    }
 
     if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
       headers.set("X-CSRF-Token", await this.getCsrfToken());
@@ -327,6 +375,238 @@ export class ApiClientBase {
       }
     }
     return this.fetchRaw<T>(url, options);
+  }
+
+  protected async requestBinary(endpoint: string, options: RequestInit = {}): Promise<ArrayBuffer> {
+    const url =
+      endpoint.startsWith("/auth") || endpoint.startsWith(API_BASE)
+        ? endpoint
+        : `${API_BASE}${endpoint}`;
+    const generation = this.sessionGeneration;
+    const method = (options.method || "GET").toUpperCase();
+    const headers = new Headers(this.getHeaders());
+    if (options.headers) {
+      new Headers(options.headers).forEach((value, key) => headers.set(key, value));
+    }
+    if (options.body instanceof FormData) {
+      headers.delete("Content-Type");
+    }
+
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+      headers.set("X-CSRF-Token", await this.getCsrfToken());
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        credentials: "include",
+        headers,
+      });
+    } catch {
+      useAppStatusStore.getState().setMaintenanceActive(true);
+      throw new ApiRequestError("Service unavailable", {
+        status: 0,
+        code: "SERVICE_UNAVAILABLE",
+      });
+    }
+
+    if (response.status < 500) {
+      useAppStatusStore.getState().setMaintenanceActive(false);
+    }
+
+    this.assertSessionGeneration(generation);
+
+    if (!response.ok) {
+      const parsedError = await response.json().catch(() => undefined);
+      if (response.status === 429) {
+        const retryAfterSeconds = getRetryAfterSeconds(response);
+        useAppStatusStore.getState().activateRateLimit(retryAfterSeconds);
+        throw new ApiRequestError("Too many requests, please try again later", {
+          status: response.status,
+          code: "RATE_LIMIT_EXCEEDED",
+          retryAfterSeconds,
+        });
+      }
+      if (response.status === 401) {
+        this.clearCsrfToken();
+        useAuthStore.getState().logout();
+        window.location.href = getLoginRedirectUrl();
+        throw new ApiRequestError("Session expired", {
+          status: response.status,
+          code: "UNAUTHORIZED",
+        });
+      }
+      if (response.status === 403) {
+        const message = extractApiErrorMessage(parsedError, "Insufficient permissions");
+        if (message === "Invalid CSRF token") {
+          this.clearCsrfToken();
+        }
+        if (message === "Account is blocked") {
+          window.location.href = "/blocked";
+          throw new ApiRequestError("Account is blocked", {
+            status: response.status,
+            code: "ACCOUNT_BLOCKED",
+          });
+        }
+        throw new ApiRequestError(message, {
+          status: response.status,
+          code: "FORBIDDEN",
+        });
+      }
+
+      const fallback = response.status >= 500 ? "Service unavailable" : "An unknown error occurred";
+      throw new ApiRequestError(extractApiErrorMessage(parsedError, fallback), {
+        status: response.status,
+        code:
+          parsedError && typeof parsedError === "object"
+            ? ((parsedError as ApiError).code ?? undefined)
+            : undefined,
+      });
+    }
+
+    const data = await response.arrayBuffer();
+    this.assertSessionGeneration(generation);
+    return data;
+  }
+
+  protected async uploadRaw<T>(
+    endpoint: string,
+    {
+      method = "POST",
+      body,
+      headers,
+      onProgress,
+    }: {
+      method?: "POST" | "PUT";
+      body: XMLHttpRequestBodyInit;
+      headers?: HeadersInit;
+      onProgress?: (progress: { loaded: number; total: number }) => void;
+    }
+  ): Promise<T> {
+    const url =
+      endpoint.startsWith("/auth") || endpoint.startsWith(API_BASE)
+        ? endpoint
+        : `${API_BASE}${endpoint}`;
+    const generation = this.sessionGeneration;
+    const requestHeaders = new Headers(headers);
+    requestHeaders.set("X-CSRF-Token", await this.getCsrfToken());
+
+    return new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url, true);
+      xhr.withCredentials = true;
+      requestHeaders.forEach((value, key) => xhr.setRequestHeader(key, value));
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          onProgress?.({ loaded: event.loaded, total: event.total });
+        }
+      };
+
+      xhr.onerror = () => {
+        useAppStatusStore.getState().setMaintenanceActive(true);
+        reject(
+          new ApiRequestError("Service unavailable", {
+            status: 0,
+            code: "SERVICE_UNAVAILABLE",
+          })
+        );
+      };
+
+      xhr.onload = () => {
+        if (xhr.status < 500) {
+          useAppStatusStore.getState().setMaintenanceActive(false);
+        }
+
+        try {
+          this.assertSessionGeneration(generation);
+        } catch (err) {
+          reject(err);
+          return;
+        }
+
+        const parseJson = () => {
+          if (!xhr.responseText) return undefined;
+          try {
+            return JSON.parse(xhr.responseText) as unknown;
+          } catch {
+            return undefined;
+          }
+        };
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(parseJson() as T);
+          return;
+        }
+
+        const parsedError = parseJson();
+        const errorCode =
+          parsedError && typeof parsedError === "object"
+            ? ((parsedError as ApiError).code ?? undefined)
+            : undefined;
+
+        if (xhr.status === 429) {
+          const retryAfterSeconds = getXhrRetryAfterSeconds(xhr);
+          useAppStatusStore.getState().activateRateLimit(retryAfterSeconds);
+          reject(
+            new ApiRequestError("Too many requests, please try again later", {
+              status: xhr.status,
+              code: "RATE_LIMIT_EXCEEDED",
+              retryAfterSeconds,
+            })
+          );
+          return;
+        }
+
+        if (xhr.status === 401) {
+          this.clearCsrfToken();
+          useAuthStore.getState().logout();
+          window.location.href = getLoginRedirectUrl();
+          reject(
+            new ApiRequestError("Session expired", {
+              status: xhr.status,
+              code: "UNAUTHORIZED",
+            })
+          );
+          return;
+        }
+
+        if (xhr.status === 403) {
+          const message = extractApiErrorMessage(parsedError, "Insufficient permissions");
+          if (message === "Invalid CSRF token") {
+            this.clearCsrfToken();
+          }
+          if (message === "Account is blocked") {
+            window.location.href = "/blocked";
+            reject(
+              new ApiRequestError("Account is blocked", {
+                status: xhr.status,
+                code: "ACCOUNT_BLOCKED",
+              })
+            );
+            return;
+          }
+          reject(
+            new ApiRequestError(message, {
+              status: xhr.status,
+              code: "FORBIDDEN",
+            })
+          );
+          return;
+        }
+
+        const fallback = xhr.status >= 500 ? "Service unavailable" : "An unknown error occurred";
+        reject(
+          new ApiRequestError(extractApiErrorMessage(parsedError, fallback), {
+            status: xhr.status,
+            code: errorCode,
+          })
+        );
+      };
+
+      xhr.send(body);
+    });
   }
 
   /**

@@ -1,6 +1,50 @@
 import { hasScopeBase } from '@/lib/permissions.js';
+import { PERMISSIONS_DOC } from './ai.docs.permissions.js';
 
 export const INTERNAL_DOCS: Record<string, string> = {
+  discovery: `# Resource Discovery
+
+Gateway AI starts conversations with a small base tool surface. Domain-specific tools are discovered by category and then remembered on the backend conversation.
+
+## Base Tools
+- discover_tools: inspect callable tool categories and category-specific tools.
+- get_current_context: read the current UI route/resource when the user says "this page" or "current item".
+- wait: pause briefly when an operation is pending, then continue by re-checking status.
+- find_resource: globally search readable resources by name, ID, domain, image, etc.
+- internal_documentation: read workflow and argument docs before complex operations.
+- ask_question: ask concise clarifying questions.
+- fetch: read a direct HTTP/HTTPS URL through Gateway when sandbox runner is enabled and the user has sandbox access.
+- web_search: available only when enabled by settings.
+
+## Tool Discovery
+- If the needed operation is not available, call discover_tools first.
+- Use internal_documentation before Gateway-specific workflows, tool argument details, permission-sensitive operations, and recently added capabilities. Do not answer those from general intuition.
+- Use discover_tools({ category: "Logging" }) before managing logging environments/schemas/logs.
+- Use discover_tools({ category: "Docker" }) before managing Docker containers/images/volumes/networks.
+- Use discover_tools({ query: "certificate" }) when you know the task but not the category.
+- After discovery, use internal_documentation for workflow details and argument shapes.
+
+Use find_resource whenever the user gives a name, domain, hostname, image, container name, certificate name, logging environment/schema name, database name, or other visible identifier and you need the actual ID or nodeId.
+Use find_resource with an empty query and a concrete type when the user asks to list resources by type, for example Docker containers.
+
+## Rule
+- Use get_current_context when the user refers to the page or resource they are currently viewing.
+- Use wait for short pending states such as container startup, image pull completion, DNS/SSL validation, deployments, daemon reloads, or log ingestion. After wait, call the relevant read/status tool again; do not finish the conversation just because the operation is not complete yet.
+- Prefer find_resource before broad list sweeps.
+- For a direct URL, use fetch. Use web_search only when you need search results rather than the exact URL content.
+- Do not list every node and then inspect every node for Docker resources unless find_resource failed, the user explicitly asked for per-node enumeration, or you need a complete inventory.
+- If the result includes nodeId, pass that nodeId to Docker tools.
+- If exactly one result is valid/applicable for the operation, use it without asking. For Docker image/container operations, ignore non-Docker nodes as choices.
+- If multiple applicable results match, use ask_question to disambiguate.
+
+## Examples
+- Find a container named api: find_resource({ query: "api", types: ["docker_container"] })
+- List Docker containers: find_resource({ query: "", types: ["docker_container"], limit: 50 })
+- List Docker nodes: find_resource({ query: "", types: ["node"], limit: 50 })
+- Find a proxy host by domain: find_resource({ query: "example.com", types: ["proxy_host"] })
+- Find a logging schema: find_resource({ query: "nginx", types: ["logging_schema"] })
+- Search all readable resources: find_resource({ query: "production" })`,
+
   pki: `# PKI (Public Key Infrastructure)
 
 ## Certificate Authorities (CAs)
@@ -31,7 +75,7 @@ SSL certificates in Gateway are used to enable HTTPS on proxy hosts. Three types
 
 ## Types
 1. **ACME** (Let's Encrypt): Automated free certificates via request_acme_cert. Requires domain verification. Auto-renewable.
-2. **Upload**: Manually uploaded PEM certificate + private key via upload_ssl_cert. No auto-renewal — must be re-uploaded before expiry.
+2. **Upload**: Manually uploaded PEM certificate + private key via manage_ssl_certificate({ operation: "upload", ... }). No auto-renewal — must be re-uploaded before expiry.
 3. **Internal**: Linked from PKI store via link_internal_cert(internalCertId). Uses the PKI cert's key material. Renewed by re-issuing the PKI cert and re-linking.
 
 ## ACME Certificates (Let's Encrypt)
@@ -42,7 +86,7 @@ SSL certificates in Gateway are used to enable HTTPS on proxy hosts. Three types
 - Staging mode available for testing (certs not browser-trusted).
 
 ## Uploading Custom Certificates
-- upload_ssl_cert({ certificatePem, privateKeyPem, chainPem? })
+- manage_ssl_certificate({ operation: "upload", certificatePem, privateKeyPem, chainPem? })
 - Chain PEM is optional (intermediate CA chain).
 - Expiry is parsed from the certificate — no auto-renewal.
 
@@ -110,10 +154,10 @@ Domains track DNS records and validation status for domains used across Gateway.
 - Required for ACME HTTP-01 challenges (domain must resolve to Gateway)
 
 ## Lifecycle
-1. Register a domain: createDomain({ domain: "example.com" })
+1. Register a domain: create_domain({ domain: "example.com" })
 2. Gateway checks DNS records automatically every 5 minutes
 3. Status: pending → valid (DNS resolves correctly) or invalid (DNS misconfigured)
-4. Use checkDns to manually trigger an immediate re-check
+4. Use manage_domain({ operation: "check_dns", domainId }) to manually trigger an immediate re-check
 
 ## DNS Records Tracked
 - **A**: IPv4 address — should point to your Gateway/nginx node IP
@@ -149,9 +193,10 @@ Access lists provide IP-based access control and HTTP basic authentication for p
 - Passwords are hashed with bcrypt before storage in htpasswd format
 - Htpasswd files are deployed to nginx nodes via daemon
 
-## Satisfy Mode
-- **"any"** (default): request passes if IP matches OR auth succeeds (logical OR)
-- **"all"**: request must satisfy BOTH IP rules AND auth (logical AND)
+## Tool Argument Shapes
+- create_access_list accepts allowIps and denyIps as string arrays plus basicAuthUsers.
+- manage_access_list({ operation: "update", accessListId, ... }) accepts ipRules as ordered { type, value } objects and basicAuthUsers as { username, password } objects.
+- Use basicAuthEnabled to turn HTTP basic auth on or off. If it is enabled, provide at least one basic auth user.
 
 ## Usage
 - One access list can be shared across multiple proxy hosts
@@ -187,7 +232,7 @@ Templates define preset configurations for issuing PKI certificates. They save t
 
 ## Nginx Config Templates
 Separate from certificate templates — these define nginx server block templates for proxy hosts.
-- Each template has a type (reverse-proxy, redirect, static-site, etc.)
+- Each template has a type: proxy, redirect, or 404.
 - Templates use variable syntax ({{variableName}}) for dynamic values
 - Can be cloned and customized
 - Assigned to proxy hosts via nginxTemplateId`,
@@ -244,7 +289,7 @@ Users authenticate via OIDC (OpenID Connect). Gateway acts as a relying party �
 ## Managing Users
 - View all users: list_users
 - Change a user's group: update_user_role(userId, groupId) — changes their permissions immediately
-- Block a user: update_user(userId, { isBlocked: true }) — blocked users see a "blocked" page after login and cannot use any features
+- Block/unblock users from the Administration UI/API; there is no current AI tool for blocking users.
 - Users cannot be deleted (they're linked to audit logs), only blocked
 
 ## User Fields
@@ -348,6 +393,14 @@ The setup script:
 ### Step 3: Verify connection
 The node status changes from **pending** to **online** in the Nodes list once the daemon connects. The enrollment token is invalidated after first use.
 
+## Assistant Tools
+- list_nodes: list daemon nodes visible to the current user.
+- get_node: inspect one node.
+- execute_node_console_command: run one argv-style command on a node console. Use { nodeId, command: ["sh","-lc","..."] }. This is destructive, requires nodes:console, is available to MCP only when that OAuth scope is explicitly granted, and catastrophic patterns such as rm -rf / are blocked.
+- create_node, rename_node, delete_node: manage node records.
+- manage_node_config: read/update/test nginx node config. Use { operation: "read"|"update"|"test", nodeId, content? }. read requires nodes:config:view:<nodeId>; update/test require nodes:config:edit:<nodeId>. This tool is browser-session-only and is not available to MCP tokens.
+- manage_node_file: manage node filesystem paths. This tool is browser-session-only and is not available to MCP tokens.
+
 ### Alternative: Manual installation
 If you cannot use the setup script, you can install manually:
 1. Download the daemon binary and place it at \`/usr/local/bin/<type>-daemon\`
@@ -369,6 +422,9 @@ All node types support an interactive console — a PTY shell session on the hos
 - Supports popout window, reconnection with output replay, and terminal resize.
 - Shell auto-detected from \`/etc/shells\` (prefers bash > zsh > ash > sh).
 - Can be configured to run as a specific OS user via \`console.user\` in daemon config.
+- The assistant has a separate one-shot \`execute_node_console_command\` tool for command execution when regular Gateway read/manage tools cannot answer the request. Prefer argv commands such as \`["sh","-lc","systemctl status nginx"]\`.
+- Treat every console command as destructive: risky commands require explicit approval and obviously host-breaking commands are blocked before reaching the daemon.
+- Use console tools for host-level inspection or repair only after identifying the exact node with get_current_context or find_resource. Do not guess node IDs from chat text.
 
 ## System Information
 Daemons report hardware/OS info on registration:
@@ -416,237 +472,7 @@ Automated cleanup tasks, configurable in Settings.
 - \`housekeeping:run\` — trigger a manual run.
 - \`housekeeping:configure\` — edit config and schedule.`,
 
-  permissions: `# Permissions & Scopes
-
-Gateway uses a group-based permission system with nested group inheritance. Each user belongs to a permission group that defines their scopes. Groups can inherit from parent groups, forming a hierarchy.
-
-## All Scopes
-
-### PKI: Certificate Authorities
-| Scope | Description |
-|-------|-------------|
-| pki:ca:view:root | List root CAs |
-| pki:ca:view:intermediate | List intermediate CAs |
-| pki:ca:view:root | View root CA details |
-| pki:ca:view:intermediate | View intermediate CA details |
-| pki:ca:create:root | Create root CAs |
-| pki:ca:create:intermediate | Create intermediate CAs (resource-scopable) |
-| pki:ca:revoke:root | Revoke root CAs |
-| pki:ca:revoke:intermediate | Revoke intermediate CAs |
-
-### PKI: Certificates
-| Scope | Description |
-|-------|-------------|
-| pki:cert:view | List PKI certificates |
-| pki:cert:view | View certificate details |
-| pki:cert:issue | Issue certificates from a CA (resource-scopable) |
-| pki:cert:revoke | Revoke certificates |
-| pki:cert:export | Download certificate files and private keys |
-
-### PKI: Certificate Templates
-| Scope | Description |
-|-------|-------------|
-| pki:templates:view | List certificate templates |
-| pki:templates:view | View template details |
-| pki:templates:create | Create templates |
-| pki:templates:edit | Edit templates |
-| pki:templates:delete | Delete templates |
-
-### Reverse Proxy
-| Scope | Description |
-|-------|-------------|
-| proxy:view | List proxy hosts |
-| proxy:view | View proxy host details (resource-scopable) |
-| proxy:create | Create proxy hosts (resource-scopable) |
-| proxy:edit | Update proxy hosts (resource-scopable) |
-| proxy:delete | Delete proxy hosts (resource-scopable) |
-| proxy:raw:read | View raw nginx config in browser-only raw config workflows (resource-scopable) |
-| proxy:raw:write | Write raw nginx config (resource-scopable) |
-| proxy:raw:toggle | Enable/disable raw config mode (resource-scopable) |
-| proxy:raw:bypass | Bypass dangerous raw nginx directive restrictions; browser/session-only (resource-scopable) |
-| proxy:advanced | Edit advanced nginx snippets (resource-scopable) |
-| proxy:advanced:bypass | Bypass advanced nginx snippet restrictions (resource-scopable) |
-
-### SSL Certificates
-| Scope | Description |
-|-------|-------------|
-| ssl:cert:view | List SSL certificates |
-| ssl:cert:view | View SSL certificate details |
-| ssl:cert:issue | Request ACME / upload / link internal certs |
-| ssl:cert:delete | Delete SSL certificates (resource-scopable) |
-| ssl:cert:revoke | Revoke SSL certificates (resource-scopable) |
-| ssl:cert:export | Export SSL certificates (resource-scopable) |
-
-### Access Control Lists
-| Scope | Description |
-|-------|-------------|
-| acl:view | List access lists |
-| acl:view | View access list details |
-| acl:create | Create access lists |
-| acl:edit | Edit access lists (resource-scopable) |
-| acl:delete | Delete access lists (resource-scopable) |
-
-### Nodes
-| Scope | Description |
-|-------|-------------|
-| nodes:details | List daemon nodes |
-| nodes:details | View node details, health, stats (resource-scopable) |
-| nodes:create | Create/enroll new nodes |
-| nodes:rename | Rename a node (resource-scopable) |
-| nodes:delete | Delete a node (resource-scopable) |
-| nodes:config:view | View node nginx config (resource-scopable) |
-| nodes:config:edit | Edit node nginx config (resource-scopable) |
-| nodes:logs | View daemon/nginx logs (resource-scopable) |
-| nodes:console | Open interactive shell (resource-scopable) |
-
-### Administration
-| Scope | Description |
-|-------|-------------|
-| admin:users | Manage users and permission groups |
-| admin:groups | Manage permission groups |
-| admin:audit | View audit log |
-| admin:system | System-level administration (protected) |
-| admin:update | Apply system updates |
-| admin:alerts | View and manage alerts |
-
-### Gateway Settings
-| Scope | Description |
-|-------|-------------|
-| settings:gateway:view | View sign-in provisioning and MCP server settings |
-| settings:gateway:edit | Edit sign-in provisioning and MCP server settings |
-
-### Housekeeping
-| Scope | Description |
-|-------|-------------|
-| housekeeping:view | View housekeeping config, stats, and history |
-| housekeeping:run | Run housekeeping manually |
-| housekeeping:configure | Edit housekeeping config and schedule |
-
-### Licensing
-| Scope | Description |
-|-------|-------------|
-| license:view | View license state |
-| license:manage | Activate, update, or remove the license |
-
-### Features
-| Scope | Description |
-|-------|-------------|
-| feat:ai:use | Access the AI assistant |
-| feat:ai:configure | Configure AI assistant settings |
-| mcp:use | Allow a user account to access the remote MCP server with OAuth |
-
-### Docker: Containers
-| Scope | Description |
-|-------|-------------|
-| docker:containers:view | List containers on a node |
-| docker:containers:view | View container details (resource-scopable) |
-| docker:containers:create | Create/deploy containers |
-| docker:containers:edit | Edit container settings (resource-scopable) |
-| docker:containers:manage | Start/stop/restart/kill/update containers (resource-scopable) |
-| docker:containers:environment | View/edit container environment variables (resource-scopable) |
-| docker:containers:delete | Remove containers (resource-scopable) |
-| docker:containers:console | Open exec terminal (resource-scopable) |
-| docker:containers:files | Browse/edit container files (resource-scopable) |
-| docker:containers:secrets | Manage encrypted secrets (resource-scopable) |
-| docker:containers:webhooks | Configure CI/CD webhook URLs |
-| docker:containers:mounts | Add, remove, or change container/deployment mounts (resource-scopable) |
-
-### Docker: Images
-| Scope | Description |
-|-------|-------------|
-| docker:images:view | List images on a node |
-| docker:images:pull | Pull images from registries |
-| docker:images:delete | Remove/prune images |
-
-### Docker: Volumes
-| Scope | Description |
-|-------|-------------|
-| docker:volumes:view | List volumes |
-| docker:volumes:create | Create volumes |
-| docker:volumes:delete | Remove volumes |
-
-### Docker: Networks
-| Scope | Description |
-|-------|-------------|
-| docker:networks:view | List networks |
-| docker:networks:create | Create networks |
-| docker:networks:edit | Connect/disconnect containers |
-| docker:networks:delete | Remove networks |
-
-### Docker: Registries
-| Scope | Description |
-|-------|-------------|
-| docker:registries:view | List private registries |
-| docker:registries:create | Add registries |
-| docker:registries:edit | Edit/test registries |
-| docker:registries:delete | Remove registries |
-
-### Docker: Tasks
-| Scope | Description |
-|-------|-------------|
-| docker:tasks | View background tasks |
-
-### Databases
-| Scope | Description |
-|-------|-------------|
-| databases:view | List saved database connections |
-| databases:view | View database connection details (resource-scopable) |
-| databases:create | Create saved database connections |
-| databases:edit | Edit saved database connections (resource-scopable) |
-| databases:delete | Delete saved database connections (resource-scopable) |
-| databases:query:read | Run read-only queries; AI/MCP database tools also require databases:view for the same database |
-| databases:query:write | Run write queries; AI/MCP database tools also require databases:view for the same database |
-| databases:query:admin | Run admin queries; AI/MCP database tools also require databases:view for the same database |
-| databases:credentials:reveal | Reveal saved database credentials (resource-scopable) |
-
-### Logging
-| Scope | Description |
-|-------|-------------|
-| logs:environments:view | List logging environments |
-| logs:environments:view | View logging environments (resource-scopable) |
-| logs:environments:create | Create logging environments |
-| logs:environments:edit | Edit logging environments (resource-scopable) |
-| logs:environments:delete | Delete logging environments (resource-scopable) |
-| logs:tokens:view | List ingest tokens (resource-scopable by environment) |
-| logs:tokens:create | Create ingest tokens (resource-scopable by environment) |
-| logs:tokens:delete | Delete ingest tokens (resource-scopable by environment) |
-| logs:schemas:view | List logging schemas |
-| logs:schemas:view | View logging schemas (resource-scopable by schema ID) |
-| logs:schemas:create | Create logging schemas |
-| logs:schemas:edit | Edit logging schemas (resource-scopable by schema ID) |
-| logs:schemas:delete | Delete logging schemas (resource-scopable by schema ID) |
-| logs:read | Search and inspect logs (resource-scopable by environment) |
-| logs:manage | Logging-wide override |
-
-### Status Page
-| Scope | Description |
-|-------|-------------|
-| status-page:view | View status page config, services, incidents, and preview |
-| status-page:manage | Edit status page settings and exposed services |
-| status-page:incidents:create | Create or promote incidents |
-| status-page:incidents:update | Edit incidents and post updates |
-| status-page:incidents:resolve | Resolve active incidents |
-| status-page:incidents:delete | Delete incidents |
-
-## Built-in Groups
-
-| Group | Description |
-|-------|-------------|
-| system-admin | Full access including admin:system |
-| admin | Curated broad access, excluding admin:system, settings:gateway:edit, housekeeping:configure, and Docker registry create/edit/delete defaults |
-| operator | Operational access — PKI, proxy, SSL, ACL, nodes, Docker containers, AI |
-| viewer | Read-only — view/discovery scopes for PKI, proxy, SSL, Docker containers |
-
-Custom groups can be created with any combination of scopes.
-
-## Nested Groups & Inheritance
-Groups can have a parent group. Inherited scopes from all ancestors are added to the effective scopes. Cycle detection prevents circular inheritance. Built-in groups cannot be modified.
-
-## Resource-Scoped Permissions
-Scopes marked "resource-scopable" support resource-level suffixes (e.g., "pki:cert:issue:ca-uuid", "nodes:details:node-uuid", "docker:containers:view:container-id"). Without a suffix, the scope applies to all resources.
-
-## Scope Containment Rule
-A user can only manage another user whose scopes are a subset of their own.`,
+  permissions: PERMISSIONS_DOC,
 
   docker: `# Docker Container Management
 
@@ -658,7 +484,13 @@ Gateway provides Portainer-like Docker container management through a daemon run
 - **Start/Stop/Restart/Kill**: Lifecycle management (transitions tracked as tasks)
 - **Recreate**: Stop + remove + create with new config (preserves name, secrets auto-injected)
 - **Duplicate**: Clone a container with a new name (secrets are copied too)
-- **Remove**: Delete container (must be stopped unless force=true)
+- **Remove**: Delete container (must be stopped first)
+
+## Recreated Containers and Stale IDs
+Docker container IDs are volatile. Recreate, image update, webhook rollout, or config changes can remove the old
+container and create a new one with the same semantic workload/name. If a Docker tool returns "No such container",
+do not conclude the workload is deleted. Use \`find_resource\` with the last known container name, nodeId, image, or
+other stable hint to locate the recreated container and continue with its new ID.
 
 ## Environment Variables & Secrets
 - Regular env vars: stored in container config, visible to all users with view access
@@ -697,10 +529,12 @@ Long-running operations (stop, restart, kill, recreate, update) create tasks vis
 
 ## Console & Files
 - Console: interactive terminal (exec) into running containers via xterm.js WebSocket
+- Assistant console command: \`execute_docker_container_console_command({ nodeId, containerId, command: ["sh","-lc","..."], user? })\` runs one command in a container when ordinary Docker tools do not cover the needed inspection or repair. It requires \`docker:containers:console\`, is destructive, is available to MCP only when that OAuth scope is explicitly granted, and blocks catastrophic patterns such as \`rm -rf /\`.
+- Before using container console, resolve the current container through get_current_context or find_resource. Container IDs can change after recreate, so re-check by name when a command reports "No such container".
 - File browser: navigate filesystem, view/edit files inside containers
 
 ## Key Notes
-- All Docker tools require a nodeId parameter — use list_nodes with type="docker" to find Docker nodes
+- Most Docker tools require a nodeId parameter. If the user names a container/image/volume/network, use find_resource first; it returns nodeId with the match. Use list_nodes with type="docker" only when you specifically need to choose or inspect Docker nodes.
 - Container IDs change after recreate/update — the frontend handles navigation to new IDs
 - Transition states (stopping, restarting, recreating, deploying, switching, etc.) block concurrent operations on the same container or deployment`,
 
@@ -763,10 +597,227 @@ Gateway can store and operate external Postgres and Redis connections directly f
 - Health is based on connectivity and latency.
 - Metrics include \`latency_ms\`, \`used_memory_bytes\`, \`maxmemory_bytes\`, \`memory_pct\`, \`connected_clients\`, and \`instantaneous_ops_per_sec\`.`,
 
+  logging: `# External Logging
+
+Gateway can ingest structured logs from external services into ClickHouse-backed logging environments.
+
+## Resource Types
+Use manage_logging with singular resource names:
+- Environments: { resource: "environment", operation: "list"|"get"|"create"|"update"|"delete" }
+- Schemas: { resource: "schema", operation: "list"|"get"|"create"|"update"|"delete" }
+- Ingest tokens: { resource: "token", operation: "list"|"create"|"delete", environmentId }
+- Logs: { resource: "logs", operation: "search", environmentId, payload }
+- Facets: { resource: "facets", operation: "facets", environmentId, payload }
+- Metadata: { resource: "metadata", operation: "metadata", environmentId }
+
+## Important Tool Argument Rules
+- Canonical tool resources are singular: "environment", "schema", "token". Do not copy plural REST nouns like "schemas" unless you have to; use the singular canonical form.
+- Create/update/search bodies go in payload, not at the top level.
+- Use find_resource({ query, types: ["logging_environment"] }) or find_resource({ query, types: ["logging_schema"] }) when the user names an environment/schema and you need its ID.
+
+## Schema Payload
+\`\`\`json
+{
+  "resource": "schema",
+  "operation": "create",
+  "payload": {
+    "name": "Application Logs",
+    "slug": "application-logs",
+    "description": "Structured application events",
+    "schemaMode": "loose",
+    "fieldSchema": [
+      { "key": "service", "location": "label", "type": "string", "required": true },
+      { "key": "durationMs", "location": "field", "type": "number", "required": false }
+    ]
+  }
+}
+\`\`\`
+
+schemaMode:
+- loose: accept unknown labels/fields
+- strip: drop unknown labels/fields
+- reject: reject events with unknown labels/fields
+
+fieldSchema entries:
+- key: safe key matching letters/numbers/underscore/dot/dash rules
+- location: "label" or "field"
+- type: labels must be "string"; fields can be "string", "number", "boolean", "datetime", or "json"
+- required: whether every event must include the key
+
+## Environment Payload
+\`\`\`json
+{
+  "resource": "environment",
+  "operation": "create",
+  "payload": {
+    "name": "Production",
+    "slug": "production",
+    "enabled": true,
+    "schemaId": null,
+    "schemaMode": "reject",
+    "retentionDays": 30,
+    "fieldSchema": []
+  }
+}
+\`\`\`
+
+## Searching Logs
+\`\`\`json
+{
+  "resource": "logs",
+  "operation": "search",
+  "environmentId": "<logging environment UUID>",
+  "payload": {
+    "query": "error",
+    "limit": 100,
+    "services": ["gateway-backend"],
+    "sources": ["codex-smoke"]
+  }
+}
+\`\`\`
+
+## Ingest Tokens
+- Create tokens with { resource: "token", operation: "create", environmentId, payload: { name, expiresAt? } }.
+- The raw token is shown only once. Do not expose it unless the user explicitly needs to configure an ingest client.`,
+
+  folders: `# Foldered Resources
+
+Gateway uses shared folder views for several resource lists. Use folder tools instead of guessing REST paths.
+
+## Tools
+- list_resource_folders({ resourceType, dockerResourceType? }) lists folders and visible assignments.
+- manage_resource_folder({ resourceType, operation, ... }) mutates folder trees and item placement.
+
+## Resource Types
+- nodes
+- databases
+- domains
+- logging_environments
+- logging_schemas
+- admin_users
+- permission_groups
+- proxy_hosts
+- docker with dockerResourceType: container, image, network, or volume
+
+## Operations
+- create: { name, parentId? }
+- update: { folderId, name?, parentId? }
+- delete: { folderId }
+- reorder_folders: { items: [{ id, sortOrder }] }
+- move_resources: { folderId, resourceIds }
+- reorder_resources: { items: [{ id, sortOrder }] }
+- move_folder is supported only where the underlying resource service supports moving folders.
+
+## Scope Rules
+- nodes: list with nodes:details or nodes:folders:manage; mutate with nodes:folders:manage.
+- databases: list with databases:view or databases:folders:manage; mutate with databases:folders:manage.
+- domains: list with domains:view; mutate with domains:folders:manage.
+- logging_environments: list with logs:environments:view, logs:environments:folders:manage, or logs:manage; mutate with logs:environments:folders:manage or logs:manage.
+- logging_schemas: list with logs:schemas:view, logs:schemas:folders:manage, or logs:manage; mutate with logs:schemas:folders:manage or logs:manage.
+- admin_users: list with admin:users or admin:users:folders:manage; mutate with admin:users:folders:manage.
+- permission_groups: list with admin:groups or admin:groups:folders:manage; mutate with admin:groups:folders:manage.
+- proxy_hosts: list with proxy:view or proxy:folders:manage; mutate folders with proxy:folders:manage; moving hosts also checks proxy:edit for each host.
+- docker: list uses dockerResourceType-specific view scope: docker:containers:view, docker:images:view, docker:networks:view, or docker:volumes:view. Folder mutation uses docker:containers:folders:manage. Moving or reordering container placements also checks docker:containers:edit for each item node; image, network, and volume placement follows the shared Docker folder route and does not require container edit scope.`,
+
+  'node-files': `# Node File Management
+
+Use manage_node_file for node filesystem operations. This works through the node daemon and follows the same validation as the node Files UI.
+
+## Operations
+- list: { nodeId, operation: "list", path? }
+- read: { nodeId, operation: "read", path, encoding?: "auto"|"utf8"|"base64", limitBytes? }
+- write: { nodeId, operation: "write", path, content? or contentBase64? }
+- create: { nodeId, operation: "create", path, content? or contentBase64? }
+- mkdir: { nodeId, operation: "mkdir", path }
+- delete: { nodeId, operation: "delete", path }
+- move: { nodeId, operation: "move", fromPath, toPath }
+- upload_init: { nodeId, operation: "upload_init", path, totalBytes }
+- upload_chunk: { nodeId, operation: "upload_chunk", uploadId, offset, contentBase64 }
+- upload_complete: { nodeId, operation: "upload_complete", uploadId, path, totalBytes }
+- upload_abort: { nodeId, operation: "upload_abort", uploadId }
+
+Read output is capped and returns { encoding, content, sizeBytes, returnedBytes, truncated }. Use base64 for binary files.`,
+
+  sandbox: `# Sandbox Runner
+
+Sandbox tools run bounded commands in Docker containers owned by the current user. They are AI-only and intentionally not exposed through MCP.
+
+## Execution Tools
+- execute_script: run a short script in a fresh container, return output, then remove the container.
+- run_process: start a longer process with a TTL.
+- read_process_output: read stdout/stderr from a running process.
+- write_process_stdin: send stdin to a running process.
+- kill_process: stop a running sandbox process.
+- list_sandbox_jobs: list current user's running sandbox jobs.
+
+## Network and Artifacts
+Sandbox containers have no direct network access. Use Gateway-mediated helpers:
+- fetch: read network content through Gateway, capped at 10 MB.
+- download_artifact: download a URL through Gateway and place it in a running sandbox, capped at 200 MB.
+- read_artifact: read a file from the sandbox in chunks, capped per read.
+- send_artifact: save a sandbox file as a Gateway-managed downloadable artifact for the user.
+
+When send_artifact succeeds, do not print the download URL in a markdown table or manual link. The chat UI automatically attaches the file card from the tool result; respond with a short confirmation such as "Attached the file."
+
+Resource tiers are low, medium, and high. TTL is capped by tier. The agent may request ttlSeconds but cannot exceed the tier cap.`,
+
+  conversations: `# AI Conversations and Lite Mode
+
+AI conversations are stored on the backend. Tool discovery is conversation-scoped, so discovered toolsets remain available when returning to a saved conversation.
+
+## Context
+- get_current_context returns the current UI route and focused resource when the user says "this page" or "current resource".
+- compact summarizes older conversation history when context grows.
+- Recent conversations are loaded from the backend, not local storage.
+- manage_ai_conversation can list, read, and delete the current user's saved conversations:
+  - { operation: "list" }
+  - { operation: "get", conversationId }
+  - { operation: "delete", conversationId }
+  - { operation: "delete_by_title", title }
+- manage_ai_conversation never creates, rewrites, or repairs conversation history. Use the chat UI/runtime for saving active messages.
+- end_conversation closes the current chat with a localized reason. Use it only when the conversation should stop, especially after the third unrelated/off-topic request in the same conversation.
+- If context is exhausted, the UI can block the composer and offer to clear the oldest saved context. Do not keep retrying the same oversized request.
+
+## Lite Mode
+Lite mode is an AI-first desktop layout. The assistant becomes the main screen, the sidebar shows recent and pinned conversations, and Settings/Administration/top-level pages keep a back button to return to chat.
+
+Do not assume the current page from chat text. Use get_current_context when the user refers to their visible page.`,
+
+  'status-page': `# Status Pages
+
+Gateway can publish status-page data from monitored services and incidents. Use manage_status_page for settings, services, incidents, updates, proxy-template choices, and preview.
+
+## Resources and Operations
+- settings: { resource: "settings", operation: "get"|"update", payload? }
+- proxy_templates: { resource: "proxy_templates", operation: "list" }
+- services: { resource: "services", operation: "list"|"create"|"update"|"delete", serviceId?, payload? }
+- incidents: { resource: "incidents", operation: "list"|"create"|"update"|"delete"|"resolve"|"promote", incidentId?, status?, limit?, payload? }
+- incident_updates: { resource: "incident_updates", operation: "create_update", incidentId, payload }
+- preview: { resource: "preview", operation: "preview" }
+
+Scopes: status-page:view for reads/preview, status-page:manage for settings/services, and status-page:incidents:create, status-page:incidents:update, status-page:incidents:resolve, or status-page:incidents:delete for incident mutations.`,
+
   api: `# Gateway REST API
 
 Gateway provides REST access for external scripts, CI/CD pipelines, CLI tools, and integrations without a browser session.
-Programmatic REST clients can use either Gateway API tokens (\`gw_\`) or OAuth Authorization Code + PKCE access tokens (\`gwo_\`). AI assistant access, AI configuration, MCP user access, auth administration, raw nginx config, gateway settings, node raw config, \`proxy:raw:bypass\`, and \`proxy:advanced:bypass\` cannot be delegated to API/OAuth tokens. MCP clients use OAuth access tokens for the MCP resource with ordinary delegated API scopes; the owning user account must have \`mcp:use\`.
+Programmatic REST clients can use either Gateway API tokens (\`gw_\`) or OAuth Authorization Code + PKCE access tokens (\`gwo_\`). AI assistant access, AI configuration, MCP user access, auth administration, raw nginx config, gateway settings, node raw config, node filesystem access, \`proxy:raw:bypass\`, and \`proxy:advanced:bypass\` cannot be delegated to API/OAuth tokens. MCP clients use OAuth access tokens for the MCP resource with ordinary delegated API scopes; the owning user account must have \`mcp:use\`. Node config and node file-management assistant tools are intentionally AI-session-only and are not exposed through MCP.
+
+## Current-User OAuth Authorizations
+The assistant can manage existing OAuth authorizations for the current browser user with manage_oauth_authorization:
+- { operation: "list" }
+- { operation: "update_scopes", clientId, resource, scopes }
+- { operation: "revoke", clientId, resource }
+
+Pending OAuth consent remains browser-only. Do not try to approve a new OAuth client through tools.
+
+## Current-User Gateway API Tokens
+The assistant can manage the current browser user's Gateway API tokens with manage_api_token:
+- { operation: "list" }
+- { operation: "create", name, scopes }
+- { operation: "update", tokenId, name?, scopes? }
+- { operation: "revoke", tokenId }
+
+Token scopes must be a subset of the current user's scopes. Token secrets are returned only by create and cannot be read later. manage_api_token is browser-session-only and is not exposed through MCP.
 
 ## Creating an API Token
 1. Go to **Settings** page → **API Tokens** section
@@ -866,6 +917,39 @@ Token permissions are controlled by scopes. Each endpoint requires specific scop
 - Token last-used timestamp is tracked for auditing
 - Tokens inherit the user's resource restrictions (if the user's group restricts a scope to specific resources, the token is similarly restricted)`,
 
+  'ai-settings': `# AI Assistant Settings
+
+AI assistant settings control the provider, request limits, tool exposure, web search, and sandbox runner. Use these tools instead of guessing from UI labels:
+
+## Tools
+- get_ai_settings: read provider, model, limits, system prompt, tool access, web search, and sandbox runner settings.
+- update_ai_settings: update supported assistant settings. Send only fields that should change.
+- list_ai_tools: list available assistant tools with categories, scopes, descriptions, and whether they are destructive.
+- get_sandbox_runtime_status: read sandbox runner enablement and runtime health.
+
+## Provider Settings
+- providerUrl: OpenAI-compatible API base URL.
+- endpointMode: auto, chat_completions, or responses.
+- model: provider model name.
+- apiKey: only set this when replacing the stored provider key. The current secret is never returned in full.
+
+## Limits
+- rateLimitMax and rateLimitWindowSeconds: rate limit for assistant requests.
+- maxToolRounds: maximum sequential tool-call rounds in one assistant run.
+- maxContextTokens: context budget used by the conversation builder.
+- maxCompletionTokens and maxTokensField: response token cap and provider field name.
+- reasoningEffort: low, medium, high, or none. Use none for models/providers that do not support reasoning controls.
+
+## Tool Access
+- disabledTools: exact tool names hidden from the assistant.
+- webSearchProvider, webSearchBaseUrl, and webSearchApiKey: provider selection, optional provider URL, and secret replacement for web search.
+- sandboxEnabled and sandboxDefaultTier: sandbox runner exposure and default tier.
+
+## Sandbox Runner
+- sandboxEnabled: expose sandbox execution and artifact tools to the assistant.
+- sandboxDefaultTier: default resource tier. The agent may request a tier only if the user has the required scope.
+- Sandbox tools are intentionally excluded from MCP exposure and are available only to the assistant when enabled and permitted.`,
+
   notifications: `# Webhook Notifications
 
 ## Overview
@@ -873,7 +957,7 @@ The notification system sends HTTP webhook notifications when alert conditions a
 
 ## Alert Rules
 Each alert rule defines:
-- **Category**: node, container, proxy, or certificate
+- **Category**: node, container, proxy, certificate, database_postgres, or database_redis
 - **Type**: threshold (metric breaches a value) or event (something happens)
 - **Threshold fields** (for threshold type): metric, metricTarget (optional sub-target such as a specific node disk mount), operator (>, >=, <, <=), thresholdValue, durationSeconds (fire observation window), fireThresholdPercent (percent of probes in that window that must breach), resolveAfterSeconds (resolve observation window, default 60s), resolveThresholdPercent (percent of probes in that window that must be clear)
 - **Event fields** (for event type): eventPattern (offline, stopped, oom_killed, etc.)
@@ -917,6 +1001,12 @@ Available in message templates (per-alert) and body templates (per-webhook):
 - Container: \`{{node_name}}\` — hosting node
 - Proxy: \`{{health_status}}\` — health status
 - Certificate: \`{{days_until_expiry}}\`, \`{{expiry_date}}\`
+- Database: \`{{metric}}\`, \`{{value}}\`, \`{{threshold}}\`, and \`{{resource.name}}\`
+
+## Database Alert Categories
+- database_postgres metrics: latency_ms, active_connections_pct, database_size_mb.
+- database_redis metrics: latency_ms, memory_pct.
+- database health events: health.offline, health.degraded, health.online. These events can also be used with threshold-style observation windows when supportsThreshold is true.
 
 ## Handlebars Helpers
 Available in all templates:
@@ -971,7 +1061,8 @@ Available in all templates:
 };
 
 /** Map doc topics to the scope required to read them */
-export const DOC_TOPIC_SCOPES: Record<string, string> = {
+export const DOC_TOPIC_SCOPES: Record<string, string | string[]> = {
+  discovery: 'feat:ai:use',
   pki: 'pki:ca:view:root',
   ssl: 'ssl:cert:view',
   proxy: 'proxy:view',
@@ -983,10 +1074,27 @@ export const DOC_TOPIC_SCOPES: Record<string, string> = {
   audit: 'admin:audit',
   nginx: 'proxy:edit',
   nodes: 'nodes:details',
+  folders: [
+    'nodes:folders:manage',
+    'databases:folders:manage',
+    'domains:folders:manage',
+    'logs:environments:folders:manage',
+    'logs:schemas:folders:manage',
+    'admin:users:folders:manage',
+    'admin:groups:folders:manage',
+    'proxy:folders:manage',
+    'docker:containers:folders:manage',
+  ],
+  'node-files': ['nodes:files:read', 'nodes:files:write'],
   docker: 'docker:containers:view',
+  sandbox: 'ai:sandbox:use',
+  conversations: 'feat:ai:use',
   databases: 'databases:view',
   postgres: 'databases:view',
   redis: 'databases:view',
+  logging: ['logs:environments:view', 'logs:schemas:view', 'logs:read', 'logs:manage'],
+  'ai-settings': 'feat:ai:configure',
+  'status-page': 'status-page:view',
   housekeeping: 'housekeeping:view',
   permissions: 'feat:ai:use',
   api: 'feat:ai:use',
@@ -997,17 +1105,21 @@ export function getInternalDocumentation(topic: string, userScopes: string[]): {
   const content = INTERNAL_DOCS[topic];
   if (!content) {
     // Only list topics the user has access to
-    const available = Object.keys(INTERNAL_DOCS).filter(
-      (t) => !DOC_TOPIC_SCOPES[t] || hasScopeBase(userScopes, DOC_TOPIC_SCOPES[t])
-    );
+    const available = Object.keys(INTERNAL_DOCS).filter((t) => hasDocTopicAccess(userScopes, DOC_TOPIC_SCOPES[t]));
     return {
       topic,
       content: `Unknown topic "${topic}". Available topics: ${available.join(', ')}.`,
     };
   }
   const requiredScope = DOC_TOPIC_SCOPES[topic];
-  if (requiredScope && !hasScopeBase(userScopes, requiredScope)) {
+  if (!hasDocTopicAccess(userScopes, requiredScope)) {
     return { topic, content: `You do not have permission to access documentation for "${topic}".` };
   }
   return { topic, content };
+}
+
+function hasDocTopicAccess(userScopes: string[], requiredScope: string | string[] | undefined) {
+  if (!requiredScope) return true;
+  const scopes = Array.isArray(requiredScope) ? requiredScope : [requiredScope];
+  return scopes.some((scope) => hasScopeBase(userScopes, scope));
 }

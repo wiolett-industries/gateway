@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { TerminalConsole } from "@/components/terminal/TerminalConsole";
+import { ConsolePanel } from "@/components/terminal/ConsolePanel";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 
@@ -22,7 +22,9 @@ export function ConsoleTab({ nodeId, containerId }: { nodeId: string; containerI
   }
 
   return (
-    <TerminalConsole
+    <ConsolePanel
+      title="Container Console"
+      description="Interactive shell session inside this container"
       wsFactory={wsFactory}
       channelKey={`docker-console:${containerId}`}
       popoutUrl={`/docker/console/${nodeId}/${containerId}?shell=auto`}

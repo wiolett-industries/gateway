@@ -1,0 +1,348 @@
+export type DockerFolderResourceType = "container" | "image" | "network" | "volume";
+
+export interface DockerContainerFolder {
+  id: string;
+  name: string;
+  resourceType: DockerFolderResourceType;
+  parentId: string | null;
+  sortOrder: number;
+  depth: number;
+  isSystem: boolean;
+  nodeId: string | null;
+  composeProject: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DockerFolderTreeNode extends DockerContainerFolder {
+  children: DockerFolderTreeNode[];
+}
+
+// ── Docker Types ──────────────────────────────────────────────────
+
+export interface DockerPort {
+  privatePort: number;
+  publicPort?: number;
+  type: string;
+  ip?: string;
+}
+
+export interface DockerMount {
+  hostPath?: string;
+  containerPath: string;
+  name?: string;
+  readOnly: boolean;
+}
+
+export interface DockerContainer {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  created: number;
+  ports: DockerPort[];
+  portsCount?: number;
+  portsTruncated?: boolean;
+  labels?: Record<string, string>;
+  kind?: "container" | "deployment";
+  deploymentId?: string;
+  activeSlot?: "blue" | "green";
+  primaryRoute?: { hostPort: number; containerPort: number } | null;
+  activeSlotContainerId?: string | null;
+  healthCheckId?: string | null;
+  healthCheckEnabled?: boolean;
+  healthStatus?: "online" | "offline" | "degraded" | "unknown" | "disabled";
+  lastHealthCheckAt?: string | null;
+  healthHistory?: Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>;
+  folderId?: string | null;
+  folderIsSystem?: boolean;
+  folderSortOrder?: number;
+  _transition?: string;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
+  // Stats (from health report, optional)
+  cpuPercent?: number;
+  memoryUsage?: number;
+  memoryLimit?: number;
+  networkRx?: number;
+  networkTx?: number;
+}
+
+export interface DockerHealthRouteOption {
+  id: string;
+  scheme: "http" | "https";
+  hostPort: number;
+  containerPort: number;
+  label: string;
+  isPrimary?: boolean;
+}
+
+export interface DockerHealthCheck {
+  id: string | null;
+  target: "container" | "deployment";
+  nodeId: string;
+  containerName: string | null;
+  deploymentId: string | null;
+  enabled: boolean;
+  scheme: "http" | "https";
+  hostPort: number | null;
+  containerPort: number | null;
+  path: string;
+  statusMin: number;
+  statusMax: number;
+  expectedBody: string | null;
+  bodyMatchMode: "includes" | "exact" | "starts_with" | "ends_with";
+  intervalSeconds: number;
+  timeoutSeconds: number;
+  slowThreshold: number;
+  healthStatus: "online" | "offline" | "degraded" | "unknown" | "disabled";
+  lastHealthCheckAt: string | null;
+  healthHistory: Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>;
+  routeOptions: DockerHealthRouteOption[];
+}
+
+export interface DockerDeploymentRoute {
+  id: string;
+  deploymentId: string;
+  hostPort: number;
+  containerPort: number;
+  isPrimary: boolean;
+}
+
+export interface DockerDeploymentDesiredConfig {
+  image: string;
+  env?: Record<string, string>;
+  restartPolicy?: string;
+  [key: string]: unknown;
+}
+
+export interface DockerDeploymentSlot {
+  id: string;
+  deploymentId: string;
+  slot: "blue" | "green";
+  containerId: string | null;
+  containerName: string;
+  image: string | null;
+  desiredConfig?: DockerDeploymentDesiredConfig | null;
+  status: string;
+  health: string;
+  drainingUntil: string | null;
+  updatedAt: string;
+}
+
+export interface DockerDeploymentRelease {
+  id: string;
+  deploymentId: string;
+  fromSlot: "blue" | "green" | null;
+  toSlot: "blue" | "green" | null;
+  image: string | null;
+  triggerSource: string;
+  taskId: string | null;
+  status: string;
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface DockerDeploymentHealthConfig {
+  path: string;
+  statusMin: number;
+  statusMax: number;
+  timeoutSeconds: number;
+  intervalSeconds: number;
+  successThreshold: number;
+  startupGraceSeconds: number;
+  deployTimeoutSeconds: number;
+}
+
+export interface DockerDeployment {
+  id: string;
+  nodeId: string;
+  name: string;
+  desiredConfig: DockerDeploymentDesiredConfig;
+  activeSlot: "blue" | "green";
+  status: string;
+  routerName: string;
+  routerImage: string;
+  networkName: string;
+  healthConfig: DockerDeploymentHealthConfig;
+  drainSeconds: number;
+  routes: DockerDeploymentRoute[];
+  routesCount?: number;
+  routesTruncated?: boolean;
+  slots: DockerDeploymentSlot[];
+  releases: DockerDeploymentRelease[];
+  webhook?: DockerWebhook | null;
+  healthCheck?: DockerHealthCheck | null;
+  _transition?: string;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DockerImage {
+  id: string;
+  repoTags: string[];
+  repoTagsCount?: number;
+  repoTagsTruncated?: boolean;
+  repoDigests?: string[];
+  repoDigestsCount?: number;
+  repoDigestsTruncated?: boolean;
+  size: number;
+  created: number;
+  containers?: number;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
+  folderId?: string | null;
+  folderIsSystem?: boolean;
+  folderSortOrder?: number;
+}
+
+export interface DockerVolume {
+  name: string;
+  driver: string;
+  mountpoint: string;
+  labels?: Record<string, string>;
+  scope: string;
+  createdAt?: string;
+  usedBy?: string[];
+  usedByCount?: number;
+  usedByTruncated?: boolean;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
+  folderId?: string | null;
+  folderIsSystem?: boolean;
+  folderSortOrder?: number;
+}
+
+export interface DockerNetwork {
+  id: string;
+  name: string;
+  driver: string;
+  scope: string;
+  ipam?: {
+    subnet?: string;
+    gateway?: string;
+    config?: Array<{ subnet?: string; gateway?: string }>;
+  };
+  containers?: Record<string, { name?: string }>;
+  containersCount?: number;
+  containersTruncated?: boolean;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
+  folderId?: string | null;
+  folderIsSystem?: boolean;
+  folderSortOrder?: number;
+}
+
+export interface DockerTask {
+  id: string;
+  nodeId: string;
+  containerId?: string;
+  containerName?: string;
+  type: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  progress?: string;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface DockerRegistry {
+  id: string;
+  name: string;
+  url: string;
+  username?: string;
+  trustedAuthRealm?: string | null;
+  scope: "global" | "node";
+  nodeId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DockerSecret {
+  id: string;
+  key: string;
+  value: string; // masked as "••••••••" unless user has docker:secrets scope
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FileEntry {
+  name: string;
+  size: number;
+  permissions: string;
+  isDir: boolean;
+  modified: string;
+  isSymlink?: boolean;
+  linkTarget?: string;
+  isSpecial?: boolean;
+  isWritable?: boolean;
+  _listTruncated?: boolean;
+  _listTotal?: number;
+  _listLimit?: number;
+}
+
+export interface ContainerCreateConfig {
+  image: string;
+  registryId?: string;
+  name?: string;
+  ports?: Array<{ hostPort: number; containerPort: number; protocol?: string }>;
+  volumes?: Array<{
+    hostPath?: string;
+    containerPath: string;
+    name?: string;
+    readOnly?: boolean;
+  }>;
+  env?: Record<string, string>;
+  networks?: string[];
+  restartPolicy?: string;
+  labels?: Record<string, string>;
+  command?: string[];
+}
+
+export interface DockerWebhook {
+  id: string;
+  nodeId: string;
+  containerName: string;
+  token: string;
+  enabled: boolean;
+  targetType?: "container" | "deployment";
+  deploymentId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DockerImageCleanupSettings {
+  id: string | null;
+  nodeId: string;
+  targetType: "container" | "deployment";
+  containerName: string | null;
+  deploymentId: string | null;
+  enabled: boolean;
+  retentionCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface DaemonNodeUpdateStatus {
+  nodeId: string;
+  hostname: string;
+  currentVersion: string;
+  updateAvailable: boolean;
+  arch?: string;
+}
+
+export interface DaemonUpdateStatus {
+  daemonType: "nginx" | "docker" | "monitoring";
+  latestVersion: string | null;
+  lastCheckedAt: string | null;
+  nodes: DaemonNodeUpdateStatus[];
+}

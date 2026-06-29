@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/middleware/error-handler.js';
-import { DatabaseConnectionService, mapDatabaseDriverError } from './databases.service.js';
+import {
+  DatabaseConnectionService,
+  inferPostgresIntent,
+  inferRedisIntent,
+  mapDatabaseDriverError,
+} from './databases.service.js';
 
 describe('mapDatabaseDriverError', () => {
   it('maps postgres authentication failures to 401', () => {
@@ -71,6 +76,20 @@ describe('mapDatabaseDriverError', () => {
   it('returns null for unknown errors', () => {
     const mapped = mapDatabaseDriverError(new Error('unexpected socket blowup'), 'postgres', 'connect');
     expect(mapped).toBeNull();
+  });
+});
+
+describe('database query intent inference', () => {
+  it('infers the strongest Postgres intent across batches while ignoring quoted semicolons', () => {
+    expect(inferPostgresIntent("select ';' as semi; show all")).toBe('read');
+    expect(inferPostgresIntent('select * from users; update users set role = $1')).toBe('write');
+    expect(inferPostgresIntent('with deleted as (delete from users returning *) select * from deleted')).toBe('admin');
+  });
+
+  it('infers the strongest Redis command intent across quoted and batched commands', () => {
+    expect(inferRedisIntent('GET "key;with;semicolons"; TTL key')).toBe('read');
+    expect(inferRedisIntent('GET key\nSET key value')).toBe('write');
+    expect(inferRedisIntent('CONFIG GET *')).toBe('admin');
   });
 });
 
@@ -166,5 +185,307 @@ describe('DatabaseConnectionService.executePostgresSql', () => {
       '1',
     ]);
     expect(log).toHaveBeenCalled();
+  });
+
+  it('compacts Postgres query rows to the requested maxRows and reports truncation', async () => {
+    const log = vi.fn().mockResolvedValue(undefined);
+    const service = new DatabaseConnectionService({} as never, { log } as never, {} as never);
+    const client = {
+      query: vi.fn(async (sql: string) => {
+        if (sql.startsWith('SET') || sql.startsWith('RESET')) return {};
+        return {
+          command: 'SELECT',
+          rowCount: 3,
+          fields: [{ name: 'id' }, { name: 'payload' }],
+          rows: [
+            { id: 1, payload: 'a' },
+            { id: 2, payload: 'b' },
+            { id: 3, payload: 'c' },
+          ],
+        };
+      }),
+      release: vi.fn(),
+    };
+    const pool = {
+      connect: vi.fn().mockResolvedValue(client),
+    };
+    vi.spyOn(service, 'getPostgresPool').mockResolvedValue(pool as never);
+
+    await expect(service.executePostgresSql('db-1', 'select * from events', 'user-1', { maxRows: 2 })).resolves.toEqual(
+      {
+        results: [
+          expect.objectContaining({
+            command: 'SELECT',
+            rowCount: 3,
+            fields: ['id', 'payload'],
+            rows: [
+              { id: 1, payload: 'a' },
+              { id: 2, payload: 'b' },
+            ],
+            truncated: true,
+            maxRows: 2,
+          }),
+        ],
+        truncated: false,
+        resultLimit: 10,
+      }
+    );
+    expect(client.release).toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({ action: 'database.postgres.query' }));
+  });
+});
+
+describe('DatabaseConnectionService.executeRedisCommand', () => {
+  it('compacts oversized Redis command results before returning them', async () => {
+    const log = vi.fn().mockResolvedValue(undefined);
+    const service = new DatabaseConnectionService({} as never, { log } as never, {} as never);
+    const client = {
+      call: vi.fn().mockResolvedValue(Array.from({ length: 600 }, (_, index) => `item-${index}`)),
+    };
+    vi.spyOn(service, 'getRedisClient').mockResolvedValue(client as never);
+
+    await expect(service.executeRedisCommand('db-1', 'LRANGE queue 0 -1', 'user-1')).resolves.toEqual({
+      results: [
+        {
+          command: 'LRANGE',
+          result: Array.from({ length: 500 }, (_, index) => `item-${index}`),
+          truncated: true,
+        },
+      ],
+      truncated: false,
+      commandLimit: 20,
+    });
+    expect(client.call).toHaveBeenCalledWith('LRANGE', 'queue', '0', '-1');
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({ action: 'database.redis.command.execute' }));
+  });
+});
+
+describe('DatabaseConnectionService connection views', () => {
+  function encryptedConfig(config: Record<string, unknown>) {
+    return JSON.stringify({ payload: JSON.stringify(config) });
+  }
+
+  function createService(row: Record<string, unknown>) {
+    const db = {
+      query: {
+        databaseConnections: {
+          findFirst: vi.fn().mockResolvedValue(row),
+        },
+      },
+    };
+    const cryptoService = {
+      decryptString: vi.fn((payload: { payload: string }) => payload.payload),
+      encryptString: vi.fn((value: string) => ({ payload: value })),
+    };
+    return new DatabaseConnectionService(db as never, { log: vi.fn() } as never, cryptoService as never);
+  }
+
+  it('masks stored database credentials in normal connection views', async () => {
+    const service = createService({
+      id: 'db-1',
+      name: 'Production Postgres',
+      type: 'postgres',
+      description: null,
+      tags: ['prod'],
+      manualSizeLimitMb: 1024,
+      host: 'db.example.com',
+      port: 5432,
+      databaseName: 'app',
+      username: 'app_user',
+      tlsEnabled: true,
+      encryptedConfig: encryptedConfig({
+        type: 'postgres',
+        host: 'db.example.com',
+        port: 5432,
+        database: 'app',
+        username: 'app_user',
+        password: 'secret-password',
+        sslEnabled: true,
+      }),
+      healthStatus: 'online',
+      lastHealthCheckAt: new Date('2026-06-21T10:00:00.000Z'),
+      lastError: null,
+      healthHistory: null,
+      createdById: 'user-1',
+      updatedById: null,
+      createdAt: new Date('2026-06-20T10:00:00.000Z'),
+      updatedAt: new Date('2026-06-21T10:00:00.000Z'),
+    });
+
+    await expect(service.get('db-1')).resolves.toMatchObject({
+      id: 'db-1',
+      hasStoredPassword: true,
+      config: {
+        password: '••••••••',
+        sslEnabled: true,
+      },
+    });
+  });
+
+  it('reveals credentials with an encoded Postgres connection string', async () => {
+    const service = createService({
+      id: 'db-1',
+      name: 'Production Postgres',
+      type: 'postgres',
+      description: null,
+      tags: [],
+      manualSizeLimitMb: null,
+      host: 'db.example.com',
+      port: 5432,
+      databaseName: 'app db',
+      username: 'app user',
+      tlsEnabled: true,
+      encryptedConfig: encryptedConfig({
+        type: 'postgres',
+        host: 'db.example.com',
+        port: 5432,
+        database: 'app db',
+        username: 'app user',
+        password: 'p@ss word',
+        sslEnabled: true,
+      }),
+      healthStatus: 'online',
+      lastHealthCheckAt: null,
+      lastError: null,
+      healthHistory: [],
+      createdById: 'user-1',
+      updatedById: null,
+      createdAt: new Date('2026-06-20T10:00:00.000Z'),
+      updatedAt: new Date('2026-06-21T10:00:00.000Z'),
+    });
+
+    await expect(service.revealCredentials('db-1')).resolves.toMatchObject({
+      password: 'p@ss word',
+      connectionString: 'postgresql://app%20user:p%40ss%20word@db.example.com:5432/app%20db?sslmode=require',
+    });
+  });
+});
+
+describe('DatabaseConnectionService credential retargeting guard', () => {
+  function encryptedConfig(config: Record<string, unknown>) {
+    return JSON.stringify({ payload: JSON.stringify(config) });
+  }
+
+  function createUpdateService(rowOverride: Record<string, unknown> = {}) {
+    const row = {
+      id: 'db-1',
+      name: 'Production Postgres',
+      type: 'postgres',
+      description: null,
+      tags: [],
+      manualSizeLimitMb: null,
+      host: 'db.example.com',
+      port: 5432,
+      databaseName: 'app',
+      username: 'app_user',
+      tlsEnabled: true,
+      encryptedConfig: encryptedConfig({
+        type: 'postgres',
+        host: 'db.example.com',
+        port: 5432,
+        database: 'app',
+        username: 'app_user',
+        password: 'secret-password',
+        sslEnabled: true,
+      }),
+      healthStatus: 'online',
+      lastHealthCheckAt: null,
+      lastError: null,
+      healthHistory: [],
+      createdById: 'user-1',
+      updatedById: null,
+      createdAt: new Date('2026-06-20T10:00:00.000Z'),
+      updatedAt: new Date('2026-06-21T10:00:00.000Z'),
+      ...rowOverride,
+    };
+    const capturedUpdates: Record<string, unknown>[] = [];
+    const db = {
+      query: {
+        databaseConnections: {
+          findFirst: vi.fn().mockResolvedValue(row),
+        },
+      },
+      update: vi.fn(() => ({
+        set: vi.fn((updates: Record<string, unknown>) => {
+          capturedUpdates.push(updates);
+          return {
+            where: vi.fn(() => ({
+              returning: vi.fn().mockResolvedValue([{ ...row, ...updates }]),
+            })),
+          };
+        }),
+      })),
+    };
+    const cryptoService = {
+      decryptString: vi.fn((payload: { payload: string }) => payload.payload),
+      encryptString: vi.fn((value: string) => ({ payload: value })),
+    };
+    const service = new DatabaseConnectionService(
+      db as never,
+      { log: vi.fn().mockResolvedValue(undefined) } as never,
+      cryptoService as never
+    );
+    const testNormalizedConnection = vi
+      .spyOn(
+        service as unknown as { testNormalizedConnection: (config: unknown) => Promise<unknown> },
+        'testNormalizedConnection'
+      )
+      .mockResolvedValue({ status: 'online', responseMs: 1 });
+    return { capturedUpdates, cryptoService, db, service, testNormalizedConnection };
+  }
+
+  function decryptCapturedConfig(capturedUpdates: Record<string, unknown>[], cryptoService: { decryptString: any }) {
+    const encryptedConfig = capturedUpdates[0]?.encryptedConfig as string;
+    const encryptedPayload = JSON.parse(encryptedConfig) as { payload: string };
+    return JSON.parse(cryptoService.decryptString(encryptedPayload));
+  }
+
+  it('preserves the stored password for metadata-only edits', async () => {
+    const { capturedUpdates, cryptoService, service } = createUpdateService();
+
+    await service.update('db-1', { name: 'Renamed Postgres' }, 'user-1');
+
+    const config = decryptCapturedConfig(capturedUpdates, cryptoService);
+    expect(config.password).toBe('secret-password');
+    expect(config.host).toBe('db.example.com');
+  });
+
+  it('rejects target-changing edits without a replacement password before testing the connection', async () => {
+    const { db, service, testNormalizedConnection } = createUpdateService();
+
+    await expect(service.update('db-1', { config: { host: 'db-alt.example.com' } }, 'user-1')).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'CREDENTIAL_REENTRY_REQUIRED',
+    });
+    expect(testNormalizedConnection).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('allows target-changing edits with a replacement password', async () => {
+    const { capturedUpdates, cryptoService, service } = createUpdateService();
+
+    await service.update('db-1', { config: { host: 'db-alt.example.com', password: 'new-secret-password' } }, 'user-1');
+
+    const config = decryptCapturedConfig(capturedUpdates, cryptoService);
+    expect(config.host).toBe('db-alt.example.com');
+    expect(config.password).toBe('new-secret-password');
+  });
+
+  it('uses a password embedded in a replacement connection string instead of the old saved password', async () => {
+    const { capturedUpdates, cryptoService, service } = createUpdateService();
+
+    await service.update(
+      'db-1',
+      {
+        config: {
+          connectionString: 'postgresql://app_user:embedded-secret@db-alt.example.com:5432/app?sslmode=require',
+        },
+      },
+      'user-1'
+    );
+
+    const config = decryptCapturedConfig(capturedUpdates, cryptoService);
+    expect(config.host).toBe('db-alt.example.com');
+    expect(config.password).toBe('embedded-secret');
   });
 });

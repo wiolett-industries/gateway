@@ -3,8 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const ORIGINAL_ENV = process.env;
 
 function setRequiredEnv(overrides: NodeJS.ProcessEnv = {}) {
+  const inheritedEnv = { ...ORIGINAL_ENV };
+  if (!Object.hasOwn(overrides, 'GRPC_TLS_AUTO_DIR')) {
+    delete inheritedEnv.GRPC_TLS_AUTO_DIR;
+  }
+
   process.env = {
-    ...ORIGINAL_ENV,
+    ...inheritedEnv,
     NODE_ENV: 'test',
     DATABASE_URL: 'http://localhost/db',
     REDIS_URL: 'redis://localhost:6379',

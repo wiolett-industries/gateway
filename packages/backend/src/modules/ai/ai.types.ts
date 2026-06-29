@@ -1,13 +1,18 @@
+import type { AIConversationRuntimeSnapshot } from './ai-run.service.js';
+
 // ── AI Configuration (stored in settings table) ──
 
 export type WebSearchProvider = 'tavily' | 'brave' | 'serper' | 'searxng' | 'exa';
 
 export type MaxTokensField = 'max_tokens' | 'max_completion_tokens';
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'none';
+export type AIEndpointMode = 'auto' | 'chat_completions' | 'responses';
 
 export interface AIConfig {
   enabled: boolean;
   providerUrl: string;
+  endpointMode: AIEndpointMode;
+  supportsImages: boolean;
   model: string;
   maxCompletionTokens: number;
   maxTokensField: MaxTokensField;
@@ -21,6 +26,8 @@ export interface AIConfig {
   webSearchEnabled: boolean;
   webSearchProvider: WebSearchProvider;
   webSearchBaseUrl: string;
+  sandboxEnabled: boolean;
+  sandboxDefaultTier: 'low' | 'medium' | 'high';
 }
 
 export interface EncryptedValue {
@@ -53,6 +60,7 @@ export interface PageContext {
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
+  attachments?: AIMessageAttachment[];
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -62,19 +70,48 @@ export interface ChatMessage {
   name?: string;
 }
 
+export interface AIMessageAttachment {
+  artifactId: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+  downloadUrl: string;
+  kind: 'image';
+}
+
+export type AIConversationStatus = 'active' | 'ended' | 'context_blocked';
+
 // ── WebSocket Protocol ──
 
 export type WSClientMessage =
-  | { type: 'chat'; requestId: string; messages: ChatMessage[]; context?: PageContext }
+  | { type: 'conversation.subscribe'; conversationId: string; clientCommandId?: string }
+  | { type: 'conversation.unsubscribe'; conversationId: string }
+  | { type: 'conversation.sync'; conversationId: string; clientCommandId?: string }
   | {
-      type: 'tool_approval';
-      requestId: string;
-      toolCallId: string;
-      approved: boolean;
-      answer?: string;
-      answers?: Record<string, string>;
+      type: 'conversation.send_message';
+      clientCommandId: string;
+      conversationId?: string;
+      content: string;
+      attachments?: AIMessageAttachment[];
+      context?: PageContext;
     }
-  | { type: 'cancel'; requestId: string }
+  | { type: 'run.stop'; conversationId: string; runId: string; clientCommandId: string }
+  | {
+      type: 'approval.decide';
+      conversationId: string;
+      runId: string;
+      approvalId: string;
+      decision: 'approved' | 'rejected';
+      clientCommandId: string;
+    }
+  | {
+      type: 'question.answer';
+      conversationId: string;
+      runId: string;
+      questionId: string;
+      answer: string;
+      clientCommandId: string;
+    }
   | { type: 'ping' };
 
 export type WSServerMessage =
@@ -85,9 +122,47 @@ export type WSServerMessage =
   | { type: 'tool_approval_required'; requestId: string; id: string; name: string; arguments: Record<string, unknown> }
   | { type: 'tool_result'; requestId: string; id: string; name: string; result: unknown; error?: string }
   | { type: 'invalidate_stores'; requestId: string; stores: string[] }
+  | { type: 'conversation_ended'; requestId: string; reason: string }
+  | { type: 'context_blocked'; requestId: string; reason: string }
   | { type: 'done'; requestId: string }
   | { type: 'error'; requestId: string; message: string; code?: string }
   | { type: 'rate_limited'; retryAfter: number }
+  | {
+      type: 'command.ack';
+      commandType: WSClientMessage['type'];
+      clientCommandId?: string;
+      conversationId?: string;
+      runId?: string;
+      duplicate?: boolean;
+    }
+  | {
+      type: 'command.error';
+      commandType?: WSClientMessage['type'] | string;
+      clientCommandId?: string;
+      conversationId?: string;
+      runId?: string;
+      code: string;
+      message: string;
+      statusCode?: number;
+    }
+  | { type: 'conversation.snapshot'; conversationId: string; snapshot: AIConversationRuntimeSnapshot }
+  | { type: 'assistant.delta'; conversationId: string; runId: string; content: string; version: number }
+  | { type: 'run.status_changed'; conversationId: string; run: AIConversationRuntimeSnapshot['runtime']['activeRun'] }
+  | { type: 'stores.invalidated'; conversationId: string; stores: string[] }
+  | {
+      type: 'approval.updated';
+      conversationId: string;
+      runId: string;
+      approval: AIConversationRuntimeSnapshot['runtime']['toolCalls'][number];
+      duplicate: boolean;
+    }
+  | {
+      type: 'question.answered';
+      conversationId: string;
+      runId: string;
+      question: NonNullable<AIConversationRuntimeSnapshot['runtime']['pendingQuestion']>;
+      duplicate: boolean;
+    }
   | { type: 'pong' };
 
 // ── AI Question (ask_question tool) ──
@@ -114,6 +189,8 @@ export interface ToolExecutionResult {
 
 export interface ToolExecutionOptions {
   source?: 'ai' | 'mcp';
+  pageContext?: PageContext;
+  conversationId?: string;
   scopes?: string[];
   tokenId?: string;
   tokenPrefix?: string;

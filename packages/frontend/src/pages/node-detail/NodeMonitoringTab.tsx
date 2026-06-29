@@ -179,21 +179,15 @@ export function NodeMonitoringTab({
       {nodeType === "nginx" && health && (
         <div className="flex flex-wrap items-center gap-3 p-3 border border-border bg-card text-sm">
           <span className="font-medium">nginx/{health.nginxVersion || "unknown"}</span>
-          <Badge variant={health.nginxRunning ? "success" : "destructive"} className="text-xs">
+          <Badge variant={health.nginxRunning ? "success" : "destructive"}>
             {health.nginxRunning ? "Running" : "Stopped"}
           </Badge>
-          <Badge variant="secondary" className="text-xs">
-            {health.workerCount} workers
-          </Badge>
-          <Badge variant="secondary" className="text-xs">
-            Up {formatUptime(health.nginxUptimeSeconds)}
-          </Badge>
-          <Badge variant={health.configValid ? "success" : "destructive"} className="text-xs">
+          <Badge variant="secondary">{health.workerCount} workers</Badge>
+          <Badge variant="secondary">Up {formatUptime(health.nginxUptimeSeconds)}</Badge>
+          <Badge variant={health.configValid ? "success" : "destructive"}>
             {health.configValid ? "Config valid" : "Config invalid"}
           </Badge>
-          <Badge variant="secondary" className="text-xs">
-            RSS {formatBytes(health.nginxRssBytes)}
-          </Badge>
+          <Badge variant="secondary">RSS {formatBytes(health.nginxRssBytes)}</Badge>
         </div>
       )}
 

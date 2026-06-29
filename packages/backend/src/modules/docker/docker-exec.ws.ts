@@ -206,14 +206,8 @@ async function authenticateAndCreateExec(
         path: '/etc/shells',
         maxBytes: 4096,
       });
-      if (fileResult.success && fileResult.detail) {
-        // Daemon returns file content as base64
-        let content = typeof fileResult.detail === 'string' ? fileResult.detail : '';
-        try {
-          content = Buffer.from(content, 'base64').toString('utf-8');
-        } catch {
-          /* not base64, use as-is */
-        }
+      if (fileResult.success && fileResult.data?.length) {
+        const content = Buffer.from(fileResult.data).toString('utf-8');
         const lines = content
           .split('\n')
           .map((l: string) => l.trim())

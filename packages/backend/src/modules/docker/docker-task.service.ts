@@ -10,6 +10,7 @@ const logger = createChildLogger('DockerTaskService');
 const ACTIVE_TASK_STATUSES = ['pending', 'running'] as const;
 const COMPLETED_TASK_STATUSES = ['completed', 'succeeded', 'failed'] as const;
 const STALE_ACTIVE_TASK_TIMEOUT_MS = 60 * 60 * 1000;
+const LOST_STARTUP_TRACKING_ERROR = 'Task tracking interrupted by backend restart';
 
 export class DockerTaskService {
   constructor(private db: DrizzleClient) {}
@@ -45,6 +46,21 @@ export class DockerTaskService {
     return row;
   }
 
+  async forceCancel(id: string) {
+    await this.markStaleActiveTasksFailed();
+    const [existing] = await this.db.select().from(dockerTasks).where(eq(dockerTasks.id, id)).limit(1);
+    if (!existing) throw new AppError(404, 'NOT_FOUND', 'Docker task not found');
+    if (!ACTIVE_TASK_STATUSES.includes(existing.status as (typeof ACTIVE_TASK_STATUSES)[number])) {
+      throw new AppError(409, 'TASK_NOT_ACTIVE', 'Only pending or running Docker tasks can be force-cancelled');
+    }
+
+    return this.update(id, {
+      status: 'failed',
+      error: 'Force-cancelled by user',
+      completedAt: new Date(),
+    });
+  }
+
   async create(input: { nodeId: string; containerId?: string; containerName?: string; type: string }) {
     await this.markStaleActiveTasksFailed();
     const [row] = await this.db
@@ -77,6 +93,24 @@ export class DockerTaskService {
     for (const row of rows) this.emit(row);
     if (rows.length > 0) {
       logger.warn(`Marked ${rows.length} stale docker task(s) as failed`);
+    }
+    return rows.length;
+  }
+
+  async markActiveTasksLostOnStartup(now = new Date()) {
+    const rows = await this.db
+      .update(dockerTasks)
+      .set({
+        status: 'failed',
+        error: LOST_STARTUP_TRACKING_ERROR,
+        completedAt: now,
+      })
+      .where(inArray(dockerTasks.status, [...ACTIVE_TASK_STATUSES]))
+      .returning();
+
+    for (const row of rows) this.emit(row);
+    if (rows.length > 0) {
+      logger.warn(`Marked ${rows.length} active docker task(s) as failed after backend startup`);
     }
     return rows.length;
   }
@@ -129,7 +163,10 @@ export class DockerTaskService {
           updates.completedAt = new Date();
         }
 
-        await this.db.update(dockerTasks).set(updates).where(eq(dockerTasks.id, data.taskId));
+        await this.db
+          .update(dockerTasks)
+          .set(updates)
+          .where(and(eq(dockerTasks.id, data.taskId), inArray(dockerTasks.status, [...ACTIVE_TASK_STATUSES])));
       } else if (data.type) {
         // Create a new task from the update
         await this.create({

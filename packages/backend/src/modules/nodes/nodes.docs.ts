@@ -10,6 +10,21 @@ import {
   UnknownDataResponseSchema,
 } from '@/lib/openapi.js';
 import {
+  FileBrowseSchema,
+  FileMoveSchema,
+  FileUploadChunkQuerySchema,
+  FileUploadCompleteSchema,
+  FileUploadInitSchema,
+} from '@/modules/docker/docker.schemas.js';
+import {
+  CreateResourceFolderSchema,
+  MoveResourceFolderSchema,
+  MoveResourcesToFolderSchema,
+  ReorderResourceFoldersSchema,
+  ReorderResourcesSchema,
+  UpdateResourceFolderSchema,
+} from '@/modules/resource-folders/resource-folder.schemas.js';
+import {
   CreateNodeSchema,
   NodeListQuerySchema,
   UpdateNodeSchema,
@@ -62,6 +77,10 @@ const LogQuerySchema = z.object({
   search: z.string().optional(),
 });
 
+const UploadIdParamSchema = z.object({
+  uploadId: z.string().min(1),
+});
+
 export const listNodesRoute = appRoute({
   method: 'get',
   path: '/',
@@ -69,6 +88,77 @@ export const listNodesRoute = appRoute({
   summary: 'List nodes',
   request: { query: NodeListQuerySchema },
   responses: okJson(UnknownDataResponseSchema),
+});
+
+export const listNodeFoldersRoute = appRoute({
+  method: 'get',
+  path: '/folders',
+  tags: ['Nodes'],
+  summary: 'List node folders',
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const createNodeFolderRoute = appRoute({
+  method: 'post',
+  path: '/folders',
+  tags: ['Nodes'],
+  summary: 'Create a node folder',
+  request: jsonBody(CreateResourceFolderSchema),
+  responses: createdJson(UnknownDataResponseSchema),
+});
+
+export const reorderNodeFoldersRoute = appRoute({
+  method: 'put',
+  path: '/folders/reorder',
+  tags: ['Nodes'],
+  summary: 'Reorder node folders',
+  request: jsonBody(ReorderResourceFoldersSchema),
+  responses: successJson,
+});
+
+export const moveNodesToFolderRoute = appRoute({
+  method: 'post',
+  path: '/folders/move-nodes',
+  tags: ['Nodes'],
+  summary: 'Move nodes to a folder',
+  request: jsonBody(MoveResourcesToFolderSchema),
+  responses: successJson,
+});
+
+export const reorderNodesRoute = appRoute({
+  method: 'put',
+  path: '/folders/reorder-nodes',
+  tags: ['Nodes'],
+  summary: 'Reorder nodes within a folder',
+  request: jsonBody(ReorderResourcesSchema),
+  responses: successJson,
+});
+
+export const updateNodeFolderRoute = appRoute({
+  method: 'put',
+  path: '/folders/{id}',
+  tags: ['Nodes'],
+  summary: 'Rename a node folder',
+  request: { params: IdParamSchema, ...jsonBody(UpdateResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const moveNodeFolderRoute = appRoute({
+  method: 'put',
+  path: '/folders/{id}/move',
+  tags: ['Nodes'],
+  summary: 'Move a node folder',
+  request: { params: IdParamSchema, ...jsonBody(MoveResourceFolderSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const deleteNodeFolderRoute = appRoute({
+  method: 'delete',
+  path: '/folders/{id}',
+  tags: ['Nodes'],
+  summary: 'Delete a node folder',
+  request: { params: IdParamSchema },
+  responses: successJson,
 });
 
 export const getNodeRoute = appRoute({
@@ -87,6 +177,105 @@ export const getNodeHealthHistoryRoute = appRoute({
   summary: 'Get node health history',
   request: { params: IdParamSchema },
   responses: okJson(UnknownDataResponseSchema),
+});
+
+export const listNodeFilesRoute = appRoute({
+  method: 'get',
+  path: '/{id}/files',
+  tags: ['Nodes'],
+  summary: 'List node files',
+  request: { params: IdParamSchema, query: FileBrowseSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const readNodeFileRoute = appRoute({
+  method: 'get',
+  path: '/{id}/files/read',
+  tags: ['Nodes'],
+  summary: 'Read node file',
+  request: { params: IdParamSchema, query: FileBrowseSchema },
+  responses: okJson(z.any()),
+});
+
+export const writeNodeFileRoute = appRoute({
+  method: 'put',
+  path: '/{id}/files/write',
+  tags: ['Nodes'],
+  summary: 'Write node file',
+  request: { params: IdParamSchema, query: FileBrowseSchema },
+  responses: successJson,
+});
+
+export const createNodeFileRoute = appRoute({
+  method: 'post',
+  path: '/{id}/files/create',
+  tags: ['Nodes'],
+  summary: 'Create or overwrite node file',
+  request: { params: IdParamSchema, query: FileBrowseSchema },
+  responses: successJson,
+});
+
+export const initNodeFileUploadRoute = appRoute({
+  method: 'post',
+  path: '/{id}/files/uploads',
+  tags: ['Nodes'],
+  summary: 'Initialize node file upload',
+  request: { params: IdParamSchema, ...jsonBody(FileUploadInitSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const uploadNodeFileChunkRoute = appRoute({
+  method: 'put',
+  path: '/{id}/files/uploads/{uploadId}/chunks',
+  tags: ['Nodes'],
+  summary: 'Upload node file chunk',
+  request: { params: IdParamSchema.merge(UploadIdParamSchema), query: FileUploadChunkQuerySchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const completeNodeFileUploadRoute = appRoute({
+  method: 'post',
+  path: '/{id}/files/uploads/{uploadId}/complete',
+  tags: ['Nodes'],
+  summary: 'Complete node file upload',
+  request: { params: IdParamSchema.merge(UploadIdParamSchema), ...jsonBody(FileUploadCompleteSchema) },
+  responses: successJson,
+});
+
+export const abortNodeFileUploadRoute = appRoute({
+  method: 'delete',
+  path: '/{id}/files/uploads/{uploadId}',
+  tags: ['Nodes'],
+  summary: 'Abort node file upload',
+  request: { params: IdParamSchema.merge(UploadIdParamSchema) },
+  responses: successJson,
+});
+
+export const createNodeDirectoryRoute = appRoute({
+  method: 'post',
+  path: '/{id}/files/directory',
+  tags: ['Nodes'],
+  summary: 'Create node directory',
+  request: { params: IdParamSchema, ...jsonBody(FileBrowseSchema) },
+  responses: successJson,
+});
+
+export const deleteNodeFileRoute = appRoute({
+  method: 'delete',
+  path: '/{id}/files',
+  tags: ['Nodes'],
+  summary: 'Delete node file or directory',
+  request: { params: IdParamSchema, query: FileBrowseSchema },
+  responses: successJson,
+});
+
+export const moveNodeFileRoute = appRoute({
+  method: 'post',
+  path: '/{id}/files/move',
+  tags: ['Nodes'],
+  summary: 'Move node file or directory',
+  request: { params: IdParamSchema, ...jsonBody(FileMoveSchema) },
+  responses: successJson,
 });
 
 export const createNodeRoute = appRoute({

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { hasScopeBase, scopeMatches } from "@/lib/scope-utils";
+import { useUIStore } from "@/stores/ui";
 import type { User } from "@/types";
 
 type AuthContextResetCallback = () => void;
@@ -73,6 +74,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         authContextResetCallback?.();
       }
       setStoredAuthContextKey(nextKey);
+      if (user.aiApprovalMode) useUIStore.getState().hydrateAIApprovalMode(user.aiApprovalMode);
     }
     set({
       user,
@@ -90,6 +92,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       authContextResetCallback?.();
     }
     setStoredAuthContextKey(nextKey);
+    if (user.aiApprovalMode) useUIStore.getState().hydrateAIApprovalMode(user.aiApprovalMode);
     set({
       user,
       isAuthenticated: true,

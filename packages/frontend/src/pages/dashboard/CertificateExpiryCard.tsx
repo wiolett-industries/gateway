@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { SectionHeader } from "@/components/common/SectionHeader";
 import { Badge } from "@/components/ui/badge";
 import { cn, formatDate, formatTimeLeft } from "@/lib/utils";
 
@@ -31,18 +32,16 @@ export function CertificateExpiryCard({ expiringItems, hasScope }: CertificateEx
 
   return (
     <div className="border bg-card" style={{ borderColor: "rgb(234 179 8 / 0.6)" }}>
-      <div className="flex items-center gap-2 border-b border-border p-4">
-        <h2 className="font-semibold" style={{ color: "rgb(234 179 8)" }}>
-          Expiring Soon
-        </h2>
-        <Badge
-          variant="warning"
-          className="ml-auto"
-          style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
-        >
-          {visible.length}
-        </Badge>
-      </div>
+      <SectionHeader
+        title="Expiring Soon"
+        titleClassName="font-semibold"
+        actions={
+          <Badge variant="warning" style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}>
+            {visible.length}
+          </Badge>
+        }
+        style={{ borderColor: "rgb(234 179 8 / 0.6)", color: "rgb(234 179 8)" }}
+      />
       <div
         className="divide-y -mb-px [&>*:last-child]:border-b"
         style={{ borderColor: "rgb(234 179 8 / 0.6)" }}
@@ -62,7 +61,7 @@ export function CertificateExpiryCard({ expiringItems, hasScope }: CertificateEx
               className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
             >
               <span className="text-sm font-medium truncate flex-1">{item.name}</span>
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="secondary">
                 {item.type === "ca" ? "CA" : item.type === "pki" ? "PKI" : "SSL"}
               </Badge>
               <span className="text-xs text-muted-foreground">{formatDate(item.expiresAt)}</span>

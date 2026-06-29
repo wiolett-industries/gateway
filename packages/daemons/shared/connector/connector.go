@@ -20,6 +20,7 @@ const (
 	MaxBackoff            = 60 * time.Second
 	InitialBackoff        = 1 * time.Second
 	ConnectAttemptTimeout = 10 * time.Second
+	MaxMessageBytes       = 512 * 1024 * 1024
 )
 
 type Connector struct {
@@ -50,6 +51,10 @@ func (c *Connector) Connect(ctx context.Context) (*grpc.ClientConn, error) {
 			Timeout:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(MaxMessageBytes),
+			grpc.MaxCallSendMsgSize(MaxMessageBytes),
+		),
 	)
 	if err != nil {
 		return nil, err

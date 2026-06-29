@@ -349,7 +349,7 @@ export function CertificateIssueDialog({
                     <span className="text-muted-foreground">SANs:</span>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {sans.map((san) => (
-                        <Badge key={san} variant="secondary" className="text-xs">
+                        <Badge key={san} variant="secondary">
                           {san}
                         </Badge>
                       ))}

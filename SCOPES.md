@@ -6,7 +6,7 @@ All scopes follow `domain:resource:action[:qualifier]`. Resource-scopable scopes
 
 | Group | Description |
 |-------|-------------|
-| `system-admin` | All 133 scopes, including protected `admin:system`. |
+| `system-admin` | All 149 scopes, including protected `admin:system`. |
 | `admin` | Curated broad access, excluding `admin:system`, gateway settings edit, housekeeping configure, and Docker registry mutation defaults. |
 | `operator` | Operational access for day-to-day PKI, proxy, SSL, ACL, node, Docker container, database, notification, and logging read/query work. |
 | `viewer` | Read-only view/discovery access. |
@@ -75,6 +75,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `domains:create` |  |
 | `domains:edit` |  |
 | `domains:delete` |  |
+| `domains:folders:manage` |  |
 | `proxy:view` | Yes |
 | `proxy:create` | Yes |
 | `proxy:edit` | Yes |
@@ -107,9 +108,14 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `nodes:config:edit` | Yes |
 | `nodes:logs` | Yes |
 | `nodes:console` | Yes |
+| `nodes:files:read` | Yes |
+| `nodes:files:write` | Yes |
+| `nodes:folders:manage` |  |
 | `nodes:lock` | Yes |
 | `admin:users` |  |
 | `admin:groups` |  |
+| `admin:users:folders:manage` |  |
+| `admin:groups:folders:manage` |  |
 | `admin:audit` |  |
 | `admin:system` |  |
 | `admin:details:certificates` |  |
@@ -124,10 +130,15 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `license:manage` |  |
 | `feat:ai:use` |  |
 | `feat:ai:configure` |  |
+| `ai:sandbox:use` |  |
+| `ai:sandbox:tier:medium` |  |
+| `ai:sandbox:tier:high` |  |
+| `ai:sandbox:manage` |  |
 | `mcp:use` |  |
 | `docker:containers:view` | Yes |
 | `docker:containers:create` | Yes |
 | `docker:containers:edit` | Yes |
+| `docker:containers:config` | Yes |
 | `docker:containers:manage` | Yes |
 | `docker:containers:environment` | Yes |
 | `docker:containers:delete` | Yes |
@@ -143,6 +154,8 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `docker:volumes:view` | Yes |
 | `docker:volumes:create` | Yes |
 | `docker:volumes:delete` | Yes |
+| `docker:volumes:files:read` | Yes |
+| `docker:volumes:files:write` | Yes |
 | `docker:networks:view` | Yes |
 | `docker:networks:create` | Yes |
 | `docker:networks:edit` | Yes |
@@ -152,6 +165,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `docker:registries:edit` |  |
 | `docker:registries:delete` |  |
 | `docker:tasks` |  |
+| `docker:tasks:manage` | Yes |
 | `databases:view` | Yes |
 | `databases:create` |  |
 | `databases:edit` | Yes |
@@ -160,6 +174,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `databases:query:write` | Yes |
 | `databases:query:admin` | Yes |
 | `databases:credentials:reveal` | Yes |
+| `databases:folders:manage` |  |
 | `notifications:alerts:view` |  |
 | `notifications:alerts:create` |  |
 | `notifications:alerts:edit` |  |
@@ -175,6 +190,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `logs:environments:create` |  |
 | `logs:environments:edit` | Yes |
 | `logs:environments:delete` | Yes |
+| `logs:environments:folders:manage` |  |
 | `logs:tokens:view` | Yes |
 | `logs:tokens:create` | Yes |
 | `logs:tokens:delete` | Yes |
@@ -182,6 +198,7 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 | `logs:schemas:create` |  |
 | `logs:schemas:edit` | Yes |
 | `logs:schemas:delete` | Yes |
+| `logs:schemas:folders:manage` |  |
 | `logs:read` | Yes |
 | `logs:manage` |  |
 | `status-page:view` |  |
@@ -193,12 +210,16 @@ Legacy global nginx management routes under `/api/monitoring/nginx/*` are no lon
 
 ## API Token Delegation
 
-API and OAuth tokens can be granted 118 of the 133 scopes. They cannot be granted:
+API and OAuth tokens can be granted all scopes except the protected user/session-only scopes listed below. They cannot be granted:
 
 | Scope | Reason |
 |-------|--------|
 | `feat:ai:use` | User/session-only AI assistant access. |
 | `feat:ai:configure` | User/session-only AI configuration. |
+| `ai:sandbox:use` | User/session-only sandbox runner access. |
+| `ai:sandbox:tier:medium` | User/session-only sandbox runner tier access. |
+| `ai:sandbox:tier:high` | User/session-only sandbox runner tier access. |
+| `ai:sandbox:manage` | User/session-only sandbox runner management. |
 | `mcp:use` | User-account capability gate for remote MCP. |
 | `admin:system` | Protected system-administrator shielding. |
 | `admin:users` | User administration is session-only. |
@@ -212,6 +233,8 @@ API and OAuth tokens can be granted 118 of the 133 scopes. They cannot be grante
 | `proxy:advanced:bypass` | Unrestricted advanced nginx snippets are session-only. |
 | `nodes:config:view` | Global node nginx config is session-only. |
 | `nodes:config:edit` | Global node nginx config is session-only. |
+| `nodes:files:read` | Node filesystem access is session-only and is not delegated to API tokens or MCP. |
+| `nodes:files:write` | Node filesystem writes are session-only and are not delegated to API tokens or MCP. |
 
 `mcp:use` is not a token scope. It gates whether the owning user account may use the MCP endpoint at all. MCP tokens use ordinary delegated Gateway scopes such as `nodes:details`, `proxy:view`, or `docker:containers:view` to determine which MCP tools and resources are available.
 

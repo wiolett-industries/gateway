@@ -7,7 +7,13 @@ import { AppError } from '@/middleware/error-handler.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv } from '@/types.js';
-import { csrfTokenRoute, currentUserRoute, logoutRoute } from './auth.docs.js';
+import {
+  csrfTokenRoute,
+  currentUserPreferencesRoute,
+  currentUserRoute,
+  logoutRoute,
+  updateCurrentUserPreferencesRoute,
+} from './auth.docs.js';
 import { authMiddleware, SESSION_COOKIE_NAME, sessionOnly } from './auth.middleware.js';
 import { AuthService } from './auth.service.js';
 
@@ -191,5 +197,25 @@ authRoutes.openapi(currentUserRoute, async (c) => {
     groupName: user.groupName,
     scopes: effectiveScopes,
     isBlocked: user.isBlocked,
+    aiApprovalMode: user.aiApprovalMode ?? 'normal',
   });
+});
+
+authRoutes.use('/me/preferences', authMiddleware);
+authRoutes.use('/me/preferences', sessionOnly);
+authRoutes.openapi(currentUserPreferencesRoute, async (c) => {
+  const sessionUser = c.get('user')!;
+  const authService = container.resolve(AuthService);
+  const preferences = await authService.getUserPreferences(sessionUser.id);
+  if (!preferences) {
+    throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+  }
+  return c.json(preferences);
+});
+
+authRoutes.openapi(updateCurrentUserPreferencesRoute, async (c) => {
+  const sessionUser = c.get('user')!;
+  const authService = container.resolve(AuthService);
+  const preferences = await authService.updateUserPreferences(sessionUser.id, c.req.valid('json'));
+  return c.json(preferences);
 });

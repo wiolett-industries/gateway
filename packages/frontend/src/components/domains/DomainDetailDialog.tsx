@@ -168,7 +168,7 @@ export function DomainDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{domain?.domain || "Loading..."}</DialogTitle>
           <DialogDescription>
@@ -237,11 +237,7 @@ export function DomainDetailDialog({
                       >
                         <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
                         <span className="truncate">{ph.domainNames[0]}</span>
-                        {!ph.enabled && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            Off
-                          </Badge>
-                        )}
+                        {!ph.enabled && <Badge variant="secondary">Off</Badge>}
                       </Link>
                     ))}
                   </div>
@@ -255,10 +251,7 @@ export function DomainDetailDialog({
                       <div key={cert.id} className="flex items-center gap-2 py-1 text-sm">
                         <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
                         <span className="truncate">{cert.domainNames[0]}</span>
-                        <Badge
-                          variant={cert.status === "active" ? "success" : "secondary"}
-                          className="text-[10px]"
-                        >
+                        <Badge variant={cert.status === "active" ? "success" : "secondary"}>
                           {cert.status}
                         </Badge>
                       </div>

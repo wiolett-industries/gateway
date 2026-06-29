@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { type AIApprovalMode, isAIApprovalMode } from "@/lib/ai-approval-mode";
 
 type Theme = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";
@@ -33,14 +34,13 @@ interface UIState {
   setShowUpdateNotifications: (show: boolean) => void;
   showSystemCertificates: boolean;
   setShowSystemCertificates: (show: boolean) => void;
+  showAILiteModeCTA: boolean;
+  setShowAILiteModeCTA: (show: boolean) => void;
 
-  // AI Approval Bypass
-  aiBypassCreateApprovals: boolean;
-  aiBypassEditApprovals: boolean;
-  aiBypassDeleteApprovals: boolean;
-  setAIBypassCreateApprovals: (v: boolean) => void;
-  setAIBypassEditApprovals: (v: boolean) => void;
-  setAIBypassDeleteApprovals: (v: boolean) => void;
+  // AI Approval Mode
+  aiApprovalMode: AIApprovalMode;
+  setAIApprovalMode: (mode: AIApprovalMode) => void;
+  hydrateAIApprovalMode: (mode: AIApprovalMode) => void;
 
   // Command palette
   commandPaletteOpen: boolean;
@@ -48,8 +48,15 @@ interface UIState {
 
   // AI Panel
   aiPanelOpen: boolean;
+  aiLiteMode: boolean;
+  aiLiteModeIntroAccepted: boolean;
+  pinnedAIConversationIds: string[];
   setAIPanelOpen: (open: boolean) => void;
+  setAILiteMode: (enabled: boolean) => void;
+  setAILiteModeIntroAccepted: (accepted: boolean) => void;
+  togglePinnedAIConversation: (conversationId: string) => void;
   toggleAIPanel: () => void;
+  toggleAILiteMode: () => void;
 
   // Recent pages
   recentPages: Array<{ path: string; label: string; icon?: string }>;
@@ -92,14 +99,13 @@ export const useUIStore = create<UIState>()(
       setShowUpdateNotifications: (showUpdateNotifications) => set({ showUpdateNotifications }),
       showSystemCertificates: false,
       setShowSystemCertificates: (showSystemCertificates) => set({ showSystemCertificates }),
+      showAILiteModeCTA: true,
+      setShowAILiteModeCTA: (showAILiteModeCTA) => set({ showAILiteModeCTA }),
 
-      // AI Approval Bypass
-      aiBypassCreateApprovals: false,
-      aiBypassEditApprovals: false,
-      aiBypassDeleteApprovals: false,
-      setAIBypassCreateApprovals: (aiBypassCreateApprovals) => set({ aiBypassCreateApprovals }),
-      setAIBypassEditApprovals: (aiBypassEditApprovals) => set({ aiBypassEditApprovals }),
-      setAIBypassDeleteApprovals: (aiBypassDeleteApprovals) => set({ aiBypassDeleteApprovals }),
+      // AI Approval Mode
+      aiApprovalMode: "normal",
+      hydrateAIApprovalMode: (aiApprovalMode) => set({ aiApprovalMode }),
+      setAIApprovalMode: (aiApprovalMode) => set({ aiApprovalMode }),
 
       // Command palette
       commandPaletteOpen: false,
@@ -107,8 +113,20 @@ export const useUIStore = create<UIState>()(
 
       // AI Panel
       aiPanelOpen: false,
+      aiLiteMode: false,
+      aiLiteModeIntroAccepted: false,
+      pinnedAIConversationIds: [],
       setAIPanelOpen: (aiPanelOpen) => set({ aiPanelOpen }),
+      setAILiteMode: (aiLiteMode) => set({ aiLiteMode }),
+      setAILiteModeIntroAccepted: (aiLiteModeIntroAccepted) => set({ aiLiteModeIntroAccepted }),
+      togglePinnedAIConversation: (conversationId) =>
+        set((state) => ({
+          pinnedAIConversationIds: state.pinnedAIConversationIds.includes(conversationId)
+            ? state.pinnedAIConversationIds.filter((id) => id !== conversationId)
+            : [conversationId, ...state.pinnedAIConversationIds],
+        })),
       toggleAIPanel: () => set((state) => ({ aiPanelOpen: !state.aiPanelOpen })),
+      toggleAILiteMode: () => set((state) => ({ aiLiteMode: !state.aiLiteMode })),
 
       // Recent pages
       recentPages: [],
@@ -131,12 +149,32 @@ export const useUIStore = create<UIState>()(
         sidebarCollapsed: state.sidebarCollapsed,
         showUpdateNotifications: state.showUpdateNotifications,
         showSystemCertificates: state.showSystemCertificates,
+        showAILiteModeCTA: state.showAILiteModeCTA,
         aiPanelOpen: state.aiPanelOpen,
-        aiBypassCreateApprovals: state.aiBypassCreateApprovals,
-        aiBypassEditApprovals: state.aiBypassEditApprovals,
-        aiBypassDeleteApprovals: state.aiBypassDeleteApprovals,
+        aiLiteMode: state.aiLiteMode,
+        aiLiteModeIntroAccepted: state.aiLiteModeIntroAccepted,
+        pinnedAIConversationIds: state.pinnedAIConversationIds,
+        aiApprovalMode: state.aiApprovalMode,
         recentPages: state.recentPages,
       }),
+      migrate: (persisted) => {
+        const state = persisted as (Partial<UIState> & Record<string, unknown>) | undefined;
+        if (!state) return persisted;
+        return {
+          theme: state.theme,
+          sidebarOpen: state.sidebarOpen,
+          sidebarCollapsed: state.sidebarCollapsed,
+          showUpdateNotifications: state.showUpdateNotifications,
+          showSystemCertificates: state.showSystemCertificates,
+          showAILiteModeCTA: state.showAILiteModeCTA,
+          aiPanelOpen: state.aiPanelOpen,
+          aiLiteMode: state.aiLiteMode,
+          aiLiteModeIntroAccepted: state.aiLiteModeIntroAccepted,
+          pinnedAIConversationIds: state.pinnedAIConversationIds,
+          aiApprovalMode: isAIApprovalMode(state.aiApprovalMode) ? state.aiApprovalMode : "normal",
+          recentPages: state.recentPages,
+        };
+      },
     }
   )
 );

@@ -1,4 +1,4 @@
-import { count, desc, eq, ilike, sql } from 'drizzle-orm';
+import { asc, count, desc, eq, ilike, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { domains } from '@/db/schema/domains.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
@@ -48,7 +48,7 @@ export class DomainsService {
         .select()
         .from(domains)
         .where(where)
-        .orderBy(desc(domains.createdAt))
+        .orderBy(asc(domains.sortOrder), asc(domains.domain), desc(domains.createdAt))
         .limit(params.limit)
         .offset((params.page - 1) * params.limit),
       this.db.select({ total: count() }).from(domains).where(where),

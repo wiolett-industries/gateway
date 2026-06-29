@@ -4,7 +4,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { makeUser } from "@/test/fixtures";
-import { SettingsTab } from "./SettingsTab";
+import { SettingsTab, WebhookSection } from "./SettingsTab";
 
 vi.mock("@/hooks/use-realtime", () => ({
   useRealtime: vi.fn(),
@@ -121,5 +121,186 @@ describe("docker detail SettingsTab", () => {
     expect(onMutationEnd).toHaveBeenCalled();
     expect(onRecreating).not.toHaveBeenCalled();
     expect(invalidate).toHaveBeenCalledWith("containers", "tasks");
+  });
+
+  it("loads container webhook and image cleanup settings", async () => {
+    vi.spyOn(api, "getContainerWebhook").mockResolvedValue({
+      id: "webhook-1",
+      nodeId: "node-1",
+      containerName: "app",
+      token: "token-1",
+      enabled: true,
+      createdAt: "2026-06-21T00:00:00.000Z",
+      updatedAt: "2026-06-21T00:00:00.000Z",
+    });
+    vi.spyOn(api, "getContainerImageCleanup").mockResolvedValue({
+      id: "cleanup-1",
+      targetType: "container",
+      nodeId: "node-1",
+      containerName: "app",
+      deploymentId: null,
+      enabled: true,
+      retentionCount: 3,
+      createdAt: "2026-06-21T00:00:00.000Z",
+      updatedAt: "2026-06-21T00:00:00.000Z",
+    });
+
+    render(<WebhookSection nodeId="node-1" containerName="app" />);
+
+    expect(
+      await screen.findByDisplayValue(`${window.location.origin}/api/webhooks/docker/token-1`)
+    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue("3")).toBeInTheDocument();
+  });
+
+  it("renders attached Docker networks in settings", async () => {
+    vi.spyOn(api, "listDockerNetworks").mockResolvedValue([
+      {
+        id: "network-2",
+        name: "other-net",
+        driver: "bridge",
+        scope: "local",
+        ipam: {},
+        containers: {},
+      },
+    ]);
+    useAuthStore.setState({
+      user: makeUser({
+        scopes: ["docker:containers:edit", "docker:networks:view", "docker:networks:edit"],
+      }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(
+      <SettingsTab
+        nodeId="node-1"
+        containerId="container-1"
+        data={{
+          Id: "container-1",
+          Name: "/app",
+          State: { Status: "running", Running: true },
+          Config: { Image: "registry.example.com/team/app:latest", Entrypoint: [], Cmd: [] },
+          HostConfig: {
+            RestartPolicy: { Name: "no", MaximumRetryCount: 0 },
+            Memory: 0,
+            MemorySwap: 0,
+            NanoCPUs: 0,
+            CpuShares: 0,
+            PidsLimit: 0,
+            PortBindings: {},
+          },
+          NetworkSettings: {
+            Networks: {
+              "app-net": {
+                NetworkID: "network-1",
+                IPAddress: "172.20.0.5",
+                Gateway: "172.20.0.1",
+                Aliases: ["app", "backend"],
+              },
+            },
+          },
+          Mounts: [],
+        }}
+      />
+    );
+
+    expect(await screen.findByText("app-net")).toBeInTheDocument();
+    expect(screen.getByText("172.20.0.5")).toBeInTheDocument();
+    expect(screen.getByText("app, backend")).toBeInTheDocument();
+    expect(api.listDockerNetworks).toHaveBeenCalledWith("node-1");
+  });
+
+  it("saves network-only changes without recreating the container", async () => {
+    vi.spyOn(api, "listDockerNetworks").mockResolvedValue([
+      {
+        id: "network-1",
+        name: "app-net",
+        driver: "bridge",
+        scope: "local",
+        ipam: {},
+        containers: {},
+      },
+      {
+        id: "network-2",
+        name: "other-net",
+        driver: "bridge",
+        scope: "local",
+        ipam: {},
+        containers: {},
+      },
+    ]);
+    vi.spyOn(api, "connectContainerToNetwork").mockResolvedValue(undefined);
+    vi.spyOn(api, "disconnectContainerFromNetwork").mockResolvedValue(undefined);
+    vi.spyOn(api, "recreateWithConfig").mockResolvedValue({});
+    const invalidate = vi.fn().mockResolvedValue(undefined);
+    useDockerStore.setState({ invalidate });
+    useAuthStore.setState({
+      user: makeUser({
+        scopes: ["docker:containers:edit", "docker:networks:view", "docker:networks:edit"],
+      }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    const onMutationStart = vi.fn();
+    const onMutationEnd = vi.fn();
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <SettingsTab
+        nodeId="node-1"
+        containerId="container-1"
+        data={{
+          Id: "container-1",
+          Name: "/app",
+          State: { Status: "running", Running: true },
+          Config: { Image: "registry.example.com/team/app:latest", Entrypoint: [], Cmd: [] },
+          HostConfig: {
+            RestartPolicy: { Name: "no", MaximumRetryCount: 0 },
+            Memory: 0,
+            MemorySwap: 0,
+            NanoCPUs: 0,
+            CpuShares: 0,
+            PidsLimit: 0,
+            PortBindings: {},
+          },
+          NetworkSettings: {
+            Networks: {
+              "app-net": {
+                NetworkID: "network-1",
+                IPAddress: "172.20.0.5",
+                Gateway: "172.20.0.1",
+                Aliases: [],
+              },
+            },
+          },
+          Mounts: [],
+        }}
+        onMutationStart={onMutationStart}
+        onMutationEnd={onMutationEnd}
+        onRefresh={onRefresh}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByText("other-net"));
+
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.connectContainerToNetwork).toHaveBeenCalledWith(
+        "node-1",
+        "network-2",
+        "container-1"
+      );
+    });
+    expect(api.recreateWithConfig).not.toHaveBeenCalled();
+    expect(onMutationStart).not.toHaveBeenCalled();
+    expect(onMutationEnd).not.toHaveBeenCalled();
+    expect(onRefresh).toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledWith("containers", "networks");
   });
 });

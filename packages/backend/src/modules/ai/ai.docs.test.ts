@@ -1,0 +1,118 @@
+import { describe, expect, it } from 'vitest';
+import { DOC_TOPIC_SCOPES, getInternalDocumentation, INTERNAL_DOCS } from './ai.docs.js';
+import { AI_TOOLS } from './ai.tools.js';
+
+describe('AI internal docs registry', () => {
+  it('keeps topic registry and scope contracts stable', () => {
+    expect(Object.keys(INTERNAL_DOCS)).toEqual([
+      'discovery',
+      'pki',
+      'ssl',
+      'proxy',
+      'domains',
+      'access-lists',
+      'templates',
+      'acme',
+      'users',
+      'audit',
+      'nginx',
+      'nodes',
+      'housekeeping',
+      'permissions',
+      'docker',
+      'databases',
+      'postgres',
+      'redis',
+      'logging',
+      'folders',
+      'node-files',
+      'sandbox',
+      'conversations',
+      'status-page',
+      'api',
+      'ai-settings',
+      'notifications',
+    ]);
+    expect(DOC_TOPIC_SCOPES).toMatchObject({
+      discovery: 'feat:ai:use',
+      permissions: 'feat:ai:use',
+      docker: 'docker:containers:view',
+      logging: ['logs:environments:view', 'logs:schemas:view', 'logs:read', 'logs:manage'],
+      folders: expect.arrayContaining(['nodes:folders:manage', 'domains:folders:manage']),
+      'node-files': ['nodes:files:read', 'nodes:files:write'],
+      sandbox: 'ai:sandbox:use',
+      conversations: 'feat:ai:use',
+      'ai-settings': 'feat:ai:configure',
+      'status-page': 'status-page:view',
+      notifications: 'notifications:view',
+      proxy: 'proxy:view',
+    });
+  });
+
+  it('keeps internal_documentation tool topics aligned with the docs registry', () => {
+    const tool = AI_TOOLS.find((candidate) => candidate.name === 'internal_documentation');
+    expect(tool).toBeDefined();
+    expect(tool?.description).toContain('logging');
+    expect(tool?.description).toContain('discovery');
+    const parameters = tool?.parameters as { properties: { topic: { enum: string[] } } };
+    expect(parameters.properties.topic.enum).toEqual(Object.keys(INTERNAL_DOCS));
+  });
+
+  it('returns allowed documentation and preserves permission topic content', () => {
+    expect(getInternalDocumentation('permissions', ['feat:ai:use'])).toEqual({
+      topic: 'permissions',
+      content: INTERNAL_DOCS.permissions,
+    });
+    expect(INTERNAL_DOCS.permissions).toContain('# Permissions');
+    expect(INTERNAL_DOCS.permissions).toContain('Resource-Scoped Permissions');
+    expect(INTERNAL_DOCS.permissions).toContain('docker:containers:view');
+
+    expect(getInternalDocumentation('discovery', ['feat:ai:use']).content).toContain('discover_tools');
+    expect(getInternalDocumentation('discovery', ['feat:ai:use']).content).toContain('get_current_context');
+    expect(getInternalDocumentation('discovery', ['feat:ai:use']).content).toContain('find_resource');
+    expect(getInternalDocumentation('logging', ['logs:schemas:view']).content).toContain('manage_logging');
+    expect(getInternalDocumentation('logging', ['logs:read:env-1']).content).toContain('External Logging');
+    expect(getInternalDocumentation('folders', ['nodes:folders:manage']).content).toContain('list_resource_folders');
+    expect(getInternalDocumentation('nodes', ['nodes:details']).content).toContain('manage_node_config');
+    expect(getInternalDocumentation('node-files', ['nodes:files:read']).content).toContain('manage_node_file');
+    expect(getInternalDocumentation('sandbox', ['ai:sandbox:use']).content).toContain('download_artifact');
+    expect(getInternalDocumentation('conversations', ['feat:ai:use']).content).toContain('manage_ai_conversation');
+    expect(getInternalDocumentation('api', ['feat:ai:use']).content).toContain('manage_oauth_authorization');
+    expect(getInternalDocumentation('api', ['feat:ai:use']).content).toContain('manage_api_token');
+    expect(getInternalDocumentation('ai-settings', ['feat:ai:configure']).content).toContain('update_ai_settings');
+    expect(getInternalDocumentation('ai-settings', ['feat:ai:configure']).content).toContain('providerUrl');
+    expect(getInternalDocumentation('ai-settings', ['feat:ai:configure']).content).not.toContain('baseUrl:');
+    expect(getInternalDocumentation('status-page', ['status-page:view']).content).toContain('manage_status_page');
+    expect(getInternalDocumentation('status-page', ['status-page:view']).content).toContain(
+      'status-page:incidents:create'
+    );
+  });
+
+  it('does not regress to stale model-facing tool names or enum examples', () => {
+    const allDocs = Object.values(INTERNAL_DOCS).join('\n');
+
+    expect(allDocs).not.toContain('upload_ssl_cert');
+    expect(allDocs).not.toContain('createDomain');
+    expect(allDocs).not.toContain('checkDns');
+    expect(allDocs).not.toContain('update_user(');
+    expect(allDocs).not.toContain('reverse-proxy');
+    expect(allDocs).not.toContain('static-site');
+    expect(allDocs).not.toContain('Satisfy Mode');
+    expect(allDocs).not.toContain('status-page:incidents:*');
+  });
+
+  it('filters unknown-topic suggestions and denies unauthorized topics', () => {
+    expect(getInternalDocumentation('docker', ['feat:ai:use'])).toEqual({
+      topic: 'docker',
+      content: 'You do not have permission to access documentation for "docker".',
+    });
+
+    const unknown = getInternalDocumentation('missing', ['feat:ai:use']);
+    expect(unknown.topic).toBe('missing');
+    expect(unknown.content).toContain('Unknown topic "missing".');
+    expect(unknown.content).toContain('permissions');
+    expect(unknown.content).toContain('api');
+    expect(unknown.content).not.toContain('docker');
+    expect(unknown.content).not.toContain('proxy');
+  });
+});

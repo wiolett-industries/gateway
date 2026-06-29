@@ -565,6 +565,180 @@ func (p *DockerPlugin) handleVolumeCommand(cmd *pb.DockerVolumeCommand, result *
 		}
 		result.Detail = string(data)
 
+	case "inspect":
+		if cmd.Name == "" {
+			result.Success = false
+			result.Error = "name is required for volume inspect"
+			return
+		}
+		data, err := p.client.InspectVolume(ctx, cmd.Name)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+		result.Detail = string(data)
+
+	case "list-files":
+		if cmd.Name == "" {
+			result.Success = false
+			result.Error = "name is required for volume file list"
+			return
+		}
+		path := cmd.Path
+		if path == "" {
+			path = "/"
+		}
+		entries, err := ListVolumeDir(ctx, p.client, cmd.Name, path)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+		data, err := json.Marshal(entries)
+		if err != nil {
+			result.Success = false
+			result.Error = fmt.Sprintf("marshal entries: %v", err)
+			return
+		}
+		result.Detail = string(data)
+
+	case "export":
+		if cmd.Name == "" {
+			result.Success = false
+			result.Error = "name is required for volume export"
+			return
+		}
+		content, err := ExportVolume(ctx, p.client, cmd.Name, cmd.MaxBytes)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+		result.Detail = encodeBase64(content)
+
+	case "read-file":
+		if cmd.Name == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "name and path are required for volume file read"
+			return
+		}
+		content, err := ReadVolumeFile(ctx, p.client, cmd.Name, cmd.Path, cmd.MaxBytes)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+		result.Data = content
+
+	case "write-file":
+		if cmd.Name == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "name and path are required for volume file write"
+			return
+		}
+		if err := WriteVolumeFile(ctx, p.client, cmd.Name, cmd.Path, cmd.Content); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "create-file":
+		if cmd.Name == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "name and path are required for volume file create"
+			return
+		}
+		if err := CreateVolumeFile(ctx, p.client, cmd.Name, cmd.Path, cmd.Content); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-init":
+		if cmd.Name == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "name, upload id, and target_path are required for volume upload init"
+			return
+		}
+		if err := InitVolumeChunkedFileUpload(ctx, p.client, cmd.Name, cmd.Path, cmd.TargetPath, cmd.MaxBytes); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-chunk":
+		if cmd.Name == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "name, upload id, and target_path are required for volume upload chunk"
+			return
+		}
+		if err := WriteVolumeChunkedFileUpload(ctx, p.client, cmd.Name, cmd.Path, cmd.TargetPath, cmd.MaxBytes, cmd.Content); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-complete":
+		if cmd.Name == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "name, upload id, and target_path are required for volume upload complete"
+			return
+		}
+		if err := CompleteVolumeChunkedFileUpload(ctx, p.client, cmd.Name, cmd.Path, cmd.TargetPath, cmd.MaxBytes); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-abort":
+		if cmd.Name == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "name, upload id, and target_path are required for volume upload abort"
+			return
+		}
+		if err := AbortVolumeChunkedFileUpload(ctx, p.client, cmd.Name, cmd.Path, cmd.TargetPath); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "create-dir":
+		if cmd.Name == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "name and path are required for volume directory create"
+			return
+		}
+		if err := CreateVolumeDirectory(ctx, p.client, cmd.Name, cmd.Path); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "delete":
+		if cmd.Name == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "name and path are required for volume file delete"
+			return
+		}
+		if err := DeleteVolumePath(ctx, p.client, cmd.Name, cmd.Path); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "move":
+		if cmd.Name == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "name, path, and target_path are required for volume file move"
+			return
+		}
+		if err := MoveVolumePath(ctx, p.client, cmd.Name, cmd.Path, cmd.TargetPath); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
 	case "create":
 		if cmd.Name == "" {
 			result.Success = false
@@ -584,6 +758,30 @@ func (p *DockerPlugin) handleVolumeCommand(cmd *pb.DockerVolumeCommand, result *
 			return
 		}
 		if err := p.client.RemoveVolume(ctx, cmd.Name, cmd.Force); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "rename":
+		if cmd.Name == "" || cmd.NewName == "" {
+			result.Success = false
+			result.Error = "name and new_name are required for volume rename"
+			return
+		}
+		if err := p.client.RenameVolume(ctx, cmd.Name, cmd.NewName); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "update-labels":
+		if cmd.Name == "" {
+			result.Success = false
+			result.Error = "name is required for volume label update"
+			return
+		}
+		if err := p.client.UpdateVolumeLabels(ctx, cmd.Name, cmd.Labels); err != nil {
 			result.Success = false
 			result.Error = err.Error()
 			return
@@ -870,16 +1068,41 @@ func (p *DockerPlugin) handleConfigPush(cmd *pb.DockerConfigPushCommand, result 
 
 // handleExecCommand dispatches exec session actions (create, resize, detach).
 func (p *DockerPlugin) handleExecCommand(cmd *pb.DockerExecCommand, result *pb.CommandResult) {
-	if p.execMgr == nil {
-		result.Success = false
-		result.Error = "exec manager not initialized (no active session)"
-		return
-	}
-
 	ctx := context.Background()
 
 	switch cmd.Action {
+	case "run":
+		if cmd.ContainerId == "" {
+			result.Success = false
+			result.Error = "container_id is required for exec run"
+			return
+		}
+		if len(cmd.Command) == 0 {
+			result.Success = false
+			result.Error = "command is required for exec run"
+			return
+		}
+		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		stdout, err := execInContainerBytesAsUser(runCtx, p.client, cmd.ContainerId, cmd.Command, cmd.User, 128*1024)
+		if err != nil {
+			result.Success = false
+			result.Error = fmt.Sprintf("exec run: %v", err)
+			return
+		}
+		resp := map[string]interface{}{
+			"stdout":   string(stdout),
+			"exitCode": 0,
+		}
+		data, _ := json.Marshal(resp)
+		result.Detail = string(data)
+
 	case "create":
+		if p.execMgr == nil {
+			result.Success = false
+			result.Error = "exec manager not initialized (no active session)"
+			return
+		}
 		if cmd.ContainerId == "" {
 			result.Success = false
 			result.Error = "container_id is required for exec create"
@@ -912,6 +1135,11 @@ func (p *DockerPlugin) handleExecCommand(cmd *pb.DockerExecCommand, result *pb.C
 		result.Detail = string(data)
 
 	case "resize":
+		if p.execMgr == nil {
+			result.Success = false
+			result.Error = "exec manager not initialized (no active session)"
+			return
+		}
 		if cmd.ContainerId == "" {
 			result.Success = false
 			result.Error = "container_id (exec_id) is required for resize"
@@ -978,8 +1206,7 @@ func (p *DockerPlugin) handleFileCommand(cmd *pb.DockerFileCommand, result *pb.C
 			result.Error = err.Error()
 			return
 		}
-		// Return content as base64 to safely transport binary data
-		result.Detail = encodeBase64(content)
+		result.Data = content
 
 	case "write":
 		if cmd.ContainerId == "" || cmd.Path == "" {
@@ -987,12 +1214,103 @@ func (p *DockerPlugin) handleFileCommand(cmd *pb.DockerFileCommand, result *pb.C
 			result.Error = "container_id and path are required"
 			return
 		}
-		if len(cmd.Content) == 0 {
+		if err := WriteFile(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.Content); err != nil {
 			result.Success = false
-			result.Error = "content is required"
+			result.Error = err.Error()
 			return
 		}
-		if err := WriteFile(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.Content); err != nil {
+
+	case "create-file":
+		if cmd.ContainerId == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "container_id and path are required"
+			return
+		}
+		if err := CreateFile(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.Content); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-init":
+		if cmd.ContainerId == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "container_id, upload id, and target_path are required"
+			return
+		}
+		if err := InitChunkedFileUpload(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.TargetPath, cmd.MaxBytes); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-chunk":
+		if cmd.ContainerId == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "container_id, upload id, and target_path are required"
+			return
+		}
+		if err := WriteChunkedFileUpload(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.TargetPath, cmd.MaxBytes, cmd.Content); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-complete":
+		if cmd.ContainerId == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "container_id, upload id, and target_path are required"
+			return
+		}
+		if err := CompleteChunkedFileUpload(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.TargetPath, cmd.MaxBytes); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "upload-abort":
+		if cmd.ContainerId == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "container_id, upload id, and target_path are required"
+			return
+		}
+		if err := AbortChunkedFileUpload(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.TargetPath); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "create-dir":
+		if cmd.ContainerId == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "container_id and path are required"
+			return
+		}
+		if err := CreateDirectory(ctx, p.client, cmd.ContainerId, cmd.Path); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "delete":
+		if cmd.ContainerId == "" || cmd.Path == "" {
+			result.Success = false
+			result.Error = "container_id and path are required"
+			return
+		}
+		if err := DeletePath(ctx, p.client, cmd.ContainerId, cmd.Path); err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return
+		}
+
+	case "move":
+		if cmd.ContainerId == "" || cmd.Path == "" || cmd.TargetPath == "" {
+			result.Success = false
+			result.Error = "container_id, path, and target_path are required"
+			return
+		}
+		if err := MovePath(ctx, p.client, cmd.ContainerId, cmd.Path, cmd.TargetPath); err != nil {
 			result.Success = false
 			result.Error = err.Error()
 			return

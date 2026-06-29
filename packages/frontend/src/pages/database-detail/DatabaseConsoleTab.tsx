@@ -187,7 +187,7 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
   const [result, setResult] = useState<unknown>(null);
   const [running, setRunning] = useState(false);
   const [splitPercent, setSplitPercent] = useState(readStoredSplitPercent);
-  const [resizing, setResizing] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<ConsoleHistoryEntry[]>(() =>
     readStoredConsoleHistory(database.id)
@@ -272,7 +272,7 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
     const container = splitContainerRef.current;
     if (!container) return;
 
-    setResizing(true);
+    setIsResizing(true);
     const updateSplit = (clientX: number) => {
       const rect = container.getBoundingClientRect();
       if (rect.width <= 0) return;
@@ -285,7 +285,7 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
     };
     const handlePointerMove = (moveEvent: PointerEvent) => updateSplit(moveEvent.clientX);
     const cleanupResize = () => {
-      setResizing(false);
+      setIsResizing(false);
       document.removeEventListener("pointermove", handlePointerMove);
       document.removeEventListener("pointerup", cleanupResize);
       document.removeEventListener("pointercancel", cleanupResize);
@@ -317,7 +317,7 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
           {history.length > 0 && (
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="icon"
               onClick={() => setHistoryOpen(true)}
               aria-label="Open query history"
@@ -325,7 +325,7 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
               <History className="h-4 w-4" />
             </Button>
           )}
-          <Button size="sm" onClick={() => void execute()} disabled={running}>
+          <Button onClick={() => void execute()} disabled={running}>
             {running ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
@@ -346,14 +346,15 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
             onChange={updateInput}
             language={database.type === "postgres" ? "sql" : "plain"}
             minHeight="0px"
+            showGutterBorder={false}
             className="border-0 flex-1 min-h-0"
           />
         </div>
 
         <div
           className={cn(
-            "group relative w-2 shrink-0 cursor-col-resize transition-colors",
-            resizing && "bg-primary/5"
+            "group relative z-10 -mx-[7.5px] w-4 shrink-0 cursor-col-resize bg-transparent",
+            isResizing && "cursor-col-resize"
           )}
           role="separator"
           aria-orientation="vertical"
@@ -363,7 +364,12 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
           aria-valuenow={Math.round(splitPercent)}
           onPointerDown={startResize}
         >
-          <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border group-hover:bg-primary/70" />
+          <div
+            className={cn(
+              "absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border group-hover:bg-primary/70",
+              isResizing && "bg-primary/70"
+            )}
+          />
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -384,11 +390,11 @@ export function DatabaseConsoleTab({ database }: { database: DatabaseConnection 
       </div>
 
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-        <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Query History</DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 overflow-auto border border-border">
+          <div className="overflow-x-auto border border-border">
             {history.length > 0 ? (
               history.map((entry) => (
                 <button

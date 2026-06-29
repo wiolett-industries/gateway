@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import type { Node } from "@/types";
 import { effectiveNodeStatus } from "@/types";
@@ -14,13 +15,14 @@ export function NodesCard({ nodesList, hasScope, loading = false }: NodesCardPro
   if (!hasScope("nodes:details")) return null;
 
   return (
-    <div className="border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border p-4">
-        <h2 className="font-semibold">Nodes</h2>
+    <PanelShell
+      title="Nodes"
+      actions={
         <Link to="/nodes" className="text-sm text-muted-foreground hover:text-foreground">
           View all
         </Link>
-      </div>
+      }
+    >
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-3">
@@ -39,11 +41,11 @@ export function NodesCard({ nodesList, hasScope, loading = false }: NodesCardPro
               <span className="text-sm font-medium truncate flex-1">
                 {node.displayName || node.hostname}
               </span>
-              <Badge variant="secondary" className="text-xs uppercase">
+              <Badge variant="secondary" className="uppercase">
                 {node.type}
               </Badge>
               {node.daemonVersion && (
-                <Badge variant="outline" className="text-xs uppercase">
+                <Badge variant="outline" className="uppercase">
                   {node.daemonVersion}
                 </Badge>
               )}
@@ -58,7 +60,7 @@ export function NodesCard({ nodesList, hasScope, loading = false }: NodesCardPro
                         ? "secondary"
                         : "destructive";
                 return (
-                  <Badge variant={v} className="text-xs uppercase">
+                  <Badge variant={v} className="uppercase">
                     {s}
                   </Badge>
                 );
@@ -67,6 +69,6 @@ export function NodesCard({ nodesList, hasScope, loading = false }: NodesCardPro
           ))}
         </div>
       ) : null}
-    </div>
+    </PanelShell>
   );
 }

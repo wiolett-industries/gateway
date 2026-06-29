@@ -277,6 +277,8 @@ describe('MCP tools', () => {
     expect(names).not.toContain('ask_question');
     expect(names).not.toContain('internal_documentation');
     expect(names).not.toContain('web_search');
+    expect(names).not.toContain('manage_ai_conversation');
+    expect(names).not.toContain('manage_oauth_authorization');
   });
 
   it('does not call tools hidden by effective token scopes', async () => {
@@ -612,6 +614,22 @@ describe('MCP resources and prompts', () => {
     const data = JSON.parse(body.result.contents[0].text);
     expect(data.topic).toBe('nodes');
     expect(data.content).toContain('# Nodes');
+  });
+
+  it('exposes logging documentation through any logging read scope', async () => {
+    registerToken(['logs:schemas:view']);
+
+    const list = await mcpRequest('resources/list');
+    const uris = list.body.result.resources.map((resource: { uri: string }) => resource.uri);
+    expect(uris).toContain('gateway://docs/logging');
+
+    const { body } = await mcpRequest('resources/read', {
+      uri: 'gateway://docs/logging',
+    });
+
+    const data = JSON.parse(body.result.contents[0].text);
+    expect(data.topic).toBe('logging');
+    expect(data.content).toContain('manage_logging');
   });
 
   it('allows MCP callers to read MCP-safe docs that were AI-gated internally', async () => {

@@ -9,6 +9,7 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { DockerManagementService } from './docker.service.js';
 import type { DockerDeploymentService } from './docker-deployment.service.js';
+import { envListToMap, normalizeEnvRecord } from './docker-env-operations.js';
 import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
 import type { DockerRegistryService } from './docker-registry.service.js';
 import type { DockerTaskService } from './docker-task.service.js';
@@ -314,10 +315,12 @@ function buildRecreateConfig(inspect: Record<string, unknown>, newImage: string)
   const config = (inspect as any)?.Config ?? {};
   const hostConfig = (inspect as any)?.HostConfig ?? {};
   const networkingConfig = (inspect as any)?.NetworkingConfig ?? {};
+  const env = Array.isArray(config.Env)
+    ? envListToMap(config.Env.filter((entry: unknown): entry is string => typeof entry === 'string'))
+    : normalizeEnvRecord(config.Env);
 
-  return {
+  const recreateConfig: Record<string, unknown> = {
     image: newImage,
-    env: config.Env,
     cmd: config.Cmd,
     entrypoint: config.Entrypoint,
     workingDir: config.WorkingDir,
@@ -328,4 +331,8 @@ function buildRecreateConfig(inspect: Record<string, unknown>, newImage: string)
     hostConfig,
     networkingConfig,
   };
+  if (env) {
+    recreateConfig.env = env;
+  }
+  return recreateConfig;
 }

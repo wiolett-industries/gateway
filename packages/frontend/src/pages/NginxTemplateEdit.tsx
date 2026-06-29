@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Eye,
   FlaskConical,
   HelpCircle,
@@ -13,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -443,9 +443,7 @@ export function NginxTemplateEdit() {
       <div className="h-full flex flex-col p-6 gap-4 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate(backHref)}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate(backHref)} />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{isNew ? "Create Config Template" : name}</h1>
@@ -506,7 +504,7 @@ export function NginxTemplateEdit() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_10rem] shrink-0">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Name</label>
+            <label className="text-xs text-muted-foreground">Name</label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -515,7 +513,7 @@ export function NginxTemplateEdit() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Description</label>
+            <label className="text-xs text-muted-foreground">Description</label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -524,7 +522,7 @@ export function NginxTemplateEdit() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Host Type</label>
+            <label className="text-xs text-muted-foreground">Host Type</label>
             <Select
               value={type}
               onValueChange={(value) => setType(value as ProxyHostType)}
@@ -549,12 +547,13 @@ export function NginxTemplateEdit() {
             readOnly={isBuiltin}
             errorLines={templateDiagnostics.errorLines}
             errorRanges={templateDiagnostics.errorRanges}
+            showGutterBorder={false}
           />
         </div>
       </div>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="w-[92vw] sm:max-w-[58rem] h-[88vh] flex flex-col overflow-hidden">
+        <DialogContent className="flex h-[88vh] w-[92vw] flex-col sm:max-w-[58rem]">
           <DialogHeader>
             <DialogTitle>Rendered Preview</DialogTitle>
             <DialogDescription>Preview the template rendered with sample data.</DialogDescription>
@@ -571,6 +570,7 @@ export function NginxTemplateEdit() {
                 readOnly
                 className="h-full border-border"
                 minHeight="0"
+                showGutterBorder={false}
               />
             )}
           </div>
@@ -578,7 +578,7 @@ export function NginxTemplateEdit() {
       </Dialog>
 
       <Dialog open={cheatsheetOpen} onOpenChange={setCheatsheetOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Template Cheatsheet</DialogTitle>
             <DialogDescription>
@@ -634,14 +634,14 @@ export function NginxTemplateEdit() {
 
       {!isBuiltin && (
         <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <DialogContent className="w-[90vw] sm:max-w-[42rem] max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogContent className="w-[90vw] sm:max-w-[42rem]">
             <DialogHeader>
               <DialogTitle>Template Settings</DialogTitle>
               <DialogDescription>
                 Configure custom variables that proxy hosts can fill when using this template.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex-1 min-h-0 flex flex-col border border-border bg-card overflow-hidden">
+            <div className="border border-border bg-card">
               <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
                 <div>
                   <h3 className="text-sm font-semibold">Custom Variables</h3>
@@ -655,7 +655,7 @@ export function NginxTemplateEdit() {
                   Add
                 </Button>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+              <div className="overflow-x-hidden">
                 <div className="w-full min-w-0">
                   {variables.length > 0 && (
                     <div className="grid grid-cols-[9rem_7rem_8rem_minmax(0,1fr)_2.25rem] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider sticky top-0 z-10 bg-card">
@@ -688,7 +688,7 @@ export function NginxTemplateEdit() {
                                 })
                               }
                             >
-                              <SelectTrigger className="h-9 w-full text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                              <SelectTrigger className="h-9 w-full border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -714,7 +714,7 @@ export function NginxTemplateEdit() {
                                   })
                                 }
                               >
-                                <SelectTrigger className="h-9 w-full text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
+                                <SelectTrigger className="h-9 w-full border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>

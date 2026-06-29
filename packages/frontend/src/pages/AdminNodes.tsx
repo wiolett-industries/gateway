@@ -1,13 +1,14 @@
-import { Check, Copy, Plus, Server, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Check, Copy, FolderPlus, Plus, Server, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { FolderedResourceList } from "@/components/common/FolderedResourceList";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
+import type { ResourceListColumn } from "@/components/common/ResourceListLayout";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
-import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,12 +29,14 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
+import { nodeIconClassNames } from "@/lib/node-appearance";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDaemonUpdatesStore } from "@/stores/daemon-updates";
 import { useNodesStore } from "@/stores/nodes";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
-import type { NodeStatus } from "@/types";
+import type { Node, NodeStatus } from "@/types";
 import { effectiveNodeStatus, isNodeIncompatible, isNodeUpdating } from "@/types";
 
 const NODE_TYPES = [
@@ -103,6 +106,7 @@ export function AdminNodes() {
   const [gatewayCertSha256, setGatewayCertSha256] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [createFolderAction, setCreateFolderAction] = useState<(() => void) | null>(null);
   const daemonUpdates = useDaemonUpdatesStore((s) => s.statuses);
   const fetchDaemonUpdates = useDaemonUpdatesStore((s) => s.fetchDaemonUpdates);
 
@@ -133,23 +137,27 @@ export function AdminNodes() {
 
   const handleSearch = () => setFilters({ search: searchInput });
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
+  const canManageFolders = hasScope("nodes:folders:manage");
 
-  const handleDelete = async (nodeId: string, hostname: string) => {
-    const ok = await confirm({
-      title: "Remove Node",
-      description: `Are you sure you want to remove "${hostname}"? This cannot be undone.`,
-      confirmLabel: "Remove",
-    });
-    if (!ok) return;
-    try {
-      await api.deleteNode(nodeId);
-      usePinnedNodesStore.getState().removePin(nodeId);
-      toast.success("Node removed");
-      fetchNodes();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to remove node");
-    }
-  };
+  const handleDelete = useCallback(
+    async (nodeId: string, hostname: string) => {
+      const ok = await confirm({
+        title: "Remove Node",
+        description: `Are you sure you want to remove "${hostname}"? This cannot be undone.`,
+        confirmLabel: "Remove",
+      });
+      if (!ok) return;
+      try {
+        await api.deleteNode(nodeId);
+        usePinnedNodesStore.getState().removePin(nodeId);
+        toast.success("Node removed");
+        fetchNodes();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to remove node");
+      }
+    },
+    [fetchNodes]
+  );
 
   const handleEnroll = async () => {
     setEnrolling(true);
@@ -198,19 +206,125 @@ export function AdminNodes() {
     setTimeout(() => setCopiedField(null), 2000);
   };
 
+  const columns = useMemo<ResourceListColumn<Node>[]>(
+    () => [
+      {
+        id: "name",
+        label: "Name",
+        width: "34%",
+        renderCell: (node) => {
+          const iconClassNames = nodeIconClassNames(node.appearanceColor);
+          return (
+            <div className="flex min-w-0 items-center gap-4">
+              <div className={iconClassNames.wrapper}>
+                <Server className={cn("h-5 w-5", iconClassNames.icon)} />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{node.displayName || node.hostname}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {node.displayName ? node.hostname : ""} {formatDaemonVersion(node.daemonVersion)}
+                </p>
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        id: "type",
+        label: "Type",
+        width: "13%",
+        align: "center",
+        renderCell: (node) => <Badge variant="secondary">{node.type}</Badge>,
+      },
+      {
+        id: "lock",
+        label: "Lock",
+        width: "13%",
+        align: "center",
+        renderCell: (node) =>
+          (node.type === "nginx" || node.type === "docker") && node.serviceCreationLocked ? (
+            <Badge variant="warning">LOCKED</Badge>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+      },
+      {
+        id: "lastSeen",
+        label: "Last Seen",
+        width: "16%",
+        align: "center",
+        renderCell: (node) => <Badge variant="outline">{formatLastSeen(node.lastSeenAt)}</Badge>,
+      },
+      {
+        id: "status",
+        label: "Status",
+        width: "14%",
+        align: "center",
+        renderCell: (node) => {
+          if (isNodeUpdating(node)) return <Badge variant="warning">UPDATING</Badge>;
+          if (isNodeIncompatible(node)) return <Badge variant="destructive">INCOMPATIBLE</Badge>;
+          const typeStatus = daemonUpdates.find((s) => s.daemonType === node.type);
+          const nodeStatus = typeStatus?.nodes.find((n) => n.nodeId === node.id);
+          if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
+            return (
+              <Badge style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}>
+                {typeStatus.latestVersion}
+              </Badge>
+            );
+          }
+          const eStatus = effectiveNodeStatus(node);
+          return <Badge variant={STATUS_BADGE[eStatus] || "secondary"}>{eStatus}</Badge>;
+        },
+      },
+      {
+        id: "actions",
+        label: "Actions",
+        width: "10%",
+        align: "right",
+        renderCell: (node) =>
+          hasScope("nodes:delete") ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={isNodeUpdating(node)}
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleDelete(node.id, node.hostname);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          ) : null,
+      },
+    ],
+    [daemonUpdates, hasScope, handleDelete]
+  );
+
   return (
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">Nodes</h1>
-            <p className="text-sm text-muted-foreground">
-              {total} node{total !== 1 ? "s" : ""} registered
-            </p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">Nodes</h1>
+              <p className="text-sm text-muted-foreground">
+                {total} node{total !== 1 ? "s" : ""} registered
+              </p>
+            </div>
           </div>
           <ResponsiveHeaderActions
-            actions={
-              hasScope("nodes:create")
+            actions={[
+              ...(canManageFolders && createFolderAction
+                ? [
+                    {
+                      label: "Add Folder",
+                      icon: <FolderPlus className="h-4 w-4" />,
+                      onClick: createFolderAction,
+                    },
+                  ]
+                : []),
+              ...(hasScope("nodes:create")
                 ? [
                     {
                       label: "Add Node",
@@ -218,9 +332,15 @@ export function AdminNodes() {
                       onClick: () => setEnrollDialogOpen(true),
                     },
                   ]
-                : []
-            }
+                : []),
+            ]}
           >
+            {canManageFolders && (
+              <Button variant="outline" onClick={() => createFolderAction?.()}>
+                <FolderPlus className="h-4 w-4" />
+                Add Folder
+              </Button>
+            )}
             {hasScope("nodes:create") && (
               <Button onClick={() => setEnrollDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-1" />
@@ -230,138 +350,62 @@ export function AdminNodes() {
           </ResponsiveHeaderActions>
         </div>
 
-        <SearchFilterBar
-          search={searchInput}
-          onSearchChange={setSearchInput}
-          onSearchSubmit={handleSearch}
-          placeholder="Search by hostname..."
-          hasActiveFilters={hasActiveFilters}
-          onReset={() => {
-            setSearchInput("");
-            resetFilters();
+        <FolderedResourceList<Node>
+          resourceType="node"
+          realtimeChannel="node.folder.changed"
+          resources={nodes}
+          columns={columns}
+          search={{
+            search: searchInput,
+            onSearchChange: setSearchInput,
+            onSearchSubmit: handleSearch,
+            placeholder: "Search by hostname...",
+            hasActiveFilters,
+            onReset: () => {
+              setSearchInput("");
+              resetFilters();
+            },
+            filters: (
+              <Select
+                value={filters.status}
+                onValueChange={(v) => setFilters({ status: v as NodeStatus | "all" })}
+              >
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="offline">Offline</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="error">Error</SelectItem>
+                </SelectContent>
+              </Select>
+            ),
           }}
-          filters={
-            <Select
-              value={filters.status}
-              onValueChange={(v) => setFilters({ status: v as NodeStatus | "all" })}
-            >
-              <SelectTrigger className="w-36">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="online">Online</SelectItem>
-                <SelectItem value="offline">Offline</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="error">Error</SelectItem>
-              </SelectContent>
-            </Select>
+          loading={isLoading}
+          loadingLabel="Loading nodes..."
+          emptyState={
+            <EmptyState
+              message="No nodes found. Add a node to start managing nginx instances remotely."
+              actionLabel={hasScope("nodes:create") ? "Add Node" : undefined}
+              onAction={hasScope("nodes:create") ? () => setEnrollDialogOpen(true) : undefined}
+              hasActiveFilters={hasActiveFilters}
+              onReset={() => {
+                setSearchInput("");
+                resetFilters();
+              }}
+            />
           }
+          minWidth={900}
+          canManageFolders={canManageFolders}
+          canViewItem={(node) => hasScope("nodes:details") || hasScope(`nodes:details:${node.id}`)}
+          canReorganizeItem={() => canManageFolders}
+          getResourceLabel={(node) => node.displayName || node.hostname}
+          onItemClick={(node) => navigate(`/nodes/${node.id}`)}
+          onRefresh={() => fetchNodes()}
+          onCreateFolderRef={(fn) => setCreateFolderAction(() => fn)}
         />
-
-        {nodes.length > 0 ? (
-          <div className="overflow-x-auto border border-border rounded-lg bg-card md:overflow-x-visible">
-            <div className="min-w-[720px] divide-y divide-border -mb-px md:min-w-0 [&>*:last-child]:border-b [&>*:last-child]:border-border">
-              {nodes.map((node) => {
-                const nodeUpdating = isNodeUpdating(node);
-                const canOpenDetails =
-                  hasScope("nodes:details") || hasScope(`nodes:details:${node.id}`);
-                return (
-                  <div
-                    key={node.id}
-                    className={`flex items-center gap-4 p-4 transition-colors ${
-                      canOpenDetails
-                        ? "cursor-pointer hover:bg-muted/50"
-                        : "cursor-default opacity-80"
-                    }`}
-                    onClick={canOpenDetails ? () => navigate(`/nodes/${node.id}`) : undefined}
-                  >
-                    <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-muted">
-                      <Server className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {node.displayName || node.hostname}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {node.displayName ? node.hostname : ""}{" "}
-                        {formatDaemonVersion(node.daemonVersion)}
-                      </p>
-                    </div>
-                    <Badge variant="secondary" className="text-xs uppercase shrink-0">
-                      {node.type}
-                    </Badge>
-                    {(node.type === "nginx" || node.type === "docker") &&
-                      node.serviceCreationLocked && (
-                        <Badge variant="warning" className="text-xs shrink-0">
-                          LOCKED
-                        </Badge>
-                      )}
-                    <Badge variant="outline" className="text-xs shrink-0">
-                      {formatLastSeen(node.lastSeenAt)}
-                    </Badge>
-                    {nodeUpdating ? (
-                      <Badge variant="warning" className="text-xs">
-                        UPDATING
-                      </Badge>
-                    ) : isNodeIncompatible(node) ? (
-                      <Badge variant="destructive" className="text-xs">
-                        INCOMPATIBLE
-                      </Badge>
-                    ) : (
-                      (() => {
-                        const typeStatus = daemonUpdates.find((s) => s.daemonType === node.type);
-                        const nodeStatus = typeStatus?.nodes.find((n) => n.nodeId === node.id);
-                        if (nodeStatus?.updateAvailable && typeStatus?.latestVersion) {
-                          return (
-                            <Badge
-                              className="text-xs"
-                              style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
-                            >
-                              {typeStatus.latestVersion}
-                            </Badge>
-                          );
-                        }
-                        const eStatus = effectiveNodeStatus(node);
-                        return (
-                          <Badge variant={STATUS_BADGE[eStatus] || "secondary"} className="text-xs">
-                            {eStatus}
-                          </Badge>
-                        );
-                      })()
-                    )}
-                    {hasScope("nodes:delete") && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={nodeUpdating}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(node.id, node.hostname);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="flex flex-col items-center gap-3">
-              <LoadingSpinner className="" />
-              <p className="text-sm text-muted-foreground">Loading nodes...</p>
-            </div>
-          </div>
-        ) : (
-          <EmptyState
-            message="No nodes found. Add a node to start managing nginx instances remotely."
-            actionLabel={hasScope("nodes:create") ? "Add Node" : undefined}
-            onAction={hasScope("nodes:create") ? () => setEnrollDialogOpen(true) : undefined}
-          />
-        )}
       </div>
 
       {/* Enrollment Dialog */}

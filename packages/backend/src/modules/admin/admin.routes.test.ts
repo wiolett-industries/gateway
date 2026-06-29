@@ -8,6 +8,7 @@ import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
+import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
 import { SessionService } from '@/services/session.service.js';
@@ -95,6 +96,13 @@ describe('admin Gateway settings route permissions', () => {
     container.registerInstance(McpSettingsService, {
       getConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
     } as unknown as McpSettingsService);
+    container.registerInstance(GeneralSettingsService, {
+      getConfig: vi.fn().mockResolvedValue({
+        fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+        features: { pkiEnabled: true, domainsEnabled: true },
+      }),
+    } as unknown as GeneralSettingsService);
     container.registerInstance(NetworkSettingsService, {
       getConfig: vi.fn().mockResolvedValue({
         clientIpSource: 'auto',
@@ -121,6 +129,11 @@ describe('admin Gateway settings route permissions', () => {
       oidcRequireVerifiedEmail: true,
       oauthExtendedCallbackCompatibility: false,
       mcpServerEnabled: true,
+      generalSettings: {
+        fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+        features: { pkiEnabled: true, domainsEnabled: true },
+      },
       networkSecurity: {
         clientIpSource: 'auto',
         trustedProxyCidrs: [],
@@ -163,6 +176,13 @@ describe('admin Gateway settings route permissions', () => {
       updateConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
       getConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
     } as unknown as McpSettingsService);
+    container.registerInstance(GeneralSettingsService, {
+      getConfig: vi.fn().mockResolvedValue({
+        fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+        features: { pkiEnabled: true, domainsEnabled: true },
+      }),
+    } as unknown as GeneralSettingsService);
     container.registerInstance(NetworkSettingsService, {
       getConfig: vi.fn().mockResolvedValue({
         clientIpSource: 'auto',
@@ -193,6 +213,61 @@ describe('admin Gateway settings route permissions', () => {
     expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ oidcRequireVerifiedEmail: true }));
   });
 
+  it('allows editing general file upload limit with settings:gateway:edit', async () => {
+    registerSession(['settings:gateway:edit']);
+    const updateGeneralConfig = vi.fn().mockResolvedValue({
+      fileUploadMaxBytes: 50 * 1024 * 1024,
+      fileOpenMaxBytes: 10 * 1024 * 1024,
+      features: { pkiEnabled: true, domainsEnabled: true },
+    });
+    container.registerInstance(AuthSettingsService, {
+      updateConfig: vi.fn().mockResolvedValue({
+        oidcAutoCreateUsers: true,
+        oidcDefaultGroupId: null,
+        oidcRequireVerifiedEmail: false,
+        oauthExtendedCallbackCompatibility: false,
+      }),
+    } as unknown as AuthSettingsService);
+    container.registerInstance(McpSettingsService, {
+      updateConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
+    } as unknown as McpSettingsService);
+    container.registerInstance(GeneralSettingsService, {
+      updateConfig: updateGeneralConfig,
+    } as unknown as GeneralSettingsService);
+    container.registerInstance(NetworkSettingsService, {
+      getConfig: vi.fn().mockResolvedValue({
+        clientIpSource: 'auto',
+        trustedProxyCidrs: [],
+        trustCloudflareHeaders: false,
+      }),
+    } as unknown as NetworkSettingsService);
+    container.registerInstance(OutboundWebhookPolicyService, {
+      getConfig: vi.fn().mockResolvedValue({
+        allowPrivateNetworks: true,
+        allowedPrivateCidrs: [],
+      }),
+    } as unknown as OutboundWebhookPolicyService);
+    container.registerInstance(GroupService, {
+      listGroups: vi.fn().mockResolvedValue([]),
+    } as unknown as GroupService);
+    container.registerInstance(AuditService, {
+      log: vi.fn().mockResolvedValue(undefined),
+    } as unknown as AuditService);
+
+    const response = await createApp().request('/api/admin/auth-settings', {
+      method: 'PUT',
+      headers: sessionHeaders(),
+      body: JSON.stringify({ generalSettings: { fileUploadMaxBytes: 50 * 1024 * 1024 } }),
+    });
+    const body = (await response.json()) as Record<string, any>;
+
+    expect(response.status).toBe(200);
+    expect(updateGeneralConfig).toHaveBeenCalledWith({ fileUploadMaxBytes: 50 * 1024 * 1024 });
+    expect(body.generalSettings.fileUploadMaxBytes).toBe(50 * 1024 * 1024);
+    expect(body.generalSettings.fileOpenMaxBytes).toBe(10 * 1024 * 1024);
+    expect(body.generalSettings.features).toEqual({ pkiEnabled: true, domainsEnabled: true });
+  });
+
   it('allows editing OAuth extended callback compatibility with settings:gateway:edit', async () => {
     registerSession(['settings:gateway:view', 'settings:gateway:edit']);
     const updateConfig = vi.fn().mockResolvedValue({
@@ -207,6 +282,13 @@ describe('admin Gateway settings route permissions', () => {
     container.registerInstance(McpSettingsService, {
       updateConfig: vi.fn().mockResolvedValue({ serverEnabled: true }),
     } as unknown as McpSettingsService);
+    container.registerInstance(GeneralSettingsService, {
+      getConfig: vi.fn().mockResolvedValue({
+        fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+        features: { pkiEnabled: true, domainsEnabled: true },
+      }),
+    } as unknown as GeneralSettingsService);
     container.registerInstance(NetworkSettingsService, {
       getConfig: vi.fn().mockResolvedValue({
         clientIpSource: 'auto',

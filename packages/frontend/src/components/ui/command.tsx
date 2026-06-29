@@ -30,6 +30,7 @@ const CommandDialog = ({
       <DialogContent
         className="overflow-hidden p-0 shadow-xl"
         hideCloseButton
+        unstyled
         aria-describedby={undefined}
       >
         <DialogPrimitive.Title className="sr-only">Command Palette</DialogPrimitive.Title>

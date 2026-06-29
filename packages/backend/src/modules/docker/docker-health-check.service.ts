@@ -14,7 +14,7 @@ import type { NotificationEvaluatorService } from '@/modules/notifications/notif
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { DockerHealthCheckUpsertInput } from './docker.schemas.js';
-import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment.service.js';
+import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment-labels.js';
 
 const logger = createChildLogger('DockerHealthCheckService');
 

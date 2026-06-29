@@ -1,6 +1,7 @@
-import { Plus } from "lucide-react";
+import { FolderPlus, Plus, ScrollText, Shield, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Button } from "@/components/ui/button";
@@ -18,10 +19,14 @@ export function Administration() {
   const { hasScope } = useAuthStore();
   const [usersCreateRequest, setUsersCreateRequest] = useState(0);
   const [groupsCreateRequest, setGroupsCreateRequest] = useState(0);
+  const [createUserFolderAction, setCreateUserFolderAction] = useState<(() => void) | null>(null);
+  const [createGroupFolderAction, setCreateGroupFolderAction] = useState<(() => void) | null>(null);
   const [auditHeaderActionsEl, setAuditHeaderActionsEl] = useState<HTMLDivElement | null>(null);
   const canUsers = hasScope("admin:users");
   const canGroups = hasScope("admin:groups");
   const canAudit = hasScope("admin:audit");
+  const canManageUserFolders = hasScope("admin:users:folders:manage");
+  const canManageGroupFolders = hasScope("admin:groups:folders:manage");
 
   const availableTabs = useMemo<AdministrationTab[]>(() => {
     const tabs: AdministrationTab[] = [];
@@ -124,12 +129,35 @@ export function Administration() {
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-bold">{currentMeta.title}</h1>
-            <p className="text-sm text-muted-foreground">{currentMeta.subtitle}</p>
+            <div className="flex items-center gap-3">
+              <LiteModeBackButton />
+              <div className="min-w-0">
+                <h1 className="text-2xl font-bold">{currentMeta.title}</h1>
+                <p className="text-sm text-muted-foreground">{currentMeta.subtitle}</p>
+              </div>
+            </div>
           </div>
           {currentMeta.actionLabel && currentMeta.onAction ? (
             <ResponsiveHeaderActions
               actions={[
+                ...(currentTab === "users" && canManageUserFolders && createUserFolderAction
+                  ? [
+                      {
+                        label: "Add Folder",
+                        icon: <FolderPlus className="h-4 w-4" />,
+                        onClick: createUserFolderAction,
+                      },
+                    ]
+                  : []),
+                ...(currentTab === "groups" && canManageGroupFolders && createGroupFolderAction
+                  ? [
+                      {
+                        label: "Add Folder",
+                        icon: <FolderPlus className="h-4 w-4" />,
+                        onClick: createGroupFolderAction,
+                      },
+                    ]
+                  : []),
                 {
                   label: currentMeta.actionLabel,
                   icon: <Plus className="h-4 w-4" />,
@@ -137,6 +165,18 @@ export function Administration() {
                 },
               ]}
             >
+              {currentTab === "users" && canManageUserFolders && (
+                <Button variant="outline" onClick={() => createUserFolderAction?.()}>
+                  <FolderPlus className="h-4 w-4" />
+                  Add Folder
+                </Button>
+              )}
+              {currentTab === "groups" && canManageGroupFolders && (
+                <Button variant="outline" onClick={() => createGroupFolderAction?.()}>
+                  <FolderPlus className="h-4 w-4" />
+                  Add Folder
+                </Button>
+              )}
               <Button onClick={currentMeta.onAction}>
                 <Plus className="h-4 w-4" />
                 {currentMeta.actionLabel}
@@ -153,19 +193,42 @@ export function Administration() {
           className={`flex flex-col ${usesFillLayout ? "mt-4 min-h-0 flex-1" : ""}`}
         >
           <TabsList>
-            {canUsers && <TabsTrigger value="users">Users</TabsTrigger>}
-            {canGroups && <TabsTrigger value="groups">Groups</TabsTrigger>}
-            {canAudit && <TabsTrigger value="audit">Audit Log</TabsTrigger>}
+            {canUsers && (
+              <TabsTrigger value="users" className="gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Users
+              </TabsTrigger>
+            )}
+            {canGroups && (
+              <TabsTrigger value="groups" className="gap-1.5">
+                <Shield className="h-3.5 w-3.5" />
+                Groups
+              </TabsTrigger>
+            )}
+            {canAudit && (
+              <TabsTrigger value="audit" className="gap-1.5">
+                <ScrollText className="h-3.5 w-3.5" />
+                Audit Log
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {canUsers && (
             <TabsContent value="users" className="mt-4">
-              <AdminUsers embedded createRequest={usersCreateRequest} />
+              <AdminUsers
+                embedded
+                createRequest={usersCreateRequest}
+                onCreateFolderRef={(fn) => setCreateUserFolderAction(() => fn)}
+              />
             </TabsContent>
           )}
           {canGroups && (
             <TabsContent value="groups" className="mt-4">
-              <AdminGroups embedded createRequest={groupsCreateRequest} />
+              <AdminGroups
+                embedded
+                createRequest={groupsCreateRequest}
+                onCreateFolderRef={(fn) => setCreateGroupFolderAction(() => fn)}
+              />
             </TabsContent>
           )}
           {canAudit && (

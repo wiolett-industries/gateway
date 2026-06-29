@@ -209,9 +209,10 @@ When enabled by an admin, it can:
 - Use any OpenAI-compatible provider configured in settings.
 - Call Gateway tools through permission-gated operations.
 - Ask clarifying questions before acting.
-- Use destructive action approval flows.
+- Continue backend-owned chat runs independently of an open browser panel.
+- Use backend approval and question flows over WebSocket for active chat turns.
 - Use a system-specific knowledge base.
 - Save and restore conversations.
-- Respect per-user tool access and approval bypass preferences.
+- Respect per-user tool access and AI approval mode preferences.
 
 No data is sent to an AI provider until an admin enables the assistant and configures a provider.

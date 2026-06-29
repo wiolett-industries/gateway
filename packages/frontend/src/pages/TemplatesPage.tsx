@@ -1,11 +1,13 @@
 import { Award, FileCode, Plus } from "lucide-react";
 import { useRef } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthStore } from "@/stores/auth";
+import { useSystemConfigStore } from "@/stores/system-config";
 import { NginxTemplates } from "./NginxTemplates";
 import { Templates } from "./Templates";
 
@@ -30,11 +32,15 @@ export function TemplatesPage() {
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const navigate = useNavigate();
   const { hasScope, hasScopedAccess } = useAuthStore();
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
 
   const pkiCreateRef = useRef<(() => void) | null>(null);
   const nginxCreateRef = useRef<(() => void) | null>(null);
 
-  const visibleTabs = TABS.filter((t) => hasScopedAccess(t.scope));
+  const visibleTabs = TABS.filter((t) => {
+    if (t.value === "pki" && !pkiEnabled) return false;
+    return hasScopedAccess(t.scope);
+  });
   const activeTab =
     tabParam && visibleTabs.some((t) => t.value === tabParam)
       ? tabParam
@@ -94,11 +100,14 @@ export function TemplatesPage() {
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div>
-            <h1 className="text-2xl font-bold">Templates</h1>
-            <p className="text-sm text-muted-foreground">
-              Certificate and nginx configuration templates
-            </p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">Templates</h1>
+              <p className="text-sm text-muted-foreground">
+                Certificate and nginx configuration templates
+              </p>
+            </div>
           </div>
           <ResponsiveHeaderActions actions={headerActions}>
             {renderActions()}

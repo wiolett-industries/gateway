@@ -2,9 +2,12 @@ import { Loader2, Menu } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AIButton } from "@/components/ai/AIButton";
+import { AILitePanel } from "@/components/ai/AILitePanel";
+import { AILiteSidebar } from "@/components/ai/AILiteSidebar";
 import { AISidePanel } from "@/components/ai/AISidePanel";
 import { CommandPalette } from "@/components/common/CommandPalette";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { PageTransition } from "@/components/common/PageTransition";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
@@ -15,6 +18,7 @@ import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useDockerStore } from "@/stores/docker";
+import { useSystemConfigStore } from "@/stores/system-config";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
 import { AI_SCOPE, isNodeIncompatible, type User } from "@/types";
@@ -50,12 +54,15 @@ export function DashboardLayout() {
     setMobileMenuOpen,
     commandPaletteOpen,
     setCommandPaletteOpen,
+    aiLiteMode,
   } = useUIStore();
+  const aiEnabled = useAIStore((state) => state.isEnabled);
 
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const [isResizing, setIsResizing] = useState(false);
   const [hasNginxNodes, setHasNginxNodes] = useState(true); // default true to avoid flash
   const bootstrapCancelledRef = useRef(false);
+  const loadSystemConfig = useSystemConfigStore((state) => state.load);
 
   useEffect(() => {
     if (isAuthenticated) return;
@@ -140,6 +147,7 @@ export function DashboardLayout() {
                 .then((status) => useAIStore.getState().setEnabled(status.enabled))
                 .catch(() => {})
             : Promise.resolve(),
+          loadSystemConfig().catch(() => {}),
         ]);
 
         return { hasNginxNodes };
@@ -186,7 +194,7 @@ export function DashboardLayout() {
     return () => {
       bootstrapCancelledRef.current = true;
     };
-  }, [currentUser, logout, navigate, setLoading, setUser]);
+  }, [currentUser, loadSystemConfig, logout, navigate, setLoading, setUser]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -344,7 +352,12 @@ export function DashboardLayout() {
         const { hasScope: checkScope } = useAuthStore.getState();
         const aiEnabled = useAIStore.getState().isEnabled;
         if (checkScope(AI_SCOPE) && aiEnabled !== false) {
-          useUIStore.getState().toggleAIPanel();
+          const ui = useUIStore.getState();
+          if (ui.aiLiteMode) {
+            ui.setAILiteMode(false);
+          } else {
+            ui.toggleAIPanel();
+          }
         }
       }
       if (mod && e.key === ",") {
@@ -353,6 +366,7 @@ export function DashboardLayout() {
       }
       // Ctrl+H = new proxy host, Ctrl+S = new SSL cert, Ctrl+R = new root CA
       if (e.ctrlKey && !e.metaKey && !e.altKey) {
+        const features = useSystemConfigStore.getState().config.features;
         switch (e.key) {
           case "h":
             e.preventDefault();
@@ -365,6 +379,7 @@ export function DashboardLayout() {
             break;
           case "r":
             e.preventDefault();
+            if (!features.pkiEnabled) break;
             navigate("/cas");
             useUIStore.getState().openModal("createCA");
             break;
@@ -372,14 +387,14 @@ export function DashboardLayout() {
       }
       // Cmd+number navigation
       if (mod && !e.altKey && !e.shiftKey) {
+        const features = useSystemConfigStore.getState().config.features;
         const routes: Record<string, string> = {
           "1": "/",
           "2": "/proxy-hosts",
-          "3": "/domains",
+          ...(features.domainsEnabled ? { "3": "/domains" } : {}),
           "4": "/nginx-templates",
           "5": "/ssl-certificates",
-          "6": "/cas",
-          "7": "/certificates",
+          ...(features.pkiEnabled ? { "6": "/cas", "7": "/certificates" } : {}),
           "8": "/templates",
           "9": "/nodes",
           "0": "/access-lists",
@@ -453,6 +468,39 @@ export function DashboardLayout() {
 
           <AISidePanel isMobile />
           <Toaster position="bottom-center" />
+          <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+          <ConfirmDialog />
+        </div>
+      </TooltipProvider>
+    );
+  }
+
+  const canUseAI = !!currentUser?.scopes?.includes(AI_SCOPE) && aiEnabled !== false;
+  const useLiteMode = aiLiteMode && canUseAI;
+
+  if (useLiteMode) {
+    const isAIHome = location.pathname === "/";
+
+    return (
+      <TooltipProvider>
+        <div className="flex h-screen bg-background dashboard-scrollbar">
+          <AILiteSidebar
+            sidebarWidth={sidebarWidth}
+            onSidebarWidthChange={handleSidebarResize}
+            isResizing={isResizing}
+            onResizeStart={handleResizeStart}
+            onResizeEnd={handleResizeEnd}
+          />
+          <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+            {isAIHome ? (
+              <PageTransition>
+                <AILitePanel />
+              </PageTransition>
+            ) : (
+              <Outlet />
+            )}
+          </main>
+          <Toaster position="bottom-right" />
           <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
           <ConfirmDialog />
         </div>

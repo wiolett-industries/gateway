@@ -22,6 +22,11 @@ const BasicAuthUserInputSchema = z.object({
   password: z.string().min(1).max(255),
 });
 
+const UpdateBasicAuthUserInputSchema = z.object({
+  username: z.string().min(1).max(255),
+  password: z.string().max(255).optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------
@@ -43,7 +48,7 @@ export const UpdateAccessListSchema = z.object({
   description: z.string().max(2000).optional().nullable(),
   ipRules: z.array(IPRuleSchema).optional(),
   basicAuthEnabled: z.boolean().optional(),
-  basicAuthUsers: z.array(BasicAuthUserInputSchema).optional(),
+  basicAuthUsers: z.array(UpdateBasicAuthUserInputSchema).optional(),
 });
 
 // ---------------------------------------------------------------------------

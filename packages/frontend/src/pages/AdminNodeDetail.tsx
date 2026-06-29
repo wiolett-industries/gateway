@@ -1,8 +1,9 @@
-import { ArrowLeft, ArrowUpCircle, EllipsisVertical, Pencil, Pin, Trash2 } from "lucide-react";
+import { ArrowUpCircle, EllipsisVertical, Pencil, Pin, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Badge } from "@/components/ui/badge";
@@ -28,12 +29,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { getNodeAppearanceColor, NODE_APPEARANCE_COLOR_OPTIONS } from "@/lib/node-appearance";
+import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
 import { useDaemonUpdatesStore } from "@/stores/daemon-updates";
+import { useDockerStore } from "@/stores/docker";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
-import type { NodeDetail } from "@/types";
+import type { NodeAppearanceColor, NodeDetail } from "@/types";
 import {
   effectiveNodeStatus,
   getNodeUpdateTargetVersion,
@@ -44,6 +48,7 @@ import { DockerContainers } from "./DockerContainers";
 import { DockerImages } from "./DockerImages";
 import { DockerNetworks } from "./DockerNetworks";
 import { DockerVolumes } from "./DockerVolumes";
+import { type FileManagerOperations, FilesTab } from "./docker-detail/FilesTab";
 import { NodeConfigTab } from "./node-detail/NodeConfigTab";
 import { NodeConsoleTab } from "./node-detail/NodeConsoleTab";
 import { NodeDetailsTab } from "./node-detail/NodeDetailsTab";
@@ -76,6 +81,7 @@ export function AdminNodeDetail() {
     [
       "details",
       "monitoring",
+      "files",
       "console",
       "configuration",
       "nginx-logs",
@@ -89,10 +95,11 @@ export function AdminNodeDetail() {
     (tab) => `/nodes/${id}/${tab}`
   );
 
-  // Rename dialog
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renameName, setRenameName] = useState("");
-  const [renaming, setRenaming] = useState(false);
+  // Appearance dialog
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [appearanceName, setAppearanceName] = useState("");
+  const [appearanceColor, setAppearanceColor] = useState<NodeAppearanceColor | null>(null);
+  const [appearanceSaving, setAppearanceSaving] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [lockSaving, setLockSaving] = useState(false);
   const daemonUpdates = useDaemonUpdatesStore((s) => s.statuses);
@@ -112,6 +119,10 @@ export function AdminNodeDetail() {
     !!(id && (hasScope(`nodes:config:view:${id}`) || hasScope(`nodes:config:edit:${id}`))) ||
     hasScope("nodes:config:view") ||
     hasScope("nodes:config:edit");
+  const canReadNodeFiles =
+    !!id && (hasScope("nodes:files:read") || hasScope(`nodes:files:read:${id}`));
+  const canWriteNodeFiles =
+    !!id && (hasScope("nodes:files:write") || hasScope(`nodes:files:write:${id}`));
   const isCompatibleNode = !!node && !isNodeIncompatible(node);
   const canManageServiceCreationLock =
     !!node &&
@@ -133,6 +144,7 @@ export function AdminNodeDetail() {
       ...(isCompatibleNode ? ["monitoring"] : []),
       ...(isCompatibleNode && node.type === "nginx" && canViewNodeConfig ? ["configuration"] : []),
       ...(isCompatibleNode && node.type === "nginx" && canViewNodeLogs ? ["nginx-logs"] : []),
+      ...(isCompatibleNode && canReadNodeFiles ? ["files"] : []),
       ...(isCompatibleNode && node.type === "docker"
         ? ["containers", "images", "volumes", "networks"]
         : []),
@@ -141,8 +153,48 @@ export function AdminNodeDetail() {
         : []),
       ...(canViewNodeLogs ? ["daemon-logs"] : []),
     ],
-    [canUseNodeConsole, canViewNodeConfig, canViewNodeLogs, isCompatibleNode, node, nodeUpdating]
+    [
+      canReadNodeFiles,
+      canUseNodeConsole,
+      canViewNodeConfig,
+      canViewNodeLogs,
+      isCompatibleNode,
+      node,
+      nodeUpdating,
+    ]
   );
+
+  const nodeFileOperations = useMemo<FileManagerOperations | undefined>(() => {
+    if (!id || !canReadNodeFiles) return undefined;
+    const readOperations = {
+      listDirectory: (path: string) => api.listNodeDir(id, path),
+      readFile: (path: string) => api.readNodeFile(id, path),
+      openFile: (filePath: string, writable = false) => {
+        const params = new URLSearchParams({ path: filePath });
+        if (writable && canWriteNodeFiles) params.set("writable", "1");
+        const fileName = filePath.split("/").pop() || "file";
+        window.open(
+          `/nodes/file/${id}?${params}`,
+          `node-file-${id}-${fileName}`,
+          "width=900,height=600,menubar=no,toolbar=no"
+        );
+      },
+    };
+    if (!canWriteNodeFiles) return readOperations;
+    return {
+      ...readOperations,
+      createFile: (path, content, onProgress) => api.createNodeFile(id, path, content, onProgress),
+      createDirectory: (path) => api.createNodeDirectory(id, path),
+      deletePath: (path) => api.deleteNodeFile(id, path),
+      movePath: (fromPath, toPath) => api.moveNodeFile(id, fromPath, toPath),
+      initUpload: (path, totalBytes) => api.initNodeFileUpload(id, path, totalBytes),
+      uploadChunk: (uploadId, offset, content, onProgress) =>
+        api.uploadNodeFileChunk(id, uploadId, offset, content, onProgress),
+      completeUpload: (uploadId, path, totalBytes) =>
+        api.completeNodeFileUpload(id, uploadId, path, totalBytes),
+      abortUpload: (uploadId) => api.abortNodeFileUpload(id, uploadId),
+    };
+  }, [canReadNodeFiles, canWriteNodeFiles, id]);
 
   const loadNode = useCallback(
     async (silent = false) => {
@@ -180,10 +232,11 @@ export function AdminNodeDetail() {
   );
 
   useEffect(() => {
+    if (!node) return;
     if (!visibleTabs.includes(activeTab)) {
       setActiveTab("details");
     }
-  }, [activeTab, setActiveTab, visibleTabs]);
+  }, [activeTab, node, setActiveTab, visibleTabs]);
 
   useEffect(() => {
     loadNode();
@@ -212,21 +265,30 @@ export function AdminNodeDetail() {
     }
   }, [activeTab, nodeUpdating, setActiveTab]);
 
-  const handleRename = async () => {
+  const openAppearanceDialog = () => {
+    if (!node) return;
+    setAppearanceName(node.displayName ?? "");
+    setAppearanceColor(node.appearanceColor ?? null);
+    setAppearanceOpen(true);
+  };
+
+  const handleAppearanceSave = async () => {
     if (!id) return;
-    setRenaming(true);
+    setAppearanceSaving(true);
     try {
       const updated = await api.updateNode(id, {
-        displayName: renameName.trim() || undefined,
+        displayName: appearanceName.trim() || null,
+        appearanceColor,
       });
       setNode((prev) => (prev ? { ...prev, ...updated } : prev));
-      setRenameOpen(false);
+      useDockerStore.getState().syncNodeAppearance(updated);
+      setAppearanceOpen(false);
       usePinnedNodesStore.getState().invalidate();
       toast.success("Node updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update");
     } finally {
-      setRenaming(false);
+      setAppearanceSaving(false);
     }
   };
 
@@ -319,9 +381,7 @@ export function AdminNodeDetail() {
         {/* Header — matches ProxyHostDetail pattern */}
         <div className="flex items-start justify-between gap-3 shrink-0">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/nodes")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate("/nodes")} />
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <h1 className="min-w-0 truncate text-2xl font-bold">
@@ -353,12 +413,9 @@ export function AdminNodeDetail() {
               ...(hasScope("nodes:rename")
                 ? [
                     {
-                      label: "Rename",
+                      label: "Appearance",
                       icon: <Pencil className="h-4 w-4" />,
-                      onClick: () => {
-                        setRenameName(node.displayName ?? "");
-                        setRenameOpen(true);
-                      },
+                      onClick: openAppearanceDialog,
                       disabled: nodeUpdating,
                     },
                   ]
@@ -407,16 +464,9 @@ export function AdminNodeDetail() {
               <Pin className="h-4 w-4" />
             </Button>
             {hasScope("nodes:rename") && (
-              <Button
-                variant="outline"
-                disabled={nodeUpdating}
-                onClick={() => {
-                  setRenameName(node.displayName ?? "");
-                  setRenameOpen(true);
-                }}
-              >
+              <Button variant="outline" disabled={nodeUpdating} onClick={openAppearanceDialog}>
                 <Pencil className="h-4 w-4" />
-                Rename
+                Appearance
               </Button>
             )}
             {(hasScope("admin:update") ||
@@ -482,6 +532,11 @@ export function AdminNodeDetail() {
                 Monitoring
               </TabsTrigger>
             )}
+            {!isNodeIncompatible(node) && canReadNodeFiles && (
+              <TabsTrigger value="files" disabled={nodeUpdating}>
+                Files
+              </TabsTrigger>
+            )}
             {!isNodeIncompatible(node) && node.type === "nginx" && canViewNodeConfig && (
               <TabsTrigger value="configuration" disabled={nodeUpdating}>
                 Configuration
@@ -512,7 +567,7 @@ export function AdminNodeDetail() {
               !nodeUpdating &&
               node.status === "online" &&
               canUseNodeConsole && <TabsTrigger value="console">Console</TabsTrigger>}
-            {canViewNodeLogs && <TabsTrigger value="daemon-logs">Daemon Logs</TabsTrigger>}
+            {canViewNodeLogs && <TabsTrigger value="daemon-logs">Logs</TabsTrigger>}
           </TabsList>
 
           {isNodeIncompatible(node) && (
@@ -574,6 +629,21 @@ export function AdminNodeDetail() {
                 )}
               </TabsContent>
             )}
+            {!isNodeIncompatible(node) && canReadNodeFiles && nodeFileOperations && (
+              <TabsContent value="files">
+                {activeTab === "files" && (
+                  <FilesTab
+                    nodeId={node.id}
+                    canBrowse={canReadNodeFiles}
+                    operations={nodeFileOperations}
+                    realtimeEvent="node.file.changed"
+                    realtimeMatches={(payload) =>
+                      (payload as { nodeId?: string } | undefined)?.nodeId === node.id
+                    }
+                  />
+                )}
+              </TabsContent>
+            )}
             {!isNodeIncompatible(node) && node.type === "docker" && (
               <>
                 <TabsContent value="containers">
@@ -608,33 +678,74 @@ export function AdminNodeDetail() {
         </Tabs>
       </div>
 
-      {/* Rename Dialog */}
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+      {/* Appearance Dialog */}
+      <Dialog open={appearanceOpen} onOpenChange={setAppearanceOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rename Node</DialogTitle>
+            <DialogTitle>Node Appearance</DialogTitle>
           </DialogHeader>
-          <div>
-            <label className="text-sm font-medium">Display Name</label>
-            <Input
-              className="mt-1"
-              value={renameName}
-              onChange={(e) => setRenameName(e.target.value)}
-              placeholder={node.hostname}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleRename();
-              }}
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Leave empty to use the hostname ({node.hostname})
-            </p>
+          <div className="space-y-5">
+            <div>
+              <label className="text-sm font-medium">Display Name</label>
+              <Input
+                aria-label="Display Name"
+                className="mt-1"
+                value={appearanceName}
+                onChange={(e) => setAppearanceName(e.target.value)}
+                placeholder={node.hostname}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleAppearanceSave();
+                }}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Leave empty to use the hostname ({node.hostname})
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Color</label>
+              <div className="mt-2 grid grid-cols-8 gap-2">
+                <button
+                  type="button"
+                  aria-label="Default color"
+                  className={cn(
+                    "aspect-square w-full border border-input bg-muted",
+                    appearanceColor === null && "border-white"
+                  )}
+                  style={appearanceColor === null ? { borderColor: "#fff" } : undefined}
+                  onClick={() => setAppearanceColor(null)}
+                />
+                {NODE_APPEARANCE_COLOR_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-label={`${option.label} color`}
+                    className={cn(
+                      "aspect-square w-full border border-input",
+                      option.swatchClassName,
+                      appearanceColor === option.value && "border-white"
+                    )}
+                    style={appearanceColor === option.value ? { borderColor: "#fff" } : undefined}
+                    onClick={() => setAppearanceColor(option.value)}
+                  />
+                ))}
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Preview:</span>
+                <Badge
+                  variant="secondary"
+                  className={getNodeAppearanceColor(appearanceColor)?.badgeClassName}
+                >
+                  {appearanceName.trim() || node.hostname}
+                </Badge>
+              </div>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameOpen(false)}>
+            <Button variant="outline" onClick={() => setAppearanceOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleRename} disabled={renaming}>
-              {renaming ? "Saving..." : "Save"}
+            <Button onClick={handleAppearanceSave} disabled={appearanceSaving}>
+              {appearanceSaving ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

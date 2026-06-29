@@ -63,7 +63,9 @@ function docUri(topic: string): string {
 
 function docRequiredScopes(topic: string): string[] {
   const requiredScope = DOC_TOPIC_SCOPES[topic];
-  return requiredScope === 'feat:ai:use' || !requiredScope ? [] : [requiredScope];
+  if (!requiredScope) return [];
+  const scopes = Array.isArray(requiredScope) ? requiredScope : [requiredScope];
+  return scopes.filter((scope) => scope !== 'feat:ai:use');
 }
 
 function accessibleDocTopics(scopes: string[]) {
@@ -123,6 +125,7 @@ const operationalResources: ResourceDefinition[] = [
           id: node.id,
           hostname: node.hostname,
           displayName: node.displayName,
+          appearanceColor: node.appearanceColor,
           type: node.type,
           status: node.status,
           isConnected: node.isConnected,

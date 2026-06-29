@@ -6,6 +6,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { container } from '@/container.js';
 import { getResourceScopedIds, hasScope, hasScopeBase, hasScopeForResource } from '@/lib/permissions.js';
+import { FOLDER_TOOL_REQUIREMENT_SCOPES } from '@/modules/ai/ai.folder-tool-scopes.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AI_TOOLS } from '@/modules/ai/ai.tools.js';
 import type { AIToolDefinition } from '@/modules/ai/ai.types.js';
@@ -13,8 +14,27 @@ import { AuditService } from '@/modules/audit/audit.service.js';
 import type { User } from '@/types.js';
 import type { McpAuthContext } from './mcp-types.js';
 
-const MCP_EXCLUDED_TOOLS = new Set(['ask_question', 'internal_documentation', 'web_search']);
-const BROAD_ONLY_TOOL_SCOPES = new Set(['create_proxy_host']);
+const MCP_EXCLUDED_TOOLS = new Set([
+  'ask_question',
+  'internal_documentation',
+  'web_search',
+  'manage_ai_conversation',
+  'manage_oauth_authorization',
+  'manage_api_token',
+  'execute_script',
+  'run_process',
+  'fetch',
+  'download_artifact',
+  'read_artifact',
+  'send_artifact',
+  'read_process_output',
+  'write_process_stdin',
+  'kill_process',
+  'list_sandbox_jobs',
+  'manage_node_config',
+  'manage_node_file',
+]);
+const BROAD_ONLY_TOOL_SCOPES = new Set<string>();
 const DIRECT_DATABASE_VIEW_TOOLS = new Set(['list_databases', 'get_database_connection']);
 const DIRECT_RAW_READ_TOOLS = new Set(['get_proxy_rendered_config']);
 const DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS = new Set([
@@ -79,6 +99,7 @@ const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
     'docker:containers:files',
     'docker:containers:secrets',
     'docker:containers:webhooks',
+    'docker:containers:config',
     'docker:containers:edit',
   ],
   manage_database_connection: [
@@ -111,10 +132,13 @@ const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
     'status-page:incidents:resolve',
     'status-page:incidents:delete',
   ],
+  list_resource_folders: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
+  manage_resource_folder: [...FOLDER_TOOL_REQUIREMENT_SCOPES],
+  manage_node_config: ['nodes:config:view', 'nodes:config:edit'],
 };
 const SENSITIVE_TOOL_ARG_RE =
   /(?:password|passwd|secret|signingsecret|privatekey|private_key|token|authorization|cookie|apikey|api_key|clientsecret|client_secret|refresh)/i;
-const MCP_ALWAYS_VISIBLE_AI_TOOLS = new Set(['find_resource']);
+const MCP_ALWAYS_VISIBLE_AI_TOOLS = new Set(['find_resource', 'wait']);
 const MCP_TOOLS_PAGE_SIZE = 80;
 const MCP_DISCOVERY_STATE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -157,7 +181,14 @@ const MCP_TOOLSET_DEFINITIONS: McpToolsetDefinition[] = [
       'list_cas',
       'list_certificates',
       'list_templates',
+      'list_resource_folders',
     ],
+  },
+  {
+    id: 'folders',
+    title: 'Folders',
+    description: 'Folder layout and foldered resource assignment operations across Gateway resources.',
+    toolNames: toolNamesForCategories(['Folders']),
   },
   {
     id: 'nodes',
@@ -218,6 +249,18 @@ const MCP_TOOLSET_DEFINITIONS: McpToolsetDefinition[] = [
     description: 'Administrative tools that are still subject to MCP/OAuth delegability and token scopes.',
     toolNames: toolNamesForCategories(['Administration']),
   },
+  {
+    id: 'maintenance',
+    title: 'Maintenance',
+    description: 'License and housekeeping control-plane operations when delegated.',
+    toolNames: toolNamesForCategories(['Maintenance']),
+  },
+  {
+    id: 'ai_assistant',
+    title: 'AI assistant',
+    description: 'AI assistant provider, limits, tool access, web search, and sandbox runner configuration.',
+    toolNames: toolNamesForCategories(['AI Assistant']),
+  },
 ];
 
 const MCP_TOOLSET_BY_ID = new Map(MCP_TOOLSET_DEFINITIONS.map((toolset) => [toolset.id, toolset]));
@@ -274,6 +317,7 @@ function hasDirectDatabaseViewForResource(scopes: string[], databaseId: string):
 }
 
 function hasToolScope(scopes: string[], tool: AIToolDefinition): boolean {
+  if (tool.name === 'wait') return true;
   if (!tool.requiredScope) return false;
   if (DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS.has(tool.name)) {
     return hasDirectDatabaseViewForQueryTool(scopes, tool.requiredScope);
@@ -292,6 +336,7 @@ function hasToolScope(scopes: string[], tool: AIToolDefinition): boolean {
 }
 
 function hasToolScopeForArgs(scopes: string[], tool: AIToolDefinition, args: Record<string, unknown>): boolean {
+  if (tool.name === 'wait') return true;
   if (!tool.requiredScope) return false;
   if (DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS.has(tool.name)) {
     const resourceId = getToolAuthorizationResourceId(tool.name, args);
@@ -445,8 +490,7 @@ function getToolResourceId(args: Record<string, unknown>): string {
   );
 }
 
-function getToolAuthorizationResourceId(toolName: string, args: Record<string, unknown>): string {
-  if (toolName === 'create_proxy_host') return '';
+function getToolAuthorizationResourceId(_toolName: string, args: Record<string, unknown>): string {
   return getToolResourceId(args);
 }
 

@@ -1,12 +1,13 @@
-import { Database as DatabaseIcon, Plus, RefreshCw } from "lucide-react";
+import { Database as DatabaseIcon, FolderPlus, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { FolderedResourceList } from "@/components/common/FolderedResourceList";
+import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
+import type { ResourceListColumn } from "@/components/common/ResourceListLayout";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
-import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -143,7 +144,7 @@ function DatabaseTagSummary({ tags, type }: { tags: string[]; type: DatabaseConn
   return (
     <div ref={containerRef} className="flex min-w-0 flex-1 items-center justify-end gap-2">
       <span ref={typeRef} className="inline-flex shrink-0">
-        <Badge variant="secondary" className="text-xs uppercase">
+        <Badge variant="secondary" className="uppercase">
           {type}
         </Badge>
       </span>
@@ -151,7 +152,7 @@ function DatabaseTagSummary({ tags, type }: { tags: string[]; type: DatabaseConn
         <Badge
           key={`${tag.raw}:${index}`}
           variant="secondary"
-          className={cn("max-w-[180px] text-xs", DATABASE_TAG_COLORS[tag.color])}
+          className={cn("max-w-[180px]", DATABASE_TAG_COLORS[tag.color])}
           title={tag.raw}
         >
           {tag.label}
@@ -160,7 +161,7 @@ function DatabaseTagSummary({ tags, type }: { tags: string[]; type: DatabaseConn
       {hiddenTags.length > 0 && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Badge variant="secondary" className="h-6 shrink-0 px-2 text-xs">
+            <Badge variant="secondary" className="shrink-0">
               +{hiddenTags.length}
             </Badge>
           </TooltipTrigger>
@@ -170,7 +171,7 @@ function DatabaseTagSummary({ tags, type }: { tags: string[]; type: DatabaseConn
                 <Badge
                   key={`${tag.raw}:${visibleCount + index}`}
                   variant="secondary"
-                  className={cn("max-w-[180px] text-xs", DATABASE_TAG_COLORS[tag.color])}
+                  className={cn("max-w-[180px]", DATABASE_TAG_COLORS[tag.color])}
                 >
                   {tag.label}
                 </Badge>
@@ -209,6 +210,7 @@ export function Databases() {
   const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState<DatabaseConnectionDraft>(draftFromConnection(null));
   const [saving, setSaving] = useState(false);
+  const [createFolderAction, setCreateFolderAction] = useState<(() => void) | null>(null);
 
   const load = useCallback(async () => {
     const cachedRows = api.getCached<DatabaseConnection[]>(databaseCacheKey);
@@ -243,6 +245,7 @@ export function Databases() {
   }, [load]);
 
   const canCreate = hasScope("databases:create");
+  const canManageFolders = hasScope("databases:folders:manage");
 
   const filtered = useMemo(
     () =>
@@ -269,15 +272,70 @@ export function Databases() {
     }
   };
 
+  const columns = useMemo<ResourceListColumn<DatabaseConnection>[]>(
+    () => [
+      {
+        id: "name",
+        label: "Name",
+        width: "38%",
+        renderCell: (row) => (
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-muted">
+              <DatabaseIcon className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{row.name}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {row.host}:{row.port}
+                {row.databaseName ? ` · ${row.databaseName}` : ""}
+              </p>
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: "tags",
+        label: "Tags",
+        width: "34%",
+        align: "right",
+        renderCell: (row) => <DatabaseTagSummary tags={row.tags} type={row.type} />,
+      },
+      {
+        id: "lastCheck",
+        label: "Last Check",
+        width: "14%",
+        align: "center",
+        renderCell: (row) => (
+          <Badge variant="outline">{formatLastCheck(row.lastHealthCheckAt)}</Badge>
+        ),
+      },
+      {
+        id: "health",
+        label: "Health",
+        width: "14%",
+        align: "center",
+        renderCell: (row) => (
+          <Badge variant={HEALTH_BADGE[row.healthStatus] ?? "secondary"}>
+            {formatHealthLabel(row.healthStatus)}
+          </Badge>
+        ),
+      },
+    ],
+    []
+  );
+
   return (
     <PageTransition>
       <div className="h-full overflow-y-auto p-6 space-y-4">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">Databases</h1>
-            <p className="text-sm text-muted-foreground">
-              Saved Postgres and Redis connections managed through Gateway
-            </p>
+          <div className="flex items-center gap-3">
+            <LiteModeBackButton />
+            <div>
+              <h1 className="text-2xl font-bold">Databases</h1>
+              <p className="text-sm text-muted-foreground">
+                Saved Postgres and Redis connections managed through Gateway
+              </p>
+            </div>
           </div>
           <ResponsiveHeaderActions
             actions={[
@@ -286,6 +344,15 @@ export function Databases() {
                 icon: <RefreshCw className="h-4 w-4" />,
                 onClick: () => void load(),
               },
+              ...(canManageFolders && createFolderAction
+                ? [
+                    {
+                      label: "Add Folder",
+                      icon: <FolderPlus className="h-4 w-4" />,
+                      onClick: createFolderAction,
+                    },
+                  ]
+                : []),
               ...(canCreate
                 ? [
                     {
@@ -300,6 +367,12 @@ export function Databases() {
             <Button variant="outline" size="icon" onClick={() => void load()} title="Refresh">
               <RefreshCw className="h-4 w-4" />
             </Button>
+            {canManageFolders && (
+              <Button variant="outline" onClick={() => createFolderAction?.()}>
+                <FolderPlus className="h-4 w-4" />
+                Add Folder
+              </Button>
+            )}
             {canCreate && (
               <Button onClick={() => setCreateOpen(true)}>
                 <Plus className="h-4 w-4" />
@@ -309,101 +382,80 @@ export function Databases() {
           </ResponsiveHeaderActions>
         </div>
 
-        <SearchFilterBar
-          placeholder="Search databases..."
-          search={search}
-          onSearchChange={setSearch}
-          onSearchSubmit={() => void load()}
-          hasActiveFilters={search !== "" || typeFilter !== "all" || healthFilter !== "all"}
-          onReset={() => {
-            setSearch("");
-            setTypeFilter("all");
-            setHealthFilter("all");
-          }}
-          filters={
-            <>
-              <Select
-                value={typeFilter}
-                onValueChange={(value) => setTypeFilter(value as typeof typeFilter)}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All types</SelectItem>
-                  <SelectItem value="postgres">Postgres</SelectItem>
-                  <SelectItem value="redis">Redis</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={healthFilter}
-                onValueChange={(value) => setHealthFilter(value as typeof healthFilter)}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Health" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All health states</SelectItem>
-                  <SelectItem value="online">Online</SelectItem>
-                  <SelectItem value="degraded">Degraded</SelectItem>
-                  <SelectItem value="offline">Offline</SelectItem>
-                  <SelectItem value="unknown">Unknown</SelectItem>
-                </SelectContent>
-              </Select>
-            </>
-          }
-        />
-
-        {loading || authLoading ? (
-          <div className="flex items-center justify-center gap-3 border border-border bg-card p-8 text-sm text-muted-foreground">
-            <LoadingSpinner className="" />
-            <span>Loading database connections...</span>
-          </div>
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            message="No databases. Add a Postgres or Redis connection to manage it through Gateway."
-            {...(canCreate
-              ? { actionLabel: "Add Database", onAction: () => setCreateOpen(true) }
-              : {})}
-          />
-        ) : (
-          <div className="overflow-x-auto border border-border rounded-lg bg-card md:overflow-x-visible">
-            <div className="min-w-[920px] divide-y divide-border -mb-px md:min-w-0 [&>*:last-child]:border-b [&>*:last-child]:border-border">
-              {filtered.map((row) => (
-                <div
-                  key={row.id}
-                  className="flex items-center gap-4 p-4 transition-colors cursor-pointer hover:bg-muted/50"
-                  onClick={() => navigate(`/databases/${row.id}/overview`)}
+        <FolderedResourceList<DatabaseConnection>
+          resourceType="database"
+          realtimeChannel="database.folder.changed"
+          resources={filtered}
+          columns={columns}
+          search={{
+            placeholder: "Search databases...",
+            search,
+            onSearchChange: setSearch,
+            onSearchSubmit: () => void load(),
+            hasActiveFilters: search !== "" || typeFilter !== "all" || healthFilter !== "all",
+            onReset: () => {
+              setSearch("");
+              setTypeFilter("all");
+              setHealthFilter("all");
+            },
+            filters: (
+              <>
+                <Select
+                  value={typeFilter}
+                  onValueChange={(value) => setTypeFilter(value as typeof typeFilter)}
                 >
-                  <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-muted shrink-0">
-                    <DatabaseIcon className="h-5 w-5 text-muted-foreground" />
-                  </div>
-
-                  <div className="min-w-[280px] flex-1 md:min-w-0">
-                    <p className="text-sm font-medium truncate">{row.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {row.host}:{row.port}
-                      {row.databaseName ? ` · ${row.databaseName}` : ""}
-                    </p>
-                  </div>
-
-                  <div className="flex min-w-0 w-[58%] shrink-0 items-center justify-end gap-2">
-                    <DatabaseTagSummary tags={row.tags} type={row.type} />
-                    <Badge variant="outline" className="text-xs shrink-0">
-                      {formatLastCheck(row.lastHealthCheckAt)}
-                    </Badge>
-                    <Badge
-                      variant={HEALTH_BADGE[row.healthStatus] ?? "secondary"}
-                      className="text-xs shrink-0 uppercase"
-                    >
-                      {formatHealthLabel(row.healthStatus)}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    <SelectItem value="postgres">Postgres</SelectItem>
+                    <SelectItem value="redis">Redis</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={healthFilter}
+                  onValueChange={(value) => setHealthFilter(value as typeof healthFilter)}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Health" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All health states</SelectItem>
+                    <SelectItem value="online">Online</SelectItem>
+                    <SelectItem value="degraded">Degraded</SelectItem>
+                    <SelectItem value="offline">Offline</SelectItem>
+                    <SelectItem value="unknown">Unknown</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            ),
+          }}
+          loading={loading || authLoading}
+          loadingLabel="Loading database connections..."
+          emptyState={
+            <EmptyState
+              message="No databases. Add a Postgres or Redis connection to manage it through Gateway."
+              {...(canCreate
+                ? { actionLabel: "Add Database", onAction: () => setCreateOpen(true) }
+                : {})}
+              hasActiveFilters={search !== "" || typeFilter !== "all" || healthFilter !== "all"}
+              onReset={() => {
+                setSearch("");
+                setTypeFilter("all");
+                setHealthFilter("all");
+              }}
+            />
+          }
+          minWidth={920}
+          canManageFolders={canManageFolders}
+          canViewItem={(row) => hasScope("databases:view") || hasScope(`databases:view:${row.id}`)}
+          canReorganizeItem={() => canManageFolders}
+          getResourceLabel={(row) => row.name}
+          onItemClick={(row) => navigate(`/databases/${row.id}/overview`)}
+          onRefresh={() => load()}
+          onCreateFolderRef={(fn) => setCreateFolderAction(() => fn)}
+        />
       </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

@@ -1,15 +1,16 @@
 import { Download, HardDrive, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PageTransition } from "@/components/common/PageTransition";
-import { SearchFilterBar } from "@/components/common/SearchFilterBar";
+import { PanelShell } from "@/components/common/PanelShell";
+import type { ResourceListColumn } from "@/components/common/ResourceListLayout";
+import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
+import { DockerFolderedResourceList } from "@/components/docker/DockerFolderedResourceList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -28,23 +29,40 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TruncateStart } from "@/components/ui/truncate-start";
+import { useDeferredDialogState } from "@/hooks/use-deferred-dialog-state";
 import { useRealtime } from "@/hooks/use-realtime";
 import { formatDisplayImageRef } from "@/lib/docker-image-ref";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
+import { nodeBadgeClassName } from "@/lib/node-appearance";
 import { formatBytes, formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { DockerRegistry, Node } from "@/types";
+import type { DockerImage, DockerRegistry, Node, NodeAppearanceColor } from "@/types";
+
+interface DockerImageListItem extends DockerImage {
+  _nodeId: string;
+  _nodeName?: string;
+  _nodeColor?: NodeAppearanceColor | null;
+}
+
+interface DockerImageUsageContainer {
+  id: string;
+  name: string;
+  state: string;
+  image: string;
+}
 
 export function DockerImages({
   embedded,
   onPullRef,
+  onCreateFolderRef,
   onRefreshRef,
   fixedNodeId,
 }: {
   embedded?: boolean;
   onPullRef?: (fn: () => void) => void;
+  onCreateFolderRef?: (fn: () => void) => void;
   onRefreshRef?: (fn: () => void) => void;
   fixedNodeId?: string;
 } = {}) {
@@ -62,21 +80,24 @@ export function DockerImages({
   const [search, setSearch] = useState("");
   const [filterUsage, setFilterUsage] = useState("all");
   const [pruning, setPruning] = useState(false);
+  const createFolderRef = useRef<(() => void) | null>(null);
 
-  // Usage dialog
-  const [usageOpen, setUsageOpen] = useState(false);
-  const [usageImage, setUsageImage] = useState("");
-  const [usageContainers, setUsageContainers] = useState<
-    Array<{ id: string; name: string; state: string }>
-  >([]);
+  // Details dialog
+  const [usageContainers, setUsageContainers] = useState<DockerImageUsageContainer[]>([]);
   const [usageLoading, setUsageLoading] = useState(false);
+  const {
+    open: detailsOpen,
+    value: detailsImage,
+    setValue: setDetailsImage,
+    close: closeDetails,
+    onOpenChange: onDetailsOpenChange,
+  } = useDeferredDialogState<DockerImageListItem>();
 
-  const showUsage = useCallback(
+  const loadUsageContainers = useCallback(
     async (imageTag: string, nodeId?: string) => {
       const nid = nodeId || selectedNodeId;
       if (!nid) return;
-      setUsageImage(imageTag);
-      setUsageOpen(true);
+      setUsageContainers([]);
       setUsageLoading(true);
       try {
         const containers = await api.listDockerContainers(nid);
@@ -173,11 +194,11 @@ export function DockerImages({
     });
     if (filterUsage === "used") {
       result = result.filter(
-        (img) => ((img as any).containers ?? (img as any).Containers ?? 0) > 0
+        (img) => ((img as any).containers ?? (img as any).Containers ?? -1) > 0
       );
     } else if (filterUsage === "unused") {
       result = result.filter(
-        (img) => ((img as any).containers ?? (img as any).Containers ?? 0) === 0
+        (img) => ((img as any).containers ?? (img as any).Containers ?? -1) === 0
       );
     }
     if (search) {
@@ -193,6 +214,34 @@ export function DockerImages({
     return result;
   }, [images, search, filterUsage]);
   const truncatedListMeta = images.find((img) => img._listTruncated);
+  const canManageFolders = !fixedNodeId && hasScope("docker:containers:folders:manage");
+  const usageColumns = useMemo<SimpleTableColumn<DockerImageUsageContainer>[]>(
+    () => [
+      {
+        id: "container",
+        header: "Container",
+        cellClassName: "font-medium",
+        render: (container) => container.name.replace(/^\//, ""),
+      },
+      {
+        id: "id",
+        header: "ID",
+        cellClassName: "font-mono text-muted-foreground",
+        render: (container) => container.id.slice(0, 12),
+      },
+      {
+        id: "state",
+        header: "State",
+        align: "right",
+        render: (container) => (
+          <Badge variant={container.state === "running" ? "success" : "secondary"}>
+            {container.state}
+          </Badge>
+        ),
+      },
+    ],
+    []
+  );
 
   const handleRemove = useCallback(
     async (imageId: string, tag: string, nodeId?: string) => {
@@ -241,6 +290,16 @@ export function DockerImages({
     }
   }, [fetchImages, selectedNodeId, search]);
 
+  const openImageDetails = useCallback(
+    (image: DockerImageListItem) => {
+      const tags = image.repoTags ?? [];
+      const rawTag = tags.length > 0 ? tags[0] : "<none>:<none>";
+      setDetailsImage(image);
+      void loadUsageContainers(rawTag, image._nodeId);
+    },
+    [loadUsageContainers, setDetailsImage]
+  );
+
   const closePull = useCallback(() => {
     setPullOpen(false);
     setPullRef("");
@@ -266,14 +325,14 @@ export function DockerImages({
     }
   }, [closePull, fetchImages, pullNodeId, pullRef, pullRegistryId, search]);
 
-  const allImageColumns: DataTableColumn<any>[] = useMemo(
+  const allImageColumns: ResourceListColumn<DockerImageListItem>[] = useMemo(
     () => [
       {
-        key: "tag",
-        header: "Repository:Tag",
+        id: "tag",
+        label: "Repository:Tag",
         width: "minmax(0, 1.45fr)",
-        render: (img: any) => {
-          const tags = img.repoTags ?? img.RepoTags ?? [];
+        renderCell: (img) => {
+          const tags = img.repoTags ?? [];
           const tag = tags.length > 0 ? formatDisplayImageRef(tags[0]) : "<none>:<none>";
           return (
             <div className="flex items-center gap-3 min-w-0">
@@ -293,93 +352,75 @@ export function DockerImages({
         },
       },
       {
-        key: "id",
-        header: "Image ID",
-        width: "9rem",
-        render: (img: any) => {
-          const id = img.id ?? img.Id ?? "";
-          return (
-            <span className="text-xs font-mono text-muted-foreground truncate">
-              {id.replace("sha256:", "").slice(0, 12)}
-            </span>
-          );
-        },
-      },
-      {
-        key: "node",
-        header: "Node",
+        id: "node",
+        label: "Node",
         width: "minmax(0, 1.15fr)",
-        render: (img: any) => (
+        renderCell: (img) => (
           <div className="min-w-0">
-            <Badge variant="secondary" className="max-w-full shrink-0 px-2.5 text-xs">
+            <Badge variant="secondary" className={nodeBadgeClassName((img as any)._nodeColor)}>
               <span className="truncate">{(img as any)._nodeName || "-"}</span>
             </Badge>
           </div>
         ),
       },
       {
-        key: "usage",
-        header: "Usage",
+        id: "usage",
+        label: "Usage",
         width: "6.5rem",
-        render: (img: any) => {
-          const tags = img.repoTags ?? img.RepoTags ?? [];
-          const rawTag = tags.length > 0 ? tags[0] : "<none>:<none>";
-          const containerCount = img.containers ?? img.Containers ?? 0;
+        renderCell: (img) => {
+          const containerCount = img.containers ?? -1;
           const isUsed = containerCount > 0;
           return isUsed ? (
-            <Badge
-              variant="success"
-              className="text-xs w-fit cursor-pointer hover:opacity-80"
-              onClick={(e: React.MouseEvent) => {
-                e.stopPropagation();
-                showUsage(rawTag, (img as any)._nodeId);
-              }}
-            >
+            <Badge variant="success" className="w-fit">
               In use
             </Badge>
           ) : (
-            <Badge variant="secondary" className="text-xs w-fit">
-              Unused
+            <Badge variant="secondary" className="w-fit">
+              {containerCount === 0 ? "Unused" : "Unknown"}
             </Badge>
           );
         },
       },
       {
-        key: "size",
-        header: "Size",
-        width: "7rem",
-        render: (img: any) => {
-          const size = img.size ?? img.Size ?? 0;
-          return <span className="text-sm text-muted-foreground">{formatBytes(size)}</span>;
+        id: "size",
+        label: "Size",
+        width: "5.25rem",
+        renderCell: (img) => {
+          const size = img.size ?? 0;
+          return (
+            <Badge variant="secondary" className="font-mono">
+              {formatBytes(size)}
+            </Badge>
+          );
         },
       },
       {
-        key: "created",
-        header: "Created",
+        id: "created",
+        label: "Created",
         width: "8rem",
         align: "right" as const,
-        render: (img: any) => {
-          const created = img.created ?? img.Created ?? 0;
+        renderCell: (img) => {
+          const created = img.created ?? 0;
           return <span className="text-sm text-muted-foreground">{formatCreated(created)}</span>;
         },
       },
       {
-        key: "actions",
-        header: "Actions",
+        id: "actions",
+        label: "Actions",
         width: "5.75rem",
         align: "right" as const,
-        render: (img: any) => {
-          const tags = img.repoTags ?? img.RepoTags ?? [];
+        renderCell: (img) => {
+          const tags = img.repoTags ?? [];
           const tag = tags.length > 0 ? tags[0] : "<none>:<none>";
-          const id = img.id ?? img.Id ?? "";
-          const containerCount = img.containers ?? img.Containers ?? 0;
-          const isUsed = containerCount > 0;
+          const id = img.id ?? "";
+          const containerCount = img.containers ?? -1;
+          const canDelete = containerCount === 0;
           return (
             <div
               className="flex items-center justify-end pr-1"
               onClick={(e) => e.stopPropagation()}
             >
-              {hasScope("docker:images:delete") && !isUsed && (
+              {hasScope("docker:images:delete") && canDelete && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -395,11 +436,11 @@ export function DockerImages({
         },
       },
     ],
-    [hasScope, handleRemove, showUsage]
+    [hasScope, handleRemove]
   );
   const imageColumns = allImageColumns.filter((c) => {
-    if (fixedNodeId && c.key === "node") return false;
-    if (!hasScope("docker:images:delete") && c.key === "actions") return false;
+    if (fixedNodeId && c.id === "node") return false;
+    if (!hasScope("docker:images:delete") && c.id === "actions") return false;
     return true;
   });
 
@@ -422,6 +463,11 @@ export function DockerImages({
                   onClick={() => fetchImages(undefined, search)}
                   disabled={isLoading}
                 />
+                {canManageFolders && (
+                  <Button variant="outline" onClick={() => createFolderRef.current?.()}>
+                    New Folder
+                  </Button>
+                )}
                 {hasScope("docker:images:delete") && (
                   <Button variant="outline" onClick={handlePrune} disabled={pruning}>
                     <Trash2 className="h-4 w-4 mr-1" />
@@ -440,83 +486,84 @@ export function DockerImages({
         </div>
       )}
 
-      {/* Filters */}
-      <SearchFilterBar
-        search={search}
-        onSearchChange={setSearch}
-        placeholder="Search images by repository or tag..."
-        hasActiveFilters={search !== "" || filterUsage !== "all" || !!selectedNodeId}
-        onReset={() => {
-          setSearch("");
-          setFilterUsage("all");
-          setSelectedNode(null);
+      <DockerFolderedResourceList<DockerImageListItem>
+        resourceType="image"
+        resources={filteredImages as DockerImageListItem[]}
+        columns={imageColumns}
+        search={{
+          search,
+          onSearchChange: setSearch,
+          placeholder: "Search images by repository or tag...",
+          hasActiveFilters: search !== "" || filterUsage !== "all" || !!selectedNodeId,
+          onReset: () => {
+            setSearch("");
+            setFilterUsage("all");
+            setSelectedNode(null);
+          },
+          filters: (
+            <div className="flex items-center gap-3">
+              <Select
+                value={selectedNodeId ?? "__all__"}
+                onValueChange={(v) => setSelectedNode(v === "__all__" ? null : v)}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="All nodes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All nodes</SelectItem>
+                  {(embedded ? storeDockerNodes : dockerNodes).map((n) => (
+                    <SelectItem key={n.id} value={n.id}>
+                      {n.displayName || n.hostname}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterUsage} onValueChange={setFilterUsage}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Usage" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All images</SelectItem>
+                  <SelectItem value="used">In use</SelectItem>
+                  <SelectItem value="unused">Unused</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ),
         }}
-        filters={
-          <div className="flex items-center gap-3">
-            <Select
-              value={selectedNodeId ?? "__all__"}
-              onValueChange={(v) => setSelectedNode(v === "__all__" ? null : v)}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="All nodes" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All nodes</SelectItem>
-                {(embedded ? storeDockerNodes : dockerNodes).map((n) => (
-                  <SelectItem key={n.id} value={n.id}>
-                    {n.displayName || n.hostname}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filterUsage} onValueChange={setFilterUsage}>
-              <SelectTrigger className="w-36">
-                <SelectValue placeholder="Usage" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All images</SelectItem>
-                <SelectItem value="used">In use</SelectItem>
-                <SelectItem value="unused">Unused</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        afterSearch={
+          truncatedListMeta ? (
+            <div className="border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+              Showing first {truncatedListMeta._listLimit ?? images.length} of{" "}
+              {truncatedListMeta._listTotal ?? "many"} images. Narrow the node or search filters for
+              more specific data.
+            </div>
+          ) : null
         }
+        loading={isLoading || (!visibleNodeId && !nodesLoaded)}
+        loadingLabel="Loading images..."
+        emptyState={
+          <EmptyState
+            message="No images found."
+            hasActiveFilters={search !== ""}
+            onReset={() => setSearch("")}
+          />
+        }
+        minWidth={fixedNodeId ? "760px" : "900px"}
+        fixedNodeId={fixedNodeId}
+        canManageFolders={canManageFolders}
+        getResourceKey={(img) => img.id}
+        getResourceLabel={(img) => {
+          const tags = (img as any).repoTags ?? (img as any).RepoTags ?? [];
+          return tags.length > 0 ? tags[0] : img.id;
+        }}
+        onItemClick={openImageDetails}
+        onRefresh={() => fetchImages(undefined, search)}
+        onCreateFolderRef={(fn) => {
+          createFolderRef.current = fn;
+          onCreateFolderRef?.(fn);
+        }}
       />
-
-      {truncatedListMeta && (
-        <div className="border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-          Showing first {truncatedListMeta._listLimit ?? images.length} of{" "}
-          {truncatedListMeta._listTotal ?? "many"} images. Narrow the node or search filters for
-          more specific data.
-        </div>
-      )}
-
-      {filteredImages.length > 0 ? (
-        <DataTable
-          columns={imageColumns}
-          data={filteredImages}
-          keyFn={(img: any) => {
-            const tags = img.repoTags ?? img.RepoTags ?? [];
-            return `${img._nodeId ?? selectedNodeId ?? "node"}:${img.id ?? img.Id ?? ""}:${tags.join("|")}`;
-          }}
-          emptyMessage="No images found."
-          horizontalScroll
-          minWidth={fixedNodeId ? "760px" : "900px"}
-        />
-      ) : isLoading || (!visibleNodeId && !nodesLoaded) ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="flex flex-col items-center gap-3">
-            <LoadingSpinner className="" />
-            <p className="text-sm text-muted-foreground">Loading images...</p>
-          </div>
-        </div>
-      ) : (
-        <EmptyState
-          message="No images found."
-          hasActiveFilters={search !== ""}
-          onReset={() => setSearch("")}
-        />
-      )}
 
       {/* Pull Image Dialog */}
       <Dialog open={pullOpen} onOpenChange={closePull}>
@@ -605,46 +652,65 @@ export function DockerImages({
         </DialogContent>
       </Dialog>
 
-      {/* Usage Dialog */}
-      <Dialog open={usageOpen} onOpenChange={setUsageOpen}>
-        <DialogContent className="sm:max-w-md">
+      {/* Image Details Dialog */}
+      <Dialog open={detailsOpen} onOpenChange={onDetailsOpenChange}>
+        <DialogContent className="max-w-full sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Containers using this image</DialogTitle>
+            <DialogTitle>Image Details</DialogTitle>
             <DialogDescription>
-              <span className="font-mono text-xs">{usageImage}</span>
+              <span className="font-mono text-xs break-all">
+                {detailsImage?.repoTags?.[0] ?? detailsImage?.id ?? ""}
+              </span>
             </DialogDescription>
           </DialogHeader>
-          {usageLoading ? (
-            <div className="py-6 text-center text-sm text-muted-foreground">Loading...</div>
-          ) : usageContainers.length > 0 ? (
-            <div className="divide-y divide-border border border-border rounded-md overflow-hidden">
-              {usageContainers.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between px-4 py-3 bg-card hover:bg-accent transition-colors cursor-pointer"
-                  onClick={() => {
-                    setUsageOpen(false);
-                    navigate(`/docker/containers/${selectedNodeId}/${c.id}`);
-                  }}
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{c.name.replace(/^\//, "")}</p>
-                    <p className="text-xs font-mono text-muted-foreground">{c.id.slice(0, 12)}</p>
-                  </div>
-                  <Badge
-                    variant={c.state === "running" ? "success" : "secondary"}
-                    className="text-xs shrink-0"
+          {detailsImage ? (
+            <div className="min-w-0 space-y-4">
+              <div className="min-w-0 divide-y divide-border overflow-hidden border border-border bg-card">
+                {[
+                  [
+                    "Repository tag",
+                    formatDisplayImageRef(detailsImage.repoTags?.[0] ?? "<none>:<none>"),
+                  ],
+                  ["Image ID", detailsImage.id],
+                  ["Size", formatBytes(detailsImage.size ?? 0)],
+                  ["Created", formatCreated(detailsImage.created ?? 0)],
+                  ["Node", detailsImage._nodeName || detailsImage._nodeId],
+                  [
+                    "Usage",
+                    detailsImage.containers == null || detailsImage.containers < 0
+                      ? "Unknown"
+                      : `${detailsImage.containers} containers`,
+                  ],
+                  ["Tags", detailsImage.repoTags?.map(formatDisplayImageRef).join(", ") || "-"],
+                  ["Digests", detailsImage.repoDigests?.join(", ") || "-"],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="grid min-w-0 grid-cols-[minmax(96px,max-content)_minmax(0,1fr)] items-center gap-4 px-4 py-3"
                   >
-                    {c.state}
-                  </Badge>
-                </div>
-              ))}
+                    <span className="text-sm text-muted-foreground">{label}</span>
+                    <span className="min-w-0 truncate text-right font-mono text-sm" title={value}>
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <PanelShell title="Containers Using This Image">
+                <SimpleTable
+                  columns={usageColumns}
+                  rows={usageContainers}
+                  getRowKey={(container) => container.id}
+                  loading={usageLoading}
+                  emptyMessage="No containers found using this image."
+                  onRowClick={(container) => {
+                    closeDetails();
+                    navigate(`/docker/containers/${detailsImage._nodeId}/${container.id}`);
+                  }}
+                />
+              </PanelShell>
             </div>
-          ) : (
-            <div className="py-6 text-center text-sm text-muted-foreground">
-              No containers found using this image.
-            </div>
-          )}
+          ) : null}
         </DialogContent>
       </Dialog>
     </>

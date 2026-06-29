@@ -10,6 +10,8 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+import { loggingEnvironmentFolders } from './logging-environment-folders.js';
+import { loggingSchemaFolders } from './logging-schema-folders.js';
 import { users } from './users.js';
 
 export type LoggingSchemaMode = 'loose' | 'strip' | 'reject';
@@ -33,6 +35,8 @@ export const loggingSchemas = pgTable(
     description: text('description'),
     schemaMode: varchar('schema_mode', { length: 20 }).$type<LoggingSchemaMode>().notNull().default('reject'),
     fieldSchema: jsonb('field_schema').$type<LoggingFieldDefinition[]>().notNull().default([]),
+    folderId: uuid('folder_id').references(() => loggingSchemaFolders.id, { onDelete: 'set null' }),
+    sortOrder: integer('sort_order').notNull().default(0),
     createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -56,6 +60,8 @@ export const loggingEnvironments = pgTable(
     rateLimitRequestsPerWindow: integer('rate_limit_requests_per_window'),
     rateLimitEventsPerWindow: integer('rate_limit_events_per_window'),
     fieldSchema: jsonb('field_schema').$type<LoggingFieldDefinition[]>().notNull().default([]),
+    folderId: uuid('folder_id').references(() => loggingEnvironmentFolders.id, { onDelete: 'set null' }),
+    sortOrder: integer('sort_order').notNull().default(0),
     createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -64,6 +70,7 @@ export const loggingEnvironments = pgTable(
     slugIdx: index('logging_env_slug_idx').on(table.slug),
     enabledIdx: index('logging_env_enabled_idx').on(table.enabled),
     schemaIdx: index('logging_env_schema_idx').on(table.schemaId),
+    folderIdx: index('logging_environments_folder_idx').on(table.folderId),
   })
 );
 

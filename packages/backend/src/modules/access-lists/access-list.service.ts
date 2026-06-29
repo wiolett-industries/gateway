@@ -18,6 +18,7 @@ import type { PaginatedResponse } from '@/types.js';
 import type { AccessListQuery, CreateAccessListInput, UpdateAccessListInput } from './access-list.schemas.js';
 
 const logger = createChildLogger('AccessListService');
+const BCRYPT_ROUNDS = 10;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -109,7 +110,29 @@ export class AccessListService {
     if (input.basicAuthEnabled !== undefined) updateData.basicAuthEnabled = input.basicAuthEnabled;
 
     if (input.basicAuthUsers !== undefined) {
-      const hashedUsers = input.basicAuthUsers.length > 0 ? await this.hashPasswords(input.basicAuthUsers) : [];
+      const existingBasicAuthUsers = (existing.basicAuthUsers as BasicAuthUser[]) ?? [];
+      const hashedUsers: BasicAuthUser[] = [];
+
+      for (const user of input.basicAuthUsers) {
+        if (user.password) {
+          hashedUsers.push({
+            username: user.username,
+            passwordHash: await bcrypt.hash(user.password, BCRYPT_ROUNDS),
+          });
+          continue;
+        }
+
+        const existingUser = existingBasicAuthUsers.find((candidate) => candidate.username === user.username);
+        if (!existingUser) {
+          throw new AppError(
+            400,
+            'BASIC_AUTH_PASSWORD_REQUIRED',
+            `Password required for basic auth user "${user.username}"`
+          );
+        }
+        hashedUsers.push(existingUser);
+      }
+
       updateData.basicAuthUsers = hashedUsers;
     }
 
@@ -419,8 +442,6 @@ export class AccessListService {
   // -----------------------------------------------------------------------
 
   private async hashPasswords(users: { username: string; password: string }[]): Promise<BasicAuthUser[]> {
-    const BCRYPT_ROUNDS = 10;
-
     return Promise.all(
       users.map(async (u) => ({
         username: u.username,

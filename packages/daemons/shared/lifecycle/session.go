@@ -57,6 +57,10 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 	}
 	defer d.plugin.OnSessionEnd()
 
+	if logStreamer, ok := d.plugin.(LogStreamPlugin); ok {
+		go logStreamer.RunLogStream(sessionCtx, conn)
+	}
+
 	// Start health reporter in background
 	go runHealthReporter(sessionCtx, d, writer)
 
@@ -105,6 +109,15 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 		case *pb.GatewayCommand_NodeExec:
 			// Handle node-level console exec (create/resize)
 			result := handleNodeExec(sessionCtx, nodeExecMgr, cmd, d.cfg.Console.User)
+			if err := writer.Send(&pb.DaemonMessage{
+				Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
+			}); err != nil {
+				return err
+			}
+			continue
+		case *pb.GatewayCommand_NodeFile:
+			// Handle node-level filesystem operations in shared lifecycle so all daemon types support them.
+			result := handleNodeFile(sessionCtx, cmd)
 			if err := writer.Send(&pb.DaemonMessage{
 				Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
 			}); err != nil {
@@ -255,6 +268,18 @@ func handleNodeExec(ctx context.Context, mgr *exec.Manager, cmd *pb.GatewayComma
 	result := &pb.CommandResult{CommandId: cmd.CommandId, Success: true}
 
 	switch nodeExec.GetAction() {
+	case "run":
+		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		commandResult, err := exec.RunCommand(runCtx, nodeExec.GetCommand(), consoleUser, 128*1024)
+		detailJSON, _ := json.Marshal(commandResult)
+		result.Detail = string(detailJSON)
+		if err != nil {
+			result.Success = false
+			result.Error = err.Error()
+			return result
+		}
+
 	case "create":
 		shell := ""
 		if cmds := nodeExec.GetCommand(); len(cmds) > 0 {

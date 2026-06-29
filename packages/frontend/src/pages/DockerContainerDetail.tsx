@@ -1,15 +1,11 @@
 import {
-  ArrowLeft,
-  Code2,
   Copy,
   EllipsisVertical,
   Pin,
   Play,
   RotateCcw,
-  Settings,
   Skull,
   Square,
-  Terminal as TerminalIcon,
   Trash2,
   Type,
 } from "lucide-react";
@@ -17,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { Badge } from "@/components/ui/badge";
@@ -79,7 +76,7 @@ export function DockerContainerDetail() {
     tab?: string;
   }>();
   const navigate = useStableNavigate();
-  const { hasScope } = useAuthStore();
+  const { hasScope, isLoading: authLoading } = useAuthStore();
   const canManage =
     hasScope("docker:containers:manage") ||
     !!(nodeId && hasScope(`docker:containers:manage:${nodeId}`));
@@ -271,10 +268,11 @@ export function DockerContainerDetail() {
   });
 
   useEffect(() => {
+    if (authLoading) return;
     if (!visibleTabs.includes(activeTab)) {
       setActiveTab("overview");
     }
-  }, [activeTab, setActiveTab, visibleTabs]);
+  }, [activeTab, authLoading, setActiveTab, visibleTabs]);
 
   // ── Action helpers ──
   const doAction = async (fn: () => Promise<void>, successMsg: string) => {
@@ -300,7 +298,7 @@ export function DockerContainerDetail() {
     if (!ok) return;
     setActionLoading(true);
     try {
-      await api.removeContainer(nodeId!, containerId!, true);
+      await api.removeContainer(nodeId!, containerId!, false);
       usePinnedContainersStore.getState().removePin(containerId!);
       toast.success("Container removed");
       invalidate("containers", "tasks");
@@ -360,6 +358,7 @@ export function DockerContainerDetail() {
 
   // Auto-navigate to overview and close popouts when container stops or enters transition
   useEffect(() => {
+    if (isLoading || !container) return;
     const needsRunning = new Set(["console", "files", "stats"]);
     const shouldDisable = currentBaseState !== "running" || !!currentTransition;
     if (!shouldDisable) return;
@@ -380,7 +379,15 @@ export function DockerContainerDetail() {
         logsChannel.close();
       } catch {}
     }
-  }, [activeTab, containerId, currentBaseState, currentTransition, setActiveTab]);
+  }, [
+    activeTab,
+    container,
+    containerId,
+    currentBaseState,
+    currentTransition,
+    isLoading,
+    setActiveTab,
+  ]);
 
   if (isLoading || !container) {
     return (
@@ -492,14 +499,7 @@ export function DockerContainerDetail() {
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0"
-              onClick={() => navigate("/docker")}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <PageBackButton onClick={() => navigate("/docker")} />
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{name}</h1>
@@ -634,7 +634,6 @@ export function DockerContainerDetail() {
             )}
             {canUseConsole && (
               <TabsTrigger value="console" disabled={isTabDisabled("console")}>
-                <TerminalIcon className="h-3.5 w-3.5 mr-1" />
                 Console
               </TabsTrigger>
             )}
@@ -655,16 +654,10 @@ export function DockerContainerDetail() {
             )}
             {canEdit && (
               <TabsTrigger value="settings" disabled={isTabDisabled("settings")}>
-                <Settings className="h-3.5 w-3.5 mr-1" />
                 Settings
               </TabsTrigger>
             )}
-            {canViewContainer && (
-              <TabsTrigger value="config">
-                <Code2 className="h-3.5 w-3.5 mr-1" />
-                Config
-              </TabsTrigger>
-            )}
+            {canViewContainer && <TabsTrigger value="config">Config</TabsTrigger>}
           </TabsList>
           <TabsContent value="overview" className="pb-0">
             <OverviewTab nodeId={nodeId!} containerId={containerId!} data={container} />

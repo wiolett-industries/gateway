@@ -386,7 +386,7 @@ export function LoggingExplorer({
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-9 w-9"
               onClick={() => setCheatsheetOpen(true)}
             >
               <Info className="h-4 w-4" />
@@ -490,7 +490,7 @@ function LoggingQueryCheatsheet({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[80vh] max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Log Query Cheatsheet</DialogTitle>
           <DialogDescription>Compact search syntax for filtering log events.</DialogDescription>

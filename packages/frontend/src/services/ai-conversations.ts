@@ -1,65 +1,150 @@
-import type { AIMessage } from "@/types/ai";
+import type { AIConversationStatus, AIMessage, AIRunStatus, PageContext } from "@/types/ai";
+import { api } from "./api";
 
-const DB_NAME = "gateway-ai";
-const DB_VERSION = 1;
-const STORE_NAME = "conversations";
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "name" });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+export interface SavedAIConversation {
+  id: string;
+  title: string;
+  messages: AIMessage[];
+  lastContext: PageContext | null;
+  createdAt: string;
+  updatedAt: string;
+  lastUserMessageAt: string | null;
+  folderId: string | null;
+  status: AIConversationStatus;
+  blockReason: string | null;
+  activeRunStatus: AIRunStatus | null;
 }
 
-export async function saveConversation(name: string, messages: AIMessage[]): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).put({ name, messages, savedAt: new Date().toISOString() });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+export interface AIConversationSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  lastUserMessageAt: string | null;
+  folderId: string | null;
+  messageCount: number;
+  status: AIConversationStatus;
+  blockReason: string | null;
+  activeRunStatus: AIRunStatus | null;
 }
 
-export async function restoreConversation(name: string): Promise<AIMessage[] | null> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const request = tx.objectStore(STORE_NAME).get(name);
-    request.onsuccess = () => resolve(request.result?.messages ?? null);
-    request.onerror = () => reject(request.error);
-  });
+export interface AIConversationFolder {
+  id: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export async function listConversations(): Promise<Array<{ name: string; savedAt: string }>> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const request = tx.objectStore(STORE_NAME).getAll();
-    request.onsuccess = () =>
-      resolve(
-        (request.result || []).map((r: { name: string; savedAt: string }) => ({
-          name: r.name,
-          savedAt: r.savedAt,
-        }))
-      );
-    request.onerror = () => reject(request.error);
-  });
+export async function getConversation(id: string): Promise<SavedAIConversation> {
+  const conversation = await api.getAIConversation(id);
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    messages: conversation.messages,
+    lastContext: conversation.lastContext,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    lastUserMessageAt: conversation.lastUserMessageAt,
+    folderId: conversation.folderId,
+    status: conversation.status,
+    blockReason: conversation.blockReason,
+    activeRunStatus: conversation.activeRunStatus,
+  };
 }
 
-export async function dropConversation(name: string): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).delete(name);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+export async function listConversations(): Promise<AIConversationSummary[]> {
+  const conversations = await api.listAIConversations();
+  return conversations.map((conversation) => ({
+    id: conversation.id,
+    title: conversation.title,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    lastUserMessageAt: conversation.lastUserMessageAt,
+    folderId: conversation.folderId,
+    messageCount: conversation.messageCount,
+    status: conversation.status,
+    blockReason: conversation.blockReason,
+    activeRunStatus: conversation.activeRunStatus,
+  }));
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  await api.deleteAIConversation(id);
+}
+
+export async function renameConversation(id: string, title: string): Promise<SavedAIConversation> {
+  const conversation = await api.updateAIConversation(id, { title });
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    messages: conversation.messages,
+    lastContext: conversation.lastContext,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    lastUserMessageAt: conversation.lastUserMessageAt,
+    folderId: conversation.folderId,
+    status: conversation.status,
+    blockReason: conversation.blockReason,
+    activeRunStatus: conversation.activeRunStatus,
+  };
+}
+
+export async function rollbackConversationToMessage(
+  id: string,
+  messageId: string
+): Promise<{ message: AIMessage; conversation: SavedAIConversation }> {
+  const result = await api.rollbackAIConversationToMessage(id, messageId);
+  return {
+    message: result.message,
+    conversation: {
+      id: result.conversation.id,
+      title: result.conversation.title,
+      messages: result.conversation.messages,
+      lastContext: result.conversation.lastContext,
+      createdAt: result.conversation.createdAt,
+      updatedAt: result.conversation.updatedAt,
+      lastUserMessageAt: result.conversation.lastUserMessageAt,
+      folderId: result.conversation.folderId,
+      status: result.conversation.status,
+      blockReason: result.conversation.blockReason,
+      activeRunStatus: result.conversation.activeRunStatus,
+    },
+  };
+}
+
+export async function listConversationFolders(): Promise<AIConversationFolder[]> {
+  return api.listAIConversationFolders();
+}
+
+export async function createConversationFolder(input: {
+  name: string;
+  description?: string;
+}): Promise<AIConversationFolder> {
+  return api.createAIConversationFolder(input);
+}
+
+export async function updateConversationFolder(
+  id: string,
+  input: { name?: string; description?: string }
+): Promise<AIConversationFolder> {
+  return api.updateAIConversationFolder(id, input);
+}
+
+export async function deleteConversationFolder(id: string): Promise<void> {
+  await api.deleteAIConversationFolder(id);
+}
+
+export async function reorderConversationFolders(
+  items: Array<{ id: string; sortOrder: number }>
+): Promise<AIConversationFolder[]> {
+  return api.reorderAIConversationFolders(items);
+}
+
+export async function moveConversationsToFolder(
+  conversationIds: string[],
+  folderId: string | null
+): Promise<void> {
+  await api.moveAIConversationsToFolder(conversationIds, folderId);
 }

@@ -1,19 +1,11 @@
-import { Check, Copy, Plus, RefreshCw, RotateCcw, Unplug } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { PanelShell } from "@/components/common/PanelShell";
 import { DockerHealthCheckSection } from "@/components/docker/DockerHealthCheckSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { useRealtime } from "@/hooks/use-realtime";
 import {
   type DockerRuntimeCapacity,
   loadDockerRuntimeCapacity,
@@ -23,33 +15,19 @@ import { formatBytes } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type {
-  DockerHealthCheck,
-  DockerImageCleanupSettings,
-  DockerNetwork,
-  DockerWebhook,
-} from "@/types";
+import type { DockerHealthCheck } from "@/types";
 import type { InspectData } from "./helpers";
 import { LabelsSection } from "./LabelsSection";
+import { type NetworkEntry, NetworksSection, readAttachedNetworks } from "./NetworksSection";
 import { type PortMapping, PortMappingsSection } from "./PortMappingsSection";
 import { RuntimeSection } from "./RuntimeSection";
 import { buildRuntimePayloadFromForm, type RuntimeFormValues } from "./runtime-payload";
 import { buildRecreatePayloadFromForm, type RecreateBaseline } from "./settings-payload";
 import { type MountEntry, VolumeMountsSection } from "./VolumeMountsSection";
+import { WebhookSection } from "./WebhookSection";
 
 export { buildRecreatePayloadFromForm } from "./settings-payload";
-
-function normalizeDockerNetwork(network: DockerNetwork | Record<string, unknown>): DockerNetwork {
-  const raw = network as Record<string, unknown>;
-  return {
-    id: String(raw.id ?? raw.Id ?? ""),
-    name: String(raw.name ?? raw.Name ?? ""),
-    driver: String(raw.driver ?? raw.Driver ?? ""),
-    scope: String(raw.scope ?? raw.Scope ?? ""),
-    ipam: (raw.ipam ?? raw.IPAM ?? undefined) as DockerNetwork["ipam"],
-    containers: (raw.containers ?? raw.Containers ?? undefined) as DockerNetwork["containers"],
-  };
-}
+export { WebhookSection } from "./WebhookSection";
 
 function parseOptionalNumber(value: string): number | null {
   if (value.trim() === "") return null;
@@ -82,6 +60,30 @@ function sameRecreateBaseline(a: RecreateBaseline, b: RecreateBaseline) {
     a.hostname === b.hostname &&
     a.labels === b.labels
   );
+}
+
+function serializeNetworks(networks: NetworkEntry[]) {
+  return JSON.stringify(
+    networks
+      .map((network) => ({
+        name: network.name,
+        networkId: network.networkId,
+      }))
+      .sort((a, b) => `${a.name}:${a.networkId}`.localeCompare(`${b.name}:${b.networkId}`))
+  );
+}
+
+function validateNetworkDraft(networks: NetworkEntry[]) {
+  if (networks.some((network) => !network.networkId || !network.name)) {
+    return "Select a network before saving.";
+  }
+
+  const names = networks.map((network) => network.name).filter(Boolean);
+  if (new Set(names).size !== names.length) {
+    return "Each network can only be attached once.";
+  }
+
+  return null;
 }
 
 function deriveCurrentNanoCPUs(hostConfig: Record<string, any>): number {
@@ -126,8 +128,10 @@ export function SettingsTab({
     hasScope("docker:containers:edit") || hasScope(`docker:containers:edit:${nodeId}`);
   const canEditMounts =
     hasScope("docker:containers:mounts") || hasScope(`docker:containers:mounts:${nodeId}`);
-  const canManageNetworks = hasScope("docker:networks:edit");
-  const canListNetworks = hasScope("docker:networks:view");
+  const canManageNetworks =
+    hasScope("docker:networks:edit") || hasScope(`docker:networks:edit:${nodeId}`);
+  const canListNetworks =
+    hasScope("docker:networks:view") || hasScope(`docker:networks:view:${nodeId}`);
   const recreatesRunningContainer =
     (data.State?.Status ?? (data.State?.Running ? "running" : "stopped")) === "running";
 
@@ -222,6 +226,13 @@ export function SettingsTab({
       })),
     [data.Mounts]
   );
+  const initialNetworks = useMemo(
+    () =>
+      readAttachedNetworks(
+        data.NetworkSettings?.Networks as Record<string, Record<string, unknown>>
+      ),
+    [data.NetworkSettings?.Networks]
+  );
 
   const config = data.Config ?? {};
   const containerName = useMemo(
@@ -258,6 +269,7 @@ export function SettingsTab({
 
   const [ports, setPorts] = useState<PortMapping[]>(initialPorts);
   const [mounts, setMounts] = useState<MountEntry[]>(initialMounts);
+  const [networks, setNetworks] = useState<NetworkEntry[]>(initialNetworks);
   const [entrypoint, setEntrypoint] = useState(initialEntrypoint.join(" "));
   const [command, setCommand] = useState(initialCmd.join(" "));
   const [stopTimeout, setStopTimeout] = useState(initialStopTimeout);
@@ -268,11 +280,7 @@ export function SettingsTab({
     Object.entries(initialLabels).map(([key, value]) => ({ key, value }))
   );
   const [recreateLoading, setRecreateLoading] = useState(false);
-  const [allNetworks, setAllNetworks] = useState<DockerNetwork[]>([]);
-  const [networksLoading, setNetworksLoading] = useState(false);
-  const [networkActionLoading, setNetworkActionLoading] = useState<string | null>(null);
-  const [selectedNetworkId, setSelectedNetworkId] = useState("");
-  const [addingNetwork, setAddingNetwork] = useState(false);
+  const networkBaseline = useMemo(() => serializeNetworks(initialNetworks), [initialNetworks]);
 
   const recreateBaseline = useMemo(
     () => ({
@@ -301,6 +309,9 @@ export function SettingsTab({
     ]
   );
   const previousRecreateBaselineRef = useRef(recreateBaseline);
+  const previousNetworkBaselineRef = useRef(networkBaseline);
+  const networkBaselineRef = useRef(networkBaseline);
+  const networkBaselineEntriesRef = useRef<NetworkEntry[]>(initialNetworks);
 
   useEffect(() => {
     const previous = previousRuntimeServerBaselineRef.current;
@@ -387,6 +398,20 @@ export function SettingsTab({
     user,
     workingDir,
   ]);
+
+  useEffect(() => {
+    const previous = previousNetworkBaselineRef.current;
+    const currentDraft = serializeNetworks(networks);
+    const baselineChanged = previous !== networkBaseline;
+    const formMatchesPrevious = currentDraft === previous;
+
+    previousNetworkBaselineRef.current = networkBaseline;
+    networkBaselineRef.current = networkBaseline;
+    networkBaselineEntriesRef.current = initialNetworks;
+
+    if (!baselineChanged || !formMatchesPrevious) return;
+    setNetworks(initialNetworks);
+  }, [initialNetworks, networkBaseline, networks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -563,8 +588,11 @@ export function SettingsTab({
     user !== recreateBaseline.user ||
     hostname !== recreateBaseline.hostname;
   const labelsChanged = JSON.stringify(labels) !== recreateBaseline.labels;
-  const hasRecreateChanges =
+  const networkValidationError = useMemo(() => validateNetworkDraft(networks), [networks]);
+  const networksChanged = serializeNetworks(networks) !== networkBaselineRef.current;
+  const hasConfigRecreateChanges =
     portsChanged || mountsChanged || execChanged || labelsChanged || imageTagChanged;
+  const hasRecreateChanges = hasConfigRecreateChanges || networksChanged;
 
   // ── Track runtime changes against baseline ──
   const b = baselineRef.current;
@@ -577,30 +605,81 @@ export function SettingsTab({
     cpuShares !== b.cpuShares ||
     pidsLimit !== b.pidsLimit;
 
+  const applyNetworkChanges = useCallback(async () => {
+    const baseline = networkBaselineEntriesRef.current;
+    const baselineByName = new Map(baseline.map((network) => [network.name, network]));
+    const nextByName = new Map(networks.map((network) => [network.name, network]));
+
+    const removed = baseline.filter((network) => !nextByName.has(network.name));
+    const added = networks.filter((network) => !baselineByName.has(network.name));
+
+    for (const network of removed) {
+      await api.disconnectContainerFromNetwork(
+        nodeId,
+        network.networkId || network.name,
+        containerId
+      );
+    }
+    for (const network of added) {
+      await api.connectContainerToNetwork(nodeId, network.networkId || network.name, containerId);
+    }
+
+    const appliedBaseline = serializeNetworks(networks);
+    networkBaselineRef.current = appliedBaseline;
+    previousNetworkBaselineRef.current = appliedBaseline;
+    networkBaselineEntriesRef.current = networks;
+  }, [containerId, networks, nodeId]);
+  const saveRequiresRecreate = hasConfigRecreateChanges && recreatesRunningContainer;
+
   // ── Recreate handler ──
   const handleRecreate = useCallback(async () => {
-    const ok = await confirm({
-      title: recreatesRunningContainer ? "Save & Recreate" : "Save",
-      description: recreatesRunningContainer
-        ? "This will stop and recreate the container with the new configuration. The container will experience downtime. Continue?"
-        : "This will save the new container configuration. The container will remain stopped. Continue?",
-      confirmLabel: recreatesRunningContainer ? "Recreate" : "Save",
-    });
-    if (!ok) return;
+    if (hasConfigRecreateChanges) {
+      const ok = await confirm({
+        title: saveRequiresRecreate ? "Save & Recreate" : "Save",
+        description: saveRequiresRecreate
+          ? "This will stop and recreate the container with the new configuration. The container will experience downtime. Continue?"
+          : "This will save the new container configuration. The container will remain stopped. Continue?",
+        confirmLabel: saveRequiresRecreate ? "Recreate" : "Save",
+      });
+      if (!ok) return;
+    }
 
     setRecreateLoading(true);
-    onMutationStart?.("recreating");
+    if (hasConfigRecreateChanges) {
+      onMutationStart?.("recreating");
+    }
     try {
       if (hasRuntimeChanges && runtimeValidationError) {
-        onMutationEnd?.();
+        if (hasConfigRecreateChanges) onMutationEnd?.();
         toast.error(runtimeValidationError);
         setRecreateLoading(false);
         return;
       }
       if (executionValidationError) {
-        onMutationEnd?.();
+        if (hasConfigRecreateChanges) onMutationEnd?.();
         toast.error(executionValidationError);
         setRecreateLoading(false);
+        return;
+      }
+      if (networksChanged && networkValidationError) {
+        if (hasConfigRecreateChanges) onMutationEnd?.();
+        toast.error(networkValidationError);
+        setRecreateLoading(false);
+        return;
+      }
+
+      if (networksChanged) {
+        await applyNetworkChanges();
+      }
+
+      if (!hasConfigRecreateChanges) {
+        toast.success("Networks saved");
+        setRecreateLoading(false);
+        void Promise.resolve(invalidate("containers", "networks"))
+          .then(() => Promise.resolve(onRefresh?.()))
+          .catch((err) => {
+            toast.error(err instanceof Error ? err.message : "Failed to refresh networks");
+          });
         return;
       }
 
@@ -647,21 +726,27 @@ export function SettingsTab({
     hostname,
     imageTag,
     imageTagChanged,
+    applyNetworkChanges,
     invalidate,
     labels,
     labelsChanged,
     mounts,
     mountsChanged,
     nodeId,
+    networkValidationError,
+    networksChanged,
     onRecreating,
+    onRefresh,
     parsedImageName,
     ports,
     portsChanged,
     buildRuntimePayload,
+    hasConfigRecreateChanges,
     hasRuntimeChanges,
     recreateBaseline,
     recreatesRunningContainer,
     runtimeValidationError,
+    saveRequiresRecreate,
     stopTimeout,
     user,
     workingDir,
@@ -671,109 +756,7 @@ export function SettingsTab({
 
   // ── Shared input styles ──
   const inputCell =
-    "h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
-
-  const attachedNetworks = useMemo(
-    () =>
-      Object.entries(
-        (data.NetworkSettings?.Networks ?? {}) as Record<string, Record<string, unknown>>
-      ).map(([name, config]) => ({
-        name,
-        networkId: String(config.NetworkID ?? ""),
-        ipAddress: String(config.IPAddress ?? ""),
-        gateway: String(config.Gateway ?? ""),
-        aliases: Array.isArray(config.Aliases)
-          ? (config.Aliases as unknown[]).map((alias) => String(alias))
-          : [],
-      })),
-    [data.NetworkSettings?.Networks]
-  );
-
-  const attachedNames = useMemo(
-    () => new Set(attachedNetworks.map((network) => network.name)),
-    [attachedNetworks]
-  );
-
-  const availableNetworks = useMemo(
-    () => allNetworks.filter((network) => !attachedNames.has(network.name)),
-    [allNetworks, attachedNames]
-  );
-
-  const isBuiltInDockerNetwork = useCallback(
-    (name: string) => ["bridge", "host", "none"].includes(name),
-    []
-  );
-
-  const loadNetworks = useCallback(async () => {
-    if (!canListNetworks) return;
-    setNetworksLoading(true);
-    try {
-      const networks = await api.listDockerNetworks(nodeId);
-      setAllNetworks((networks ?? []).map((network) => normalizeDockerNetwork(network)));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load networks");
-    } finally {
-      setNetworksLoading(false);
-    }
-  }, [canListNetworks, nodeId]);
-
-  useEffect(() => {
-    if (!canListNetworks) return;
-    void loadNetworks();
-  }, [canListNetworks, loadNetworks]);
-
-  useEffect(() => {
-    if (availableNetworks.length === 0) {
-      setSelectedNetworkId("");
-      setAddingNetwork(false);
-      return;
-    }
-    if (!availableNetworks.some((network) => network.id === selectedNetworkId)) {
-      setSelectedNetworkId(availableNetworks[0]?.id ?? "");
-    }
-  }, [availableNetworks, selectedNetworkId]);
-
-  useRealtime("docker.network.changed", (payload) => {
-    const ev = payload as { nodeId?: string };
-    if (!ev || ev.nodeId !== nodeId) return;
-    void loadNetworks();
-  });
-
-  const refreshAfterNetworkChange = useCallback(async () => {
-    await invalidate("containers", "networks");
-    await Promise.all([loadNetworks(), Promise.resolve(onRefresh?.())]);
-  }, [invalidate, loadNetworks, onRefresh]);
-
-  const handleConnectNetwork = useCallback(async () => {
-    if (!selectedNetworkId) return;
-    setNetworkActionLoading(`connect:${selectedNetworkId}`);
-    try {
-      await api.connectContainerToNetwork(nodeId, selectedNetworkId, containerId);
-      toast.success("Network connected");
-      setAddingNetwork(false);
-      await refreshAfterNetworkChange();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to connect network");
-    } finally {
-      setNetworkActionLoading(null);
-    }
-  }, [containerId, nodeId, refreshAfterNetworkChange, selectedNetworkId]);
-
-  const handleDisconnectNetwork = useCallback(
-    async (networkId: string, networkName: string) => {
-      setNetworkActionLoading(`disconnect:${networkId}`);
-      try {
-        await api.disconnectContainerFromNetwork(nodeId, networkId, containerId);
-        toast.success(`Disconnected from ${networkName}`);
-        await refreshAfterNetworkChange();
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to disconnect network");
-      } finally {
-        setNetworkActionLoading(null);
-      }
-    },
-    [containerId, nodeId, refreshAfterNetworkChange]
-  );
+    "h-9 border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
 
   return (
     <div
@@ -807,134 +790,117 @@ export function SettingsTab({
           onApply={handleLiveUpdate}
         />
 
-        <div
-          className="border bg-card overflow-hidden"
-          style={execChanged || imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-        >
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <h3 className="text-sm font-semibold">Execution</h3>
-              <p className="text-xs text-muted-foreground">Requires container recreation</p>
-            </div>
-            {canEdit && (
+        <PanelShell
+          title="Execution"
+          description="Requires container recreation"
+          dirty={execChanged || imageTagChanged}
+          bodyClassName="p-4 space-y-4"
+          actions={
+            canEdit ? (
               <Button
-                size="sm"
                 style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                 className="hover:opacity-90 disabled:opacity-50"
                 onClick={handleRecreate}
                 disabled={
                   recreateLoading ||
                   !hasRecreateChanges ||
+                  (!!networkValidationError && networksChanged) ||
                   !!executionValidationError ||
                   (hasRuntimeChanges && !!runtimeValidationError)
                 }
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                {recreatesRunningContainer ? "Save & Recreate" : "Save"}
+                {saveRequiresRecreate ? "Save & Recreate" : "Save"}
               </Button>
-            )}
-          </div>
-          <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Image</label>
-                <Input
-                  className="h-8 text-xs font-mono bg-muted/50"
-                  value={parsedImageName}
-                  disabled
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Tag</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={imageTag}
-                  onChange={(e) => setImageTag(e.target.value)}
-                  placeholder={imageTagLocked ? "digest" : "latest"}
-                  disabled={!canEdit || imageTagLocked}
-                  style={imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-                />
-              </div>
+            ) : null
+          }
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Image</label>
+              <Input value={parsedImageName} disabled />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Entrypoint</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={entrypoint}
-                  onChange={(e) => setEntrypoint(e.target.value)}
-                  placeholder="/docker-entrypoint.sh"
-                  disabled={!canEdit}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Working Directory
-                </label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={workingDir}
-                  onChange={(e) => setWorkingDir(e.target.value)}
-                  placeholder="/app"
-                  disabled={!canEdit}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">User</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={user}
-                  onChange={(e) => setUser(e.target.value)}
-                  placeholder="root"
-                  disabled={!canEdit}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Hostname</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={hostname}
-                  onChange={(e) => setHostname(e.target.value)}
-                  placeholder="container-hostname"
-                  disabled={!canEdit}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Command</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  placeholder="nginx -g daemon off;"
-                  disabled={!canEdit}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Stop Grace (s)</label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  type="number"
-                  min={0}
-                  max={300}
-                  step={1}
-                  value={stopTimeout}
-                  onChange={(e) => setStopTimeout(e.target.value)}
-                  placeholder="20"
-                  disabled={!canEdit}
-                  style={
-                    stopTimeout !== recreateBaseline.stopTimeout
-                      ? { borderColor: "rgb(234 179 8)" }
-                      : undefined
-                  }
-                />
-              </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Tag</label>
+              <Input
+                value={imageTag}
+                onChange={(e) => setImageTag(e.target.value)}
+                placeholder={imageTagLocked ? "digest" : "latest"}
+                disabled={!canEdit || imageTagLocked}
+                style={imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+              />
             </div>
           </div>
-        </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Entrypoint</label>
+              <Input
+                value={entrypoint}
+                onChange={(e) => setEntrypoint(e.target.value)}
+                placeholder="/docker-entrypoint.sh"
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Working Directory</label>
+              <Input
+                value={workingDir}
+                onChange={(e) => setWorkingDir(e.target.value)}
+                placeholder="/app"
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">User</label>
+              <Input
+                value={user}
+                onChange={(e) => setUser(e.target.value)}
+                placeholder="root"
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Hostname</label>
+              <Input
+                value={hostname}
+                onChange={(e) => setHostname(e.target.value)}
+                placeholder="container-hostname"
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Command</label>
+              <Input
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                placeholder="nginx -g daemon off;"
+                disabled={!canEdit}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Stop Grace (s)</label>
+              <Input
+                type="number"
+                min={0}
+                max={300}
+                step={1}
+                value={stopTimeout}
+                onChange={(e) => setStopTimeout(e.target.value)}
+                placeholder="20"
+                disabled={!canEdit}
+                style={
+                  stopTimeout !== recreateBaseline.stopTimeout
+                    ? { borderColor: "rgb(234 179 8)" }
+                    : undefined
+                }
+              />
+            </div>
+          </div>
+        </PanelShell>
       </div>
 
       {/* ─── Port Mappings ────────────────────────────────────────── */}
@@ -953,6 +919,16 @@ export function SettingsTab({
         setMounts={setMounts}
         mountsChanged={mountsChanged}
         inputCell={inputCell}
+      />
+
+      {/* ─── Networks ─────────────────────────────────────────────── */}
+      <NetworksSection
+        nodeId={nodeId}
+        networks={networks}
+        setNetworks={setNetworks}
+        networksChanged={networksChanged}
+        canManageNetworks={canManageNetworks}
+        canListNetworks={canListNetworks}
       />
 
       {/* ─── Labels ───────────────────────────────────────────────── */}
@@ -975,139 +951,6 @@ export function SettingsTab({
         }}
       />
 
-      {/* ─── Networks ─────────────────────────────────────────────── */}
-      <div className="border border-border bg-card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
-            <h3 className="text-sm font-semibold">Networks</h3>
-            <p className="text-xs text-muted-foreground">
-              Connect this container to additional Docker networks
-            </p>
-          </div>
-          {canManageNetworks && canListNetworks && (
-            <Button
-              size="sm"
-              onClick={() => setAddingNetwork(true)}
-              disabled={addingNetwork || networksLoading || availableNetworks.length === 0}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add
-            </Button>
-          )}
-        </div>
-        {attachedNetworks.length > 0 || addingNetwork ? (
-          <>
-            <div
-              className={`grid ${
-                canManageNetworks
-                  ? "grid-cols-[minmax(0,1fr)_120px_120px_36px]"
-                  : "grid-cols-[minmax(0,1fr)_120px_120px]"
-              } border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider`}
-            >
-              <div className="px-3 py-2">Network</div>
-              <div className="px-3 py-2 border-l border-border">IP</div>
-              <div className="px-3 py-2 border-l border-border">Gateway</div>
-              {canManageNetworks && <div />}
-            </div>
-            <div>
-              {attachedNetworks.map((network) => (
-                <div
-                  key={`${network.name}:${network.networkId}`}
-                  className={`grid ${
-                    canManageNetworks
-                      ? "grid-cols-[minmax(0,1fr)_120px_120px_36px]"
-                      : "grid-cols-[minmax(0,1fr)_120px_120px]"
-                  } border-b border-border last:border-b-0`}
-                >
-                  <div className="flex min-w-0 items-center px-3 py-2 text-sm">
-                    <div className="min-w-0">
-                      <span className="block truncate font-medium">{network.name}</span>
-                      {network.aliases.length > 0 && (
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {network.aliases.join(", ")}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center border-l border-border px-3 py-2 text-xs font-mono text-muted-foreground">
-                    <span className="truncate">{network.ipAddress || "-"}</span>
-                  </div>
-                  <div className="flex items-center border-l border-border px-3 py-2 text-xs font-mono text-muted-foreground">
-                    <span className="truncate">{network.gateway || "-"}</span>
-                  </div>
-                  {canManageNetworks && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                      disabled={
-                        !!networkActionLoading ||
-                        !network.networkId ||
-                        isBuiltInDockerNetwork(network.name)
-                      }
-                      onClick={() => handleDisconnectNetwork(network.networkId, network.name)}
-                    >
-                      <Unplug className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-              {addingNetwork && (
-                <div
-                  className={`grid ${
-                    canManageNetworks
-                      ? "grid-cols-[minmax(0,1fr)_120px_120px_36px]"
-                      : "grid-cols-[minmax(0,1fr)_120px_120px]"
-                  } border-b border-border last:border-b-0`}
-                >
-                  <div className="min-w-0">
-                    <Select
-                      value={selectedNetworkId}
-                      onValueChange={setSelectedNetworkId}
-                      disabled={
-                        !canManageNetworks || networksLoading || availableNetworks.length === 0
-                      }
-                    >
-                      <SelectTrigger className="h-9 text-xs border-0 rounded-none shadow-none focus:ring-1 focus:ring-inset focus:ring-ring">
-                        <SelectValue
-                          placeholder={networksLoading ? "Loading networks..." : "Select a network"}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableNetworks.map((network) => (
-                          <SelectItem key={network.id} value={network.id}>
-                            {network.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center border-l border-border px-3 py-2 text-xs text-muted-foreground">
-                    -
-                  </div>
-                  <div className="flex items-center border-l border-border px-3 py-2 text-xs text-muted-foreground">
-                    -
-                  </div>
-                  {canManageNetworks && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                      disabled={!selectedNetworkId || networksLoading || !!networkActionLoading}
-                      onClick={handleConnectNetwork}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="py-8 text-center text-muted-foreground text-sm">No networks</div>
-        )}
-      </div>
-
       {/* ─── Webhook / Image Cleanup ─────────────────────────────── */}
       {(() => {
         const canManageWebhooks =
@@ -1124,356 +967,5 @@ export function SettingsTab({
         );
       })()}
     </div>
-  );
-}
-
-// ── Webhook Section ──────────────────────────────────────────────
-
-type WebhookSectionProps =
-  | {
-      nodeId: string;
-      target?: "container";
-      containerName: string;
-      deploymentId?: never;
-      initialWebhook?: never;
-      onWebhookChange?: never;
-      disabled?: boolean;
-      allowWebhook?: boolean;
-      allowCleanup?: boolean;
-    }
-  | {
-      nodeId: string;
-      target: "deployment";
-      deploymentId: string;
-      containerName?: never;
-      initialWebhook?: DockerWebhook | null;
-      onWebhookChange?: (webhook: DockerWebhook | null) => void;
-      disabled?: boolean;
-      allowWebhook?: boolean;
-      allowCleanup?: boolean;
-    };
-
-export function WebhookSection(props: WebhookSectionProps) {
-  const isDeployment = props.target === "deployment";
-  const allowWebhook = props.allowWebhook ?? true;
-  const allowCleanup = props.allowCleanup ?? true;
-  const nodeId = props.nodeId;
-  const targetName = isDeployment ? props.deploymentId : props.containerName;
-  const onWebhookChange = isDeployment ? props.onWebhookChange : undefined;
-  const [webhook, setWebhookState] = useState<DockerWebhook | null>(
-    isDeployment ? (props.initialWebhook ?? null) : null
-  );
-  const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
-  const [copiedCurl, setCopiedCurl] = useState(false);
-
-  // Cleanup config local state
-  const [cleanup, setCleanup] = useState<DockerImageCleanupSettings | null>(null);
-  const [cleanupEnabled, setCleanupEnabled] = useState(false);
-  const [retentionCount, setRetentionCount] = useState("2");
-
-  const setWebhook = useCallback(
-    (next: DockerWebhook | null) => {
-      setWebhookState(next);
-      if (isDeployment) {
-        onWebhookChange?.(next);
-      }
-    },
-    [isDeployment, onWebhookChange]
-  );
-
-  const fetchSettings = useCallback(async () => {
-    const webhookRequest = allowWebhook
-      ? isDeployment
-        ? api.getDeploymentWebhook(nodeId, targetName)
-        : api.getContainerWebhook(nodeId, targetName)
-      : Promise.resolve(null);
-    const cleanupRequest = allowCleanup
-      ? isDeployment
-        ? api.getDeploymentImageCleanup(nodeId, targetName)
-        : api.getContainerImageCleanup(nodeId, targetName)
-      : Promise.resolve(null);
-
-    try {
-      const [webhookResult, cleanupResult] = await Promise.allSettled([
-        webhookRequest,
-        cleanupRequest,
-      ]);
-      if (webhookResult.status === "fulfilled") {
-        setWebhook(webhookResult.value);
-      }
-      if (cleanupResult.status === "fulfilled" && cleanupResult.value) {
-        setCleanup(cleanupResult.value);
-        setCleanupEnabled(cleanupResult.value.enabled);
-        setRetentionCount(String(cleanupResult.value.retentionCount));
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [allowCleanup, allowWebhook, isDeployment, nodeId, setWebhook, targetName]);
-
-  useEffect(() => {
-    fetchSettings();
-  }, [fetchSettings]);
-
-  useRealtime("docker.webhook.changed", (payload: unknown) => {
-    const p = payload as Record<string, unknown>;
-    if (
-      allowWebhook &&
-      p.nodeId === nodeId &&
-      (isDeployment
-        ? p.deploymentId === targetName || p.targetId === targetName
-        : p.containerName === targetName)
-    ) {
-      fetchSettings();
-    }
-  });
-
-  useRealtime("docker.image-cleanup.changed", (payload: unknown) => {
-    const p = payload as Record<string, unknown>;
-    if (
-      allowCleanup &&
-      p.nodeId === nodeId &&
-      (isDeployment
-        ? p.targetType === "deployment" && p.deploymentId === targetName
-        : p.targetType === "container" && p.containerName === targetName)
-    ) {
-      setCleanup(p as unknown as DockerImageCleanupSettings);
-      setCleanupEnabled(Boolean(p.enabled));
-      setRetentionCount(String(p.retentionCount ?? 2));
-    }
-  });
-
-  const webhookEnabled = !!webhook?.enabled;
-  const webhookUrl = webhookEnabled
-    ? `${window.location.origin}/api/webhooks/docker/${webhook.token}`
-    : "";
-  const curlExample = webhookEnabled
-    ? `curl -X POST ${webhookUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{"tag":"v1.0.0"}'`
-    : "";
-
-  const handleEnable = async () => {
-    try {
-      const data = isDeployment
-        ? await api.upsertDeploymentWebhook(nodeId, targetName, { enabled: true })
-        : await api.upsertContainerWebhook(nodeId, targetName, { enabled: true });
-      setWebhook(data);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to enable webhook");
-    }
-  };
-
-  const autoSave = useCallback(
-    async (patch: { enabled?: boolean; retentionCount?: number }) => {
-      try {
-        const data = isDeployment
-          ? await api.upsertDeploymentImageCleanup(nodeId, targetName, patch)
-          : await api.upsertContainerImageCleanup(nodeId, targetName, patch);
-        setCleanup(data);
-        setCleanupEnabled(data.enabled);
-        setRetentionCount(String(data.retentionCount));
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to save");
-      }
-    },
-    [isDeployment, nodeId, targetName]
-  );
-
-  const handleCleanupToggle = useCallback(
-    (v: boolean) => {
-      setCleanupEnabled(v);
-      autoSave({ enabled: v });
-    },
-    [autoSave]
-  );
-
-  const handleRetentionBlur = useCallback(() => {
-    const v = Math.max(1, Math.min(50, Number(retentionCount) || 2));
-    setRetentionCount(String(v));
-    if (cleanupEnabled && v !== cleanup?.retentionCount) {
-      autoSave({ retentionCount: v });
-    }
-  }, [autoSave, cleanup?.retentionCount, cleanupEnabled, retentionCount]);
-
-  const handleRegenerate = async () => {
-    const ok = await confirm({
-      title: "Regenerate Webhook URL",
-      description:
-        "This will invalidate the current webhook URL. Any CI pipelines using the old URL will stop working. Continue?",
-      confirmLabel: "Regenerate",
-      variant: "destructive",
-    });
-    if (!ok) return;
-    try {
-      const data = isDeployment
-        ? await api.regenerateDeploymentWebhookToken(nodeId, targetName)
-        : await api.regenerateWebhookToken(nodeId, targetName);
-      setWebhook(data);
-      toast.success("Webhook URL regenerated");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to regenerate");
-    }
-  };
-
-  const handleDisable = async () => {
-    const ok = await confirm({
-      title: "Disable Webhook URL",
-      description:
-        "This will disable the current webhook URL. CI pipelines using this URL will stop working. Image cleanup settings are managed separately. Continue?",
-      confirmLabel: "Disable",
-      variant: "destructive",
-    });
-    if (!ok) return;
-    try {
-      if (isDeployment) {
-        await api.deleteDeploymentWebhook(nodeId, targetName);
-      } else {
-        await api.deleteContainerWebhook(nodeId, targetName);
-      }
-      setWebhook(null);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to disable");
-    }
-  };
-
-  const copyToClipboard = (text: string, type: "url" | "curl") => {
-    navigator.clipboard.writeText(text);
-    if (type === "url") {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } else {
-      setCopiedCurl(true);
-      setTimeout(() => setCopiedCurl(false), 2000);
-    }
-  };
-
-  if (loading) return null;
-  if (!allowWebhook && !allowCleanup) return null;
-
-  const handleToggle = async (enabled: boolean) => {
-    if (enabled) {
-      await handleEnable();
-    } else {
-      await handleDisable();
-    }
-  };
-
-  return (
-    <>
-      {allowWebhook && (
-        <div className="border border-border bg-card overflow-hidden">
-          <div
-            className={`flex items-center justify-between px-4 py-3 ${webhookEnabled ? "border-b border-border" : ""}`}
-          >
-            <div>
-              <h3 className="text-sm font-semibold">Webhook</h3>
-              <p className="text-xs text-muted-foreground">
-                Trigger {isDeployment ? "deployment" : "container"} updates from CI pipelines
-              </p>
-            </div>
-            <Switch checked={webhookEnabled} onChange={handleToggle} disabled={props.disabled} />
-          </div>
-
-          {webhookEnabled && (
-            <div className="divide-y divide-border">
-              {/* Webhook URL */}
-              <div className="flex items-center justify-between gap-4 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">Webhook URL</p>
-                  <div className="flex gap-1.5 mt-1.5">
-                    <Input
-                      className="h-8 text-xs font-mono flex-1"
-                      value={webhookUrl}
-                      readOnly
-                      onClick={(e) => (e.target as HTMLInputElement).select()}
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() => copyToClipboard(webhookUrl, "url")}
-                    >
-                      {copied ? (
-                        <Check className="h-3.5 w-3.5" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={handleRegenerate}
-                      title="Regenerate URL"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* curl example */}
-              <div className="px-4 py-3">
-                <p className="text-sm font-medium">Example</p>
-                <div className="relative mt-1.5">
-                  <pre className="bg-muted/50 border border-border rounded-md p-3 text-xs font-mono overflow-x-auto whitespace-pre">
-                    {curlExample}
-                  </pre>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute top-1.5 right-1.5 h-6 w-6"
-                    onClick={() => copyToClipboard(curlExample, "curl")}
-                  >
-                    {copiedCurl ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {allowCleanup && (
-        <div className="border border-border bg-card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <h3 className="text-sm font-semibold">Image Cleanup</h3>
-              <p className="text-xs text-muted-foreground">
-                Remove old image versions after manual or webhook updates
-              </p>
-            </div>
-            <Switch
-              checked={cleanupEnabled}
-              onChange={handleCleanupToggle}
-              disabled={props.disabled}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-4 px-4 py-3">
-            <div>
-              <p
-                className={`text-sm font-medium ${!cleanupEnabled ? "text-muted-foreground" : ""}`}
-              >
-                Keep last N versions
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Number of old image versions to retain
-              </p>
-            </div>
-            <Input
-              type="number"
-              className="h-8 text-xs w-20 shrink-0"
-              value={retentionCount}
-              onChange={(e) => setRetentionCount(e.target.value)}
-              disabled={!cleanupEnabled || props.disabled}
-              min={1}
-              max={50}
-              onBlur={handleRetentionBlur}
-            />
-          </div>
-        </div>
-      )}
-    </>
   );
 }

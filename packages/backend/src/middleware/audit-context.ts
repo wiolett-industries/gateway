@@ -14,6 +14,10 @@ const FALLBACK_AUDIT_SKIP_ROUTES: Array<{ method: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/api\/logging\/ingest$/ },
   { method: 'POST', pattern: /^\/api\/logging\/ingest\/batch$/ },
   { method: 'POST', pattern: /^\/api\/logging\/environments\/[^/]+\/search$/ },
+  { method: 'POST', pattern: /^\/api\/docker\/folders\/placements$/ },
+  { method: 'PUT', pattern: /^\/api\/docker\/folders\/reorder$/ },
+  { method: 'PUT', pattern: /^\/api\/docker\/folders\/reorder-containers$/ },
+  { method: 'PUT', pattern: /^\/api\/docker\/folders\/reorder-resources$/ },
 ];
 
 interface FallbackAuditTarget {

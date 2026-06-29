@@ -3,6 +3,7 @@ import { Code2, Minus, Plus, RotateCcw, Table2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/code-editor";
 import { Input } from "@/components/ui/input";
@@ -336,8 +337,6 @@ export function EnvironmentTab({
     return <div className="py-12 text-center text-muted-foreground">Loading environment...</div>;
   }
 
-  const isLast = (idx: number) => idx === envVars.length - 1;
-
   // Build a unified key map across both sections for cross-section duplicate detection
   const invalidKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
   const allKeyLocations = new Map<string, { envIndices: number[]; secretIndices: number[] }>();
@@ -409,22 +408,17 @@ export function EnvironmentTab({
       className={`${rawMode ? "flex flex-col flex-1 min-h-0" : "pb-6 space-y-4"} ${disabled || isSaving ? "pointer-events-none opacity-60" : ""}`}
     >
       {canEdit && (
-        <div
-          className={`flex flex-col ${rawMode ? "flex-1 min-h-0" : "border border-border bg-card"}`}
-        >
-          {/* Header */}
-          <div
-            className={`flex items-center justify-between px-4 py-3 shrink-0 ${rawMode ? "bg-card border border-border border-b-0" : "border-b border-border"}`}
-          >
-            <div>
-              <h3 className="text-sm font-semibold">Environment Variables</h3>
-              <p className="text-xs text-muted-foreground">
-                {onSaveServiceEnv
-                  ? "Saved to deployment configuration"
-                  : "Changes will recreate the container"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
+        <PanelShell
+          title="Environment Variables"
+          description={
+            onSaveServiceEnv
+              ? "Saved to deployment configuration"
+              : "Changes will recreate the container"
+          }
+          className={rawMode ? "flex flex-1 flex-col min-h-0" : undefined}
+          bodyClassName={rawMode ? "flex min-h-0 flex-1 flex-col" : undefined}
+          actions={
+            <>
               {canEdit && !rawMode && (
                 <Button
                   variant="ghost"
@@ -448,7 +442,6 @@ export function EnvironmentTab({
               </Button>
               {canEdit && (
                 <Button
-                  size="sm"
                   style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                   className="hover:opacity-90 disabled:opacity-50"
                   onClick={handleSave}
@@ -462,9 +455,9 @@ export function EnvironmentTab({
                       : "Save"}
                 </Button>
               )}
-            </div>
-          </div>
-
+            </>
+          }
+        >
           <AnimatePresence mode="popLayout" initial={false}>
             {rawMode ? (
               <motion.div
@@ -484,6 +477,7 @@ export function EnvironmentTab({
                   readOnly={!canEdit}
                   language="env"
                   errorLines={errorLines}
+                  className="-m-px"
                 />
               </motion.div>
             ) : (
@@ -495,7 +489,7 @@ export function EnvironmentTab({
                 transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
               >
                 {envVars.length > 0 && (
-                  <div className="grid grid-cols-[1fr_1fr] border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="grid grid-cols-[1fr_1fr] border-b border-border bg-muted text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     <div className="px-3 py-2">Key</div>
                     <div className="px-3 py-2 border-l border-border">Value</div>
                   </div>
@@ -509,7 +503,7 @@ export function EnvironmentTab({
                       <Input
                         value={env.key}
                         onChange={(e) => updateVar(idx, "key", e.target.value)}
-                        className={`h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
+                        className={`h-9 border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring ${
                           duplicateKeyIndices.has(idx) ||
                           (env.key.trim() && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(env.key.trim()))
                             ? "bg-red-500/15 text-red-400"
@@ -521,7 +515,7 @@ export function EnvironmentTab({
                         <Input
                           value={env.value}
                           onChange={(e) => updateVar(idx, "value", e.target.value)}
-                          className="h-9 text-xs font-mono border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
+                          className="h-9 border-0 rounded-none shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring flex-1 min-w-0"
                           placeholder="value"
                         />
                         <Button
@@ -532,16 +526,6 @@ export function EnvironmentTab({
                         >
                           <Minus className="h-3.5 w-3.5" />
                         </Button>
-                        {isLast(idx) && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                            onClick={addVar}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
                       </div>
                     </div>
                   ))}
@@ -559,7 +543,7 @@ export function EnvironmentTab({
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </PanelShell>
       )}
 
       {/* Secrets section — only in table mode */}

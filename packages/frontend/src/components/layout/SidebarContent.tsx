@@ -6,6 +6,7 @@ import {
   Bell,
   Box,
   Database,
+  Expand,
   FileText,
   GitBranch,
   Globe,
@@ -27,6 +28,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AIButton } from "@/components/ai/AIButton";
+import { confirmAILiteMode } from "@/components/ai/confirm-lite-mode";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,12 +48,14 @@ import { deriveAllowedResourceIdsByScope } from "@/lib/scope-utils";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
+import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import { usePinnedDatabasesStore } from "@/stores/pinned-databases";
 import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import { usePinnedProxiesStore } from "@/stores/pinned-proxies";
+import { useSystemConfigStore } from "@/stores/system-config";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
 import type { Node, ProxyHost } from "@/types";
@@ -180,15 +184,25 @@ export function SidebarContent({
   const location = useLocation();
   const navigate = useNavigate();
   const { user, hasScope, hasAnyScope, hasScopedAccess, logout } = useAuthStore();
-  const { sidebarOpen, toggleSidebar, setCommandPaletteOpen: openPalette } = useUIStore();
+  const {
+    sidebarOpen,
+    toggleSidebar,
+    setAIPanelOpen,
+    setAILiteMode,
+    setCommandPaletteOpen: openPalette,
+  } = useUIStore();
 
+  const aiEnabled = useAIStore((s) => s.isEnabled);
   const updateAvailable = useUpdateStore((s) => s.status?.updateAvailable ?? false);
   const showUpdateNotifications = useUIStore((s) => s.showUpdateNotifications);
+  const showAILiteModeCTA = useUIStore((s) => s.showAILiteModeCTA);
   const sidebarPinnedIds = usePinnedNodesStore((s) => s.sidebarNodeIds);
   const pinnedRefreshTick = usePinnedNodesStore((s) => s.refreshTick);
   const [pinnedNodes, setPinnedNodes] = useState<Node[]>([]);
   const [statusPageEnabled, setStatusPageEnabled] = useState(false);
   const [loggingEnabled, setLoggingEnabled] = useState(false);
+  const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
+  const domainsEnabled = useSystemConfigStore((s) => s.config.features.domainsEnabled);
 
   const sidebarPinnedProxyIds = usePinnedProxiesStore((s) => s.sidebarProxyIds);
   const pinnedProxyRefreshTick = usePinnedProxiesStore((s) => s.refreshTick);
@@ -406,7 +420,9 @@ export function SidebarContent({
     "notifications:view",
     "notifications:manage"
   );
-  const canAccessDatabases = hasScopedAccess("databases:view");
+  const canAccessDatabases =
+    hasScopedAccess("databases:view") || hasScope("databases:folders:manage");
+  const canAccessNodes = hasScopedAccess("nodes:details") || hasScope("nodes:folders:manage");
   const hasResourceScopedSchemaView = user
     ? (deriveAllowedResourceIdsByScope(user.scopes)["logs:schemas:view"]?.length ?? 0) > 0
     : false;
@@ -422,6 +438,16 @@ export function SidebarContent({
       ) ||
       hasResourceScopedSchemaView);
   const canAccessAuthorities = hasAnyScope("pki:ca:view:root", "pki:ca:view:intermediate");
+  const canUseAI = hasScope(AI_SCOPE) && aiEnabled !== false;
+
+  const handleTryLiteMode = useCallback(async () => {
+    const confirmed = await confirmAILiteMode();
+    if (!confirmed) return;
+    setAILiteMode(true);
+    setAIPanelOpen(false);
+    navigate("/");
+    onNavigate?.();
+  }, [navigate, onNavigate, setAIPanelOpen, setAILiteMode]);
 
   useEffect(() => {
     api
@@ -435,6 +461,7 @@ export function SidebarContent({
       // Hide entire Reverse Proxy group when no nginx nodes
       if (group.label === "Reverse Proxy" && !hasNginxNodes && !canAccessProxyHosts)
         return { ...group, items: [] };
+      if (group.label === "PKI" && !pkiEnabled) return { ...group, items: [] };
       return {
         ...group,
         items: group.items.filter((item) => {
@@ -447,9 +474,15 @@ export function SidebarContent({
           } else if (item.href === "/logging") {
             if (!canAccessLogging) return false;
           } else if (item.href === "/cas") {
-            if (!canAccessAuthorities) return false;
+            if (!pkiEnabled || !canAccessAuthorities) return false;
+          } else if (item.href === "/certificates") {
+            if (!pkiEnabled) return false;
+          } else if (item.href === "/domains") {
+            if (!domainsEnabled) return false;
           } else if (item.href === "/notifications") {
             if (!canAccessNotifications) return false;
+          } else if (item.href === "/nodes") {
+            if (!canAccessNodes) return false;
           } else if (item.requiresStatusPageEnabled && !statusPageEnabled) {
             return false;
           } else if (item.href === "/administration") {
@@ -469,7 +502,7 @@ export function SidebarContent({
           // Templates: need at least one template scope
           if (
             item.href === "/templates" &&
-            !hasScopedAccess("pki:templates:view") &&
+            (!pkiEnabled || !hasScopedAccess("pki:templates:view")) &&
             !hasScopedAccess("proxy:templates:view")
           )
             return false;
@@ -510,7 +543,7 @@ export function SidebarContent({
     <div
       style={{ width: alwaysExpanded ? "100%" : isExpanded ? sidebarWidth : 48 }}
       className={cn(
-        "relative flex h-full shrink-0 flex-col bg-sidebar-background overflow-hidden",
+        "relative flex h-full shrink-0 flex-col bg-sidebar-background overflow-visible",
         !alwaysExpanded && "border-r border-sidebar-border",
         !alwaysExpanded && !isResizing && "transition-[width] duration-200 ease-out"
       )}
@@ -558,6 +591,22 @@ export function SidebarContent({
             <div className="flex-1" />
 
             {hasScope(AI_SCOPE) && <AIButton iconOnly />}
+
+            {canUseAI && showAILiteModeCTA && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 bg-sidebar-accent text-sidebar-accent-foreground/80 hover:bg-muted hover:text-sidebar-accent-foreground"
+                    onClick={handleTryLiteMode}
+                  >
+                    <Expand className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Switch to lite mode</TooltipContent>
+              </Tooltip>
+            )}
 
             {updateAvailable && hasScope("admin:update") && showUpdateNotifications && (
               <Tooltip>
@@ -865,6 +914,22 @@ export function SidebarContent({
 
             <Separator />
 
+            {canUseAI && showAILiteModeCTA && (
+              <>
+                <div className="px-2 py-2">
+                  <button
+                    type="button"
+                    onClick={handleTryLiteMode}
+                    className="flex w-full items-center gap-2 bg-sidebar-accent px-3 py-2 text-left text-sm font-medium text-sidebar-accent-foreground/80 transition-colors hover:bg-muted hover:text-sidebar-accent-foreground"
+                  >
+                    <Expand className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Switch to lite mode</span>
+                  </button>
+                </div>
+                <Separator />
+              </>
+            )}
+
             {/* Update notification */}
             {updateAvailable && hasScope("admin:update") && showUpdateNotifications && (
               <>
@@ -872,7 +937,7 @@ export function SidebarContent({
                   <Link
                     to="/settings/gateway"
                     onClick={onNavigate}
-                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium transition-colors"
                     style={{ backgroundColor: "rgb(234 179 8)", color: "#111" }}
                   >
                     <ArrowUpCircle className="h-4 w-4 shrink-0" />

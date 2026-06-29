@@ -12,12 +12,22 @@ import { NotificationRetryJob } from '@/jobs/notification-retry.job.js';
 import { UpdateCheckJob } from '@/jobs/update-check.job.js';
 import { logger } from '@/lib/logger.js';
 import { AccessListService } from '@/modules/access-lists/access-list.service.js';
+import { AdminUserFolderService } from '@/modules/admin/admin-user-folders.service.js';
+import { AISandboxService } from '@/modules/ai/ai.sandbox.service.js';
+import { AISandboxArtifactService } from '@/modules/ai/ai.sandbox-artifact.service.js';
+import { AISandboxJobsService } from '@/modules/ai/ai.sandbox-jobs.service.js';
+import { AISandboxRunnerService } from '@/modules/ai/ai.sandbox-runner.service.js';
 import { AIService } from '@/modules/ai/ai.service.js';
 import { AISettingsService } from '@/modules/ai/ai.settings.service.js';
+import { AIConversationService } from '@/modules/ai/ai-conversation.service.js';
+import { AIConversationFolderService } from '@/modules/ai/ai-conversation-folder.service.js';
+import { AIConversationSearchService } from '@/modules/ai/ai-conversation-search.service.js';
+import { AIRunService } from '@/modules/ai/ai-run.service.js';
 import { AlertService } from '@/modules/audit/alert.service.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
 import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
+import { DatabaseFolderService } from '@/modules/databases/database-folders.service.js';
 import { DatabaseMonitoringService } from '@/modules/databases/database-monitoring.service.js';
 import { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
 import { DockerManagementService } from '@/modules/docker/docker.service.js';
@@ -33,21 +43,26 @@ import { DockerTaskService } from '@/modules/docker/docker-task.service.js';
 import { DockerWebhookService } from '@/modules/docker/docker-webhook.service.js';
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
 import { DomainsService } from '@/modules/domains/domain.service.js';
+import { DomainFolderService } from '@/modules/domains/domain-folders.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
+import { PermissionGroupFolderService } from '@/modules/groups/permission-group-folders.service.js';
 import { LicenseService } from '@/modules/license/license.service.js';
 import { LICENSE_HEARTBEAT_INTERVAL_MS } from '@/modules/license/license.types.js';
 import { LoggingClickHouseService } from '@/modules/logging/logging-clickhouse.service.js';
 import { LoggingEnvironmentService } from '@/modules/logging/logging-environment.service.js';
+import { LoggingEnvironmentFolderService } from '@/modules/logging/logging-environment-folders.service.js';
 import { LoggingFeatureService } from '@/modules/logging/logging-feature.service.js';
 import { LoggingIngestService } from '@/modules/logging/logging-ingest.service.js';
 import { LoggingMetadataService } from '@/modules/logging/logging-metadata.service.js';
 import { LoggingRateLimitService } from '@/modules/logging/logging-rate-limit.service.js';
 import { LoggingSchemaService } from '@/modules/logging/logging-schema.service.js';
+import { LoggingSchemaFolderService } from '@/modules/logging/logging-schema-folders.service.js';
 import { LoggingSearchService } from '@/modules/logging/logging-search.service.js';
 import { LoggingTokenService } from '@/modules/logging/logging-token.service.js';
 import { LoggingValidationService } from '@/modules/logging/logging-validation.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
 import { MonitoringService } from '@/modules/monitoring/monitoring.service.js';
+import { NodeFolderService } from '@/modules/nodes/node-folders.service.js';
 import { NodeMonitoringService } from '@/modules/nodes/node-monitoring.service.js';
 import { NodesService } from '@/modules/nodes/nodes.service.js';
 import { NotificationAlertRuleService } from '@/modules/notifications/notification-alert-rule.service.js';
@@ -65,6 +80,7 @@ import { TemplatesService } from '@/modules/pki/templates.service.js';
 import { FolderService } from '@/modules/proxy/folder.service.js';
 import { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
+import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
 import { SetupService } from '@/modules/setup/setup.service.js';
@@ -130,6 +146,9 @@ export async function initializeContainer(): Promise<void> {
   const mcpSettingsService = new McpSettingsService(db);
   container.registerInstance(McpSettingsService, mcpSettingsService);
 
+  const generalSettingsService = new GeneralSettingsService(db);
+  container.registerInstance(GeneralSettingsService, generalSettingsService);
+
   const networkSettingsService = new NetworkSettingsService(db);
   container.registerInstance(NetworkSettingsService, networkSettingsService);
 
@@ -141,6 +160,9 @@ export async function initializeContainer(): Promise<void> {
 
   const authService = new AuthService(db, sessionService, cacheService, authSettingsService, auditService);
   container.registerInstance(AuthService, authService);
+  const adminUserFolderService = new AdminUserFolderService(db, auditService);
+  adminUserFolderService.setEventBus(eventBus);
+  container.registerInstance(AdminUserFolderService, adminUserFolderService);
 
   const oauthService = new OAuthService(db, cacheService, auditService, authSettingsService);
   container.registerInstance(OAuthService, oauthService);
@@ -258,8 +280,11 @@ export async function initializeContainer(): Promise<void> {
   const nodeDispatch = new NodeDispatchService(nodeRegistry, db);
   container.registerInstance(NodeDispatchService, nodeDispatch);
 
-  const nodesService = new NodesService(db, auditService, nodeRegistry, grpcIdentityService);
+  const nodesService = new NodesService(db, auditService, nodeRegistry, grpcIdentityService, nodeDispatch);
   container.registerInstance(NodesService, nodesService);
+
+  const nodeFolderService = new NodeFolderService(db, auditService);
+  container.registerInstance(NodeFolderService, nodeFolderService);
 
   const nodeMonitoringService = new NodeMonitoringService(nodeRegistry, cacheService);
   container.registerInstance(NodeMonitoringService, nodeMonitoringService);
@@ -322,8 +347,8 @@ export async function initializeContainer(): Promise<void> {
   dockerManagementService.setDeploymentService(dockerDeploymentService);
   dockerFolderService.setEventBus(eventBus);
   dockerTaskService.setEventBus(eventBus);
-  void dockerTaskService.markStaleActiveTasksFailed().catch((error) => {
-    logger.warn('Failed to reconcile stale Docker tasks during bootstrap', { error });
+  void dockerTaskService.markActiveTasksLostOnStartup().catch((error) => {
+    logger.warn('Failed to mark interrupted Docker tasks during bootstrap', { error });
   });
   dockerDeploymentService.setEventBus(eventBus);
   dockerHealthCheckService.setEventBus(eventBus);
@@ -336,6 +361,7 @@ export async function initializeContainer(): Promise<void> {
   caService.setEventBus(eventBus);
   certService.setEventBus(eventBus);
   nodesService.setEventBus(eventBus);
+  nodeFolderService.setEventBus(eventBus);
   nodeRegistry.setEventBus(eventBus);
   folderService.setEventBus(eventBus);
   nginxTemplateService.setEventBus(eventBus);
@@ -344,9 +370,13 @@ export async function initializeContainer(): Promise<void> {
   const databaseConnectionService = new DatabaseConnectionService(db, auditService, cryptoService);
   container.registerInstance(DatabaseConnectionService, databaseConnectionService);
 
+  const databaseFolderService = new DatabaseFolderService(db, auditService);
+  container.registerInstance(DatabaseFolderService, databaseFolderService);
+
   const databaseMonitoringService = new DatabaseMonitoringService(databaseConnectionService, cacheService);
   container.registerInstance(DatabaseMonitoringService, databaseMonitoringService);
   databaseConnectionService.setEventBus(eventBus);
+  databaseFolderService.setEventBus(eventBus);
 
   const proxyService = new ProxyService(
     db,
@@ -422,11 +452,39 @@ export async function initializeContainer(): Promise<void> {
   // AI Settings
   const aiSettingsService = new AISettingsService(db, cryptoService);
   container.registerInstance(AISettingsService, aiSettingsService);
+  const aiSandboxArtifactService = new AISandboxArtifactService(env);
+  container.registerInstance(AISandboxArtifactService, aiSandboxArtifactService);
+  const aiSandboxJobsService = new AISandboxJobsService(db);
+  container.registerInstance(AISandboxJobsService, aiSandboxJobsService);
+  const aiSandboxRunnerService = new AISandboxRunnerService();
+  container.registerInstance(AISandboxRunnerService, aiSandboxRunnerService);
+  const aiSandboxService = new AISandboxService(aiSandboxJobsService, aiSandboxRunnerService, aiSandboxArtifactService);
+  container.registerInstance(AISandboxService, aiSandboxService);
+  const aiConversationSearchService = new AIConversationSearchService(db, auditService);
+  container.registerInstance(AIConversationSearchService, aiConversationSearchService);
+  const aiConversationService = new AIConversationService(
+    db,
+    {
+      artifacts: aiSandboxArtifactService,
+      sandbox: aiSandboxService,
+    },
+    aiConversationSearchService
+  );
+  container.registerInstance(AIConversationService, aiConversationService);
+  const aiConversationFolderService = new AIConversationFolderService(db, aiConversationSearchService);
+  container.registerInstance(AIConversationFolderService, aiConversationFolderService);
+  const aiRunService = new AIRunService(db, eventBus, aiConversationSearchService);
+  container.registerInstance(AIRunService, aiRunService);
+  aiSandboxService.startPolicyReconciliation();
+  authService.setSandboxService(aiSandboxService);
 
   // Domain management
   const domainsService = new DomainsService(db, auditService);
   domainsService.setEventBus(eventBus);
   container.registerInstance(DomainsService, domainsService);
+  const domainFolderService = new DomainFolderService(db, auditService);
+  domainFolderService.setEventBus(eventBus);
+  container.registerInstance(DomainFolderService, domainFolderService);
 
   // Setup service (bootstrap management SSL)
   const setupTokenPolicyService = new SetupTokenPolicyService(db, env.SETUP_BOOTSTRAP);
@@ -478,10 +536,17 @@ export async function initializeContainer(): Promise<void> {
   );
   loggingEnvironmentService.setEventBus(eventBus);
   container.registerInstance(LoggingEnvironmentService, loggingEnvironmentService);
+  const loggingEnvironmentFolderService = new LoggingEnvironmentFolderService(db, auditService);
+  loggingEnvironmentFolderService.setEventBus(eventBus);
+  container.registerInstance(LoggingEnvironmentFolderService, loggingEnvironmentFolderService);
   const loggingTokenService = new LoggingTokenService(db, auditService);
   container.registerInstance(LoggingTokenService, loggingTokenService);
   const loggingSchemaService = new LoggingSchemaService(db, auditService);
+  loggingSchemaService.setEventBus(eventBus);
   container.registerInstance(LoggingSchemaService, loggingSchemaService);
+  const loggingSchemaFolderService = new LoggingSchemaFolderService(db, auditService);
+  loggingSchemaFolderService.setEventBus(eventBus);
+  container.registerInstance(LoggingSchemaFolderService, loggingSchemaFolderService);
   const loggingValidationService = new LoggingValidationService(env);
   container.registerInstance(LoggingValidationService, loggingValidationService);
   const loggingRateLimitService = new LoggingRateLimitService(redis, env);
@@ -506,11 +571,17 @@ export async function initializeContainer(): Promise<void> {
 
   // Housekeeping service
   const housekeepingService = new HousekeepingService(db, dockerService, nodeDispatch, env);
+  housekeepingService.setSandboxArtifactService(aiSandboxArtifactService);
+  housekeepingService.setDockerManagementService(dockerManagementService);
   container.registerInstance(HousekeepingService, housekeepingService);
 
   // Group service (injectable — resolve from container)
   const groupService = container.resolve(GroupService);
   groupService.setEventBus(eventBus);
+  groupService.setSandboxService(aiSandboxService);
+  const permissionGroupFolderService = new PermissionGroupFolderService(db, auditService);
+  permissionGroupFolderService.setEventBus(eventBus);
+  container.registerInstance(PermissionGroupFolderService, permissionGroupFolderService);
 
   // ── Notification services (before AI — AI uses them) ──────────────
   const notifRuleService = new NotificationAlertRuleService(db, auditService);
@@ -553,7 +624,10 @@ export async function initializeContainer(): Promise<void> {
     notifRuleService,
     notifWebhookService,
     notifDeliveryService,
-    notifDispatcherService
+    notifDispatcherService,
+    aiSandboxService,
+    aiSandboxArtifactService,
+    aiConversationSearchService
   );
   container.registerInstance(AIService, aiService);
 

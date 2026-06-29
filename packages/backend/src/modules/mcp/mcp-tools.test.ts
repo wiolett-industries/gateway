@@ -51,4 +51,58 @@ describe('MCP tool scope filtering', () => {
     expect(toolNames(['logs:read:env-1'])).toContain('manage_logging');
     expect(toolNames(['status-page:incidents:resolve'])).toContain('manage_status_page');
   });
+
+  it('never exposes AI sandbox runner tools through MCP', () => {
+    const sandboxToolNames = [
+      'execute_script',
+      'run_process',
+      'fetch',
+      'download_artifact',
+      'read_artifact',
+      'send_artifact',
+      'read_process_output',
+      'write_process_stdin',
+      'kill_process',
+      'list_sandbox_jobs',
+    ];
+
+    expect(toolNames(['ai:sandbox:use', 'ai:sandbox:tier:medium', 'ai:sandbox:tier:high'])).not.toEqual(
+      expect.arrayContaining(sandboxToolNames)
+    );
+  });
+
+  it('never exposes node config or filesystem tools through MCP', () => {
+    expect(toolNames(['nodes:config:view', 'nodes:config:edit'])).not.toContain('manage_node_config');
+    expect(toolNames(['nodes:files:read', 'nodes:files:write'])).not.toContain('manage_node_file');
+  });
+
+  it('exposes console tools only when their opt-in console scopes are delegated', () => {
+    expect(toolNames(['nodes:details'])).not.toContain('execute_node_console_command');
+    expect(toolNames(['nodes:console'])).toContain('execute_node_console_command');
+    expect(toolByName(['nodes:console'], 'execute_node_console_command')?.destructive).toBe(true);
+
+    expect(toolNames(['docker:containers:view'])).not.toContain('execute_docker_container_console_command');
+    expect(toolNames(['docker:containers:console:node-1'])).toContain('execute_docker_container_console_command');
+    expect(
+      toolByName(['docker:containers:console:node-1'], 'execute_docker_container_console_command')?.destructive
+    ).toBe(true);
+  });
+
+  it('never exposes browser-session-only current-user tools through MCP', () => {
+    expect(toolNames(['feat:ai:use'])).not.toEqual(
+      expect.arrayContaining(['manage_ai_conversation', 'manage_oauth_authorization', 'manage_api_token'])
+    );
+  });
+
+  it('keeps wait available as a safe MCP coordination tool without delegated scopes', () => {
+    expect(toolNames([])).toContain('wait');
+    expect(toolByName([], 'wait')?.destructive).toBe(false);
+  });
+
+  it('advertises Docker folder tools for every Docker resource view scope', () => {
+    expect(toolNames(['docker:containers:view'])).toContain('list_resource_folders');
+    expect(toolNames(['docker:images:view'])).toContain('list_resource_folders');
+    expect(toolNames(['docker:networks:view'])).toContain('list_resource_folders');
+    expect(toolNames(['docker:volumes:view'])).toContain('list_resource_folders');
+  });
 });

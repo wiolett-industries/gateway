@@ -83,7 +83,7 @@ export function MoveToFolderDialog({
             Select a destination folder or move to root (ungrouped).
           </DialogDescription>
         </DialogHeader>
-        <div className="border border-border max-h-64 overflow-y-auto">
+        <div className="border border-border">
           <button
             type="button"
             className={cn(

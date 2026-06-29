@@ -16,6 +16,7 @@ const IMPLIED_SCOPES_BY_REQUIRED_SCOPE: Record<string, readonly string[]> = {
   "license:view": ["license:manage"],
   "docker:containers:view": [
     "docker:containers:edit",
+    "docker:containers:config",
     "docker:containers:manage",
     "docker:containers:console",
     "docker:containers:files",

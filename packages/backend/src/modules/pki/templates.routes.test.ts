@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { container } from '@/container.js';
 import { errorHandler } from '@/middleware/error-handler.js';
+import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv, User } from '@/types.js';
 import { templateRoutes } from './templates.routes.js';
@@ -48,6 +49,9 @@ function registerServices(scopes: string[], templateService: Partial<TemplatesSe
     }),
   } as unknown as TokensService);
   container.registerInstance(TemplatesService, templateService as TemplatesService);
+  container.registerInstance(GeneralSettingsService, {
+    isFeatureEnabled: vi.fn().mockResolvedValue(true),
+  } as unknown as GeneralSettingsService);
 }
 
 function authHeaders() {

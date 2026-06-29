@@ -830,8 +830,7 @@ resolve_version() {
         | grep -o '"tag_name":"v[0-9]*\.[0-9]*\.[0-9]*"' | head -1 | cut -d'"' -f4) || true
 
     if [ -z "$VERSION" ]; then
-        warn "Could not fetch latest version, falling back to 'latest' tag"
-        VERSION="latest"
+        error "Could not fetch latest version from ${GITLAB_API}/releases. Retry later or pass --version <tag> explicitly; use --version latest only if you intentionally want the mutable latest tag."
     fi
 
     info "Install version: ${VERSION}"

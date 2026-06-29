@@ -2,6 +2,8 @@ import { ExternalLink, ShieldCheck, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
+import { PanelShell } from "@/components/common/PanelShell";
 import { ScopeList } from "@/components/common/ScopeList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -251,19 +253,14 @@ export function OAuthApplicationsSection({
 
   return (
     <>
-      <div className="border border-border bg-card">
-        <div className="border-b border-border p-4">
-          <h2 className="font-semibold">OAuth Applications</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Applications you authorized to access Gateway with your account
-          </p>
-        </div>
+      <PanelShell
+        title="OAuth Applications"
+        description="Applications you authorized to access Gateway with your account"
+      >
         {loading ? (
           <div className="p-4 text-sm text-muted-foreground">Loading OAuth applications...</div>
         ) : authorizations.length === 0 ? (
-          <p className="px-4 py-4 text-center text-sm text-muted-foreground">
-            No OAuth applications authorized yet
-          </p>
+          <EmptyState message="No OAuth applications authorized yet." embedded />
         ) : (
           <div className="divide-y divide-border">
             {authorizations.map((authorization) => (
@@ -289,9 +286,7 @@ export function OAuthApplicationsSection({
                       <p className="text-sm font-medium text-foreground">
                         {authorization.clientName}
                       </p>
-                      <Badge variant="secondary" className="text-xs">
-                        {resourceLabel(authorization.resource)}
-                      </Badge>
+                      <Badge variant="secondary">{resourceLabel(authorization.resource)}</Badge>
                       {safeHttpUrl(authorization.clientUri) && (
                         <a
                           href={safeHttpUrl(authorization.clientUri)!}
@@ -333,7 +328,7 @@ export function OAuthApplicationsSection({
             ))}
           </div>
         )}
-      </div>
+      </PanelShell>
 
       <Dialog
         open={!!selectedAuthorization}
@@ -403,7 +398,7 @@ export function OAuthApplicationsSection({
 
               <div className="flex flex-wrap gap-1.5">
                 {selectedAuthorization.resources.map((resource) => (
-                  <Badge key={resource} variant="secondary" className="text-xs">
+                  <Badge key={resource} variant="secondary">
                     {resourceLabel(resource)}
                   </Badge>
                 ))}
@@ -430,6 +425,7 @@ export function OAuthApplicationsSection({
                   loggingSchemas={loggingSchemasList}
                   restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
                   allowedResourceIds={allowedResourceIdsByScope}
+                  viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
                 />
                 {unknownScopes.length > 0 && (
                   <div className="border-t border-border p-3">
