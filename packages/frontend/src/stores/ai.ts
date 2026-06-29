@@ -279,7 +279,12 @@ let wsClient: AIWebSocketClient | null = null;
 let conversationLoadGeneration = 0;
 const pendingToolCommands = new Map<
   string,
-  { toolCallId: string; previousStatus: AIToolCall["status"]; previousResult?: unknown; decision: "approval" | "question" }
+  {
+    toolCallId: string;
+    previousStatus: AIToolCall["status"];
+    previousResult?: unknown;
+    decision: "approval" | "question";
+  }
 >();
 
 function updateToolCallById(
@@ -654,7 +659,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
     set((state) => ({
       messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
         ...tc,
-        status: "completed",
+        status: "running",
         result: { answer },
         error: undefined,
       })),
@@ -1005,7 +1010,10 @@ export const useAIStore = create<AIState>()((set, get) => ({
     if (cmd === "/clear" || cmd === "/new") {
       const activeConversationId = get().activeConversationId;
       if (activeConversationId) {
-        trySendWSMessage({ type: "conversation.unsubscribe", conversationId: activeConversationId });
+        trySendWSMessage({
+          type: "conversation.unsubscribe",
+          conversationId: activeConversationId,
+        });
       }
       set({
         messages: [],
@@ -1044,6 +1052,7 @@ export function resetAIStateForAuthChange() {
   wsClient = null;
   conversationLoadGeneration += 1;
   assistantDraftVersions.clear();
+  pendingToolCommands.clear();
   useAIStore.setState({
     messages: [],
     recentConversations: [],
@@ -1092,7 +1101,9 @@ function handleWSMessage(
 
     case "command.error":
       {
-        const pending = msg.clientCommandId ? pendingToolCommands.get(msg.clientCommandId) : undefined;
+        const pending = msg.clientCommandId
+          ? pendingToolCommands.get(msg.clientCommandId)
+          : undefined;
         if (pending) {
           if (msg.clientCommandId) pendingToolCommands.delete(msg.clientCommandId);
           set((state) => ({

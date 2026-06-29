@@ -117,4 +117,35 @@ describe('DockerWebhookService', () => {
     });
     expect(config.env).not.toHaveProperty('0');
   });
+
+  it('does not introduce numeric env keys across repeated webhook updates', async () => {
+    const { docker, service } = createService({
+      Env: ['PATH=/bin', 'APP_PORT=4000'],
+    });
+
+    await service.triggerUpdate({
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      containerName: 'app',
+      tag: 'new',
+      webhookId: 'webhook-1',
+    });
+    await service.triggerUpdate({
+      nodeId: 'node-1',
+      containerId: 'container-1',
+      containerName: 'app',
+      tag: 'new',
+      webhookId: 'webhook-1',
+    });
+
+    const recreateConfigs = docker.recreateWithConfig.mock.calls.map(
+      (call) => call[2] as { env?: Record<string, string> }
+    );
+    expect(recreateConfigs).toHaveLength(2);
+    for (const config of recreateConfigs) {
+      expect(config.env).toEqual({ PATH: '/bin', APP_PORT: '4000' });
+      expect(config.env).not.toHaveProperty('0');
+      expect(Object.keys(config.env ?? {})).not.toContain('1');
+    }
+  });
 });

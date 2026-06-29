@@ -71,6 +71,13 @@ function sentPayloads(socket: MockWebSocket): Array<Record<string, unknown>> {
   return vi.mocked(socket.send).mock.calls.map(([payload]) => JSON.parse(String(payload)));
 }
 
+function getToolCall(toolCallId: string) {
+  return useAIStore
+    .getState()
+    .messages.flatMap((message) => message.toolCalls ?? [])
+    .find((toolCall) => toolCall.id === toolCallId);
+}
+
 function runtimeRun(status: "queued" | "running" | "waiting_for_approval" | "waiting_for_answer") {
   return {
     id: "run-1",
@@ -745,6 +752,10 @@ describe("AI backend runtime store", () => {
 
     useAIStore.getState().answerQuestion("call_question_1", "yes");
 
+    expect(getToolCall("call_question_1")).toMatchObject({
+      status: "running",
+      result: { answer: "yes" },
+    });
     expect(sentPayloads(socket)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -754,6 +765,50 @@ describe("AI backend runtime store", () => {
         }),
       ])
     );
+  });
+
+  it("restores an ask_question answer when the backend rejects the command", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: "conversation-1",
+      activeRunId: "run-1",
+      pendingApprovalToolCallId: "call_question_1",
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "call_question_1",
+              name: "ask_question",
+              arguments: { question: "Continue?" },
+              status: "awaiting_approval",
+            },
+          ],
+        },
+      ],
+    });
+
+    useAIStore.getState().answerQuestion("call_question_1", "yes");
+    const command = sentPayloads(socket).find((payload) => payload.type === "question.answer");
+
+    socket.emit({
+      type: "command.error",
+      commandType: "question.answer",
+      clientCommandId: command?.clientCommandId as string,
+      conversationId: "conversation-1",
+      runId: "run-1",
+      code: "QUESTION_REJECTED",
+      message: "Question is no longer pending",
+    });
+
+    expect(useAIStore.getState().pendingApprovalToolCallId).toBe("call_question_1");
+    expect(getToolCall("call_question_1")).toMatchObject({
+      status: "awaiting_approval",
+      error: "Question is no longer pending",
+    });
+    expect(getToolCall("call_question_1")?.result).toBeUndefined();
   });
 
   it("updates background chat runtime status from snapshots and status events", async () => {
@@ -1004,5 +1059,84 @@ describe("AI backend runtime store", () => {
         }),
       ])
     );
+  });
+
+  it("leaves approval retryable when the websocket is closed before send", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: "conversation-1",
+      activeRunId: "run-1",
+      pendingApprovalToolCallId: "tool-1",
+      messages: [
+        {
+          id: "message-1",
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "tool-1",
+              name: "pull_docker_image",
+              arguments: { imageRef: "redis:latest" },
+              status: "awaiting_approval",
+            },
+          ],
+        },
+      ],
+    });
+    socket.readyState = 3;
+
+    useAIStore.getState().approveTool("tool-1");
+
+    expect(sentPayloads(socket)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "approval.decide" })])
+    );
+    expect(getToolCall("tool-1")).toMatchObject({
+      status: "awaiting_approval",
+      error: "AI connection is not open",
+    });
+  });
+
+  it("restores approval controls when the backend rejects an approval command", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: "conversation-1",
+      activeRunId: "run-1",
+      pendingApprovalToolCallId: "tool-1",
+      messages: [
+        {
+          id: "message-1",
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "tool-1",
+              name: "pull_docker_image",
+              arguments: { imageRef: "redis:latest" },
+              status: "awaiting_approval",
+            },
+          ],
+        },
+      ],
+    });
+
+    useAIStore.getState().approveTool("tool-1");
+    expect(getToolCall("tool-1")).toMatchObject({ status: "running" });
+    const command = sentPayloads(socket).find((payload) => payload.type === "approval.decide");
+
+    socket.emit({
+      type: "command.error",
+      commandType: "approval.decide",
+      clientCommandId: command?.clientCommandId as string,
+      conversationId: "conversation-1",
+      runId: "run-1",
+      code: "APPROVAL_REJECTED",
+      message: "Approval is no longer pending",
+    });
+
+    expect(useAIStore.getState().pendingApprovalToolCallId).toBe("tool-1");
+    expect(getToolCall("tool-1")).toMatchObject({
+      status: "awaiting_approval",
+      error: "Approval is no longer pending",
+    });
   });
 });

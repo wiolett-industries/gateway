@@ -206,6 +206,56 @@ describe("api client contract", () => {
     expect(lastJsonBody(fetchMock)).toEqual({ name: "Server" });
   });
 
+  it("exports PKI blobs through the shared binary request path", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "Content-Type": "application/x-pkcs12" },
+        })
+      );
+
+    await expect(api.exportCertificate("cert-1", "pkcs12")).rejects.toThrow(
+      "Passphrase required for PKCS#12 export"
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const blob = await api.exportCertificate("cert-1", "pkcs12", "secret-passphrase");
+
+    expect(blob.type).toBe("application/x-pkcs12");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/auth/csrf");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/certificates/cert-1/export");
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "POST" });
+    const headers = (fetchMock.mock.calls[1]?.[1] as RequestInit).headers as Headers;
+    expect(headers.get("X-CSRF-Token")).toBe("csrf-token");
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({
+      format: "pkcs12",
+      passphrase: "secret-passphrase",
+    });
+  });
+
+  it("surfaces structured PKI binary export errors", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { code: "PASSPHRASE_REQUIRED", message: "Passphrase required for PKCS#12 export" },
+          { status: 400 }
+        )
+      );
+
+    await expect(
+      api.exportCertificate("cert-1", "pkcs12", "secret-passphrase")
+    ).rejects.toMatchObject({
+      message: "Passphrase required for PKCS#12 export",
+      status: 400,
+      code: "PASSPHRASE_REQUIRED",
+    });
+  });
+
   it("adds docker list metadata and supports cache-busting container inspect", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-21T12:00:00Z"));

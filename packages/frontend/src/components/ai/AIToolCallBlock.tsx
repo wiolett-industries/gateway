@@ -164,7 +164,9 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
       {toolStatus === "awaiting_approval" && toolName !== "ask_question" && (
         <div className="flex items-center gap-2 border border-border bg-yellow-500/5 px-2.5 py-2">
           <span className="flex-1 text-yellow-600 dark:text-yellow-400 text-xs">
-            {hasError ? `Could not send decision: ${safeToolCall.error}` : "This action requires your approval"}
+            {hasError
+              ? `Could not send decision: ${safeToolCall.error}`
+              : "This action requires your approval"}
           </span>
           <Button
             size="sm"
@@ -255,8 +257,10 @@ export function QuestionBlock({
     args.allowFreeText !== undefined ? args.allowFreeText : options.length === 0;
   const status = safeToolCall.status ?? "failed";
   const isAnswered = status === "completed" || status === "failed";
+  const isPending = status === "running";
 
   const handleSubmit = (text: string) => {
+    if (isPending) return;
     if (!text.trim()) return;
     if (typeof safeToolCall.id === "string") onAnswer?.(safeToolCall.id, text.trim());
   };
@@ -287,7 +291,15 @@ export function QuestionBlock({
       <div className="px-3 py-2 border-b border-border">
         <p className="text-sm font-medium">{question}</p>
         {safeToolCall.error && (
-          <p className="mt-1 text-xs text-destructive">Could not send answer: {safeToolCall.error}</p>
+          <p className="mt-1 text-xs text-destructive">
+            Could not send answer: {safeToolCall.error}
+          </p>
+        )}
+        {isPending && (
+          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Sending answer...
+          </p>
         )}
       </div>
 
@@ -297,7 +309,8 @@ export function QuestionBlock({
             <button
               key={i}
               onClick={() => handleSubmit(opt.label)}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-accent transition-colors border-b border-border last:border-b-0"
+              disabled={isPending}
+              className="w-full px-3 py-2 text-left text-sm hover:bg-accent transition-colors border-b border-border last:border-b-0 disabled:pointer-events-none disabled:opacity-60"
             >
               <span>{opt.label}</span>
               {opt.description && (
@@ -321,10 +334,11 @@ export function QuestionBlock({
               placeholder={options.length > 0 ? "Or type your answer..." : "Type your answer..."}
               className="w-full bg-background border border-input px-2.5 py-1.5 pr-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               autoFocus
+              disabled={isPending}
             />
             <button
               className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
-              disabled={!answerText.trim()}
+              disabled={isPending || !answerText.trim()}
               onClick={() => handleSubmit(answerText)}
             >
               <Send className="h-3.5 w-3.5" />

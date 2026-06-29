@@ -158,6 +158,8 @@ Gateway intentionally treats the two OAuth resources differently:
 - Gateway API OAuth keeps expiring access tokens and refresh-token renewal.
 - Gateway MCP OAuth is intended for long-lived MCP and AI clients. MCP authorizations issue a long-lived access token and do not depend on refresh-token renewal during normal use.
 
+MCP authorizations should be removed explicitly when access is no longer needed; revocation immediately stops the corresponding MCP token from being accepted.
+
 OAuth authorizations are managed in **Settings > OAuth Applications**. If the same client has grants for both API and MCP resources, Gateway displays them as separate rows.
 
 ### MCP

@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -75,6 +76,9 @@ export function CertificateDetail() {
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [revokeReason, setRevokeReason] = useState("unspecified");
   const [isRevoking, setIsRevoking] = useState(false);
+  const [pkcs12DialogOpen, setPkcs12DialogOpen] = useState(false);
+  const [pkcs12Passphrase, setPkcs12Passphrase] = useState("");
+  const [downloadingFormat, setDownloadingFormat] = useState<"pem" | "der" | "pkcs12" | null>(null);
 
   const handleRevoke = async () => {
     if (!cert) return;
@@ -92,10 +96,15 @@ export function CertificateDetail() {
     }
   };
 
-  const handleDownload = async (format: "pem" | "der" | "pkcs12") => {
+  const handleDownload = async (format: "pem" | "der" | "pkcs12", passphrase?: string) => {
     if (!cert) return;
+    if (format === "pkcs12" && !passphrase?.trim()) {
+      setPkcs12DialogOpen(true);
+      return;
+    }
+    setDownloadingFormat(format);
     try {
-      const blob = await api.exportCertificate(cert.id, format);
+      const blob = await api.exportCertificate(cert.id, format, passphrase);
       const ext = format === "pem" ? "pem" : format === "der" ? "der" : "p12";
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -103,9 +112,24 @@ export function CertificateDetail() {
       a.download = `${cert.commonName}.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Failed to download certificate");
+      if (format === "pkcs12") {
+        setPkcs12DialogOpen(false);
+        setPkcs12Passphrase("");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to download certificate");
+    } finally {
+      setDownloadingFormat(null);
     }
+  };
+
+  const handlePkcs12Download = () => {
+    if (downloadingFormat === "pkcs12") return;
+    if (!pkcs12Passphrase.trim()) {
+      toast.error("Passphrase required for PKCS#12 export");
+      return;
+    }
+    void handleDownload("pkcs12", pkcs12Passphrase);
   };
 
   if (isLoading) {
@@ -163,7 +187,7 @@ export function CertificateDetail() {
                       <Download className="h-4 w-4" />
                       Download DER
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDownload("pkcs12")}>
+                    <DropdownMenuItem onClick={() => setPkcs12DialogOpen(true)}>
                       <Download className="h-4 w-4" />
                       Download PKCS#12
                     </DropdownMenuItem>
@@ -318,6 +342,53 @@ export function CertificateDetail() {
               </Button>
               <Button variant="destructive" onClick={handleRevoke} disabled={isRevoking}>
                 {isRevoking ? "Revoking..." : "Revoke"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog
+          open={pkcs12DialogOpen}
+          onOpenChange={(open) => {
+            if (downloadingFormat === "pkcs12") return;
+            setPkcs12DialogOpen(open);
+            if (!open) setPkcs12Passphrase("");
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Export PKCS#12</DialogTitle>
+              <DialogDescription>
+                Enter a passphrase to protect the exported certificate archive.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Passphrase</label>
+              <Input
+                type="password"
+                value={pkcs12Passphrase}
+                onChange={(event) => setPkcs12Passphrase(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") handlePkcs12Download();
+                }}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPkcs12DialogOpen(false);
+                  setPkcs12Passphrase("");
+                }}
+                disabled={downloadingFormat === "pkcs12"}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handlePkcs12Download}
+                disabled={downloadingFormat === "pkcs12" || !pkcs12Passphrase.trim()}
+              >
+                {downloadingFormat === "pkcs12" ? "Exporting..." : "Export"}
               </Button>
             </DialogFooter>
           </DialogContent>

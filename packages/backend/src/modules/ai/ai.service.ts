@@ -59,7 +59,6 @@ import { executeProxyTool, PROXY_TOOL_NAMES } from './ai.proxy-tools.js';
 import { findResource } from './ai.resource-search.js';
 import type { AISandboxService } from './ai.sandbox.service.js';
 import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
-import { redactOneTimeSecretToolResult } from './ai-secret-result-redaction.js';
 import {
   agentPage,
   agentPageLimit,
@@ -89,6 +88,7 @@ import { executeWebSearch } from './ai.web-search.js';
 import { getAIToolApprovalDecision } from './ai-approval-policy.js';
 import { AIConversationService } from './ai-conversation.service.js';
 import { type AIChatSearchScope, AIConversationSearchService } from './ai-conversation-search.service.js';
+import { redactOneTimeSecretToolResult } from './ai-secret-result-redaction.js';
 
 const logger = createChildLogger('AIService');
 const SANDBOX_TOOL_NAMES = new Set([

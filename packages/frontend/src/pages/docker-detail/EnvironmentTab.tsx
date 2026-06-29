@@ -337,8 +337,6 @@ export function EnvironmentTab({
     return <div className="py-12 text-center text-muted-foreground">Loading environment...</div>;
   }
 
-  const isLast = (idx: number) => idx === envVars.length - 1;
-
   // Build a unified key map across both sections for cross-section duplicate detection
   const invalidKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
   const allKeyLocations = new Map<string, { envIndices: number[]; secretIndices: number[] }>();
@@ -528,16 +526,6 @@ export function EnvironmentTab({
                         >
                           <Minus className="h-3.5 w-3.5" />
                         </Button>
-                        {isLast(idx) && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                            onClick={addVar}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
                       </div>
                     </div>
                   ))}

@@ -384,7 +384,13 @@ export class ApiClientBase {
         : `${API_BASE}${endpoint}`;
     const generation = this.sessionGeneration;
     const method = (options.method || "GET").toUpperCase();
-    const headers = new Headers(options.headers);
+    const headers = new Headers(this.getHeaders());
+    if (options.headers) {
+      new Headers(options.headers).forEach((value, key) => headers.set(key, value));
+    }
+    if (options.body instanceof FormData) {
+      headers.delete("Content-Type");
+    }
 
     if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
       headers.set("X-CSRF-Token", await this.getCsrfToken());

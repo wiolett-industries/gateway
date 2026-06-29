@@ -15,4 +15,3 @@ export function redactOneTimeSecretToolResult(toolName: string, value: unknown):
     tokenRedacted: true,
   };
 }
-

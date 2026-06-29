@@ -66,8 +66,6 @@ export function SecretsSection({
     });
   };
 
-  const isLastSecret = (idx: number) => idx === secretRows.length - 1;
-
   return (
     <PanelShell
       className="overflow-visible"
@@ -162,16 +160,6 @@ export function SecretsSection({
                     >
                       <Minus className="h-3.5 w-3.5" />
                     </Button>
-                    {isLastSecret(idx) && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 shrink-0 rounded-none border-l border-border"
-                        onClick={addSecretRow}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
                   </div>
                 </>
               ) : (

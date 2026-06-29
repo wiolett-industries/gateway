@@ -664,7 +664,7 @@ const RAW_TOKEN_SCOPES = [
   {
     value: "docker:containers:config",
     label: "Container Config",
-    desc: "Edit container recreate/configuration fields",
+    desc: "View container recreate/configuration fields",
     group: "Docker: Containers",
   },
   {

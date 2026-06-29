@@ -464,11 +464,7 @@ describe('DatabaseConnectionService credential retargeting guard', () => {
   it('allows target-changing edits with a replacement password', async () => {
     const { capturedUpdates, cryptoService, service } = createUpdateService();
 
-    await service.update(
-      'db-1',
-      { config: { host: 'db-alt.example.com', password: 'new-secret-password' } },
-      'user-1'
-    );
+    await service.update('db-1', { config: { host: 'db-alt.example.com', password: 'new-secret-password' } }, 'user-1');
 
     const config = decryptCapturedConfig(capturedUpdates, cryptoService);
     expect(config.host).toBe('db-alt.example.com');

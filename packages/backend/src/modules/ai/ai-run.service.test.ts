@@ -525,9 +525,7 @@ describe('AIRunService runtime snapshots', () => {
           requestId: 'request-1',
           pendingMessages: [{ role: 'system', content: 'server-only system prompt' }],
           allQuestions: [],
-          queuedApprovals: [
-            { id: 'call-2', name: 'restart_docker_container', arguments: { containerId: 'abc' } },
-          ],
+          queuedApprovals: [{ id: 'call-2', name: 'restart_docker_container', arguments: { containerId: 'abc' } }],
         },
       },
     ]);
@@ -546,8 +544,9 @@ describe('AIRunService runtime snapshots', () => {
     const from = vi.fn(() => ({ where }));
     const select = vi.fn(() => ({ from }));
     const service = new AIRunService({ select } as never);
-    (service as unknown as { getRuntimeSnapshot: (conversationId: string) => Promise<unknown> }).getRuntimeSnapshot =
-      vi.fn().mockResolvedValue({
+    (service as unknown as { getRuntimeSnapshot: (conversationId: string) => Promise<unknown> }).getRuntimeSnapshot = vi
+      .fn()
+      .mockResolvedValue({
         activeRun: null,
         assistantDraftContent: null,
         assistantDraftVersion: null,

@@ -384,7 +384,7 @@ export class DockerRegistryService {
       url: this.normalizeOriginUrl(registry.url),
       trustedAuthRealm: registry.trustedAuthRealm?.trim() || '',
       scope: registry.scope,
-      nodeId: registry.scope === 'node' ? registry.nodeId ?? '' : '',
+      nodeId: registry.scope === 'node' ? (registry.nodeId ?? '') : '',
       username: registry.username ?? '',
     };
   }

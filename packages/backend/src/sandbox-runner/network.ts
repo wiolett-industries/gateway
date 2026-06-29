@@ -1,9 +1,9 @@
 import { Buffer } from 'node:buffer';
 import dns from 'node:dns/promises';
+import type { IncomingMessage, RequestOptions } from 'node:http';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
-import type { IncomingMessage, RequestOptions } from 'node:http';
 
 const MAX_REDIRECTS = 5;
 
@@ -141,7 +141,8 @@ async function requestResolvedUrl(target: ResolvedFetchTarget, signal: AbortSign
     headers: { host: target.url.host },
     family: target.family,
     lookup: (_hostname, _options, callback) => callback(null, target.address, target.family),
-    servername: target.url.protocol === 'https:' && net.isIP(target.url.hostname) === 0 ? target.url.hostname : undefined,
+    servername:
+      target.url.protocol === 'https:' && net.isIP(target.url.hostname) === 0 ? target.url.hostname : undefined,
   };
 
   return new Promise((resolve, reject) => {

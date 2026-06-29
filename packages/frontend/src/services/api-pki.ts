@@ -10,7 +10,6 @@ import type {
   PaginatedResponse,
   Template,
 } from "@/types";
-import { API_BASE } from "./api-base";
 import type { ApiClientBaseConstructor } from "./api-mixins";
 
 export function withPkiApi<TBase extends ApiClientBaseConstructor>(Base: TBase) {
@@ -65,13 +64,11 @@ export function withPkiApi<TBase extends ApiClientBaseConstructor>(Base: TBase) 
     }
 
     async exportCAKey(id: string, passphrase: string): Promise<Blob> {
-      const response = await fetch(`${API_BASE}/cas/${id}/export-key`, {
+      const bytes = await this.requestBinary(`/cas/${id}/export-key`, {
         method: "POST",
-        headers: this.getHeaders(),
         body: JSON.stringify({ passphrase }),
       });
-      if (!response.ok) throw new Error("Failed to export CA key");
-      return response.blob();
+      return new Blob([bytes], { type: "application/x-pkcs12" });
     }
 
     // ── Certificates ──────────────────────────────────────────────────
@@ -133,23 +130,27 @@ export function withPkiApi<TBase extends ApiClientBaseConstructor>(Base: TBase) 
     }
 
     async exportCertificate(id: string, format: string, passphrase?: string): Promise<Blob> {
+      if (format === "pkcs12" && !passphrase?.trim()) {
+        throw new Error("Passphrase required for PKCS#12 export");
+      }
       const body: Record<string, string> = { format };
       if (passphrase) body.passphrase = passphrase;
-      const response = await fetch(`${API_BASE}/certificates/${id}/export`, {
+      const bytes = await this.requestBinary(`/certificates/${id}/export`, {
         method: "POST",
-        headers: this.getHeaders(),
         body: JSON.stringify(body),
       });
-      if (!response.ok) throw new Error("Failed to export certificate");
-      return response.blob();
+      const type =
+        format === "der"
+          ? "application/pkix-cert"
+          : format === "pkcs12"
+            ? "application/x-pkcs12"
+            : "application/x-pem-file";
+      return new Blob([bytes], { type });
     }
 
     async downloadChain(id: string): Promise<Blob> {
-      const response = await fetch(`${API_BASE}/certificates/${id}/chain`, {
-        headers: this.getHeaders(),
-      });
-      if (!response.ok) throw new Error("Failed to download chain");
-      return response.blob();
+      const bytes = await this.requestBinary(`/certificates/${id}/chain`);
+      return new Blob([bytes], { type: "application/x-pem-file" });
     }
 
     // ── Templates ─────────────────────────────────────────────────────

@@ -24,9 +24,9 @@ describe('sandbox artifact host path resolution', () => {
     const allowDirectoryAccess = vi.fn().mockResolvedValue(undefined);
     const realWorkspaceDir = await realpath(workspaceDir);
 
-    await expect(resolveHostArtifactPath(workspaceDir, 'artifacts/nested/result.txt', allowDirectoryAccess)).resolves.toBe(
-      path.join(realWorkspaceDir, 'artifacts', 'nested', 'result.txt')
-    );
+    await expect(
+      resolveHostArtifactPath(workspaceDir, 'artifacts/nested/result.txt', allowDirectoryAccess)
+    ).resolves.toBe(path.join(realWorkspaceDir, 'artifacts', 'nested', 'result.txt'));
     expect(allowDirectoryAccess).toHaveBeenCalledWith(path.join(realWorkspaceDir, 'artifacts', 'nested'));
   });
 

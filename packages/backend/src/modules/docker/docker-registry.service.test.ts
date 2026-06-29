@@ -242,20 +242,14 @@ describe('DockerRegistryService credential retargeting guard', () => {
   it('allows origin-changing registry edits with a replacement password', async () => {
     const { capturedUpdates, service } = createRegistryUpdateService(registryRow());
 
-    await service.update(
-      'registry-1',
-      { url: 'https://registry-alt.example.com', password: 'new-password' },
-      'user-1'
-    );
+    await service.update('registry-1', { url: 'https://registry-alt.example.com', password: 'new-password' }, 'user-1');
 
     expect(capturedUpdates[0]).toMatchObject({ url: 'https://registry-alt.example.com' });
     expect(capturedUpdates[0]?.encryptedPassword).toBe(JSON.stringify({ encryptedKey: 'key', encryptedDek: 'dek' }));
   });
 
   it('clears node affinity when a registry is intentionally moved back to global scope', async () => {
-    const { capturedUpdates, service } = createRegistryUpdateService(
-      registryRow({ scope: 'node', nodeId: 'node-1' })
-    );
+    const { capturedUpdates, service } = createRegistryUpdateService(registryRow({ scope: 'node', nodeId: 'node-1' }));
 
     await service.update('registry-1', { scope: 'global', password: 'new-password' }, 'user-1');
 

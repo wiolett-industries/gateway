@@ -246,8 +246,7 @@ export class DatabaseConnectionService {
     const existing = await this.getRow(id);
     const currentConfig = this.decryptConfig(existing.encryptedConfig);
     const replacementPassword = this.extractReplacementPassword(input.config);
-    const nextPassword =
-      replacementPassword !== undefined ? replacementPassword : currentConfig.password;
+    const nextPassword = replacementPassword !== undefined ? replacementPassword : currentConfig.password;
     const inputConfig = input.config ?? {};
     const mergedConfig =
       currentConfig.type === 'postgres'

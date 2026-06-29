@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import dns from 'node:dns/promises';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertFetchUrlAllowed,
   isBlockedNetworkAddress,

@@ -161,6 +161,9 @@ export class OAuthTokenLifecycle {
     const now = Date.now();
     const scopes = canonicalizeScopes(input.scopes);
     if (this.isMcpResource(input.resource)) {
+      // Accepted MCP design: access-only, long-lived bearer token. MCP clients do
+      // not use refresh-token rotation during normal operation; explicit
+      // authorization/token revocation is the lifecycle boundary.
       await db.insert(oauthAccessTokens).values({
         tokenHash: hashSecret(accessToken),
         tokenPrefix: accessToken.slice(0, 12),
