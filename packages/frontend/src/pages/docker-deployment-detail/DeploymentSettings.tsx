@@ -16,7 +16,7 @@ import type { DockerDeployment, DockerHealthCheck, DockerWebhook } from "@/types
 import { formatBytes } from "../docker-detail/helpers";
 import { LabelsSection } from "../docker-detail/LabelsSection";
 import { type PortMapping, PortMappingsSection } from "../docker-detail/PortMappingsSection";
-import { RuntimeSection } from "../docker-detail/RuntimeSection";
+import { type RuntimeFieldErrors, RuntimeSection } from "../docker-detail/RuntimeSection";
 import { WebhookSection } from "../docker-detail/SettingsTab";
 import { type MountEntry, VolumeMountsSection } from "../docker-detail/VolumeMountsSection";
 
@@ -346,6 +346,62 @@ export function DeploymentSettings({
 
     return null;
   }, [cpuCount, memSwapMB, memoryMB, runtimeCapacity]);
+  const runtimeFieldErrors = useMemo<RuntimeFieldErrors>(() => {
+    const fieldErrors: RuntimeFieldErrors = {};
+    const parsedMemoryMB = parseOptionalNumber(memoryMB);
+    if (Number.isNaN(parsedMemoryMB) || (parsedMemoryMB !== null && parsedMemoryMB < 0)) {
+      fieldErrors.memoryMB = true;
+    }
+
+    const parsedSwapMB = memSwapMB === "-1" ? -1 : parseOptionalNumber(memSwapMB);
+    if (
+      Number.isNaN(parsedSwapMB) ||
+      (parsedSwapMB !== null && parsedSwapMB !== -1 && parsedSwapMB < 0)
+    ) {
+      fieldErrors.memSwapMB = true;
+    }
+
+    const parsedCpuCount = parseOptionalNumber(cpuCount);
+    if (Number.isNaN(parsedCpuCount) || (parsedCpuCount !== null && parsedCpuCount < 0)) {
+      fieldErrors.cpuCount = true;
+    }
+
+    if ((parsedSwapMB === -1 || (parsedSwapMB ?? 0) > 0) && !parsedMemoryMB) {
+      fieldErrors.memoryMB = true;
+      fieldErrors.memSwapMB = true;
+    }
+
+    const maxMemoryMB =
+      runtimeCapacity.maxMemoryBytes && runtimeCapacity.maxMemoryBytes > 0
+        ? runtimeCapacity.maxMemoryBytes / 1048576
+        : null;
+    if (maxMemoryMB && parsedMemoryMB !== null && parsedMemoryMB > maxMemoryMB) {
+      fieldErrors.memoryMB = true;
+    }
+
+    const maxSwapMB =
+      runtimeCapacity.maxSwapBytes !== null && runtimeCapacity.maxSwapBytes >= 0
+        ? runtimeCapacity.maxSwapBytes / 1048576
+        : null;
+    if (
+      maxSwapMB !== null &&
+      parsedSwapMB !== null &&
+      parsedSwapMB !== -1 &&
+      parsedSwapMB > maxSwapMB
+    ) {
+      fieldErrors.memSwapMB = true;
+    }
+
+    if (
+      runtimeCapacity.maxCpuCount &&
+      parsedCpuCount !== null &&
+      parsedCpuCount > runtimeCapacity.maxCpuCount
+    ) {
+      fieldErrors.cpuCount = true;
+    }
+
+    return fieldErrors;
+  }, [cpuCount, memSwapMB, memoryMB, runtimeCapacity]);
 
   return (
     <div className="space-y-6 pb-6">
@@ -371,6 +427,7 @@ export function DeploymentSettings({
           maxSwapBytes={runtimeCapacity.maxSwapBytes}
           maxCpuCount={runtimeCapacity.maxCpuCount}
           runtimeValidationError={runtimeValidationError}
+          runtimeFieldErrors={runtimeFieldErrors}
           hasRuntimeChanges={runtimeChanged}
           liveLoading={!!action}
           onApply={() =>

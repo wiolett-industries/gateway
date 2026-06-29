@@ -1,5 +1,6 @@
 import { Save } from "lucide-react";
 import { PanelShell } from "@/components/common/PanelShell";
+import { SettingsControlRow, SettingsInlineControl } from "@/components/common/SettingsControlRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -9,7 +10,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatBytes } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
+
+export interface RuntimeFieldErrors {
+  memoryMB?: boolean;
+  memSwapMB?: boolean;
+  cpuCount?: boolean;
+}
 
 interface RuntimeSectionProps {
   canEdit: boolean;
@@ -32,10 +39,14 @@ interface RuntimeSectionProps {
   maxSwapBytes: number | null;
   maxCpuCount: number | null;
   runtimeValidationError: string | null;
+  runtimeFieldErrors: RuntimeFieldErrors;
   hasRuntimeChanges: boolean;
   liveLoading: boolean;
   onApply: () => void;
 }
+
+const invalidInputClass =
+  "border-destructive ring-1 ring-inset ring-destructive transition-[border-color,box-shadow] focus-visible:border-destructive focus-visible:ring-destructive";
 
 export function RuntimeSection({
   canEdit,
@@ -58,14 +69,12 @@ export function RuntimeSection({
   maxSwapBytes,
   maxCpuCount,
   runtimeValidationError,
+  runtimeFieldErrors,
   hasRuntimeChanges,
   liveLoading,
   onApply,
 }: RuntimeSectionProps) {
-  const maxMemoryMB =
-    maxMemoryBytes && maxMemoryBytes > 0 ? Math.floor(maxMemoryBytes / 1048576) : null;
-  const maxSwapMB =
-    maxSwapBytes !== null && maxSwapBytes >= 0 ? Math.floor(maxSwapBytes / 1048576) : null;
+  const activeFieldErrors = hasRuntimeChanges ? runtimeFieldErrors : {};
 
   return (
     <PanelShell
@@ -84,121 +93,37 @@ export function RuntimeSection({
           </Button>
         ) : null
       }
-      bodyClassName="p-4 space-y-4"
+      bodyClassName="divide-y divide-border"
     >
-      {hasRuntimeChanges && runtimeValidationError && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {runtimeValidationError}
-        </div>
-      )}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <label className="text-xs text-muted-foreground">Restart Policy</label>
-          <Select value={restartPolicy} onValueChange={setRestartPolicy} disabled={!canEdit}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="no">No</SelectItem>
-              <SelectItem value="always">Always</SelectItem>
-              <SelectItem value="unless-stopped">Unless Stopped</SelectItem>
-              <SelectItem value="on-failure">On Failure</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs text-muted-foreground">
-            {restartPolicy === "on-failure" ? "Max Retries" : "PIDs Limit"}
-          </label>
-          {restartPolicy === "on-failure" ? (
+      <SettingsControlRow title="Restart Policy" description="Container restart behavior">
+        <div className="grid w-full gap-2 sm:grid-cols-2">
+          <SettingsInlineControl label="Policy">
+            <Select value={restartPolicy} onValueChange={setRestartPolicy} disabled={!canEdit}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no">No</SelectItem>
+                <SelectItem value="always">Always</SelectItem>
+                <SelectItem value="unless-stopped">Unless Stopped</SelectItem>
+                <SelectItem value="on-failure">On Failure</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsInlineControl>
+          <SettingsInlineControl label="Max Retries">
             <Input
               type="number"
               value={maxRetries}
               onChange={(e) => setMaxRetries(e.target.value)}
               placeholder="0"
-              disabled={!canEdit}
+              disabled={!canEdit || restartPolicy !== "on-failure"}
               min={0}
             />
-          ) : (
-            <Input
-              type="number"
-              value={pidsLimit}
-              onChange={(e) => setPidsLimit(e.target.value)}
-              placeholder="Unlimited"
-              disabled={!canEdit}
-              min={0}
-            />
-          )}
+          </SettingsInlineControl>
         </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <label className="text-xs text-muted-foreground">Memory Limit (MB)</label>
-          <Input
-            type="number"
-            value={memoryMB}
-            onChange={(e) => setMemoryMB(e.target.value)}
-            placeholder="Unlimited"
-            disabled={!canEdit}
-            min={0}
-            max={maxMemoryMB ?? undefined}
-          />
-          <p className="min-h-4 text-[11px] text-muted-foreground">
-            Max:{" "}
-            {maxMemoryBytes && maxMemoryBytes > 0 ? formatBytes(maxMemoryBytes) : "detecting..."}
-          </p>
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs text-muted-foreground">Swap (MB)</label>
-          <Input
-            type="number"
-            value={memSwapMB}
-            onChange={(e) => setMemSwapMB(e.target.value)}
-            placeholder="-1 = unlimited, 0 = disabled"
-            disabled={!canEdit}
-            min={-1}
-            max={maxSwapMB ?? undefined}
-          />
-          <p className="min-h-4 text-[11px] text-muted-foreground">
-            Max extra swap:{" "}
-            {maxSwapBytes !== null && maxSwapBytes >= 0
-              ? formatBytes(maxSwapBytes)
-              : "detecting..."}
-          </p>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <label className="text-xs text-muted-foreground">CPU Limit (cores)</label>
-          <Input
-            type="number"
-            value={cpuCount}
-            onChange={(e) => setCpuCount(e.target.value)}
-            placeholder="Unlimited"
-            disabled={!canEdit}
-            min={0}
-            max={maxCpuCount ?? undefined}
-            step={0.1}
-          />
-          {maxCpuCount && maxCpuCount > 0 && (
-            <p className="text-[11px] text-muted-foreground">Max: {maxCpuCount} cores</p>
-          )}
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs text-muted-foreground">CPU Shares</label>
-          <Input
-            type="number"
-            value={cpuShares}
-            onChange={(e) => setCpuShares(e.target.value)}
-            placeholder="Default: 1024"
-            disabled={!canEdit}
-            min={0}
-          />
-        </div>
-      </div>
-      {restartPolicy === "on-failure" && (
-        <div className="space-y-1.5">
-          <label className="text-xs text-muted-foreground">PIDs Limit</label>
+      </SettingsControlRow>
+      <SettingsControlRow title="PID Limits" description="Maximum processes inside the container">
+        <SettingsInlineControl label="PIDs Limit">
           <Input
             type="number"
             value={pidsLimit}
@@ -207,8 +132,72 @@ export function RuntimeSection({
             disabled={!canEdit}
             min={0}
           />
+        </SettingsInlineControl>
+      </SettingsControlRow>
+      <SettingsControlRow
+        title="Memory Limit and Swap"
+        description={
+          <>
+            Max: {maxMemoryBytes && maxMemoryBytes > 0 ? formatBytes(maxMemoryBytes) : "detecting"}{" "}
+            · {maxSwapBytes !== null && maxSwapBytes >= 0 ? formatBytes(maxSwapBytes) : "detecting"}
+          </>
+        }
+      >
+        <div className="grid w-full gap-2 sm:grid-cols-2">
+          <SettingsInlineControl label="Memory (MB)">
+            <Input
+              type="text"
+              inputMode="numeric"
+              className={cn(activeFieldErrors.memoryMB && invalidInputClass)}
+              value={memoryMB}
+              onChange={(e) => setMemoryMB(e.target.value)}
+              placeholder="Unlimited"
+              disabled={!canEdit}
+            />
+          </SettingsInlineControl>
+          <SettingsInlineControl label="Swap (MB)">
+            <Input
+              type="text"
+              inputMode="numeric"
+              className={cn(activeFieldErrors.memSwapMB && invalidInputClass)}
+              value={memSwapMB}
+              onChange={(e) => setMemSwapMB(e.target.value)}
+              placeholder="-1 = unlimited, 0 = off"
+              disabled={!canEdit}
+            />
+          </SettingsInlineControl>
         </div>
-      )}
+      </SettingsControlRow>
+      <SettingsControlRow
+        title="CPU Limit and Shares"
+        description={maxCpuCount && maxCpuCount > 0 ? `Max: ${maxCpuCount} cores` : undefined}
+      >
+        <div className="grid w-full gap-2 sm:grid-cols-2">
+          <SettingsInlineControl label="CPU Limit">
+            <Input
+              type="number"
+              className={cn(activeFieldErrors.cpuCount && invalidInputClass)}
+              value={cpuCount}
+              onChange={(e) => setCpuCount(e.target.value)}
+              placeholder="Unlimited"
+              disabled={!canEdit}
+              min={0}
+              max={maxCpuCount ?? undefined}
+              step={0.1}
+            />
+          </SettingsInlineControl>
+          <SettingsInlineControl label="CPU Shares">
+            <Input
+              type="number"
+              value={cpuShares}
+              onChange={(e) => setCpuShares(e.target.value)}
+              placeholder="Default: 1024"
+              disabled={!canEdit}
+              min={0}
+            />
+          </SettingsInlineControl>
+        </div>
+      </SettingsControlRow>
     </PanelShell>
   );
 }

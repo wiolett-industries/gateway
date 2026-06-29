@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PanelShell } from "@/components/common/PanelShell";
+import { SettingsControlRow, SettingsInlineControl } from "@/components/common/SettingsControlRow";
 import { DockerHealthCheckSection } from "@/components/docker/DockerHealthCheckSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,7 @@ import type { InspectData } from "./helpers";
 import { LabelsSection } from "./LabelsSection";
 import { type NetworkEntry, NetworksSection, readAttachedNetworks } from "./NetworksSection";
 import { type PortMapping, PortMappingsSection } from "./PortMappingsSection";
-import { RuntimeSection } from "./RuntimeSection";
+import { type RuntimeFieldErrors, RuntimeSection } from "./RuntimeSection";
 import { buildRuntimePayloadFromForm, type RuntimeFormValues } from "./runtime-payload";
 import { buildRecreatePayloadFromForm, type RecreateBaseline } from "./settings-payload";
 import { type MountEntry, VolumeMountsSection } from "./VolumeMountsSection";
@@ -424,10 +425,17 @@ export function SettingsTab({
     };
   }, [nodeId]);
 
-  const runtimeValidationError = useMemo(() => {
+  const runtimeValidation = useMemo(() => {
+    const fieldErrors: RuntimeFieldErrors = {};
+    const messages: string[] = [];
+    const addError = (field: keyof RuntimeFieldErrors, message: string) => {
+      fieldErrors[field] = true;
+      messages.push(message);
+    };
+
     const parsedMemoryMB = parseOptionalNumber(memoryMB);
     if (Number.isNaN(parsedMemoryMB) || (parsedMemoryMB !== null && parsedMemoryMB < 0)) {
-      return "Memory limit must be a non-negative number.";
+      addError("memoryMB", "Memory limit must be a non-negative number.");
     }
 
     const parsedSwapMB = memSwapMB === "-1" ? -1 : parseOptionalNumber(memSwapMB);
@@ -435,16 +443,18 @@ export function SettingsTab({
       Number.isNaN(parsedSwapMB) ||
       (parsedSwapMB !== null && parsedSwapMB !== -1 && parsedSwapMB < 0)
     ) {
-      return "Swap must be -1 or a non-negative number.";
+      addError("memSwapMB", "Swap must be -1 or a non-negative number.");
     }
 
     const parsedCpuCount = parseOptionalNumber(cpuCount);
     if (Number.isNaN(parsedCpuCount) || (parsedCpuCount !== null && parsedCpuCount < 0)) {
-      return "CPU limit must be a non-negative number.";
+      addError("cpuCount", "CPU limit must be a non-negative number.");
     }
 
     if ((parsedSwapMB === -1 || (parsedSwapMB ?? 0) > 0) && !parsedMemoryMB) {
-      return "Set a memory limit before configuring swap.";
+      fieldErrors.memoryMB = true;
+      fieldErrors.memSwapMB = true;
+      messages.push("Set a memory limit before configuring swap.");
     }
 
     const maxMemoryMB =
@@ -452,7 +462,10 @@ export function SettingsTab({
         ? runtimeCapacity.maxMemoryBytes / 1048576
         : null;
     if (maxMemoryMB && parsedMemoryMB !== null && parsedMemoryMB > maxMemoryMB) {
-      return `Memory limit cannot exceed node memory (${formatBytes(runtimeCapacity.maxMemoryBytes ?? 0)}).`;
+      addError(
+        "memoryMB",
+        `Memory limit cannot exceed node memory (${formatBytes(runtimeCapacity.maxMemoryBytes ?? 0)}).`
+      );
     }
 
     const maxSwapMB =
@@ -465,7 +478,10 @@ export function SettingsTab({
       parsedSwapMB !== -1 &&
       parsedSwapMB > maxSwapMB
     ) {
-      return `Swap cannot exceed node swap (${formatBytes(runtimeCapacity.maxSwapBytes ?? 0)}).`;
+      addError(
+        "memSwapMB",
+        `Swap cannot exceed node swap (${formatBytes(runtimeCapacity.maxSwapBytes ?? 0)}).`
+      );
     }
 
     if (
@@ -473,11 +489,16 @@ export function SettingsTab({
       parsedCpuCount !== null &&
       parsedCpuCount > runtimeCapacity.maxCpuCount
     ) {
-      return `CPU limit cannot exceed node CPU capacity (${runtimeCapacity.maxCpuCount} cores).`;
+      addError(
+        "cpuCount",
+        `CPU limit cannot exceed node CPU capacity (${runtimeCapacity.maxCpuCount} cores).`
+      );
     }
 
-    return null;
+    return { message: messages[0] ?? null, fieldErrors };
   }, [cpuCount, memSwapMB, memoryMB, runtimeCapacity]);
+  const runtimeValidationError = runtimeValidation.message;
+  const runtimeFieldErrors = runtimeValidation.fieldErrors;
 
   const executionValidationError = useMemo(() => {
     const parsedStopTimeout = parseOptionalNumber(stopTimeout);
@@ -785,6 +806,7 @@ export function SettingsTab({
           maxSwapBytes={runtimeCapacity.maxSwapBytes}
           maxCpuCount={runtimeCapacity.maxCpuCount}
           runtimeValidationError={runtimeValidationError}
+          runtimeFieldErrors={runtimeFieldErrors}
           hasRuntimeChanges={hasRuntimeChanges}
           liveLoading={liveLoading}
           onApply={handleLiveUpdate}
@@ -794,7 +816,7 @@ export function SettingsTab({
           title="Execution"
           description="Requires container recreation"
           dirty={execChanged || imageTagChanged}
-          bodyClassName="p-4 space-y-4"
+          bodyClassName="divide-y divide-border"
           actions={
             canEdit ? (
               <Button
@@ -815,91 +837,97 @@ export function SettingsTab({
             ) : null
           }
         >
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Image</label>
-              <Input value={parsedImageName} disabled />
+          <SettingsControlRow title="Image and Tag" description="Container image reference">
+            <div className="grid w-full gap-2 sm:grid-cols-2">
+              <SettingsInlineControl label="Image">
+                <Input value={parsedImageName} disabled />
+              </SettingsInlineControl>
+              <SettingsInlineControl label="Tag">
+                <Input
+                  value={imageTag}
+                  onChange={(e) => setImageTag(e.target.value)}
+                  placeholder={imageTagLocked ? "digest" : "latest"}
+                  disabled={!canEdit || imageTagLocked}
+                  style={imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
+                />
+              </SettingsInlineControl>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Tag</label>
-              <Input
-                value={imageTag}
-                onChange={(e) => setImageTag(e.target.value)}
-                placeholder={imageTagLocked ? "digest" : "latest"}
-                disabled={!canEdit || imageTagLocked}
-                style={imageTagChanged ? { borderColor: "rgb(234 179 8)" } : undefined}
-              />
+          </SettingsControlRow>
+          <SettingsControlRow
+            title="Working Dir and Entrypoint"
+            description="Initial process context"
+          >
+            <div className="grid w-full gap-2 sm:grid-cols-2">
+              <SettingsInlineControl label="Working Dir">
+                <Input
+                  value={workingDir}
+                  onChange={(e) => setWorkingDir(e.target.value)}
+                  placeholder="/app"
+                  disabled={!canEdit}
+                />
+              </SettingsInlineControl>
+              <SettingsInlineControl label="Entrypoint">
+                <Input
+                  value={entrypoint}
+                  onChange={(e) => setEntrypoint(e.target.value)}
+                  placeholder="/docker-entrypoint.sh"
+                  disabled={!canEdit}
+                />
+              </SettingsInlineControl>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Entrypoint</label>
-              <Input
-                value={entrypoint}
-                onChange={(e) => setEntrypoint(e.target.value)}
-                placeholder="/docker-entrypoint.sh"
-                disabled={!canEdit}
-              />
+          </SettingsControlRow>
+          <SettingsControlRow title="User and Hostname" description="Container identity">
+            <div className="grid w-full gap-2 sm:grid-cols-2">
+              <SettingsInlineControl label="User">
+                <Input
+                  value={user}
+                  onChange={(e) => setUser(e.target.value)}
+                  placeholder="root"
+                  disabled={!canEdit}
+                />
+              </SettingsInlineControl>
+              <SettingsInlineControl label="Hostname">
+                <Input
+                  value={hostname}
+                  onChange={(e) => setHostname(e.target.value)}
+                  placeholder="container-hostname"
+                  disabled={!canEdit}
+                />
+              </SettingsInlineControl>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Working Directory</label>
-              <Input
-                value={workingDir}
-                onChange={(e) => setWorkingDir(e.target.value)}
-                placeholder="/app"
-                disabled={!canEdit}
-              />
+          </SettingsControlRow>
+          <SettingsControlRow
+            title="Command and Stop Grace"
+            description="Command override and shutdown timeout"
+          >
+            <div className="grid w-full gap-2 sm:grid-cols-2">
+              <SettingsInlineControl label="Command">
+                <Input
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  placeholder="nginx -g daemon off;"
+                  disabled={!canEdit}
+                />
+              </SettingsInlineControl>
+              <SettingsInlineControl label="Stop Grace (s)">
+                <Input
+                  type="number"
+                  min={0}
+                  max={300}
+                  step={1}
+                  value={stopTimeout}
+                  onChange={(e) => setStopTimeout(e.target.value)}
+                  placeholder="20"
+                  disabled={!canEdit}
+                  style={
+                    stopTimeout !== recreateBaseline.stopTimeout
+                      ? { borderColor: "rgb(234 179 8)" }
+                      : undefined
+                  }
+                />
+              </SettingsInlineControl>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">User</label>
-              <Input
-                value={user}
-                onChange={(e) => setUser(e.target.value)}
-                placeholder="root"
-                disabled={!canEdit}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Hostname</label>
-              <Input
-                value={hostname}
-                onChange={(e) => setHostname(e.target.value)}
-                placeholder="container-hostname"
-                disabled={!canEdit}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Command</label>
-              <Input
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="nginx -g daemon off;"
-                disabled={!canEdit}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Stop Grace (s)</label>
-              <Input
-                type="number"
-                min={0}
-                max={300}
-                step={1}
-                value={stopTimeout}
-                onChange={(e) => setStopTimeout(e.target.value)}
-                placeholder="20"
-                disabled={!canEdit}
-                style={
-                  stopTimeout !== recreateBaseline.stopTimeout
-                    ? { borderColor: "rgb(234 179 8)" }
-                    : undefined
-                }
-              />
-            </div>
-          </div>
+          </SettingsControlRow>
         </PanelShell>
       </div>
 

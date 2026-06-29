@@ -148,7 +148,7 @@ describe("docker detail SettingsTab", () => {
     render(<WebhookSection nodeId="node-1" containerName="app" />);
 
     expect(
-      await screen.findByDisplayValue(`${window.location.origin}/api/webhooks/docker/token-1`)
+      await screen.findByText(`${window.location.origin}/api/webhooks/docker/token-1`)
     ).toBeInTheDocument();
     expect(screen.getByDisplayValue("3")).toBeInTheDocument();
   });

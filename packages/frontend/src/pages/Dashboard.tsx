@@ -24,6 +24,27 @@ import { PinnedProxyCard } from "./dashboard/PinnedProxyCard";
 import { QuickStatsCard } from "./dashboard/QuickStatsCard";
 import { RecentActivityCard } from "./dashboard/RecentActivityCard";
 
+type DashboardDevWindow = Window & {
+  gatewayDev?: Record<string, unknown>;
+  gatewayDevShowExpiringSoon?: () => void;
+  gatewayDevHideExpiringSoon?: () => void;
+};
+
+function makeDevExpiringItems(): ExpiringItem[] {
+  const makeItem = (id: string, name: string, daysLeft: number): ExpiringItem => ({
+    id,
+    name,
+    type: "ssl",
+    expiresAt: new Date(Date.now() + daysLeft * 24 * 60 * 60 * 1000).toISOString(),
+    daysLeft,
+  });
+
+  return [
+    makeItem("dev-expiring-preview", "backend.preview.pearldivergame.com", 15),
+    makeItem("dev-expiring-staging", "backend.staging.pearldivergame.com", 15),
+  ];
+}
+
 export function Dashboard() {
   const { user, hasScope, hasScopedAccess } = useAuthStore();
   const { cas, fetchCAs, isLoading: casLoading } = useCAStore();
@@ -71,6 +92,7 @@ export function Dashboard() {
     () => hasScopedAccess("proxy:view") && api.getCached<ProxyHost[]>(healthCacheKey) === undefined
   );
   const [expiringItems, setExpiringItems] = useState<ExpiringItem[]>([]);
+  const [forcedExpiringItems, setForcedExpiringItems] = useState<ExpiringItem[] | null>(null);
   const [nodesList, setNodesList] = useState<Node[]>(
     () => api.getCached<Node[]>(nodesCacheKey) ?? []
   );
@@ -87,6 +109,29 @@ export function Dashboard() {
   );
   const canViewCAs =
     pkiEnabled && (hasScope("pki:ca:view:root") || hasScope("pki:ca:view:intermediate"));
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || typeof window === "undefined") return;
+
+    const win = window as DashboardDevWindow;
+    const gatewayDev = (win.gatewayDev ??= {});
+    const showExpiringSoon = () => setForcedExpiringItems(makeDevExpiringItems());
+    const hideExpiringSoon = () => setForcedExpiringItems(null);
+
+    gatewayDev.showExpiringSoon = showExpiringSoon;
+    gatewayDev.hideExpiringSoon = hideExpiringSoon;
+    win.gatewayDevShowExpiringSoon = showExpiringSoon;
+    win.gatewayDevHideExpiringSoon = hideExpiringSoon;
+
+    return () => {
+      if (gatewayDev.showExpiringSoon === showExpiringSoon) delete gatewayDev.showExpiringSoon;
+      if (gatewayDev.hideExpiringSoon === hideExpiringSoon) delete gatewayDev.hideExpiringSoon;
+      if (win.gatewayDevShowExpiringSoon === showExpiringSoon)
+        delete win.gatewayDevShowExpiringSoon;
+      if (win.gatewayDevHideExpiringSoon === hideExpiringSoon)
+        delete win.gatewayDevHideExpiringSoon;
+    };
+  }, []);
 
   const refreshNodes = useCallback(() => {
     if (!hasScopedAccess("nodes:details")) {
@@ -420,6 +465,11 @@ export function Dashboard() {
     pkiCertificates: { total: totalCerts, active: totalCerts, revoked: 0, expired: 0 },
     cas: { total: totalCAs, active: activeCAs },
   };
+  const expiringItemsForCard = forcedExpiringItems ?? expiringItems;
+  const hasExpiringItemScope = useCallback(
+    (scope: string) => (forcedExpiringItems ? true : hasScopedAccess(scope)),
+    [forcedExpiringItems, hasScopedAccess]
+  );
 
   if (casLoading && statsLoading && !stats) {
     return <LoadingSpinner />;
@@ -491,7 +541,10 @@ export function Dashboard() {
               />
             ))}
 
-          <CertificateExpiryCard expiringItems={expiringItems} hasScope={hasScopedAccess} />
+          <CertificateExpiryCard
+            expiringItems={expiringItemsForCard}
+            hasScope={hasExpiringItemScope}
+          />
 
           <HealthOverviewCard
             healthHosts={visibleHealthHosts}

@@ -1,5 +1,8 @@
-import { CheckCircle, Copy } from "lucide-react";
-import { toast } from "sonner";
+import { CheckCircle } from "lucide-react";
+import { CopyValueField } from "@/components/common/CopyValueField";
+import { PanelShell } from "@/components/common/PanelShell";
+import { SectionHeader } from "@/components/common/SectionHeader";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { DNSChallenge } from "@/types";
 
@@ -22,54 +25,41 @@ export function DNSChallengeVerification({
 }: DNSChallengeVerificationProps) {
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <CheckCircle className="h-5 w-5 text-amber-500" />
-        <h3 className="text-sm font-semibold">{title}</h3>
-      </div>
-      <p className="text-sm text-muted-foreground">{description}</p>
-      <div className="border border-border divide-y divide-border">
+      <PanelShell
+        title={
+          <span className="flex items-center gap-2">
+            <CheckCircle className="h-4 w-4 text-amber-500" />
+            {title}
+          </span>
+        }
+        description={description}
+        bodyClassName="divide-y divide-border"
+      >
         {challenges.map((challenge, i) => (
-          <div key={`${challenge.domain}-${i}`} className="p-3 space-y-1">
-            <p className="text-xs text-muted-foreground">
-              Domain: <span className="font-medium text-foreground">{challenge.domain}</span>
-            </p>
-            <div className="flex items-center gap-2">
-              <p className="text-xs text-muted-foreground">Record Name:</p>
-              <code className="text-xs font-mono bg-muted px-1.5 py-0.5 break-all min-w-0">
-                {challenge.recordName}
-              </code>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => {
-                  navigator.clipboard.writeText(challenge.recordName);
-                  toast.success("Copied");
-                }}
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <p className="text-xs text-muted-foreground">Record Value:</p>
-              <code className="text-xs font-mono bg-muted px-1.5 py-0.5 break-all min-w-0">
-                {challenge.recordValue}
-              </code>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => {
-                  navigator.clipboard.writeText(challenge.recordValue);
-                  toast.success("Copied");
-                }}
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
+          <div key={`${challenge.domain}-${i}`}>
+            <SectionHeader
+              title={
+                <span className="block min-w-0 truncate" title={challenge.domain}>
+                  {challenge.domain}
+                </span>
+              }
+              description="Domain"
+              actions={
+                <Badge variant="secondary" className="shrink-0 font-mono">
+                  TXT
+                </Badge>
+              }
+              className="bg-muted/40 px-3 py-2 dark:bg-muted/60"
+              titleClassName="min-w-0 truncate text-sm"
+              descriptionClassName="uppercase"
+            />
+            <div className="space-y-3 p-3">
+              <CopyValueField label="Record name" value={challenge.recordName} />
+              <CopyValueField label="Record value" value={challenge.recordValue} />
             </div>
           </div>
         ))}
-      </div>
+      </PanelShell>
       <Button onClick={onVerify} disabled={isVerifying}>
         {isVerifying ? "Verifying..." : verifyLabel}
       </Button>
