@@ -515,6 +515,153 @@ describe("AI backend runtime store", () => {
     ]);
   });
 
+  it("streams assistant deltas without REST refetches and ignores stale draft snapshots", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: "conversation-1",
+      recentConversations: [
+        {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:00.000Z",
+          lastUserMessageAt: "2026-06-26T10:00:00.000Z",
+          folderId: null,
+          messageCount: 1,
+          status: "active",
+          blockReason: null,
+          activeRunStatus: "running",
+        },
+      ],
+    });
+    vi.mocked(listConversations).mockClear();
+    vi.mocked(getConversation).mockClear();
+
+    socket.emit({
+      type: "assistant.delta",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      content: "Hel",
+      version: 1,
+    });
+    socket.emit({
+      type: "assistant.delta",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      content: "lo",
+      version: 2,
+    });
+
+    expect(useAIStore.getState().messages).toEqual([
+      expect.objectContaining({
+        id: "run-1:runtime",
+        role: "assistant",
+        content: "Hello",
+        isStreaming: true,
+      }),
+    ]);
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [
+          {
+            id: "run-1:draft",
+            role: "assistant",
+            content: "Hel",
+            isStreaming: true,
+          },
+        ],
+        runtime: {
+          activeRun: runtimeRun("running"),
+          assistantDraftContent: "Hel",
+          assistantDraftVersion: 1,
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [],
+        },
+      },
+    });
+
+    expect(useAIStore.getState().messages[0]).toMatchObject({
+      id: "run-1:draft",
+      content: "Hello",
+      isStreaming: true,
+    });
+
+    socket.emit({
+      type: "assistant.delta",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      content: " after approval",
+      version: 3,
+    });
+
+    expect(useAIStore.getState().messages[0]).toMatchObject({
+      id: "run-1:draft",
+      content: "Hello after approval",
+      isStreaming: true,
+    });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:02.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [
+          {
+            id: "assistant-final",
+            role: "assistant",
+            content: "Hello after approval",
+            isStreaming: false,
+          },
+        ],
+        runtime: {
+          activeRun: null,
+          assistantDraftContent: null,
+          assistantDraftVersion: null,
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [],
+        },
+      },
+    });
+
+    expect(useAIStore.getState()).toMatchObject({
+      activeRunId: null,
+      isStreaming: false,
+    });
+    expect(useAIStore.getState().messages).toEqual([
+      expect.objectContaining({
+        id: "assistant-final",
+        content: "Hello after approval",
+        isStreaming: false,
+      }),
+    ]);
+    expect(listConversations).not.toHaveBeenCalled();
+    expect(getConversation).not.toHaveBeenCalled();
+  });
+
   it("merges pending ask_question runtime state into the saved assistant tool call", async () => {
     const socket = await connectAI();
     useAIStore.setState({ activeConversationId: "conversation-1" });

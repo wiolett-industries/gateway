@@ -232,6 +232,8 @@ export interface AIRunQuestion {
 
 export interface AIRuntimeSnapshot {
   activeRun: AIRun | null;
+  assistantDraftContent?: string | null;
+  assistantDraftVersion?: number | null;
   pendingApprovals: AIRunToolCall[];
   pendingQuestion: AIRunQuestion | null;
   pendingQuestions: AIRunQuestion[];
@@ -315,6 +317,13 @@ export type WSServerMessage =
       type: "conversation.snapshot";
       conversationId: string;
       snapshot: AIConversationRuntimeSnapshot;
+    }
+  | {
+      type: "assistant.delta";
+      conversationId: string;
+      runId: string;
+      content: string;
+      version: number;
     }
   | { type: "run.status_changed"; conversationId: string; run: AIRun | null }
   | { type: "stores.invalidated"; conversationId: string; stores: string[] }

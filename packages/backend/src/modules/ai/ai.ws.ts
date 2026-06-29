@@ -21,6 +21,7 @@ interface WSConnectionState {
   user: User | null;
   sessionId: string | null;
   authenticated: boolean;
+  subscribedConversationIds: Set<string>;
   runtimeUnsubscribe: (() => void) | null;
   keepaliveInterval: ReturnType<typeof setInterval> | null;
 }
@@ -98,8 +99,33 @@ function subscribeToUserRuntime(ws: WSContext, state: WSConnectionState, userId:
   if (state.runtimeUnsubscribe) return;
   const eventBus = container.resolve(EventBusService);
   state.runtimeUnsubscribe = eventBus.subscribe(aiUserConversationsChangedChannel(userId), (payload) => {
-    const event = payload as { userId?: string; conversationId?: string; invalidatedStores?: string[] };
+    const event = payload as {
+      type?: string;
+      userId?: string;
+      conversationId?: string;
+      runId?: string;
+      content?: string;
+      version?: number;
+      invalidatedStores?: string[];
+    };
     if (event.userId !== userId || typeof event.conversationId !== 'string') return;
+    if (event.type === 'assistant.delta') {
+      if (
+        state.subscribedConversationIds.has(event.conversationId) &&
+        typeof event.runId === 'string' &&
+        typeof event.content === 'string' &&
+        typeof event.version === 'number'
+      ) {
+        send(ws, {
+          type: 'assistant.delta',
+          conversationId: event.conversationId,
+          runId: event.runId,
+          content: event.content,
+          version: event.version,
+        });
+      }
+      return;
+    }
     if (event.invalidatedStores?.length) {
       send(ws, {
         type: 'stores.invalidated',
@@ -200,6 +226,7 @@ export function createWSHandlers() {
         user: null,
         sessionId: null,
         authenticated: false,
+        subscribedConversationIds: new Set(),
         runtimeUnsubscribe: null,
         keepaliveInterval: null,
       };
@@ -263,6 +290,7 @@ export function createWSHandlers() {
 
       if (msg.type === 'conversation.subscribe') {
         try {
+          state.subscribedConversationIds.add(msg.conversationId);
           send(ws, {
             type: 'command.ack',
             commandType: msg.type,
@@ -277,6 +305,7 @@ export function createWSHandlers() {
       }
 
       if (msg.type === 'conversation.unsubscribe') {
+        state.subscribedConversationIds.delete(msg.conversationId);
         send(ws, { type: 'command.ack', commandType: msg.type, conversationId: msg.conversationId });
         return;
       }
@@ -334,6 +363,7 @@ export function createWSHandlers() {
             runId: result.run.id,
             duplicate: result.duplicate,
           });
+          state.subscribedConversationIds.add(result.conversationId);
           const snapshot = await sendConversationSnapshot(ws, user.id, result.conversationId);
           send(ws, {
             type: 'run.status_changed',

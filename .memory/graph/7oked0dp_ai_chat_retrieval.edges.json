@@ -1,0 +1,55 @@
+{
+  "file_name": "7oked0dp_ai_chat_retrieval",
+  "edges": [
+    {
+      "from_id": "7oked0dp",
+      "to_id": "ph8ejel0",
+      "relation": "derived_from",
+      "weight": 0.72,
+      "reason": "Both discuss separation/refactor of AI web-search behavior into dedicated modules and tests; same area of AI gateway services.",
+      "source": "auto",
+      "created_at": 1782520396384,
+      "updated_at": 1782520396384
+    },
+    {
+      "from_id": "7oked0dp",
+      "to_id": "h8y5ou2d",
+      "relation": "derived_from",
+      "weight": 0.68,
+      "reason": "Relocates resource-search/find logic; same area of AI gateway resource/search refactor.",
+      "source": "auto",
+      "created_at": 1782520396384,
+      "updated_at": 1782520396384
+    },
+    {
+      "from_id": "7oked0dp",
+      "to_id": "7abclq2n",
+      "relation": "depends_on",
+      "weight": 0.6,
+      "reason": "Data flow and test scaffolding for database extraction seams referenced by databases service changes.",
+      "source": "auto",
+      "created_at": 1782520396384,
+      "updated_at": 1782520396384
+    },
+    {
+      "from_id": "7oked0dp",
+      "to_id": "3b6g7z3k",
+      "relation": "depends_on",
+      "weight": 0.58,
+      "reason": "Backend database view/editor fixes interrelate with Postgres handling; same gateway database concerns.",
+      "source": "auto",
+      "created_at": 1782520396384,
+      "updated_at": 1782520396384
+    },
+    {
+      "from_id": "7oked0dp",
+      "to_id": "412x4uua",
+      "relation": "uses_service",
+      "weight": 0.5,
+      "reason": "Frontend API client refactor pattern used as precedent for service extraction; same_gateway frontend/backend collaboration.",
+      "source": "auto",
+      "created_at": 1782520396384,
+      "updated_at": 1782520396384
+    }
+  ]
+}

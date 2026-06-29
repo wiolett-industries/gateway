@@ -128,6 +128,23 @@ describe('AIService system prompt', () => {
             lastUserMessageAt: '2026-06-26T12:00:00.000Z',
           },
         ],
+        projectRecentChatContexts: [
+          {
+            conversationId: 'conversation-2',
+            projectId: 'project-1',
+            title: 'Docker deploy debug',
+            lastUserMessageAt: '2026-06-26T11:00:00.000Z',
+            messages: [
+              {
+                messageId: 'message-1',
+                role: 'user',
+                createdAt: '2026-06-26T11:00:00.000Z',
+                content: 'Check docker compose logs',
+                toolName: null,
+              },
+            ],
+          },
+        ],
       }),
     };
     const service = createService({ monitoringService, conversationSearchService });
@@ -146,7 +163,28 @@ describe('AIService system prompt', () => {
     expect(prompt).toContain('Current project ID: project-1');
     expect(prompt).toContain('Gateway AI');
     expect(prompt).toContain('Migration issue');
-    expect(prompt).toContain('These pointers are not full context or evidence');
+    expect(prompt).toContain('Project recent chat tail context');
+    expect(prompt).toContain('Docker deploy debug');
+    expect(prompt).toContain('Check docker compose logs');
+    expect(prompt).toContain('These pointers and tail snippets are not full context or evidence');
+  });
+
+  it('requires startup retrieval and strengthens discovery/documentation rules', async () => {
+    const monitoringService = {
+      getDashboardStats: vi.fn().mockRejectedValue(new Error('stats unavailable')),
+    };
+    const service = createService({ monitoringService });
+
+    const prompt = await service.buildSystemPrompt({
+      ...BASE_USER,
+      scopes: ['feat:ai:use'],
+    });
+
+    expect(prompt).toContain('At the first substantive user request in a new conversation');
+    expect(prompt).toContain('search the current project and also run an all_user_chats search');
+    expect(prompt).toContain('always search both the current retrieval boundary and all_user_chats');
+    expect(prompt).toContain('Do not answer from general intuition when internal documentation can verify');
+    expect(prompt).toContain('do NOT say the tool is unavailable or that you cannot do it');
   });
 
   it('advertises logging documentation to logging-scoped users', async () => {

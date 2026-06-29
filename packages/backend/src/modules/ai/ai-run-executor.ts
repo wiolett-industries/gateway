@@ -18,6 +18,7 @@ import { AIService } from './ai.service.js';
 import type { ChatMessage, WSServerMessage } from './ai.types.js';
 import { classifyAIToolForApproval } from './ai-approval-policy.js';
 import type { AIConversationSearchService } from './ai-conversation-search.service.js';
+import { type AssistantLiveDraft, AssistantLiveDraftStore } from './ai-live-draft-store.js';
 import {
   normalizeCheckpoint,
   questionTextFromArgs,
@@ -29,6 +30,13 @@ import {
 const logger = createChildLogger('AI-Run-Executor');
 
 type PublishConversationChanged = (userId: string, conversationId: string, invalidatedStores?: string[]) => void;
+type PublishAssistantDelta = (
+  userId: string,
+  conversationId: string,
+  runId: string,
+  content: string,
+  version: number
+) => void;
 
 interface ApprovalContinuationInput {
   conversationId: string;
@@ -58,10 +66,12 @@ interface ResumeInput {
 export class AIRunExecutor {
   private readonly abortControllers = new Map<string, AbortController>();
   private readonly executingRuns = new Set<string>();
+  private readonly assistantLiveDrafts = new AssistantLiveDraftStore();
 
   constructor(
     private readonly db: DrizzleClient,
     private readonly publishConversationChanged: PublishConversationChanged,
+    private readonly publishAssistantDelta: PublishAssistantDelta,
     private readonly conversationSearchService?: AIConversationSearchService
   ) {}
 
@@ -93,6 +103,24 @@ export class AIRunExecutor {
     this.abortControllers.get(runId)?.abort();
     this.abortControllers.delete(runId);
     this.executingRuns.delete(runId);
+  }
+
+  getAssistantDraft(runId: string): AssistantLiveDraft | null {
+    return this.assistantLiveDrafts.get(runId);
+  }
+
+  async flushAssistantDraftToMessage(
+    userId: string,
+    conversationId: string,
+    runId: string,
+    fallbackContent?: string | null
+  ): Promise<string | null> {
+    const content = this.assistantLiveDrafts.getContent(runId, fallbackContent);
+    const assistantMessageId = await this.persistAssistantMessageIfNeeded(userId, conversationId, content);
+    if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(runId, assistantMessageId);
+    this.assistantLiveDrafts.forget(runId);
+    await this.clearAssistantDraft(runId);
+    return assistantMessageId;
   }
 
   private async executeRun(user: User, runId: string): Promise<void> {
@@ -138,14 +166,15 @@ export class AIRunExecutor {
       }
     } catch (error) {
       if (abortController.signal.aborted) return;
-      const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+      const assistantMessageId = await this.persistAssistantBoundary(
         user.id,
         run.conversationId,
+        run.id,
         assistantContent
       );
       if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
-      await this.clearAssistantDraft(run.id);
       await this.updateRunStatus(run.id, 'failed', error instanceof Error ? error.message : 'AI run failed');
+      this.forgetAssistantDraftState(run.id);
       this.publishConversationChanged(user.id, run.conversationId);
     } finally {
       this.abortControllers.delete(run.id);
@@ -242,14 +271,15 @@ export class AIRunExecutor {
       }
     } catch (error) {
       if (abortController.signal.aborted) return;
-      const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+      const assistantMessageId = await this.persistAssistantBoundary(
         user.id,
         input.conversationId,
+        input.runId,
         assistantContent
       );
       if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(input.runId, assistantMessageId);
-      await this.clearAssistantDraft(input.runId);
       await this.updateRunStatus(input.runId, 'failed', error instanceof Error ? error.message : 'AI run failed');
+      this.forgetAssistantDraftState(input.runId);
       this.publishConversationChanged(user.id, input.conversationId);
     } finally {
       this.abortControllers.delete(input.runId);
@@ -269,8 +299,8 @@ export class AIRunExecutor {
 
     if (event.type === 'text_delta') {
       assistantContent += event.content;
-      await this.updateAssistantDraft(run.id, assistantContent);
-      this.publishConversationChanged(user.id, run.conversationId);
+      const draft = this.appendAssistantDraft(run.id, run.conversationId, event.content);
+      this.publishAssistantDelta(user.id, run.conversationId, run.id, event.content, draft.version);
       return { assistantContent, assistantMessageWritten, done: false };
     }
 
@@ -299,13 +329,13 @@ export class AIRunExecutor {
     }
 
     if (event.type === 'tool_approval_required') {
-      const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+      const assistantMessageId = await this.persistAssistantBoundary(
         user.id,
         run.conversationId,
+        run.id,
         assistantContent
       );
       assistantMessageWritten = true;
-      await this.clearAssistantDraft(run.id);
       await this.persistPendingInteraction(run, event, assistantMessageId);
       this.conversationSearchService?.rebuildConversationIndexBestEffort(user.id, run.conversationId);
       await this.setConversationCheckpoint(run.conversationId, event);
@@ -315,42 +345,46 @@ export class AIRunExecutor {
     }
 
     if (event.type === 'error' || event.type === 'context_blocked') {
-      const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+      const assistantMessageId = await this.persistAssistantBoundary(
         user.id,
         run.conversationId,
+        run.id,
         assistantContent
       );
       assistantMessageWritten = true;
       if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
-      await this.clearAssistantDraft(run.id);
       await this.updateRunStatus(run.id, 'failed', event.type === 'error' ? event.message : event.reason);
+      this.forgetAssistantDraftState(run.id);
       this.publishConversationChanged(user.id, run.conversationId);
       return { assistantContent, assistantMessageWritten, done: true };
     }
 
     if (event.type === 'conversation_ended') {
-      const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+      const assistantMessageId = await this.persistAssistantBoundary(
         user.id,
         run.conversationId,
+        run.id,
         assistantContent
       );
       assistantMessageWritten = true;
       if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
-      await this.clearAssistantDraft(run.id);
     }
 
     if (event.type === 'done') {
       if (!assistantMessageWritten) {
-        const assistantMessageId = await this.persistAssistantMessageIfNeeded(
+        const assistantMessageId = await this.persistAssistantBoundary(
           user.id,
           run.conversationId,
+          run.id,
           assistantContent
         );
         if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
+      } else {
+        await this.clearAssistantDraftState(run.id);
       }
-      await this.clearAssistantDraft(run.id);
       await this.updateRunStatus(run.id, 'completed');
       await this.setConversationCheckpoint(run.conversationId, null);
+      this.forgetAssistantDraftState(run.id);
       this.publishConversationChanged(user.id, run.conversationId);
       return { assistantContent, assistantMessageWritten, done: true };
     }
@@ -401,6 +435,31 @@ export class AIRunExecutor {
     await this.db.update(aiConversations).set({ updatedAt: new Date() }).where(eq(aiConversations.id, conversationId));
     this.conversationSearchService?.rebuildConversationIndexBestEffort(userId, conversationId);
     return message?.id ?? null;
+  }
+
+  private appendAssistantDraft(runId: string, conversationId: string, delta: string): AssistantLiveDraft {
+    return this.assistantLiveDrafts.append(runId, conversationId, delta);
+  }
+
+  private async persistAssistantBoundary(
+    userId: string,
+    conversationId: string,
+    runId: string,
+    fallbackContent: string
+  ): Promise<string | null> {
+    const content = this.assistantLiveDrafts.getContent(runId, fallbackContent);
+    const assistantMessageId = await this.persistAssistantMessageIfNeeded(userId, conversationId, content);
+    await this.clearAssistantDraftState(runId);
+    return assistantMessageId;
+  }
+
+  private async clearAssistantDraftState(runId: string): Promise<void> {
+    this.assistantLiveDrafts.clearContent(runId);
+    await this.clearAssistantDraft(runId);
+  }
+
+  private forgetAssistantDraftState(runId: string): void {
+    this.assistantLiveDrafts.forget(runId);
   }
 
   private async recordToolCall(input: {
@@ -496,13 +555,6 @@ export class AIRunExecutor {
         updatedAt: new Date(),
       })
       .where(eq(aiConversations.id, conversationId));
-  }
-
-  private async updateAssistantDraft(runId: string, content: string): Promise<void> {
-    await this.db
-      .update(aiRuns)
-      .set({ assistantDraftContent: content, updatedAt: new Date() })
-      .where(eq(aiRuns.id, runId));
   }
 
   private async clearAssistantDraft(runId: string): Promise<void> {

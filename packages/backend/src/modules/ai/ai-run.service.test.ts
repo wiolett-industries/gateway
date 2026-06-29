@@ -60,6 +60,18 @@ function createStartRunDb({ selectRows, insertRows = [] }: { selectRows: unknown
   };
 }
 
+function createRuntimeSnapshotDb() {
+  let whereCall = 0;
+  const orderByQuestions = vi.fn(async () => []);
+  const where = vi.fn(() => {
+    whereCall += 1;
+    return whereCall === 2 ? { orderBy: orderByQuestions } : Promise.resolve([]);
+  });
+  const from = vi.fn(() => ({ where }));
+  const select = vi.fn(() => ({ from }));
+  return { select };
+}
+
 describe('AIRunService startUserRun', () => {
   it('creates a conversation, user message, and queued run atomically', async () => {
     const conversation = { id: 'conversation-1', lastContext: null };
@@ -453,6 +465,99 @@ describe('AIRunService question answers', () => {
     await expect(answer).rejects.toMatchObject({
       code: 'AI_QUESTION_ANSWER_CONFLICT',
       statusCode: 409,
+    });
+  });
+});
+
+describe('AIRunService stopRun', () => {
+  it('aborts the executor and flushes the active draft before publishing the stopped snapshot', async () => {
+    const stopped = {
+      id: 'run-1',
+      conversationId: 'conversation-1',
+      userId: 'user-1',
+      status: 'stopped',
+      assistantDraftContent: 'Persisted fallback',
+    };
+    const harness = createTransitionDb([stopped], [[{ id: 'conversation-1' }]]);
+    const service = new AIRunService(harness.db as never);
+    const executor = {
+      abortRun: vi.fn(),
+      flushAssistantDraftToMessage: vi.fn().mockResolvedValue('assistant-1'),
+    };
+    (service as unknown as { executor: typeof executor }).executor = executor;
+
+    await expect(
+      service.stopRun({
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+        userId: 'user-1',
+      })
+    ).resolves.toEqual({ run: stopped, duplicate: false });
+
+    expect(executor.abortRun).toHaveBeenCalledWith('run-1');
+    expect(executor.flushAssistantDraftToMessage).toHaveBeenCalledWith(
+      'user-1',
+      'conversation-1',
+      'run-1',
+      'Persisted fallback'
+    );
+    expect(executor.abortRun.mock.invocationCallOrder[0]).toBeLessThan(
+      executor.flushAssistantDraftToMessage.mock.invocationCallOrder[0]
+    );
+  });
+});
+
+describe('AIRunService runtime snapshots', () => {
+  it('uses the in-memory live draft and version when an active run is streaming', async () => {
+    const run = {
+      id: 'run-1',
+      conversationId: 'conversation-1',
+      assistantDraftContent: 'Persisted draft',
+    };
+    const service = new AIRunService(createRuntimeSnapshotDb() as never);
+    (service as unknown as { getActiveRun: (conversationId: string) => Promise<unknown> }).getActiveRun = vi
+      .fn()
+      .mockResolvedValue(run);
+    (
+      service as unknown as { listConversationToolCalls: (conversationId: string) => Promise<unknown[]> }
+    ).listConversationToolCalls = vi.fn().mockResolvedValue([]);
+    (service as unknown as { executor: { getAssistantDraft: (runId: string) => unknown } }).executor = {
+      getAssistantDraft: vi.fn(() => ({
+        runId: 'run-1',
+        conversationId: 'conversation-1',
+        content: 'Live draft',
+        version: 7,
+      })),
+    };
+
+    await expect(service.getRuntimeSnapshot('conversation-1')).resolves.toMatchObject({
+      activeRun: run,
+      assistantDraftContent: 'Live draft',
+      assistantDraftVersion: 7,
+    });
+  });
+
+  it('falls back to persisted assistant draft content when no live draft exists', async () => {
+    const run = {
+      id: 'run-1',
+      conversationId: 'conversation-1',
+      assistantDraftContent: 'Persisted draft',
+    };
+    const service = new AIRunService(createRuntimeSnapshotDb() as never);
+    (service as unknown as { getActiveRun: (conversationId: string) => Promise<unknown> }).getActiveRun = vi
+      .fn()
+      .mockResolvedValue(run);
+    (
+      service as unknown as { listConversationToolCalls: (conversationId: string) => Promise<unknown[]> }
+    ).listConversationToolCalls = vi.fn().mockResolvedValue([]);
+    (service as unknown as { executor: { getAssistantDraft: (runId: string) => unknown } }).executor = {
+      getAssistantDraft: vi.fn(() => null),
+    };
+
+    await expect(service.getRuntimeSnapshot('conversation-1')).resolves.toMatchObject({
+      activeRun: run,
+      assistantDraftContent: 'Persisted draft',
+      assistantDraftVersion: 0,
     });
   });
 });

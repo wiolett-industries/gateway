@@ -26,6 +26,19 @@ export interface SystemPromptContext {
       title: string;
       lastUserMessageAt: string | null;
     }>;
+    projectRecentChatContexts: Array<{
+      conversationId: string;
+      projectId: string;
+      title: string;
+      lastUserMessageAt: string | null;
+      messages: Array<{
+        messageId: string;
+        role: string;
+        createdAt: string;
+        content: string;
+        toolName: string | null;
+      }>;
+    }>;
   };
 }
 
@@ -99,7 +112,7 @@ CORRECT (multiple small questions):
   ask_question("Certificate domain/SAN?", allowFreeText: true)
 
 ## Knowledge Tool
-You have an **internal_documentation** tool. Use it BEFORE attempting complex tasks to get detailed info about how things work in this system. Available topics: ${Object.keys(
+You have an **internal_documentation** tool. Use it BEFORE attempting complex tasks, recently added capabilities, permission-sensitive operations, multi-step workflows, and any operation whose arguments or lifecycle you are not certain about. Available topics: ${Object.keys(
     INTERNAL_DOCS
   )
     .filter((t) => {
@@ -110,17 +123,17 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     })
     .join(
       ', '
-    )}. When unsure about field values, workflows, or constraints — look it up first. It's free, fast, and prevents errors.
+    )}. When unsure about field values, workflows, constraints, side effects, tool arguments, or expected follow-up checks — look it up first. It's free, fast, and prevents errors. Do not answer from general intuition when internal documentation can verify the Gateway-specific behavior.
 
 ## Key Facts (use internal_documentation for details)`);
 
   parts.push(`\n## Conversation Retrieval
 You have read-only tools for finding and reading the user's previous AI chats: search_chats, find_in_chat, read_chat_slice, and list_projects.
-- At the beginning of a new conversation, if the user's first request appears to continue prior work, references previous discussion, or depends on missing project-specific context, run a lightweight search_chats before answering.
-- If you do not understand a project-specific name, error, command, file, resource, tool name, old decision, artifact, migration, or phrase from the current conversation, consider chat retrieval alongside internal_documentation, discover_tools, get_current_context, and find_resource.
-- Search the current project first when this chat belongs to a project. If this chat is outside a project, search no-project chats first.
-- Search a specific project only when the user names it or project pointers clearly indicate it. Use all_user_chats only when the user explicitly asks broadly or project-local search does not resolve an obviously cross-project reference.
-- Project and chat pointers are navigation hints only. Do not claim details from pointers or search snippets as certain until you read the relevant source with read_chat_slice.
+- At the first substantive user request in a new conversation, run lightweight previous-chat retrieval before answering or acting. If this chat belongs to a project, search the current project and also run an all_user_chats search with a compact query. If this chat is outside a project, search no_project and also all_user_chats.
+- When the user explicitly asks about old chats, previous work, prior decisions, earlier bugs, commands, migrations, files, errors, or "what did we do before", always search both the current retrieval boundary and all_user_chats before answering.
+- If you do not understand a project-specific name, error, command, file, resource, tool name, old decision, artifact, migration, or phrase from the current conversation, use chat retrieval alongside internal_documentation, discover_tools, get_current_context, and find_resource before saying you do not know.
+- Search a specific project when the user names it or project pointers clearly indicate it. Use all_user_chats for global/cross-project recall and as the required broad pass at conversation start or explicit recall.
+- Project and chat pointers are navigation hints only. Injected tail context is lightweight context, not authoritative evidence. Do not claim exact details from pointers, tail context, or search snippets as certain until you read the relevant source with read_chat_slice.
 - Do not load entire chats. Use search_chats first, then find_in_chat or read_chat_slice only for targeted evidence.`);
 
   parts.push(
@@ -130,10 +143,10 @@ You have read-only tools for finding and reading the user's previous AI chats: s
     `- Use wait when an operation needs time to finish, such as container startup, image pulls, DNS/SSL validation, deployments, daemon reloads, or log ingestion. After waiting, call the relevant read/status tool again. Do not end the conversation only because the state is pending.`
   );
   parts.push(
-    `- Use discover_tools when you are unsure which Gateway tool handles a task. It returns callable tool categories and, with category/query/includeTools, the relevant callable tool names.`
+    `- Use discover_tools whenever you are unsure which Gateway tool handles a task, when the visible tool schema lacks a tool the user names, or when a capability may be hidden behind category discovery. It returns callable tool categories and, with category/query/includeTools, the relevant callable tool names.`
   );
   parts.push(
-    `- If the user names a Gateway tool or function that is not currently available in your tool schema, do NOT say the tool is unavailable. First call discover_tools with that tool name as query and includeTools:true, then continue with the discovered callable tool.`
+    `- If the user names a Gateway tool or function that is not currently available in your tool schema, do NOT say the tool is unavailable or that you cannot do it. First call discover_tools with that tool name as query and includeTools:true, then continue with the discovered callable tool. If discovery finds a relevant category, read internal_documentation for that workflow before calling mutating or multi-step tools.`
   );
   if (hasScopeBase(user.scopes, 'ai:sandbox:use')) {
     parts.push(
@@ -226,7 +239,10 @@ You have read-only tools for finding and reading the user's previous AI chats: s
 Current project ID: ${context.retrievalPointers.currentProjectId ?? 'none'}.
 Available projects: ${JSON.stringify(context.retrievalPointers.availableProjects).slice(0, 6000)}.
 Recent chats in the current retrieval boundary: ${JSON.stringify(context.retrievalPointers.recentChats).slice(0, 6000)}.
-These pointers are not full context or evidence. Use conversation retrieval tools to inspect exact source messages.`);
+Project recent chat tail context (up to 3 chats, latest messages only): ${JSON.stringify(
+      context.retrievalPointers.projectRecentChatContexts
+    ).slice(0, 8000)}.
+These pointers and tail snippets are not full context or evidence. Use conversation retrieval tools to inspect exact source messages.`);
   }
 
   if (config.customSystemPrompt) {

@@ -24,6 +24,10 @@ const MAX_SNIPPET_LENGTH = 280;
 const MAX_TEXT_LENGTH = 12_000;
 const FUZZY_CANDIDATE_LIMIT = 750;
 const WINDOW_RADIUS = 1;
+const SEARCH_INDEX_INSERT_BATCH_SIZE = 100;
+const PROMPT_PROJECT_CHAT_CONTEXT_LIMIT = 3;
+const PROMPT_PROJECT_CHAT_CONTEXT_MESSAGE_LIMIT = 4;
+const PROMPT_PROJECT_CHAT_CONTEXT_MESSAGE_LENGTH = 500;
 
 export type AIChatSearchScope =
   | { type: 'current_project' }
@@ -139,7 +143,9 @@ export class AIConversationSearchService {
       await tx
         .delete(aiConversationSearchDocuments)
         .where(eq(aiConversationSearchDocuments.conversationId, conversation.id));
-      if (documents.length > 0) await tx.insert(aiConversationSearchDocuments).values(documents);
+      for (const chunk of chunks(documents, SEARCH_INDEX_INSERT_BATCH_SIZE)) {
+        await tx.insert(aiConversationSearchDocuments).values(chunk);
+      }
     });
   }
 
@@ -204,7 +210,9 @@ export class AIConversationSearchService {
   async searchChats(userId: string, input: SearchChatsInput) {
     const query = String(input.query ?? '').trim();
     if (!query) throw new AppError(400, 'AI_CHAT_SEARCH_QUERY_REQUIRED', 'query is required');
-    await this.backfillMissingIndexes(userId);
+    await this.backfillMissingIndexes(userId).catch((error) => {
+      logger.warn('Failed to backfill AI conversation search indexes', { userId, error });
+    });
     const limit = clampLimit(input.limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
     const currentConversation = input.currentConversationId
       ? await this.getOwnedConversation(userId, input.currentConversationId)
@@ -300,50 +308,31 @@ export class AIConversationSearchService {
     const currentConversation = input.currentConversationId
       ? await this.getOwnedConversation(userId, input.currentConversationId)
       : null;
-    await this.rebuildConversationIndex(userId, conversation.id);
     const query = String(input.query ?? '').trim();
     if (!query) throw new AppError(400, 'AI_CHAT_SEARCH_QUERY_REQUIRED', 'query is required');
     const limit = clampLimit(input.limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
     const normalized = normalizeSearchText(query);
-    const tokens = normalized.tokens;
-    const baseConditions: SQL[] = [
-      eq(aiConversationSearchDocuments.userId, userId),
-      eq(aiConversationSearchDocuments.conversationId, conversation.id),
-    ];
-    const rows: ScoredDocumentRow[] = [];
-    if (normalized.normalizedText) {
-      rows.push(
-        ...(await this.queryDocuments(
-          [...baseConditions, containsCondition(normalized.normalizedText)],
-          'phrase',
-          1,
-          limit * 3
-        ))
-      );
-    }
-    if (rows.length < limit && normalized.normalizedText) {
-      rows.push(
-        ...(await this.queryDocuments(
-          [...baseConditions, ftsCondition(normalized.normalizedText)],
-          'fts',
-          0.92,
-          limit * 3
-        ))
-      );
-    }
-    if (rows.length < limit && tokens.length > 0) {
-      rows.push(
-        ...(await this.queryDocuments([...baseConditions, tokenAndCondition(tokens)], 'token_and', 0.86, limit * 3))
-      );
-    }
-    if (rows.length < limit && tokens.length > 0) {
-      rows.push(
-        ...(await this.queryDocuments([...baseConditions, tokenOrCondition(tokens)], 'token_or', 0.62, limit * 4))
-      );
-    }
-    if (rows.length < limit && normalized.normalizedText.length >= 3) {
-      rows.push(...(await this.fuzzyDocuments(baseConditions, normalized.normalizedText, limit)));
-    }
+    const [messages, toolCalls] = await Promise.all([
+      this.loadMessageRows(conversation.id),
+      this.loadToolCallRows(conversation.id),
+    ]);
+    const rows = scoreInMemoryDocuments(
+      buildConversationSearchDocuments({
+        userId,
+        projectId: conversation.folderId,
+        conversationId: conversation.id,
+        title: conversation.title,
+        messages,
+        toolCalls,
+      }),
+      {
+        conversationTitle: conversation.title,
+        conversationCreatedAt: conversation.createdAt,
+        conversationUpdatedAt: conversation.updatedAt,
+      },
+      normalized,
+      limit
+    );
     const grouped = await this.groupConversationMatches(rows, 1);
     const result = grouped[0] ?? {
       conversationId: conversation.id,
@@ -422,15 +411,32 @@ export class AIConversationSearchService {
       title: string;
       lastUserMessageAt: string | null;
     }>;
+    projectRecentChatContexts: Array<{
+      conversationId: string;
+      projectId: string;
+      title: string;
+      lastUserMessageAt: string | null;
+      messages: Array<{
+        messageId: string;
+        role: string;
+        createdAt: string;
+        content: string;
+        toolName: string | null;
+      }>;
+    }>;
     currentProjectId: string | null;
   }> {
     const currentConversation = conversationId ? await this.getOwnedConversation(userId, conversationId) : null;
     const currentProjectId = currentConversation?.folderId ?? null;
     const projects = await this.listProjectPointers(userId, { limit: 20, currentConversationId: conversationId });
-    const recentChats = await this.recentChatsForPrompt(userId, currentProjectId);
+    const recentChats = await this.recentChatsForPrompt(userId, currentProjectId, currentConversation?.id ?? null);
+    const projectRecentChatContexts = currentProjectId
+      ? await this.projectRecentChatContexts(recentChats.slice(0, PROMPT_PROJECT_CHAT_CONTEXT_LIMIT), currentProjectId)
+      : [];
     return {
       availableProjects: projects.projects,
       recentChats,
+      projectRecentChatContexts,
       currentProjectId,
     };
   }
@@ -592,7 +598,7 @@ export class AIConversationSearchService {
     }));
   }
 
-  private async recentChatsForPrompt(userId: string, projectId: string | null) {
+  private async recentChatsForPrompt(userId: string, projectId: string | null, excludeConversationId: string | null) {
     const conversations = await this.db
       .select({
         id: aiConversations.id,
@@ -604,7 +610,8 @@ export class AIConversationSearchService {
       .where(
         and(
           eq(aiConversations.userId, userId),
-          projectId ? eq(aiConversations.folderId, projectId) : isNull(aiConversations.folderId)
+          projectId ? eq(aiConversations.folderId, projectId) : isNull(aiConversations.folderId),
+          ...(excludeConversationId ? [ne(aiConversations.id, excludeConversationId)] : [])
         )
       )
       .orderBy(desc(aiConversations.createdAt))
@@ -622,6 +629,34 @@ export class AIConversationSearchService {
       }))
       .sort((left, right) => Date.parse(right.lastUserMessageAt) - Date.parse(left.lastUserMessageAt))
       .slice(0, 20);
+  }
+
+  private async projectRecentChatContexts(
+    chats: Array<{
+      conversationId: string;
+      projectId: string | null;
+      title: string;
+      lastUserMessageAt: string | null;
+    }>,
+    projectId: string
+  ) {
+    const contexts = [];
+    for (const chat of chats.slice(0, PROMPT_PROJECT_CHAT_CONTEXT_LIMIT)) {
+      if (chat.projectId !== projectId) continue;
+      const messages = (await this.loadMessageRows(chat.conversationId))
+        .filter((message) => !message.isSensitive)
+        .slice(-PROMPT_PROJECT_CHAT_CONTEXT_MESSAGE_LIMIT)
+        .map(toPromptTailMessage);
+      if (messages.length === 0) continue;
+      contexts.push({
+        conversationId: chat.conversationId,
+        projectId,
+        title: chat.title,
+        lastUserMessageAt: chat.lastUserMessageAt,
+        messages,
+      });
+    }
+    return contexts;
   }
 
   private async projectStats(userId: string, projectIds: string[]) {
@@ -935,6 +970,18 @@ function toReadableMessage(message: MessageRow) {
   };
 }
 
+function toPromptTailMessage(message: MessageRow) {
+  return {
+    messageId: message.id,
+    role: message.role,
+    createdAt: message.createdAt.toISOString(),
+    content: truncatePromptTailText(
+      message.content || (typeof message.uiMessage.content === 'string' ? message.uiMessage.content : '')
+    ),
+    toolName: message.toolName,
+  };
+}
+
 function compactJson(value: unknown): string {
   if (value == null) return '';
   try {
@@ -953,6 +1000,13 @@ function snippet(value: string): string {
   return compact.length > MAX_SNIPPET_LENGTH ? `${compact.slice(0, MAX_SNIPPET_LENGTH)}...` : compact;
 }
 
+function truncatePromptTailText(value: string): string {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  return compact.length > PROMPT_PROJECT_CHAT_CONTEXT_MESSAGE_LENGTH
+    ? `${compact.slice(0, PROMPT_PROJECT_CHAT_CONTEXT_MESSAGE_LENGTH)}...`
+    : compact;
+}
+
 function clampLimit(value: unknown, fallback: number, max: number): number {
   const parsed = Number(value ?? fallback);
   return Math.min(max, Math.max(1, Number.isFinite(parsed) ? Math.trunc(parsed) : fallback));
@@ -960,6 +1014,103 @@ function clampLimit(value: unknown, fallback: number, max: number): number {
 
 function roundScore(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+function scoreInMemoryDocuments(
+  documents: NewAIConversationSearchDocument[],
+  conversation: { conversationTitle: string; conversationCreatedAt: Date; conversationUpdatedAt: Date },
+  normalizedQuery: { normalizedText: string; tokens: string[] },
+  limit: number
+): ScoredDocumentRow[] {
+  const collected = new Map<string, ScoredDocumentRow>();
+  const addMatches = (
+    predicate: (document: NewAIConversationSearchDocument) => boolean,
+    matchedBy: string,
+    score: number
+  ) => {
+    for (const [index, document] of documents.entries()) {
+      if (!predicate(document)) continue;
+      const row = toDocumentRow(document, conversation, index, matchedBy, score);
+      const existing = collected.get(row.id);
+      if (!existing || row.score > existing.score) collected.set(row.id, row);
+    }
+  };
+
+  if (normalizedQuery.normalizedText) {
+    addMatches((document) => document.normalizedText.includes(normalizedQuery.normalizedText), 'phrase', 1);
+  }
+  if (collected.size < limit && normalizedQuery.tokens.length > 0) {
+    addMatches((document) => allTokensMatch(document, normalizedQuery.tokens), 'fts', 0.92);
+  }
+  if (collected.size < limit && normalizedQuery.tokens.length > 0) {
+    addMatches((document) => allTokensMatch(document, normalizedQuery.tokens), 'token_and', 0.86);
+  }
+  if (collected.size < limit && normalizedQuery.tokens.length > 0) {
+    addMatches((document) => someTokenMatches(document, normalizedQuery.tokens), 'token_or', 0.62);
+  }
+  if (collected.size < limit && normalizedQuery.normalizedText.length >= 3) {
+    addMatches(
+      (document) => trigramSimilarity(normalizedQuery.normalizedText, document.normalizedText) >= 0.22,
+      'fuzzy_trigram',
+      0
+    );
+  }
+
+  return [...collected.values()]
+    .map((row) =>
+      row.matchedBy === 'fuzzy_trigram'
+        ? { ...row, score: trigramSimilarity(normalizedQuery.normalizedText, row.normalizedText) }
+        : row
+    )
+    .sort((left, right) => right.score - left.score || right.createdAt.getTime() - left.createdAt.getTime())
+    .slice(0, limit * 4);
+}
+
+function toDocumentRow(
+  document: NewAIConversationSearchDocument,
+  conversation: { conversationTitle: string; conversationCreatedAt: Date; conversationUpdatedAt: Date },
+  index: number,
+  matchedBy: string,
+  baseScore: number
+): ScoredDocumentRow {
+  const createdAt = document.createdAt instanceof Date ? document.createdAt : new Date();
+  const row: DocumentRow = {
+    id: `${document.kind}:${document.messageId ?? 'conversation'}:${index}`,
+    conversationId: document.conversationId,
+    projectId: document.projectId ?? null,
+    messageId: document.messageId ?? null,
+    kind: document.kind,
+    role: document.role ?? null,
+    text: document.text,
+    normalizedText: document.normalizedText,
+    tokens: Array.isArray(document.tokens) ? document.tokens : [],
+    createdAt,
+    conversationTitle: conversation.conversationTitle,
+    conversationCreatedAt: conversation.conversationCreatedAt,
+    conversationUpdatedAt: conversation.conversationUpdatedAt,
+  };
+  return { ...row, matchedBy, score: scoreDocument(row, baseScore) };
+}
+
+function allTokensMatch(document: NewAIConversationSearchDocument, tokens: string[]): boolean {
+  return tokens.every((token) => tokenMatches(document, token));
+}
+
+function someTokenMatches(document: NewAIConversationSearchDocument, tokens: string[]): boolean {
+  return tokens.some((token) => tokenMatches(document, token));
+}
+
+function tokenMatches(document: NewAIConversationSearchDocument, token: string): boolean {
+  const tokens = Array.isArray(document.tokens) ? document.tokens : [];
+  return tokens.includes(token) || document.normalizedText.includes(token);
+}
+
+function chunks<T>(values: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    result.push(values.slice(index, index + size));
+  }
+  return result;
 }
 
 function encodeCursor(offset: number): string {

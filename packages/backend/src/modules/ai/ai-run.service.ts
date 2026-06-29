@@ -33,6 +33,15 @@ export interface AIConversationChangedEvent {
   invalidatedStores?: string[];
 }
 
+export interface AIAssistantDeltaEvent {
+  type: 'assistant.delta';
+  userId: string;
+  conversationId: string;
+  runId: string;
+  content: string;
+  version: number;
+}
+
 export interface CreateAIRunInput {
   conversationId: string;
   userId: string;
@@ -71,6 +80,8 @@ export interface RecordToolCallInput {
 
 export interface RuntimeSnapshot {
   activeRun: AIRun | null;
+  assistantDraftContent: string | null;
+  assistantDraftVersion: number | null;
   pendingApprovals: AIRunToolCall[];
   pendingQuestion: AIRunQuestion | null;
   pendingQuestions: AIRunQuestion[];
@@ -108,6 +119,8 @@ export class AIRunService {
       db,
       (userId, conversationId, invalidatedStores) =>
         this.publishConversationChanged(userId, conversationId, invalidatedStores),
+      (userId, conversationId, runId, content, version) =>
+        this.publishAssistantDelta(userId, conversationId, runId, content, version),
       conversationSearchService
     );
   }
@@ -442,6 +455,13 @@ export class AIRunService {
       .returning();
 
     if (stopped) {
+      this.executor.abortRun(input.runId);
+      await this.executor.flushAssistantDraftToMessage(
+        input.userId,
+        input.conversationId,
+        input.runId,
+        stopped.assistantDraftContent
+      );
       await Promise.all([
         this.db
           .update(aiRunToolCalls)
@@ -464,7 +484,6 @@ export class AIRunService {
             )
           ),
       ]);
-      this.executor.abortRun(input.runId);
       this.publishConversationChanged(input.userId, input.conversationId);
       return { run: stopped, duplicate: false };
     }
@@ -495,6 +514,8 @@ export class AIRunService {
     if (!activeRun) {
       return {
         activeRun: null,
+        assistantDraftContent: null,
+        assistantDraftVersion: null,
         pendingApprovals: [],
         pendingQuestion: null,
         pendingQuestions: [],
@@ -512,9 +533,13 @@ export class AIRunService {
       this.listConversationToolCalls(conversationId),
     ]);
     const pendingQuestions = questions.filter((question) => question.status === 'pending');
+    const liveDraft = this.executor.getAssistantDraft(activeRun.id);
+    const assistantDraftContent = liveDraft?.content ?? activeRun.assistantDraftContent ?? null;
 
     return {
       activeRun,
+      assistantDraftContent,
+      assistantDraftVersion: liveDraft?.version ?? (assistantDraftContent ? 0 : null),
       pendingApprovals: activeToolCalls.filter((toolCall) => toolCall.status === 'pending_approval'),
       pendingQuestion: pendingQuestions[0] ?? null,
       pendingQuestions,
@@ -564,7 +589,7 @@ export class AIRunService {
         discoveredToolsets: conversation.discoveredToolsets,
         checkpoint: conversation.checkpoint,
       },
-      messages: withAssistantDraftMessage(snapshotMessages, runtime.activeRun),
+      messages: withAssistantDraftMessage(snapshotMessages, runtime.activeRun, runtime.assistantDraftContent),
       runtime,
     };
   }
@@ -623,6 +648,24 @@ export class AIRunService {
       conversationId,
       ...(invalidatedStores?.length ? { invalidatedStores } : {}),
     } satisfies AIConversationChangedEvent;
+    this.eventBus?.publish(aiUserConversationsChangedChannel(userId), event);
+  }
+
+  private publishAssistantDelta(
+    userId: string,
+    conversationId: string,
+    runId: string,
+    content: string,
+    version: number
+  ): void {
+    const event = {
+      type: 'assistant.delta',
+      userId,
+      conversationId,
+      runId,
+      content,
+      version,
+    } satisfies AIAssistantDeltaEvent;
     this.eventBus?.publish(aiUserConversationsChangedChannel(userId), event);
   }
 }
@@ -785,10 +828,11 @@ function readMessageRole(uiMessage: unknown): string {
 
 function withAssistantDraftMessage(
   messages: Record<string, unknown>[],
-  activeRun: AIRun | null
+  activeRun: AIRun | null,
+  assistantDraftContent: string | null
 ): Record<string, unknown>[] {
-  const content = activeRun?.assistantDraftContent;
-  if (!content) return messages;
+  const content = assistantDraftContent;
+  if (!content || !activeRun) return messages;
   const sequence =
     messages.reduce(
       (max, message, index) => Math.max(max, typeof message.sequence === 'number' ? message.sequence : index),

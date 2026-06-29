@@ -285,6 +285,56 @@ describe('AI websocket backend runtime commands', () => {
     handlers.onClose(new Event('close'), ws as any);
   });
 
+  it('forwards assistant deltas without fetching a fresh conversation snapshot', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    const getConversationSnapshot = vi.fn().mockResolvedValue(createSnapshot(createRun()));
+    container.registerInstance(AIRunService, {
+      getConversationSnapshot,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'conversation.subscribe',
+          conversationId: 'conversation-1',
+          clientCommandId: 'cmd-subscribe',
+        }),
+      }),
+      ws as any
+    );
+    vi.mocked(ws.send).mockClear();
+
+    container.resolve(EventBusService).publish(aiUserConversationsChangedChannel(USER.id), {
+      type: 'assistant.delta',
+      userId: USER.id,
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      content: 'hello',
+      version: 1,
+    });
+    container.resolve(EventBusService).publish(aiUserConversationsChangedChannel(USER.id), {
+      type: 'assistant.delta',
+      userId: USER.id,
+      conversationId: 'conversation-2',
+      runId: 'run-2',
+      content: 'ignored',
+      version: 1,
+    });
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(getConversationSnapshot).toHaveBeenCalledTimes(1);
+    expect(ws.send).toHaveBeenCalledTimes(1);
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'assistant.delta',
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+        content: 'hello',
+        version: 1,
+      })
+    );
+  });
+
   it('returns command.error when a conversation already has an active run', async () => {
     const { ws, handlers } = await openAuthenticatedWs();
     container.registerInstance(TOKENS.RedisClient, allowingRedis() as any);

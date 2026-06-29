@@ -1,0 +1,35 @@
+{
+  "file_name": "pstn8fla_startup_chat_retrieval",
+  "edges": [
+    {
+      "from_id": "pstn8fla",
+      "to_id": "ph8ejel0",
+      "relation": "same_area",
+      "weight": 0.5,
+      "reason": "Refactor of AI web search behavior and tests within gateway AI service; related to memory/guardrail changes in AI integration.",
+      "source": "auto",
+      "created_at": 1782520710804,
+      "updated_at": 1782520710804
+    },
+    {
+      "from_id": "pstn8fla",
+      "to_id": "iop65o1t",
+      "relation": "same_area",
+      "weight": 0.45,
+      "reason": "Normalized OAuth permissions policy across Gateway and MCP scopes; aligns with API/tool access controls in gateway.",
+      "source": "auto",
+      "created_at": 1782520710804,
+      "updated_at": 1782520710804
+    },
+    {
+      "from_id": "pstn8fla",
+      "to_id": "sg6sqaui",
+      "relation": "depends_on",
+      "weight": 0.4,
+      "reason": "Guardrails and helper extraction affect AI service execution paths and tool usage.",
+      "source": "auto",
+      "created_at": 1782520710804,
+      "updated_at": 1782520710804
+    }
+  ]
+}

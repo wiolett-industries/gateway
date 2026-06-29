@@ -277,6 +277,7 @@ interface AIState {
 
 let wsClient: AIWebSocketClient | null = null;
 let conversationLoadGeneration = 0;
+const assistantDraftVersions = new Map<string, number>();
 
 export interface AIConversationBlock {
   status: Exclude<AIConversationStatus, "active">;
@@ -931,6 +932,7 @@ export function resetAIStateForAuthChange() {
   wsClient?.disconnect();
   wsClient = null;
   conversationLoadGeneration += 1;
+  assistantDraftVersions.clear();
   useAIStore.setState({
     messages: [],
     recentConversations: [],
@@ -1000,7 +1002,21 @@ function handleWSMessage(
         ),
       }));
       if (get().activeConversationId !== msg.conversationId) return;
-      set(projectConversationSnapshot(msg.snapshot));
+      set((state) => projectConversationSnapshot(msg.snapshot, state.messages));
+      break;
+
+    case "assistant.delta":
+      if (get().activeConversationId !== msg.conversationId) return;
+      set((state) => ({
+        activeRunId: msg.runId,
+        isStreaming: true,
+        messages: applyAssistantDeltaToMessages(state.messages, msg),
+        recentConversations: patchRecentConversationRunStatus(
+          state.recentConversations,
+          msg.conversationId,
+          "running"
+        ),
+      }));
       break;
 
     case "run.status_changed":
@@ -1029,7 +1045,22 @@ function handleWSMessage(
   }
 }
 
-function projectConversationSnapshot(snapshot: AIConversationRuntimeSnapshot): Partial<AIState> {
+function projectConversationSnapshot(
+  snapshot: AIConversationRuntimeSnapshot,
+  currentMessages: AIMessage[] = []
+): Partial<AIState> {
+  const activeRunId = snapshot.runtime.activeRun?.id ?? null;
+  const snapshotDraftVersion = snapshot.runtime.assistantDraftVersion;
+  const currentDraftVersion = activeRunId ? (assistantDraftVersions.get(activeRunId) ?? -1) : -1;
+  const snapshotDraftIsStale = Boolean(
+    activeRunId &&
+      typeof snapshotDraftVersion === "number" &&
+      snapshotDraftVersion < currentDraftVersion
+  );
+
+  if (activeRunId && typeof snapshotDraftVersion === "number" && !snapshotDraftIsStale) {
+    assistantDraftVersions.set(activeRunId, snapshotDraftVersion);
+  }
   const runtimeToolCalls = snapshot.runtime.toolCalls.map(runtimeToolCallToUI);
   const pendingQuestions =
     snapshot.runtime.pendingQuestions.length > 0
@@ -1038,11 +1069,15 @@ function projectConversationSnapshot(snapshot: AIConversationRuntimeSnapshot): P
         ? [snapshot.runtime.pendingQuestion]
         : [];
   const pendingQuestionToolCalls = pendingQuestions.map(pendingQuestionToToolCall);
-  const messages = attachRuntimeToolCallsToMessages(
-    normalizeSnapshotMessages(snapshot),
-    [...runtimeToolCalls, ...pendingQuestionToolCalls],
-    Boolean(snapshot.runtime.activeRun),
-    snapshot.runtime.activeRun?.id ?? null
+  const messages = preserveFreshRuntimeDraft(
+    attachRuntimeToolCallsToMessages(
+      normalizeSnapshotMessages(snapshot),
+      [...runtimeToolCalls, ...pendingQuestionToolCalls],
+      Boolean(snapshot.runtime.activeRun),
+      snapshot.runtime.activeRun?.id ?? null
+    ),
+    currentMessages,
+    snapshotDraftIsStale ? activeRunId : null
   );
 
   return {
@@ -1056,6 +1091,57 @@ function projectConversationSnapshot(snapshot: AIConversationRuntimeSnapshot): P
       snapshot.runtime.pendingApprovals[0]?.toolCallId ?? pendingQuestions[0]?.toolCallId ?? null,
     isStreaming: isActiveRunStatus(snapshot.runtime.activeRun?.status),
   };
+}
+
+function preserveFreshRuntimeDraft(
+  snapshotMessages: AIMessage[],
+  currentMessages: AIMessage[],
+  activeRunId: string | null
+): AIMessage[] {
+  if (!activeRunId) return snapshotMessages;
+  const currentIndex = findActiveRuntimeAssistantIndex(currentMessages, activeRunId);
+  if (currentIndex === -1) return snapshotMessages;
+  const snapshotIndex = findActiveRuntimeAssistantIndex(snapshotMessages, activeRunId);
+  if (snapshotIndex === -1) return snapshotMessages;
+  const currentDraft = currentMessages[currentIndex];
+  const nextMessages = [...snapshotMessages];
+  nextMessages[snapshotIndex] = {
+    ...nextMessages[snapshotIndex],
+    content: currentDraft.content,
+    isStreaming: currentDraft.isStreaming,
+  };
+  return nextMessages;
+}
+
+function applyAssistantDeltaToMessages(
+  messages: AIMessage[],
+  delta: Extract<WSServerMessage, { type: "assistant.delta" }>
+): AIMessage[] {
+  const previousVersion = assistantDraftVersions.get(delta.runId) ?? 0;
+  if (delta.version <= previousVersion) return messages;
+  assistantDraftVersions.set(delta.runId, delta.version);
+
+  const nextMessages = [...messages];
+  let targetIndex = findActiveRuntimeAssistantIndex(nextMessages, delta.runId);
+  if (targetIndex === -1) {
+    targetIndex = nextMessages.length;
+    nextMessages.push({
+      id: `${delta.runId}:runtime`,
+      role: "assistant",
+      content: "",
+      sequence: nextMessageSequence(nextMessages),
+      createdAt: nowIso(),
+      isStreaming: true,
+    });
+  }
+
+  const current = nextMessages[targetIndex];
+  nextMessages[targetIndex] = {
+    ...current,
+    content: `${current.content}${delta.content}`,
+    isStreaming: true,
+  };
+  return sortMessagesBySequence(nextMessages);
 }
 
 function normalizeSnapshotMessages(snapshot: AIConversationRuntimeSnapshot): AIMessage[] {
