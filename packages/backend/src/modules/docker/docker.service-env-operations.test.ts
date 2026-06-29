@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { envListToMap, normalizeEnvRecord } from './docker-env-operations.js';
 import { DockerManagementService } from './docker.service.js';
+import { envListToMap, normalizeEnvRecord } from './docker-env-operations.js';
 
 function dbWithOnlineDockerNode() {
   const limit = vi.fn().mockResolvedValue([
