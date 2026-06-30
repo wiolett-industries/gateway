@@ -24,12 +24,13 @@ import type {
   AIComposerLocalImageAttachment,
   AIConfig,
   AIMessageAttachment,
+  AIToolCall,
   PageContext,
 } from "@/types/ai";
 import { AIComposer } from "./AIComposer";
 import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
 import { AIMessage } from "./AIMessage";
-import { QuestionBlock } from "./AIToolCallBlock";
+import { ApprovalBlock, QuestionBlock } from "./AIToolCallBlock";
 import { QuickActionChips } from "./QuickActionChips";
 import {
   composerAttachmentToFile,
@@ -432,6 +433,20 @@ export function AILitePanel() {
     return { activeQuestion: null, questionIndex: 0, questionsTotal: 0 };
   })();
 
+  const activeApproval = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role !== "assistant" || !msg.toolCalls) continue;
+      const pendingApproval = msg.toolCalls.find(
+        (tc): tc is AIToolCall =>
+          tc.name !== "ask_question" &&
+          (tc.status === "awaiting_approval" || tc.status === "running")
+      );
+      if (pendingApproval) return pendingApproval;
+    }
+    return null;
+  })();
+
   return (
     <div className="flex h-full flex-col bg-background">
       <div className="flex h-[49px] shrink-0 items-center justify-between border-b border-border px-4">
@@ -584,6 +599,10 @@ export function AILitePanel() {
             )}
             <QuestionBlock toolCall={activeQuestion} onAnswer={answerQuestion} />
           </div>
+        </div>
+      ) : activeApproval ? (
+        <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
+          <ApprovalBlock toolCall={activeApproval} onApprove={approveTool} onReject={rejectTool} />
         </div>
       ) : conversationBlock ? (
         <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">

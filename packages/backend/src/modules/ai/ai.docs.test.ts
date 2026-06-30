@@ -76,6 +76,12 @@ describe('AI internal docs registry', () => {
     expect(getInternalDocumentation('nodes', ['nodes:details']).content).toContain('manage_node_config');
     expect(getInternalDocumentation('node-files', ['nodes:files:read']).content).toContain('manage_node_file');
     expect(getInternalDocumentation('sandbox', ['ai:sandbox:use']).content).toContain('download_artifact');
+    expect(getInternalDocumentation('sandbox', ['ai:sandbox:use']).content).toContain(
+      'Artifact tool path arguments are relative to /workspace'
+    );
+    expect(getInternalDocumentation('sandbox', ['ai:sandbox:use']).content).toContain(
+      'run_process returns as soon as the process starts'
+    );
     expect(getInternalDocumentation('conversations', ['feat:ai:use']).content).toContain('manage_ai_conversation');
     expect(getInternalDocumentation('api', ['feat:ai:use']).content).toContain('manage_oauth_authorization');
     expect(getInternalDocumentation('api', ['feat:ai:use']).content).toContain('manage_api_token');

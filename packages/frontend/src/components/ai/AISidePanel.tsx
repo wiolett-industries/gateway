@@ -41,12 +41,13 @@ import type {
   AIConversationStatus,
   AIMessageAttachment,
   AIRunStatus,
+  AIToolCall,
   PageContext,
 } from "@/types/ai";
 import { AIComposer } from "./AIComposer";
 import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
 import { AIMessage } from "./AIMessage";
-import { QuestionBlock } from "./AIToolCallBlock";
+import { ApprovalBlock, QuestionBlock } from "./AIToolCallBlock";
 import { confirmAILiteMode } from "./confirm-lite-mode";
 import { QuickActionChips } from "./QuickActionChips";
 import {
@@ -514,6 +515,20 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     return { activeQuestion: null, questionIndex: 0, questionsTotal: 0 };
   })();
 
+  const activeApproval = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role !== "assistant" || !msg.toolCalls) continue;
+      const pendingApproval = msg.toolCalls.find(
+        (tc): tc is AIToolCall =>
+          tc.name !== "ask_question" &&
+          (tc.status === "awaiting_approval" || tc.status === "running")
+      );
+      if (pendingApproval) return pendingApproval;
+    }
+    return null;
+  })();
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -731,6 +746,10 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
             </div>
           )}
           <QuestionBlock toolCall={activeQuestion} onAnswer={answerQuestion} />
+        </div>
+      ) : activeApproval ? (
+        <div className="shrink-0">
+          <ApprovalBlock toolCall={activeApproval} onApprove={approveTool} onReject={rejectTool} />
         </div>
       ) : conversationBlock ? (
         <AIConversationBlockedBlock block={conversationBlock} onNewChat={clearMessages} />

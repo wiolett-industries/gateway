@@ -314,6 +314,16 @@ const pendingToolCommands = new Map<
   }
 >();
 
+declare global {
+  interface Window {
+    gatewayDev?: {
+      showApprovalBlock?: () => void;
+      hideApprovalBlock?: () => void;
+      [key: string]: unknown;
+    };
+  }
+}
+
 function updateToolCallById(
   messages: AIMessage[],
   toolCallId: string,
@@ -1785,6 +1795,52 @@ function isActiveRunStatus(status: string | null | undefined): boolean {
     status === "waiting_for_answer"
   );
 }
+
+const DEV_APPROVAL_MESSAGE_ID = "dev-approval-preview-message";
+const DEV_APPROVAL_TOOL_CALL_ID = "dev-approval-preview-tool";
+
+function installAIDevCommands(): void {
+  if (!import.meta.env.DEV || typeof window === "undefined") return;
+
+  window.gatewayDev = {
+    ...(window.gatewayDev ?? {}),
+    showApprovalBlock: () => {
+      useUIStore.setState({ aiPanelOpen: true });
+      useAIStore.setState((state) => ({
+        messages: [
+          ...state.messages.filter((message) => message.id !== DEV_APPROVAL_MESSAGE_ID),
+          {
+            id: DEV_APPROVAL_MESSAGE_ID,
+            role: "assistant",
+            content: "",
+            createdAt: nowIso(),
+            localOnly: true,
+            isStreaming: true,
+            toolCalls: [
+              {
+                id: DEV_APPROVAL_TOOL_CALL_ID,
+                name: "run_process",
+                arguments: { command: "echo preview" },
+                status: "awaiting_approval",
+              },
+            ],
+          },
+        ],
+        activeConversationId: state.activeConversationId ?? "00000000-0000-4000-8000-000000000001",
+        activeRunId: state.activeRunId ?? "dev-approval-preview-run",
+        isConnected: true,
+        retryAfter: null,
+      }));
+    },
+    hideApprovalBlock: () => {
+      useAIStore.setState((state) => ({
+        messages: state.messages.filter((message) => message.id !== DEV_APPROVAL_MESSAGE_ID),
+      }));
+    },
+  };
+}
+
+installAIDevCommands();
 
 // Auto-manage WS lifecycle based on visible AI surfaces.
 // This runs outside React — no component mount/unmount issues.

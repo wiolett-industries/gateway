@@ -80,7 +80,7 @@ interface AIToolCallBlockProps {
   onAnswer?: (toolCallId: string, answer: string) => void;
 }
 
-export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlockProps) {
+export function AIToolCallBlock({ toolCall }: AIToolCallBlockProps) {
   const [expanded, setExpanded] = useState(false);
   const safeToolCall =
     toolCall && typeof toolCall === "object" ? toolCall : ({} as Partial<AIToolCall>);
@@ -161,37 +161,6 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
         {!isSkipped && statusIcon()}
       </button>
 
-      {toolStatus === "awaiting_approval" && toolName !== "ask_question" && (
-        <div className="flex items-center gap-2 border border-border bg-yellow-500/5 px-2.5 py-2">
-          <span className="flex-1 text-yellow-600 dark:text-yellow-400 text-xs">
-            {hasError
-              ? `Could not send decision: ${safeToolCall.error}`
-              : "This action requires your approval"}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 px-2 text-xs"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (typeof safeToolCall.id === "string") onReject?.(safeToolCall.id);
-            }}
-          >
-            Reject
-          </Button>
-          <Button
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (typeof safeToolCall.id === "string") onApprove?.(safeToolCall.id);
-            }}
-          >
-            Approve
-          </Button>
-        </div>
-      )}
-
       {/* Animated expand/collapse */}
       <div
         className="grid transition-[grid-template-rows] duration-150 ease-out"
@@ -225,6 +194,43 @@ export function AIToolCallBlock({ toolCall, onApprove, onReject }: AIToolCallBlo
             </p>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+export function ApprovalBlock({
+  toolCall,
+  onApprove,
+  onReject,
+}: {
+  toolCall: AIToolCall;
+  onApprove?: (toolCallId: string) => void;
+  onReject?: (toolCallId: string) => void;
+}) {
+  const isSending = toolCall.status === "running";
+  const hasError = !!toolCall.error;
+  const label = hasError
+    ? `Could not send decision: ${toolCall.error}`
+    : isSending
+      ? "Sending approval decision..."
+      : "This action requires your approval";
+
+  return (
+    <div className="flex items-center gap-3 border border-yellow-600/70 bg-yellow-500/5 px-3 py-2 dark:border-yellow-500/70">
+      <span className="min-w-0 flex-1 text-sm text-yellow-600 dark:text-yellow-400">{label}</span>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button
+          variant="outline"
+          className="h-9"
+          disabled={isSending}
+          onClick={() => onReject?.(toolCall.id)}
+        >
+          Reject
+        </Button>
+        <Button className="h-9" disabled={isSending} onClick={() => onApprove?.(toolCall.id)}>
+          Approve
+        </Button>
       </div>
     </div>
   );

@@ -23,7 +23,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'run_process',
     description:
-      'Start a bounded long-running process in a Docker sandbox container with no network access. Use download_artifact to place network files into it, read_process_output to inspect output, and kill_process to stop it. TTL is capped by tier.',
+      'Start a bounded long-running process in a Docker sandbox container with no network access. The process working directory is /workspace. Write files that must be read or sent back under /workspace, then pass relative paths such as "result.txt" to read_artifact or send_artifact. run_process returns immediately after start, so wait/read_process_output/read_artifact before sending a just-created file. TTL is capped by tier.',
     parameters: {
       type: 'object',
       properties: {
@@ -58,7 +58,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'download_artifact',
     description:
-      'Download a network file through Gateway and copy it into a running sandbox container. Use this instead of curl/wget inside the sandbox. Download size is capped at 200 MB.',
+      'Download a network file through Gateway and copy it into a running sandbox container under /workspace. Use this instead of curl/wget inside the sandbox. The path argument must be relative to /workspace. Download size is capped at 200 MB.',
     parameters: {
       type: 'object',
       properties: {
@@ -79,7 +79,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'read_artifact',
     description:
-      'Read a file from a running sandbox container in chunks. Use offset and length for large files. Each read is capped at 1 MB.',
+      'Read a file from a running sandbox container in chunks. The path argument must be relative to /workspace, not absolute. Use offset and length for large files. Each read is capped at 1 MB.',
     parameters: {
       type: 'object',
       properties: {
@@ -99,7 +99,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'send_artifact',
     description:
-      'Send a sandbox file to the user as a Gateway-managed downloadable artifact. The file is saved by Gateway and the chat receives a download link. File size is capped at 10 MB.',
+      'Send a sandbox file to the user as a Gateway-managed downloadable artifact. The path argument must be relative to /workspace, not absolute. If the file was created by run_process, wait or verify it exists with read_artifact before sending. File size is capped at 10 MB.',
     parameters: {
       type: 'object',
       properties: {

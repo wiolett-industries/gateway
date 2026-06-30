@@ -753,9 +753,16 @@ Sandbox tools run bounded commands in Docker containers owned by the current use
 ## Network and Artifacts
 Sandbox containers have no direct network access. Use Gateway-mediated helpers:
 - fetch: read network content through Gateway, capped at 10 MB.
-- download_artifact: download a URL through Gateway and place it in a running sandbox, capped at 200 MB.
+- download_artifact: download a URL through Gateway and place it in a running sandbox under /workspace, capped at 200 MB.
 - read_artifact: read a file from the sandbox in chunks, capped per read.
 - send_artifact: save a sandbox file as a Gateway-managed downloadable artifact for the user.
+
+Artifact path rules:
+- The sandbox process working directory is /workspace.
+- Files that must be read_artifact or send_artifact must be written under /workspace.
+- Artifact tool path arguments are relative to /workspace. Example: write /workspace/report.txt, then send_artifact with path "report.txt".
+- Do not write deliverable files under /tmp, and do not pass absolute paths such as "/workspace/report.txt" or relative paths like "tmp/report.txt" for files created in /tmp.
+- run_process returns as soon as the process starts. If a file is created by a running process, wait briefly and verify it with read_process_output or read_artifact before send_artifact.
 
 When send_artifact succeeds, do not print the download URL in a markdown table or manual link. The chat UI automatically attaches the file card from the tool result; respond with a short confirmation such as "Attached the file."
 

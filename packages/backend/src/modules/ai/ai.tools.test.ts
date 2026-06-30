@@ -512,6 +512,12 @@ describe('AI tool scope filtering', () => {
     expect(sandboxToolNamesForScopes(['ai:sandbox:use'], false)).toEqual([]);
     expect(sandboxToolNamesForScopes([], true)).toEqual([]);
     expect(sandboxToolNamesForScopes(['ai:sandbox:use'], true)).toEqual(expectedSandboxTools);
+    expect(AI_TOOLS.find((tool) => tool.name === 'run_process')?.description).toContain(
+      'The process working directory is /workspace'
+    );
+    expect(AI_TOOLS.find((tool) => tool.name === 'send_artifact')?.description).toContain(
+      'path argument must be relative to /workspace'
+    );
     expect(isDestructiveTool('execute_script')).toBe(true);
     expect(isDestructiveTool('run_process')).toBe(true);
     expect(isDestructiveTool('fetch')).toBe(false);

@@ -236,6 +236,9 @@ describe('AIService system prompt', () => {
     expect(prompt).toContain('discover_tools({ category: "Sandbox", includeTools: true })');
     expect(prompt).toContain('download_artifact');
     expect(prompt).toContain('send_artifact');
+    expect(prompt).toContain('files that will be read_artifact or send_artifact MUST be written under /workspace');
+    expect(prompt).toContain('artifact tool path arguments MUST be relative to /workspace');
+    expect(prompt).toContain('run_process returns after the process starts');
   });
 
   it('continues without inventory or CA sections when optional context fetches are unavailable', async () => {

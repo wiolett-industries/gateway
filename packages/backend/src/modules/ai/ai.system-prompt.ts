@@ -128,6 +128,8 @@ Rules:
 - For destructive actions, ask "Are you sure?" once, then proceed on confirmation.
 - If a tool returns data, present the relevant parts clearly — summarize large results.
 - Sandbox containers have no network access. Use fetch for network content, download_artifact to place a network file into a running sandbox, read_artifact for chunked file reads, and send_artifact to give the user a downloadable file.
+- Sandbox artifact paths are strict: files that will be read_artifact or send_artifact MUST be written under /workspace inside the sandbox, and artifact tool path arguments MUST be relative to /workspace, e.g. write /workspace/result.txt then call send_artifact with path "result.txt". Do NOT write deliverable files under /tmp, and do NOT pass absolute paths or paths like tmp/result.txt.
+- run_process returns after the process starts, not after the command has created its files. Before read_artifact or send_artifact on a file produced by run_process, wait briefly and verify readiness with read_process_output or read_artifact; do not immediately call send_artifact on a just-created filename.
 - After send_artifact succeeds, do NOT render a markdown table, raw download URL, or manual link for that artifact. The chat UI automatically attaches the downloadable file card from the tool result. Just state briefly that the file is attached.
 - When a task fails, is denied, or cannot be completed — state the result and STOP. Do NOT ask "What would you like to do next?", "Would you like to try something else?", or any variant. The user will tell you if they need something else.
 
@@ -213,7 +215,8 @@ You have read-only tools for finding and reading the user's previous AI chats: s
   if (hasScopeBase(user.scopes, 'ai:sandbox:use')) {
     push(
       'Sandbox discovery policy',
-      `- For sandbox workflows involving run_process, execute_script, download_artifact, read_artifact, send_artifact, read_process_output, write_process_stdin, kill_process, or list_sandbox_jobs, call discover_tools({ category: "Sandbox", includeTools: true }) first if those tools are not already visible.`
+      `- For sandbox workflows involving run_process, execute_script, download_artifact, read_artifact, send_artifact, read_process_output, write_process_stdin, kill_process, or list_sandbox_jobs, call discover_tools({ category: "Sandbox", includeTools: true }) first if those tools are not already visible.
+- Sandbox file handoff rule: create deliverable files under /workspace, pass relative paths to artifact tools, and after run_process wait/check the file before send_artifact.`
     );
   }
   push(
