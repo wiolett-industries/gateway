@@ -42,6 +42,11 @@ export const ChatRequestSchema = z.object({
   context: PageContextSchema.optional(),
 });
 
+export const AIContextEstimateRequestSchema = z.object({
+  context: PageContextSchema.optional(),
+  conversationId: z.string().uuid().optional().nullable(),
+});
+
 export const AIConfigUpdateSchema = z.object({
   enabled: z.boolean().optional(),
   providerUrl: z.union([z.string().url(), z.literal('')]).optional(),

@@ -613,6 +613,8 @@ export function AILitePanel() {
             slashResults={slashResults}
             slashIndex={slashIndex}
             messages={messages}
+            context={context}
+            conversationId={activeConversationId}
             isStreaming={currentConversationStreaming}
             isConnected={isConnected}
             retryAfter={retryAfter}

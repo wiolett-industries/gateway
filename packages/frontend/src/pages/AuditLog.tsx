@@ -47,6 +47,7 @@ import { api } from "@/services/api";
 import type { AuditLogEntry } from "@/types";
 
 const PAGE_SIZE = 100;
+const DIALOG_CLOSE_RESET_MS = 260;
 const AUDIT_VIEW_STORAGE_KEY = "gateway:audit-log:view";
 const SYSTEM_USER_FILTER = "system";
 
@@ -401,6 +402,7 @@ export function AuditLog({
     () => api.getCached<AuditLogEntry[]>(initialAuditCacheKey) ?? []
   );
   const [selectedEntry, setSelectedEntry] = useState<AuditLogEntry | null>(null);
+  const [entryDetailsOpen, setEntryDetailsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(
     () => api.getCached<AuditLogEntry[]>(initialAuditCacheKey) === undefined
   );
@@ -429,6 +431,9 @@ export function AuditLog({
   const requestIdRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const configSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingViewConfigRef = useRef<AuditViewConfig | null>(null);
+  const selectedEntryResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const actionOptions = useMemo(
     () =>
@@ -537,8 +542,31 @@ export function AuditLog({
   );
 
   const openConfigureDialog = () => {
-    setDraftViewConfig(viewConfig);
+    if (configSaveTimerRef.current) {
+      clearTimeout(configSaveTimerRef.current);
+      configSaveTimerRef.current = null;
+    }
+    const pendingConfig = pendingViewConfigRef.current;
+    if (pendingConfig) {
+      pendingViewConfigRef.current = null;
+      setViewConfig(pendingConfig);
+      setDraftViewConfig(pendingConfig);
+    } else {
+      setDraftViewConfig(viewConfig);
+    }
     setConfigOpen(true);
+  };
+
+  const closeConfigureDialog = () => {
+    setConfigOpen(false);
+  };
+
+  const handleConfigureOpenChange = (open: boolean) => {
+    if (open) {
+      setConfigOpen(true);
+      return;
+    }
+    closeConfigureDialog();
   };
 
   const saveViewConfig = () => {
@@ -547,8 +575,16 @@ export function AuditLog({
       excludedResourceTypes: uniqueSorted(draftViewConfig.excludedResourceTypes),
     };
     writeAuditViewConfig(next);
-    setViewConfig(next);
-    setConfigOpen(false);
+    closeConfigureDialog();
+    if (configSaveTimerRef.current) clearTimeout(configSaveTimerRef.current);
+    pendingViewConfigRef.current = next;
+    configSaveTimerRef.current = setTimeout(() => {
+      if (pendingViewConfigRef.current) {
+        setViewConfig(pendingViewConfigRef.current);
+        pendingViewConfigRef.current = null;
+      }
+      configSaveTimerRef.current = null;
+    }, DIALOG_CLOSE_RESET_MS);
   };
 
   const resetViewConfig = () => {
@@ -563,6 +599,36 @@ export function AuditLog({
     setExportFrom("");
     setExportTo("");
     setExportOpen(true);
+  };
+
+  const closeExportDialog = () => {
+    setExportOpen(false);
+  };
+
+  const handleExportOpenChange = (open: boolean) => {
+    if (open) {
+      setExportOpen(true);
+      return;
+    }
+    closeExportDialog();
+  };
+
+  const openEntryDetails = (entry: AuditLogEntry) => {
+    if (selectedEntryResetTimerRef.current) {
+      clearTimeout(selectedEntryResetTimerRef.current);
+      selectedEntryResetTimerRef.current = null;
+    }
+    setSelectedEntry(entry);
+    setEntryDetailsOpen(true);
+  };
+
+  const closeEntryDetails = () => {
+    setEntryDetailsOpen(false);
+    if (selectedEntryResetTimerRef.current) clearTimeout(selectedEntryResetTimerRef.current);
+    selectedEntryResetTimerRef.current = setTimeout(() => {
+      setSelectedEntry(null);
+      selectedEntryResetTimerRef.current = null;
+    }, DIALOG_CLOSE_RESET_MS);
   };
 
   const runExport = async () => {
@@ -589,7 +655,7 @@ export function AuditLog({
       }
       const { content, type } = formatAuditExport(exportedEntries, exportFormat);
       downloadTextFile(content, buildAuditExportFilename(exportFormat), type);
-      setExportOpen(false);
+      closeExportDialog();
       toast.success(`Exported ${exportedEntries.length} audit log entries`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to export audit log");
@@ -603,6 +669,13 @@ export function AuditLog({
     pageRef.current = 0;
     fetchPage([]);
   }, [fetchPage]);
+
+  useEffect(() => {
+    return () => {
+      if (configSaveTimerRef.current) clearTimeout(configSaveTimerRef.current);
+      if (selectedEntryResetTimerRef.current) clearTimeout(selectedEntryResetTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     api
@@ -786,7 +859,7 @@ export function AuditLog({
               columns={columns}
               data={entries}
               keyFn={(e) => e.id}
-              onRowClick={setSelectedEntry}
+              onRowClick={openEntryDetails}
               scrollRef={scrollRef}
               horizontalScroll
               minWidth="1000px"
@@ -805,7 +878,7 @@ export function AuditLog({
         )}
       </div>
 
-      <Dialog open={configOpen} onOpenChange={setConfigOpen}>
+      <Dialog open={configOpen} onOpenChange={handleConfigureOpenChange}>
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Configure Audit View</DialogTitle>
@@ -822,6 +895,7 @@ export function AuditLog({
                   excludedActions: toggleValue(draft.excludedActions, value),
                 }))
               }
+              viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
             />
             <AuditOptionChecklist
               title="Hidden Resources"
@@ -837,6 +911,7 @@ export function AuditLog({
                   excludedResourceTypes: toggleValue(draft.excludedResourceTypes, value),
                 }))
               }
+              viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
             />
           </div>
           <DialogFooter>
@@ -848,7 +923,7 @@ export function AuditLog({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+      <Dialog open={exportOpen} onOpenChange={handleExportOpenChange}>
         <DialogContent className="sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>Download Audit Log</DialogTitle>
@@ -882,6 +957,7 @@ export function AuditLog({
                 selected={exportActions}
                 onToggle={(value) => setExportActions((values) => toggleValue(values, value))}
                 emptyMessage="No actions available."
+                viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
               />
               <AuditOptionChecklist
                 title="Resources"
@@ -893,6 +969,7 @@ export function AuditLog({
                 selected={exportResourceTypes}
                 onToggle={(value) => setExportResourceTypes((values) => toggleValue(values, value))}
                 emptyMessage="No resources available."
+                viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
               />
               <AuditOptionChecklist
                 title="Users"
@@ -901,11 +978,12 @@ export function AuditLog({
                 selected={exportUserIds}
                 onToggle={(value) => setExportUserIds((values) => toggleValue(values, value))}
                 emptyMessage="Load audit entries to populate users."
+                viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setExportOpen(false)} disabled={exporting}>
+            <Button variant="outline" onClick={closeExportDialog} disabled={exporting}>
               Cancel
             </Button>
             <Button onClick={() => void runExport()} disabled={exporting}>
@@ -915,7 +993,7 @@ export function AuditLog({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && setSelectedEntry(null)}>
+      <Dialog open={entryDetailsOpen} onOpenChange={(open) => !open && closeEntryDetails()}>
         <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Audit Entry Details</DialogTitle>
@@ -1014,6 +1092,7 @@ function AuditOptionChecklist({
   selected,
   onToggle,
   emptyMessage = "No options available.",
+  viewportClassName,
 }: {
   title: string;
   description: string;
@@ -1021,6 +1100,7 @@ function AuditOptionChecklist({
   selected: string[];
   onToggle: (value: string) => void;
   emptyMessage?: string;
+  viewportClassName?: string;
 }) {
   return (
     <PanelShell
@@ -1028,6 +1108,7 @@ function AuditOptionChecklist({
       description={description}
       className="min-h-0"
       headerClassName="px-3 py-2"
+      bodyClassName={viewportClassName}
     >
       <div>
         {options.length === 0 ? (

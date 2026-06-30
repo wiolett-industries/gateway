@@ -65,6 +65,25 @@ export interface AIConfig {
   webSearchApiKeyLast4: string;
 }
 
+export interface AIContextEstimate {
+  systemTokens: number;
+  toolsTokens: number;
+  totalOverhead: number;
+  limit: number;
+  reasoningEffort: AIConfig["reasoningEffort"];
+  toolCount: number;
+  systemBreakdown: Array<{
+    label: string;
+    chars: number;
+    tokens: number;
+  }>;
+  toolBreakdown: Array<{
+    label: string;
+    chars: number;
+    tokens: number;
+  }>;
+}
+
 export interface AISandboxStatus {
   state: "stopped" | "starting" | "running" | "unavailable";
   socketPath?: string;

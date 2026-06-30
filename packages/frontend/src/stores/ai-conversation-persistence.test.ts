@@ -4,6 +4,7 @@ import {
   listConversations,
   rollbackConversationToMessage,
 } from "@/services/ai-conversations";
+import { api } from "@/services/api";
 import { resetAIStateForAuthChange, useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -121,6 +122,55 @@ describe("AI backend runtime store", () => {
         }),
       ])
     );
+  });
+
+  it("reports context usage with server-estimated prompt and tool overhead", async () => {
+    const socket = await connectAI();
+    const estimateSpy = vi.spyOn(api, "getAIContextEstimate").mockResolvedValueOnce({
+      systemTokens: 120,
+      toolsTokens: 80,
+      totalOverhead: 200,
+      limit: 1000,
+      reasoningEffort: "low",
+      toolCount: 3,
+      systemBreakdown: [{ label: "Base instructions", chars: 480, tokens: 120 }],
+      toolBreakdown: [{ label: "Discovery", chars: 320, tokens: 80 }],
+    });
+    useAIStore.setState({
+      activeConversationId: "11111111-1111-4111-8111-111111111111",
+      lastContext: {
+        route: "/docker/containers/container-1",
+        resourceType: "docker container",
+        resourceId: "container-1",
+      },
+      messages: [
+        { id: "message-1", role: "user", content: "hello world" },
+        { id: "local-1", role: "assistant", content: "local note", localOnly: true },
+      ],
+    });
+
+    const handled = await useAIStore.getState().handleSlashCommand("/context");
+
+    expect(handled).toBe(true);
+    expect(estimateSpy).toHaveBeenCalledWith({
+      context: {
+        route: "/docker/containers/container-1",
+        resourceType: "docker container",
+        resourceId: "container-1",
+      },
+      conversationId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(sentPayloads(socket)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "conversation.send_message" })])
+    );
+    const contextMessage = useAIStore.getState().messages.at(-1);
+    expect(contextMessage).toMatchObject({ role: "assistant", localOnly: true });
+    expect(contextMessage?.content).toContain("Estimated tokens: 207 / 1,000 (21%)");
+    expect(contextMessage?.content).toContain("Chat: ~7 tokens");
+    expect(contextMessage?.content).toContain("System prompt: ~120 tokens");
+    expect(contextMessage?.content).toContain("Tools: ~80 tokens (3 available)");
+    expect(contextMessage?.content).toContain("- Base instructions: ~120 tokens");
+    expect(contextMessage?.content).toContain("- Discovery: ~80 tokens");
   });
 
   it("refreshes all recent conversations without blanking an existing sidebar list", async () => {

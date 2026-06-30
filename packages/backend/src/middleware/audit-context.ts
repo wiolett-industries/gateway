@@ -26,13 +26,123 @@ interface FallbackAuditTarget {
   resourceId?: string;
 }
 
-const DOCKER_ROUTE_AUDIT_TARGETS: Array<{
+const NAMED_ROUTE_AUDIT_TARGETS: Array<{
   method: string;
   pattern: RegExp;
   action: string;
   resourceType: string;
   resourceIdGroup?: number;
 }> = [
+  {
+    method: 'POST',
+    pattern: /^\/api\/system\/check-update$/,
+    action: 'system.update.check',
+    resourceType: 'system-update',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/system\/update$/,
+    action: 'system.update.perform',
+    resourceType: 'system-update',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/system\/daemon-updates\/check$/,
+    action: 'system.daemon_update.check',
+    resourceType: 'daemon-update',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/system\/daemon-updates\/([^/]+)$/,
+    action: 'system.daemon_update.perform',
+    resourceType: 'daemon-update',
+    resourceIdGroup: 1,
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/ai\/config$/,
+    action: 'ai.config.update',
+    resourceType: 'ai-config',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/ai\/context-estimate$/,
+    action: 'ai.context.estimate',
+    resourceType: 'ai-context',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/ai\/conversation-folders$/,
+    action: 'ai.conversation_folder.create',
+    resourceType: 'ai-conversation-folder',
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/ai\/conversation-folders\/([^/]+)$/,
+    action: 'ai.conversation_folder.update',
+    resourceType: 'ai-conversation-folder',
+    resourceIdGroup: 1,
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/ai\/conversation-folders\/([^/]+)$/,
+    action: 'ai.conversation_folder.delete',
+    resourceType: 'ai-conversation-folder',
+    resourceIdGroup: 1,
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/ai\/conversation-folders\/reorder$/,
+    action: 'ai.conversation_folder.reorder',
+    resourceType: 'ai-conversation-folder',
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/ai\/conversation-folders\/move-conversations$/,
+    action: 'ai.conversation_folder.move_conversations',
+    resourceType: 'ai-conversation-folder',
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/ai\/conversations\/([^/]+)$/,
+    action: 'ai.conversation.update',
+    resourceType: 'ai-conversation',
+    resourceIdGroup: 1,
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/ai\/conversations\/([^/]+)$/,
+    action: 'ai.conversation.delete',
+    resourceType: 'ai-conversation',
+    resourceIdGroup: 1,
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/ai\/conversations\/([^/]+)\/rollback$/,
+    action: 'ai.conversation.rollback',
+    resourceType: 'ai-conversation',
+    resourceIdGroup: 1,
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/ai\/sandbox\/jobs\/([^/]+)\/kill$/,
+    action: 'ai.sandbox_job.kill',
+    resourceType: 'ai-sandbox-job',
+    resourceIdGroup: 1,
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/ai\/sandbox\/artifacts$/,
+    action: 'ai.sandbox_artifact.create',
+    resourceType: 'ai-sandbox-artifact',
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/ai\/sandbox\/artifacts\/([^/]+)$/,
+    action: 'ai.sandbox_artifact.delete',
+    resourceType: 'ai-sandbox-artifact',
+    resourceIdGroup: 1,
+  },
   {
     method: 'POST',
     pattern: /^\/api\/docker\/nodes\/([^/]+)\/containers$/,
@@ -295,7 +405,7 @@ function shouldSkipFallbackAudit(method: string, path: string): boolean {
 }
 
 function resolveFallbackAuditTarget(method: string, path: string): FallbackAuditTarget {
-  for (const target of DOCKER_ROUTE_AUDIT_TARGETS) {
+  for (const target of NAMED_ROUTE_AUDIT_TARGETS) {
     if (target.method !== method) continue;
     const match = target.pattern.exec(path);
     if (!match) continue;

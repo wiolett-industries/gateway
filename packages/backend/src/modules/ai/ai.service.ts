@@ -74,7 +74,7 @@ import {
 } from './ai.service-helpers.js';
 import type { AISettingsService } from './ai.settings.service.js';
 import { manageStatusPageTool } from './ai.status-page-tools.js';
-import { buildAISystemPrompt } from './ai.system-prompt.js';
+import { buildAISystemPromptDetailed, type SystemPromptBreakdownItem } from './ai.system-prompt.js';
 import { AI_TOOLS, getOpenAITools, inferDiscoveredToolsetsFromText, TOOL_STORE_INVALIDATION_MAP } from './ai.tools.js';
 import type {
   AIMessageAttachment,
@@ -257,6 +257,32 @@ function inferDiscoveredToolsetsFromMessages(messages: ChatMessage[]): string[] 
     : [];
 }
 
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? '"[Undefined]"';
+  } catch {
+    return '"[Unserializable]"';
+  }
+}
+
+function estimateToolBreakdown(
+  tools: Array<{ function: { name: string } }>
+): Array<{ label: string; chars: number; tokens: number }> {
+  const toolDefinitionsByName = new Map(AI_TOOLS.map((tool) => [tool.name, tool]));
+  const byCategory = new Map<string, { chars: number; tokens: number }>();
+  for (const tool of tools) {
+    const category = toolDefinitionsByName.get(tool.function.name)?.category ?? 'Other';
+    const serialized = safeStringify(tool);
+    const current = byCategory.get(category) ?? { chars: 0, tokens: 0 };
+    current.chars += serialized.length;
+    current.tokens += estimateTokens(serialized);
+    byCategory.set(category, current);
+  }
+  return [...byCategory.entries()]
+    .map(([label, value]) => ({ label, ...value }))
+    .sort((left, right) => right.tokens - left.tokens);
+}
+
 function normalizeSearchScope(value: unknown): AIChatSearchScope | undefined {
   if (!isRecord(value) || typeof value.type !== 'string') return undefined;
   if (value.type === 'current_project' || value.type === 'no_project' || value.type === 'all_user_chats') {
@@ -300,6 +326,14 @@ export class AIService {
   ) {}
 
   async buildSystemPrompt(user: User, pageContext?: PageContext, conversationId?: string): Promise<string> {
+    return (await this.buildSystemPromptDetailed(user, pageContext, conversationId)).prompt;
+  }
+
+  private async buildSystemPromptDetailed(
+    user: User,
+    pageContext?: PageContext,
+    conversationId?: string
+  ): Promise<{ prompt: string; breakdown: SystemPromptBreakdownItem[] }> {
     const retrievalPointers = conversationId
       ? await (this.conversationSearchService ?? container.resolve(AIConversationSearchService))
           .getPromptPointers(user.id, conversationId)
@@ -311,7 +345,7 @@ export class AIService {
             return undefined;
           })
       : undefined;
-    return buildAISystemPrompt(
+    return buildAISystemPromptDetailed(
       {
         settingsService: this.settingsService,
         monitoringService: this.monitoringService,
@@ -1272,8 +1306,8 @@ export class AIService {
     };
   }
 
-  private async getConversationDiscoveredToolsets(user: User, conversationId?: string): Promise<string[] | undefined> {
-    if (!conversationId) return undefined;
+  private async getConversationDiscoveredToolsets(user: User, conversationId?: string): Promise<string[]> {
+    if (!conversationId) return [];
     try {
       const conversation = await container.resolve(AIConversationService).getConversation(user.id, conversationId);
       return conversation?.discoveredToolsets ?? [];
@@ -1289,7 +1323,7 @@ export class AIService {
   private buildModelTools(
     config: { disabledTools: string[]; webSearchEnabled: boolean; sandboxEnabled: boolean },
     user: User,
-    discoveredToolsets: string[] | undefined
+    discoveredToolsets: string[]
   ) {
     return getOpenAITools(config.disabledTools, user.scopes, config.webSearchEnabled, {
       discoveredToolsets,
@@ -1869,15 +1903,36 @@ export class AIService {
    */
   async getContextEstimate(
     user: User,
-    pageContext?: PageContext
+    pageContext?: PageContext,
+    conversationId?: string
   ): Promise<{
     systemTokens: number;
     toolsTokens: number;
     totalOverhead: number;
+    limit: number;
+    reasoningEffort: string;
+    toolCount: number;
+    systemBreakdown: SystemPromptBreakdownItem[];
+    toolBreakdown: Array<{ label: string; chars: number; tokens: number }>;
   }> {
-    const prompt = await this.buildSystemPrompt(user, pageContext);
+    const config = await this.settingsService.getConfig();
+    const { prompt, breakdown } = await this.buildSystemPromptDetailed(user, pageContext, conversationId);
+    const discoveredToolsets = await this.getConversationDiscoveredToolsets(user, conversationId);
+    const tools = this.buildModelTools(config, user, discoveredToolsets);
     const systemTokens = estimateTokens(prompt);
-    const toolsTokens = 3000;
-    return { systemTokens, toolsTokens, totalOverhead: systemTokens + toolsTokens };
+    const toolsTokens = estimateTokens(safeStringify(tools));
+    const totalOverhead = systemTokens + toolsTokens;
+    const toolBreakdown = estimateToolBreakdown(tools);
+
+    return {
+      systemTokens,
+      toolsTokens,
+      totalOverhead,
+      limit: config.maxContextTokens,
+      reasoningEffort: config.reasoningEffort,
+      toolCount: tools.length,
+      systemBreakdown: breakdown,
+      toolBreakdown,
+    };
   }
 }

@@ -1543,6 +1543,10 @@ const BASE_AI_TOOL_NAMES = new Set([
   'find_resource',
   'ask_question',
   'internal_documentation',
+  'search_chats',
+  'find_in_chat',
+  'read_chat_slice',
+  'list_projects',
   'fetch',
   'web_search',
 ]);

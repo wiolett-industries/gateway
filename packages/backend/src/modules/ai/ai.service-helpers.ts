@@ -582,6 +582,7 @@ export {
   dockerImageMatchesSearch,
   dockerNetworkMatchesSearch,
   dockerVolumeMatchesSearch,
+  estimateMessagesTokens,
   estimateTokens,
   getToolResourceId,
   hasRegistryHost,

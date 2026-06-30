@@ -38,6 +38,7 @@ import type {
   User,
 } from "@/types";
 import type {
+  AIContextEstimate,
   AIMessage,
   AIMessageAttachment,
   AIRunStatus,
@@ -770,6 +771,20 @@ class ApiClient extends withLoggingApi(
         }>
       >;
     }>("/ai/tools");
+    return res.data;
+  }
+
+  async getAIContextEstimate(input?: {
+    context?: PageContext;
+    conversationId?: string | null;
+  }): Promise<AIContextEstimate> {
+    const res = await this.request<{ data: AIContextEstimate }>("/ai/context-estimate", {
+      method: "POST",
+      body: JSON.stringify({
+        context: input?.context,
+        conversationId: input?.conversationId ?? undefined,
+      }),
+    });
     return res.data;
   }
 

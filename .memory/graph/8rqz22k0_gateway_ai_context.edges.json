@@ -1,0 +1,55 @@
+{
+  "file_name": "8rqz22k0_gateway_ai_context",
+  "edges": [
+    {
+      "from_id": "8rqz22k0",
+      "to_id": "duvbj7h2",
+      "relation": "same_area",
+      "weight": 0.6,
+      "reason": "tools definition and gateway tool registry context overlap with AI tooling lifecycle in source context.",
+      "source": "auto",
+      "created_at": 1782786043594,
+      "updated_at": 1782786043594
+    },
+    {
+      "from_id": "8rqz22k0",
+      "to_id": "ph8ejel0",
+      "relation": "same_area",
+      "weight": 0.6,
+      "reason": "web search integration and AI service responsibilities share context with AI tooling and discovery.",
+      "source": "auto",
+      "created_at": 1782786043594,
+      "updated_at": 1782786043594
+    },
+    {
+      "from_id": "8rqz22k0",
+      "to_id": "sg6sqaui",
+      "relation": "same_workflow",
+      "weight": 0.55,
+      "reason": "guardrail refactor workstream surrounding ai.service.ts touches similar tooling and lifecycle flow.",
+      "source": "auto",
+      "created_at": 1782786043594,
+      "updated_at": 1782786043594
+    },
+    {
+      "from_id": "8rqz22k0",
+      "to_id": "h8y5ou2d",
+      "relation": "same_area",
+      "weight": 0.5,
+      "reason": "refactor and guardrails context for AI service translates to broader gateway AI tooling governance.",
+      "source": "auto",
+      "created_at": 1782786043594,
+      "updated_at": 1782786043594
+    },
+    {
+      "from_id": "8rqz22k0",
+      "to_id": "xg6y81q3",
+      "relation": "same_area",
+      "weight": 0.5,
+      "reason": "shared MCP scope and tool exposure mechanics align with gateway AI tool model discussed in source.",
+      "source": "auto",
+      "created_at": 1782786043594,
+      "updated_at": 1782786043594
+    }
+  ]
+}

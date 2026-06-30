@@ -18,7 +18,7 @@ import {
 } from "@/lib/ai-approval-mode";
 import { cn } from "@/lib/utils";
 import { type AIContextUsage, getAIContextUsage } from "@/stores/ai";
-import type { AIComposerAttachment, AIMessage as AIMessageType } from "@/types/ai";
+import type { AIComposerAttachment, AIMessage as AIMessageType, PageContext } from "@/types/ai";
 import { getComposerAttachmentId, getComposerAttachmentPreviewUrl } from "./useAIComposerDraft";
 
 export interface AISlashCommand {
@@ -37,6 +37,8 @@ interface AIComposerProps {
   slashResults: AISlashCommand[];
   slashIndex: number;
   messages: AIMessageType[];
+  context?: PageContext;
+  conversationId?: string | null;
   isStreaming: boolean;
   isConnected: boolean;
   retryAfter?: number | null;
@@ -114,6 +116,14 @@ function ContextRing({ usage }: { usage: AIContextUsage | null }) {
                 <span className="text-muted-foreground">Messages</span>
                 <span>{usage.messageCount}</span>
               </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted-foreground">System</span>
+                <span>{usage.systemTokens.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted-foreground">Tools</span>
+                <span>{usage.toolsTokens.toLocaleString()}</span>
+              </div>
             </>
           )}
         </div>
@@ -133,6 +143,8 @@ export function AIComposer({
   slashResults,
   slashIndex,
   messages,
+  context,
+  conversationId,
   isStreaming,
   isConnected,
   retryAfter,
@@ -158,13 +170,13 @@ export function AIComposer({
 
   useEffect(() => {
     let active = true;
-    void getAIContextUsage(messages).then((nextUsage) => {
+    void getAIContextUsage(messages, context, conversationId).then((nextUsage) => {
       if (active) setUsage(nextUsage);
     });
     return () => {
       active = false;
     };
-  }, [messages]);
+  }, [context, conversationId, messages]);
 
   const attachFiles = (files: FileList | File[] | null) => {
     if (!canAttachImages || !files || !onAttachFiles) return;

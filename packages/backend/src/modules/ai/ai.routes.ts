@@ -9,7 +9,8 @@ import type { AppEnv } from '@/types.js';
 import { aiStatusRoute, getAiConfigRoute, listAiToolsRoute, updateAiConfigRoute } from './ai.openapi.js';
 import { AISandboxService } from './ai.sandbox.service.js';
 import { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
-import { AIConfigUpdateSchema } from './ai.schemas.js';
+import { AIConfigUpdateSchema, AIContextEstimateRequestSchema } from './ai.schemas.js';
+import { AIService } from './ai.service.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS } from './ai.tools.js';
 import { AIConversationService } from './ai-conversation.service.js';
@@ -204,6 +205,16 @@ aiRoutes.post('/conversations/:id/rollback', requireScope('feat:ai:use'), async 
   const result = await service.rollbackToMessage(user.id, c.req.param('id'), messageId);
   if (!result) return c.json({ code: 'NOT_FOUND', message: 'Conversation message not found' }, 404);
   return c.json({ data: result });
+});
+
+aiRoutes.post('/context-estimate', requireScope('feat:ai:use'), async (c) => {
+  const parsed = AIContextEstimateRequestSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ code: 'VALIDATION_ERROR', message: parsed.error.message }, 400);
+
+  const service = container.resolve(AIService);
+  const user = c.get('user')!;
+  const data = await service.getContextEstimate(user, parsed.data.context, parsed.data.conversationId ?? undefined);
+  return c.json({ data });
 });
 
 // GET /api/ai/config — full config for admin display (admin only)

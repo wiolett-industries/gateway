@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AIService } from './ai.service.js';
+import { AI_TOOLS } from './ai.tools.js';
 
 const BASE_USER = {
   id: 'user-1',
@@ -255,5 +256,84 @@ describe('AIService system prompt', () => {
     expect(prompt).not.toContain('## System Inventory');
     expect(prompt).not.toContain('## Certificate Authorities');
     expect(caService.getCATree).not.toHaveBeenCalled();
+  });
+
+  it('summarizes large resource-scoped permission lists instead of injecting every resource ID', async () => {
+    const monitoringService = {
+      getDashboardStats: vi.fn().mockRejectedValue(new Error('stats unavailable')),
+    };
+    const service = createService({ monitoringService });
+    const resourceScopes = Array.from({ length: 250 }, (_, index) => `proxy:view:host-${index}`);
+
+    const prompt = await service.buildSystemPrompt({
+      ...BASE_USER,
+      scopes: ['feat:ai:use', ...resourceScopes],
+    });
+
+    expect(prompt).toContain('Scopes: 251 total scopes.');
+    expect(prompt).toContain('resource-scoped: proxy:view: 250 resource-scoped grants');
+    expect(prompt).toContain('resource-scoped grant IDs are omitted from this prompt');
+    expect(prompt).not.toContain('host-249');
+  });
+
+  it('estimates context overhead from the real system prompt and model tools', async () => {
+    const monitoringService = {
+      getDashboardStats: vi.fn().mockRejectedValue(new Error('stats unavailable')),
+    };
+    const service = createService({
+      config: {
+        customSystemPrompt: 'Keep answers short.',
+        disabledTools: AI_TOOLS.map((tool) => tool.name),
+        webSearchEnabled: false,
+        sandboxEnabled: false,
+        maxContextTokens: 12345,
+        reasoningEffort: 'low',
+      },
+      monitoringService,
+    });
+
+    const estimate = await service.getContextEstimate(
+      { ...BASE_USER, scopes: ['feat:ai:use'] },
+      { route: '/docker/containers/container-1', resourceType: 'docker container', resourceId: 'container-1' }
+    );
+
+    expect(estimate.systemTokens).toBeGreaterThan(0);
+    expect(estimate.toolsTokens).toBe(1);
+    expect(estimate.totalOverhead).toBe(estimate.systemTokens + estimate.toolsTokens);
+    expect(estimate.limit).toBe(12345);
+    expect(estimate.reasoningEffort).toBe('low');
+    expect(estimate.toolCount).toBe(0);
+    expect(estimate.systemBreakdown).toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: 'Base instructions' })])
+    );
+    expect(estimate.toolBreakdown).toEqual([]);
+  });
+
+  it('keeps new conversations on base tools until a category is discovered', async () => {
+    const monitoringService = {
+      getDashboardStats: vi.fn().mockRejectedValue(new Error('stats unavailable')),
+    };
+    const service = createService({
+      config: {
+        customSystemPrompt: '',
+        disabledTools: [],
+        webSearchEnabled: false,
+        sandboxEnabled: false,
+        maxContextTokens: 12345,
+        reasoningEffort: 'low',
+      },
+      monitoringService,
+    });
+    const broadToolScopes = [
+      ...new Set(AI_TOOLS.map((tool) => tool.requiredScope).filter((scope): scope is string => Boolean(scope))),
+    ];
+
+    const estimate = await service.getContextEstimate({ ...BASE_USER, scopes: broadToolScopes });
+
+    expect(estimate.toolCount).toBeLessThan(AI_TOOLS.length);
+    expect(estimate.toolBreakdown.map((item) => item.label)).toEqual(
+      expect.arrayContaining(['Discovery', 'Conversation Retrieval'])
+    );
+    expect(estimate.toolBreakdown.map((item) => item.label)).not.toContain('Docker');
   });
 });

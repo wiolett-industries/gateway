@@ -32,6 +32,33 @@ import type {
 
 const DEFAULT_CONTEXT_TOKEN_LIMIT = 56000;
 const DEFAULT_REASONING_EFFORT: AIConfig["reasoningEffort"] = "none";
+const CONTEXT_ESTIMATE_CACHE_TTL_MS = 30_000;
+
+interface AIContextOverheadEstimate {
+  systemTokens: number;
+  toolsTokens: number;
+  overheadTokens: number;
+  limit: number;
+  source: "server" | "settings" | "fallback";
+  reasoningEffort: AIConfig["reasoningEffort"];
+  toolCount: number;
+  systemBreakdown: Array<{
+    label: string;
+    chars: number;
+    tokens: number;
+  }>;
+  toolBreakdown: Array<{
+    label: string;
+    chars: number;
+    tokens: number;
+  }>;
+}
+
+let contextEstimateCache: {
+  key: string;
+  expiresAt: number;
+  estimate: AIContextOverheadEstimate;
+} | null = null;
 
 async function resolveContextSettings(): Promise<{
   limit: number;
@@ -389,14 +416,111 @@ function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
   return result;
 }
 
+function estimateTextTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function estimateChatMessagesTokens(messages: ChatMessage[]): number {
+  let total = 0;
+  for (const message of messages) {
+    if (typeof message.content === "string") total += estimateTextTokens(message.content);
+    if (message.attachments?.length) {
+      for (const attachment of message.attachments) {
+        total += Math.ceil(attachment.sizeBytes / 3);
+      }
+    }
+    if (message.tool_calls?.length) {
+      for (const toolCall of message.tool_calls) {
+        total += estimateTextTokens(toolCall.function.arguments || "");
+        total += 20;
+      }
+    }
+    total += 4;
+  }
+  return total;
+}
+
+function contextEstimateCacheKey(context?: PageContext, conversationId?: string | null): string {
+  return JSON.stringify({
+    conversationId: conversationId ?? null,
+    route: context?.route ?? null,
+    resourceType: context?.resourceType ?? null,
+    resourceId: context?.resourceId ?? null,
+  });
+}
+
+async function resolveContextOverhead(
+  context?: PageContext,
+  conversationId?: string | null
+): Promise<AIContextOverheadEstimate> {
+  const key = contextEstimateCacheKey(context, conversationId);
+  const now = Date.now();
+  if (contextEstimateCache?.key === key && contextEstimateCache.expiresAt > now) {
+    return contextEstimateCache.estimate;
+  }
+
+  try {
+    const estimate = await api.getAIContextEstimate({ context, conversationId });
+    const result: AIContextOverheadEstimate = {
+      systemTokens: estimate.systemTokens,
+      toolsTokens: estimate.toolsTokens,
+      overheadTokens: estimate.totalOverhead,
+      limit: estimate.limit,
+      source: "server",
+      reasoningEffort: estimate.reasoningEffort,
+      toolCount: estimate.toolCount,
+      systemBreakdown: estimate.systemBreakdown ?? [],
+      toolBreakdown: estimate.toolBreakdown ?? [],
+    };
+    contextEstimateCache = {
+      key,
+      expiresAt: now + CONTEXT_ESTIMATE_CACHE_TTL_MS,
+      estimate: result,
+    };
+    return result;
+  } catch {
+    const { limit, source, reasoningEffort } = await resolveContextSettings();
+    const result: AIContextOverheadEstimate = {
+      systemTokens: 0,
+      toolsTokens: 0,
+      overheadTokens: 0,
+      limit,
+      source,
+      reasoningEffort,
+      toolCount: 0,
+      systemBreakdown: [],
+      toolBreakdown: [],
+    };
+    contextEstimateCache = {
+      key,
+      expiresAt: now + CONTEXT_ESTIMATE_CACHE_TTL_MS,
+      estimate: result,
+    };
+    return result;
+  }
+}
+
 export interface AIContextUsage {
   messageCount: number;
   estimatedTokens: number;
   limit: number;
   percent: number;
   chatTokens: number;
+  systemTokens: number;
+  toolsTokens: number;
   overheadTokens: number;
-  source: "settings" | "fallback";
+  toolCount: number;
+  systemBreakdown: Array<{
+    label: string;
+    chars: number;
+    tokens: number;
+  }>;
+  toolBreakdown: Array<{
+    label: string;
+    chars: number;
+    tokens: number;
+  }>;
+  source: "server" | "settings" | "fallback";
   reasoningEffort: AIConfig["reasoningEffort"];
 }
 
@@ -404,23 +528,31 @@ interface SendMessageOptions {
   startNewConversation?: boolean;
 }
 
-export async function getAIContextUsage(messages: AIMessage[]): Promise<AIContextUsage> {
+export async function getAIContextUsage(
+  messages: AIMessage[],
+  context?: PageContext,
+  conversationId?: string | null
+): Promise<AIContextUsage> {
   const chatMessages = buildChatMessages(messages);
-  const charCount = chatMessages.reduce((sum, message) => sum + (message.content?.length || 0), 0);
-  const chatTokens = Math.ceil(charCount / 4);
-  const overheadTokens = 3000;
+  const chatTokens = estimateChatMessagesTokens(chatMessages);
+  const overhead = await resolveContextOverhead(context, conversationId);
+  const overheadTokens = overhead.overheadTokens;
   const estimatedTokens = chatTokens + overheadTokens;
-  const { limit, source, reasoningEffort } = await resolveContextSettings();
 
   return {
     messageCount: chatMessages.length,
     estimatedTokens,
-    limit,
-    percent: Math.round((estimatedTokens / limit) * 100),
+    limit: overhead.limit,
+    percent: Math.round((estimatedTokens / overhead.limit) * 100),
     chatTokens,
+    systemTokens: overhead.systemTokens,
+    toolsTokens: overhead.toolsTokens,
     overheadTokens,
-    source,
-    reasoningEffort,
+    toolCount: overhead.toolCount,
+    systemBreakdown: overhead.systemBreakdown,
+    toolBreakdown: overhead.toolBreakdown,
+    source: overhead.source,
+    reasoningEffort: overhead.reasoningEffort,
   };
 }
 
@@ -1027,15 +1159,38 @@ export const useAIStore = create<AIState>()((set, get) => ({
     }
 
     if (cmd === "/context") {
-      const { messages } = get();
-      const usage = await getAIContextUsage(messages);
+      const { activeConversationId, lastContext, messages } = get();
+      const usage = await getAIContextUsage(
+        messages,
+        lastContext ?? undefined,
+        activeConversationId
+      );
       const sourceNote =
-        usage.source === "fallback" ? "\n- Limit source: fallback (AI settings unavailable)" : "";
+        usage.source === "fallback"
+          ? "\n- Estimate source: fallback (context estimate unavailable)"
+          : usage.source === "settings"
+            ? "\n- Estimate source: local chat + AI settings fallback"
+            : "";
+      const systemBreakdown =
+        usage.systemBreakdown.length > 0
+          ? `\n\n**System breakdown**\n${[...usage.systemBreakdown]
+              .sort((left, right) => right.tokens - left.tokens)
+              .slice(0, 6)
+              .map((item) => `- ${item.label}: ~${item.tokens.toLocaleString()} tokens`)
+              .join("\n")}`
+          : "";
+      const toolBreakdown =
+        usage.toolBreakdown.length > 0
+          ? `\n\n**Tool breakdown**\n${usage.toolBreakdown
+              .slice(0, 6)
+              .map((item) => `- ${item.label}: ~${item.tokens.toLocaleString()} tokens`)
+              .join("\n")}`
+          : "";
 
       const localMsg: AIMessage = {
         id: generateId(),
         role: "assistant",
-        content: `**Context Usage**\n- Messages: ${usage.messageCount}\n- Estimated tokens: ${usage.estimatedTokens.toLocaleString()} / ${usage.limit.toLocaleString()} (${usage.percent}%)\n- Chat: ~${usage.chatTokens.toLocaleString()} tokens\n- System overhead: ~${usage.overheadTokens.toLocaleString()} tokens\n- Reasoning: ${usage.reasoningEffort}${sourceNote}`,
+        content: `**Context Usage**\n- Messages: ${usage.messageCount}\n- Estimated tokens: ${usage.estimatedTokens.toLocaleString()} / ${usage.limit.toLocaleString()} (${usage.percent}%)\n- Chat: ~${usage.chatTokens.toLocaleString()} tokens\n- System prompt: ~${usage.systemTokens.toLocaleString()} tokens\n- Tools: ~${usage.toolsTokens.toLocaleString()} tokens (${usage.toolCount} available)\n- Reasoning: ${usage.reasoningEffort}${sourceNote}${systemBreakdown}${toolBreakdown}`,
         createdAt: nowIso(),
         localOnly: true,
       };

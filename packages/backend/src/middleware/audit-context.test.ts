@@ -42,6 +42,39 @@ describe('resolveFallbackAuditTarget', () => {
     });
   });
 
+  it('maps system update routes away from generic route audit actions', () => {
+    expect(__testOnly.resolveFallbackAuditTarget('POST', '/api/system/check-update')).toEqual({
+      action: 'system.update.check',
+      resourceType: 'system-update',
+      resourceId: undefined,
+    });
+    expect(
+      __testOnly.resolveFallbackAuditTarget('POST', '/api/system/daemon-updates/11111111-1111-4111-8111-111111111111')
+    ).toEqual({
+      action: 'system.daemon_update.perform',
+      resourceType: 'daemon-update',
+      resourceId: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('maps AI routes away from generic route audit actions', () => {
+    expect(__testOnly.resolveFallbackAuditTarget('PUT', '/api/ai/config')).toEqual({
+      action: 'ai.config.update',
+      resourceType: 'ai-config',
+      resourceId: undefined,
+    });
+    expect(__testOnly.resolveFallbackAuditTarget('POST', '/api/ai/context-estimate')).toEqual({
+      action: 'ai.context.estimate',
+      resourceType: 'ai-context',
+      resourceId: undefined,
+    });
+    expect(__testOnly.resolveFallbackAuditTarget('DELETE', '/api/ai/conversations/chat-1')).toEqual({
+      action: 'ai.conversation.delete',
+      resourceType: 'ai-conversation',
+      resourceId: 'chat-1',
+    });
+  });
+
   it('keeps a generic fallback for unknown mutating routes', () => {
     expect(__testOnly.resolveFallbackAuditTarget('POST', '/api/unknown')).toEqual({
       action: 'route.post',
