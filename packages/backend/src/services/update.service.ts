@@ -2,6 +2,7 @@ import { inArray } from 'drizzle-orm';
 import type { Env } from '@/config/env.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { settings } from '@/db/schema/settings.js';
+import { DEFAULT_SANDBOX_WORKSPACE_DIR } from '@/foundation/foundation-migrator.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { compareSemver, isNewerVersion, parseSemver } from '@/lib/semver.js';
 import {
@@ -29,6 +30,13 @@ interface GitLabRelease {
   tag_name: string;
   description: string;
   _links: { self: string };
+}
+
+interface FoundationMigrationOutput {
+  ok: true;
+  changedFiles: string[];
+  backupDir: string | null;
+  sandboxWorkspaceDir: string;
 }
 
 export function isGatewayReleaseTag(tag: string): boolean {
@@ -289,62 +297,72 @@ export class UpdateService {
 
     await this.dockerService.pullImageRef(DOCKER_COMPOSE_CLI_IMAGE_REF);
 
-    logger.info('Updating .env on host', { composeDir, envTag: tag, imageRef: artifact.imageRef });
-    const envResult = await this.dockerService.runOneShot({
-      Image: currentImage,
+    logger.info('Running foundation migrations from target image', {
+      composeDir,
+      envTag: tag,
+      imageRef: artifact.imageRef,
+    });
+    const migrationResult = await this.dockerService.runOneShot({
+      Image: artifact.imageRef,
       Cmd: [
-        'sh',
-        '-c',
-        `set -eu
-tmp="/host/.env.tmp"
-awk -v version="$GATEWAY_VERSION" -v image_ref="$GATEWAY_IMAGE_REF" -v sandbox_workspace="$SANDBOX_RUNNER_WORKSPACE_DIR" '
-  BEGIN { seen_version = 0; seen_ref = 0; seen_sandbox_workspace = 0 }
-  /^GATEWAY_VERSION=/ { print "GATEWAY_VERSION=" version; seen_version = 1; next }
-  /^GATEWAY_IMAGE_REF=/ { print "GATEWAY_IMAGE_REF=" image_ref; seen_ref = 1; next }
-  /^SANDBOX_RUNNER_WORKSPACE_DIR=/ { print "SANDBOX_RUNNER_WORKSPACE_DIR=" sandbox_workspace; seen_sandbox_workspace = 1; next }
-  { print }
-  END {
-    if (!seen_version) print "GATEWAY_VERSION=" version
-    if (!seen_ref) print "GATEWAY_IMAGE_REF=" image_ref
-    if (!seen_sandbox_workspace) print "SANDBOX_RUNNER_WORKSPACE_DIR=" sandbox_workspace
-  }
-' /host/.env > "$tmp"
-mv "$tmp" /host/.env
-if grep -q 'image: \${GATEWAY_IMAGE}:\${GATEWAY_VERSION}' /host/docker-compose.yml; then
-  sed -i 's#image: \${GATEWAY_IMAGE}:\${GATEWAY_VERSION}#image: \${GATEWAY_IMAGE_REF}#' /host/docker-compose.yml
-elif grep -q 'image: \${GATEWAY_IMAGE_REF}' /host/docker-compose.yml; then
-  true
-else
-  echo "Unrecognized gateway app image line in docker-compose.yml" >&2
-  exit 42
-fi
-if ! grep -q 'SANDBOX_RUNNER_WORKSPACE_DIR.*SANDBOX_RUNNER_WORKSPACE_DIR' /host/docker-compose.yml && ! grep -q '/var/lib/gateway/sandbox-workspaces:/var/lib/gateway/sandbox-workspaces' /host/docker-compose.yml; then
-  tmp="/host/docker-compose.yml.tmp"
-  awk '
-    BEGIN { in_app = 0; inserted = 0 }
-    /^  app:/ { in_app = 1 }
-    in_app && /^  [A-Za-z0-9_-]+:/ && $0 !~ /^  app:/ { in_app = 0 }
-    { print }
-    in_app && /^[[:space:]]+-[[:space:]]+\\/var\\/run\\/docker\\.sock:/ && !inserted {
-      print "      - \${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}:\${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}"
-      inserted = 1
-    }
-    END { if (!inserted) exit 43 }
-  ' /host/docker-compose.yml > "$tmp"
-  mv "$tmp" /host/docker-compose.yml
-fi`,
+        'node',
+        'dist/foundation-migrator.js',
+        '--host-dir',
+        '/host',
+        '--target-version',
+        tag,
+        '--image-ref',
+        artifact.imageRef,
       ],
-      Env: [
-        `GATEWAY_VERSION=${tag}`,
-        `GATEWAY_IMAGE_REF=${artifact.imageRef}`,
-        'SANDBOX_RUNNER_WORKSPACE_DIR=/var/lib/gateway/sandbox-workspaces',
-      ],
-      HostConfig: { Binds: [`${composeDir}:/host`] },
+      HostConfig: {
+        Binds: [`${composeDir}:/host`, `${DEFAULT_SANDBOX_WORKSPACE_DIR}:${DEFAULT_SANDBOX_WORKSPACE_DIR}`],
+      },
     });
 
-    if (envResult.exitCode !== 0) throw new Error(`Failed to update .env: ${envResult.output}`);
+    if (migrationResult.exitCode !== 0) {
+      throw new Error(`Foundation migration failed: ${migrationResult.output}`);
+    }
+    const migrationOutput = parseFoundationMigrationOutput(migrationResult.output);
 
-    logger.info('.env updated, launching compose sidecar');
+    const workspaceResult = await this.prepareSandboxWorkspaceDir(
+      artifact.imageRef,
+      composeDir,
+      migrationOutput.backupDir,
+      migrationOutput.sandboxWorkspaceDir
+    );
+    if (workspaceResult) throw workspaceResult;
+
+    logger.info('Validating migrated docker-compose.yml');
+    const composeConfigResult = await this.dockerService.runOneShot({
+      Image: DOCKER_COMPOSE_CLI_IMAGE_REF,
+      Cmd: [
+        'docker',
+        'compose',
+        '--project-name',
+        composeProject,
+        '-f',
+        '/project/docker-compose.yml',
+        'config',
+        '--quiet',
+      ],
+      HostConfig: { Binds: [`${composeDir}:/project`, '/var/run/docker.sock:/var/run/docker.sock'] },
+    });
+
+    if (composeConfigResult.exitCode !== 0) {
+      const rollbackError = await this.rollbackFoundationMigration(
+        artifact.imageRef,
+        composeDir,
+        migrationOutput.backupDir
+      ).catch((error) => error as Error);
+      if (rollbackError) {
+        throw new Error(
+          `Migrated docker-compose.yml failed validation and rollback failed: ${composeConfigResult.output}; rollback: ${formatError(rollbackError)}`
+        );
+      }
+      throw new Error(`Migrated docker-compose.yml failed validation: ${composeConfigResult.output}`);
+    }
+
+    logger.info('Foundation files migrated, launching compose sidecar');
 
     await this.dockerService.runDetached({
       Image: DOCKER_COMPOSE_CLI_IMAGE_REF,
@@ -357,6 +375,65 @@ fi`,
     });
 
     logger.info('Update sidecar launched — container will be replaced shortly');
+  }
+
+  private async rollbackFoundationMigration(
+    imageRef: string,
+    composeDir: string,
+    backupDir: string | null
+  ): Promise<void> {
+    if (!backupDir) return;
+    if (!backupDir.startsWith('/host/.gateway-foundation-backups/')) {
+      throw new Error(`Refusing to rollback unexpected foundation backup path: ${backupDir}`);
+    }
+    const result = await this.dockerService.runOneShot({
+      Image: imageRef,
+      Cmd: [
+        'sh',
+        '-c',
+        `set -eu
+backup="$FOUNDATION_BACKUP_DIR"
+[ -f "$backup/.env" ] && cp -p "$backup/.env" /host/.env || true
+[ -f "$backup/docker-compose.yml" ] && cp -p "$backup/docker-compose.yml" /host/docker-compose.yml || true`,
+      ],
+      Env: [`FOUNDATION_BACKUP_DIR=${backupDir}`],
+      HostConfig: { Binds: [`${composeDir}:/host`] },
+    });
+    if (result.exitCode !== 0) throw new Error(`Foundation rollback failed: ${result.output}`);
+  }
+
+  private async prepareSandboxWorkspaceDir(
+    imageRef: string,
+    composeDir: string,
+    backupDir: string | null,
+    sandboxWorkspaceDir: string
+  ): Promise<Error | null> {
+    if (!sandboxWorkspaceDir.startsWith('/')) return null;
+    if (!/^\/[a-zA-Z0-9/_.-]+$/.test(sandboxWorkspaceDir)) {
+      const error = new Error(`Invalid sandbox workspace directory path: ${sandboxWorkspaceDir}`);
+      const rollbackError = await this.rollbackFoundationMigration(imageRef, composeDir, backupDir).catch(
+        (innerError) => innerError as Error
+      );
+      if (rollbackError) {
+        return new Error(`${error.message}; rollback failed: ${formatError(rollbackError)}`);
+      }
+      return error;
+    }
+
+    const result = await this.dockerService.runOneShot({
+      Image: imageRef,
+      Cmd: ['sh', '-c', 'set -eu\nmkdir -p "$SANDBOX_WORKSPACE_DIR"\nchmod 700 "$SANDBOX_WORKSPACE_DIR"'],
+      Env: [`SANDBOX_WORKSPACE_DIR=${sandboxWorkspaceDir}`],
+      HostConfig: { Binds: [`${sandboxWorkspaceDir}:${sandboxWorkspaceDir}`] },
+    });
+    if (result.exitCode === 0) return null;
+
+    const error = new Error(`Failed to prepare sandbox workspace directory: ${result.output}`);
+    const rollbackError = await this.rollbackFoundationMigration(imageRef, composeDir, backupDir).catch(
+      (innerError) => innerError as Error
+    );
+    if (rollbackError) return new Error(`${error.message}; rollback failed: ${formatError(rollbackError)}`);
+    return error;
   }
 
   getGatewayManifestUrl(version: string): string {
@@ -373,6 +450,29 @@ fi`,
         set: { value, updatedAt: new Date() },
       });
   }
+}
+
+function parseFoundationMigrationOutput(output: string): FoundationMigrationOutput {
+  const line = output
+    .trim()
+    .split('\n')
+    .reverse()
+    .find((entry) => entry.trim().startsWith('{'));
+  if (!line) throw new Error(`Foundation migration returned invalid output: ${output}`);
+  const parsed = JSON.parse(line) as Partial<FoundationMigrationOutput>;
+  if (
+    parsed.ok !== true ||
+    !Array.isArray(parsed.changedFiles) ||
+    !('backupDir' in parsed) ||
+    typeof parsed.sandboxWorkspaceDir !== 'string'
+  ) {
+    throw new Error(`Foundation migration returned invalid output: ${output}`);
+  }
+  return parsed as FoundationMigrationOutput;
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function imageRepositoryFromRef(imageRef: string): string {

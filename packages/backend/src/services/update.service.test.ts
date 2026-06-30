@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { imageRepositoryFromRef, isGatewayReleaseTag, selectLatestGatewayRelease } from './update.service.js';
+import { describe, expect, it, vi } from 'vitest';
+import type { TrustedGatewayUpdateArtifact } from '@/lib/update-artifact-trust.js';
+import {
+  imageRepositoryFromRef,
+  isGatewayReleaseTag,
+  selectLatestGatewayRelease,
+  UpdateService,
+} from './update.service.js';
 
 describe('UpdateService release selection', () => {
   describe('isGatewayReleaseTag', () => {
@@ -74,3 +80,170 @@ describe('imageRepositoryFromRef', () => {
     expect(imageRepositoryFromRef('registry.example.com/wiolett/gateway')).toBe('registry.example.com/wiolett/gateway');
   });
 });
+
+describe('UpdateService foundation migration', () => {
+  it('runs foundation migrations from the target image before validating and recreating compose', async () => {
+    const dockerService = makeDockerService();
+    const service = makeUpdateService(dockerService);
+    const artifact = makeArtifact('registry.example.com/wiolett/gateway@sha256:new');
+
+    await service.performUpdate('v2.4.3', artifact);
+
+    expect(dockerService.pullImageRef).toHaveBeenNthCalledWith(1, artifact.imageRef);
+    expect(dockerService.runOneShot).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        Image: artifact.imageRef,
+        Cmd: [
+          'node',
+          'dist/foundation-migrator.js',
+          '--host-dir',
+          '/host',
+          '--target-version',
+          'v2.4.3',
+          '--image-ref',
+          artifact.imageRef,
+        ],
+        HostConfig: expect.objectContaining({
+          Binds: expect.arrayContaining([
+            '/srv/gateway:/host',
+            '/var/lib/gateway/sandbox-workspaces:/var/lib/gateway/sandbox-workspaces',
+          ]),
+        }),
+      })
+    );
+    expect(dockerService.runOneShot).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        Image: artifact.imageRef,
+        Cmd: ['sh', '-c', 'set -eu\nmkdir -p "$SANDBOX_WORKSPACE_DIR"\nchmod 700 "$SANDBOX_WORKSPACE_DIR"'],
+        Env: ['SANDBOX_WORKSPACE_DIR=/var/lib/gateway/sandbox-workspaces'],
+        HostConfig: expect.objectContaining({
+          Binds: ['/var/lib/gateway/sandbox-workspaces:/var/lib/gateway/sandbox-workspaces'],
+        }),
+      })
+    );
+    expect(dockerService.runOneShot).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        Cmd: [
+          'docker',
+          'compose',
+          '--project-name',
+          'gateway',
+          '-f',
+          '/project/docker-compose.yml',
+          'config',
+          '--quiet',
+        ],
+      })
+    );
+    expect(dockerService.runDetached).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Cmd: [
+          'sh',
+          '-c',
+          'sleep 2 && docker compose --project-name gateway -f /project/docker-compose.yml up -d --force-recreate app',
+        ],
+      })
+    );
+  });
+
+  it('does not recreate the app when migrated compose validation fails', async () => {
+    const dockerService = makeDockerService();
+    dockerService.runOneShot
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        output:
+          '{"ok":true,"changedFiles":["docker-compose.yml"],"backupDir":"/host/.gateway-foundation-backups/test","sandboxWorkspaceDir":"/var/lib/gateway/sandbox-workspaces"}',
+      })
+      .mockResolvedValueOnce({ exitCode: 0, output: '' })
+      .mockResolvedValueOnce({ exitCode: 1, output: 'bad compose' });
+    const service = makeUpdateService(dockerService);
+
+    await expect(
+      service.performUpdate('v2.4.3', makeArtifact('registry.example.com/wiolett/gateway:v2.4.3'))
+    ).rejects.toThrow('Migrated docker-compose.yml failed validation');
+
+    expect(dockerService.runOneShot).toHaveBeenNthCalledWith(
+      4,
+      expect.objectContaining({
+        Image: 'registry.example.com/wiolett/gateway:v2.4.3',
+        Env: ['FOUNDATION_BACKUP_DIR=/host/.gateway-foundation-backups/test'],
+      })
+    );
+    expect(dockerService.runDetached).not.toHaveBeenCalled();
+  });
+
+  it('prepares a custom sandbox workspace directory from the migrator output', async () => {
+    const dockerService = makeDockerService();
+    dockerService.runOneShot.mockResolvedValueOnce({
+      exitCode: 0,
+      output:
+        '{"ok":true,"changedFiles":[".env","docker-compose.yml"],"backupDir":"/host/.gateway-foundation-backups/test","sandboxWorkspaceDir":"/srv/gateway-workspaces"}',
+    });
+    const service = makeUpdateService(dockerService);
+    const artifact = makeArtifact('registry.example.com/wiolett/gateway:v2.4.3');
+
+    await service.performUpdate('v2.4.3', artifact);
+
+    expect(dockerService.runOneShot).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        Env: ['SANDBOX_WORKSPACE_DIR=/srv/gateway-workspaces'],
+        HostConfig: { Binds: ['/srv/gateway-workspaces:/srv/gateway-workspaces'] },
+      })
+    );
+  });
+});
+
+function makeUpdateService(dockerService: ReturnType<typeof makeDockerService>): UpdateService {
+  return new UpdateService(
+    {} as never,
+    dockerService as never,
+    {
+      APP_VERSION: 'v2.4.2',
+      COMPOSE_PROJECT_DIR: '/srv/gateway',
+      GITLAB_API_URL: 'https://gitlab.example.com/api/v4',
+      GITLAB_PROJECT_PATH: 'wiolett/gateway',
+    } as never
+  );
+}
+
+function makeDockerService() {
+  return {
+    inspectSelf: vi.fn().mockResolvedValue({
+      Config: {
+        Image: 'registry.example.com/wiolett/gateway:v2.4.2',
+        Labels: {
+          'com.docker.compose.project.working_dir': '/srv/gateway',
+          'com.docker.compose.project': 'gateway',
+        },
+      },
+    }),
+    pullImageRef: vi.fn().mockResolvedValue(undefined),
+    runOneShot: vi.fn().mockResolvedValue({
+      exitCode: 0,
+      output:
+        '{"ok":true,"changedFiles":[],"backupDir":"/host/.gateway-foundation-backups/test","sandboxWorkspaceDir":"/var/lib/gateway/sandbox-workspaces"}',
+    }),
+    runDetached: vi.fn().mockResolvedValue('sidecar-1'),
+  };
+}
+
+function makeArtifact(imageRef: string): TrustedGatewayUpdateArtifact {
+  return {
+    imageRef,
+    digest: 'sha256:new',
+    signedManifest: 'signed',
+    payload: {
+      kind: 'gateway-image',
+      version: 'v2.4.3',
+      tag: 'v2.4.3',
+      image: 'registry.example.com/wiolett/gateway',
+      digest: 'sha256:new',
+      imageRef,
+      createdAt: '2026-06-30T00:00:00.000Z',
+    },
+  };
+}

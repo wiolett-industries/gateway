@@ -1407,7 +1407,9 @@ ${app_port}
     mem_limit: ${APP_MEM_LIMIT}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # gateway-managed:start sandbox-workspace
       - \${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}:\${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}
+      # gateway-managed:end sandbox-workspace
       - ./docker-compose.yml:/app/docker-compose.yml:ro
 $(compose_depends_on)
     healthcheck:
