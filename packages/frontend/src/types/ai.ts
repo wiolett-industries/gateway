@@ -5,6 +5,7 @@ export interface AIToolCall {
   name: string;
   arguments: Record<string, unknown>;
   status: "running" | "completed" | "failed" | "awaiting_approval" | "rejected";
+  approvalPolicy?: string;
   assistantMessageId?: string | null;
   result?: unknown;
   error?: string;

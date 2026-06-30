@@ -522,7 +522,8 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
       const pendingApproval = msg.toolCalls.find(
         (tc): tc is AIToolCall =>
           tc.name !== "ask_question" &&
-          (tc.status === "awaiting_approval" || tc.status === "running")
+          (tc.status === "awaiting_approval" ||
+            (tc.status === "running" && tc.approvalPolicy === "requires_approval"))
       );
       if (pendingApproval) return pendingApproval;
     }

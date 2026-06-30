@@ -715,6 +715,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       messages: updateToolCallById(state.messages, toolCallId, (tc) => ({
         ...tc,
         status: "running",
+        approvalPolicy: "requires_approval",
         error: undefined,
       })),
     }));
@@ -1517,6 +1518,8 @@ function normalizeMessageToolCall(
     name,
     arguments: normalizeToolCallArguments(rawArguments),
     status: normalizeToolCallStatus(toolCall.status),
+    approvalPolicy:
+      typeof toolCall.approvalPolicy === "string" ? toolCall.approvalPolicy : undefined,
     assistantMessageId:
       typeof toolCall.assistantMessageId === "string" ? toolCall.assistantMessageId : undefined,
     result: toolCall.result,
@@ -1543,6 +1546,7 @@ function runtimeToolCallToUI(toolCall: AIRunToolCall): AIToolCall {
     name: toolCall.toolName,
     arguments: toolCall.toolArgs,
     status: runtimeToolStatusToUI(toolCall.status),
+    approvalPolicy: toolCall.approvalPolicy,
     assistantMessageId: toolCall.assistantMessageId,
     result: toolCall.result ?? undefined,
     error: toolCall.error ?? undefined,

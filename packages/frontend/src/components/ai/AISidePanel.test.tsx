@@ -187,6 +187,33 @@ describe("AISidePanel autoscroll", () => {
     });
   });
 
+  it("keeps the composer visible for auto-approved running tool calls", () => {
+    act(() => {
+      useAIStore.setState({
+        messages: [
+          assistantMessage([
+            {
+              id: "tool-1",
+              name: "run_process",
+              arguments: { command: ["sh", "-lc", "pwd"] },
+              status: "running",
+              approvalPolicy: "auto_approved",
+            },
+          ]),
+        ],
+        isConnected: true,
+        isStreaming: true,
+        retryAfter: null,
+      });
+      useUIStore.setState({ aiPanelOpen: true, aiLiteMode: false });
+    });
+
+    renderAISidePanel();
+
+    expect(screen.queryByText("Sending approval decision...")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /run process/i })).toBeInTheDocument();
+  });
+
   it("renders lite sidebar conversations and wires load and delete actions", async () => {
     const user = userEvent.setup();
     const fetchRecentConversations = vi.fn();
