@@ -140,7 +140,8 @@ export function AIMessage({
     );
   }
 
-  if (message.localOnly) {
+  if (message.localOnly && !message.toolCalls?.length) {
+    if (!content.trim()) return null;
     return (
       <div className="flex justify-center">
         <div className="max-w-[90%] bg-muted/50 px-3 py-2 text-xs text-muted-foreground">

@@ -55,6 +55,37 @@ describe("AIMessage tool call groups", () => {
     expect(screen.getByText("Show health summary")).toBeInTheDocument();
   });
 
+  it("does not render an empty local-only message bubble", () => {
+    const { container } = render(
+      <AIMessage
+        message={{
+          id: "local-empty",
+          role: "assistant",
+          content: "",
+          localOnly: true,
+        }}
+      />
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders local-only tool calls through the normal tool call UI", () => {
+    render(
+      <AIMessage
+        message={{
+          id: "local-tool",
+          role: "assistant",
+          content: "",
+          localOnly: true,
+          toolCalls: [toolCall("tool-1", "running")],
+        }}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /find resource/i })).toBeInTheDocument();
+  });
+
   it("keeps an expanded completed tool group open when a new tool call appears", () => {
     const { rerender } = render(
       <AIMessage message={message([toolCall("tool-1"), toolCall("tool-2")])} />

@@ -336,6 +336,7 @@ function updateToolCallById(
 }
 
 function appendLocalAssistantError(messages: AIMessage[], content: string): AIMessage[] {
+  if (!content.trim()) return messages;
   return [
     ...messages,
     {
