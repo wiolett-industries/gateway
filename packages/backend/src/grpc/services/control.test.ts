@@ -287,7 +287,7 @@ describe('diffDockerContainerStateReports', () => {
 
 describe('CommandStream daemon certificate identity', () => {
   it('stores docker daemon engine version under dockerVersion capabilities', async () => {
-    const setMetadata = vi.fn(() => ({
+    const setMetadata = vi.fn((_metadata: { capabilities: Record<string, unknown> }) => ({
       where: vi.fn(async () => undefined),
     }));
     const db = {
@@ -318,7 +318,7 @@ describe('CommandStream daemon certificate identity', () => {
 
     await vi.waitFor(() => expect(setMetadata).toHaveBeenCalled());
 
-    const metadata = setMetadata.mock.calls[0][0] as { capabilities: Record<string, unknown> };
+    const metadata = setMetadata.mock.calls[0][0];
     expect(metadata.capabilities).toMatchObject({
       daemonType: 'docker',
       dockerVersion: '27.5.1',
