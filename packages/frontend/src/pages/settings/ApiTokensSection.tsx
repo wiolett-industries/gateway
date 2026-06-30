@@ -1,7 +1,8 @@
-import { Copy, Key, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Key, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { CopyValueField } from "@/components/common/CopyValueField";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PanelShell } from "@/components/common/PanelShell";
 import { ScopeList } from "@/components/common/ScopeList";
@@ -52,10 +53,12 @@ export function ApiTokensSection({
   const [selectedScopes, setSelectedScopes] = useState<string[]>([]);
   const [resourceScopes, setResourceScopes] = useState<Record<string, string[]>>({});
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
+  const [createdSecretDialogOpen, setCreatedSecretDialogOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [tokenScopeSearch, setTokenScopeSearch] = useState("");
   const [editingToken, setEditingToken] = useState<ApiToken | null>(null);
   const [initialResourceLimitedScopes, setInitialResourceLimitedScopes] = useState<string[]>([]);
+  const createdSecretResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userScopes = useMemo(() => user?.scopes ?? [], [user?.scopes]);
   const allowedResourceIdsByScope = useMemo(
     () => deriveAllowedResourceIdsByScope(userScopes),
@@ -92,6 +95,12 @@ export function ApiTokensSection({
   useEffect(() => {
     loadTokens();
   }, [loadTokens]);
+
+  useEffect(() => {
+    return () => {
+      if (createdSecretResetTimerRef.current) clearTimeout(createdSecretResetTimerRef.current);
+    };
+  }, []);
 
   const openTokenEdit = (token: ApiToken) => {
     setEditingToken(token);
@@ -178,6 +187,8 @@ export function ApiTokensSection({
     try {
       const result = await api.createToken({ name: newTokenName, scopes: finalTokenScopes });
       setCreatedSecret(result.token);
+      setCreateDialogOpen(false);
+      setCreatedSecretDialogOpen(true);
       loadTokens();
       toast.success("API token created");
     } catch (err) {
@@ -201,6 +212,15 @@ export function ApiTokensSection({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to revoke token");
     }
+  };
+
+  const closeCreatedSecretDialog = () => {
+    setCreatedSecretDialogOpen(false);
+    if (createdSecretResetTimerRef.current) clearTimeout(createdSecretResetTimerRef.current);
+    createdSecretResetTimerRef.current = setTimeout(() => {
+      setCreatedSecret(null);
+      createdSecretResetTimerRef.current = null;
+    }, 220);
   };
 
   return (
@@ -287,112 +307,113 @@ export function ApiTokensSection({
             </DialogDescription>
           </DialogHeader>
 
-          {createdSecret ? (
-            <div className="space-y-4">
-              <div className="border border-yellow-600/30 bg-yellow-600/5 p-3">
-                <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
-                  Copy this token now. It will not be shown again.
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Name</label>
+              <Input
+                value={newTokenName}
+                onChange={(e) => setNewTokenName(e.target.value)}
+                placeholder="e.g., CI/CD Pipeline"
+                autoFocus
+              />
+            </div>
+
+            <div className="border border-border">
+              <Input
+                value={tokenScopeSearch}
+                onChange={(e) => setTokenScopeSearch(e.target.value)}
+                placeholder="Search scopes..."
+                className="border-0 border-b border-border rounded-none h-9 text-sm focus-visible:ring-0"
+              />
+              <ScopeList
+                scopes={API_TOKEN_SCOPES.filter(
+                  (scope) =>
+                    selectedScopes.includes(scope.value) ||
+                    hasSelectableScopeBase(userScopes, scope.value)
+                )}
+                search={tokenScopeSearch}
+                selected={selectedScopes}
+                onToggle={toggleScope}
+                resources={resourceScopes}
+                onToggleResource={(scope, caId) => {
+                  setResourceScopes((prev) => {
+                    const current = prev[scope] || [];
+                    const has = current.includes(caId);
+                    return {
+                      ...prev,
+                      [scope]: has ? current.filter((id) => id !== caId) : [...current, caId],
+                    };
+                  });
+                }}
+                cas={cas}
+                nodes={nodesList}
+                proxyHosts={proxyHostsList}
+                databases={databasesList}
+                loggingSchemas={loggingSchemasList}
+                restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
+                allowedResourceIds={allowedResourceIdsByScope}
+                viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
+              />
+              <div className="border-t border-border px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  {finalTokenScopes.length} scope{finalTokenScopes.length !== 1 ? "s" : ""}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-muted p-3 text-sm font-mono break-all">
-                  {createdSecret}
-                </code>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => {
-                    navigator.clipboard.writeText(createdSecret);
-                    toast.success("Token copied to clipboard");
-                  }}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-              <DialogFooter>
-                <Button onClick={() => setCreateDialogOpen(false)}>Done</Button>
-              </DialogFooter>
             </div>
-          ) : (
-            <>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Name</label>
-                  <Input
-                    value={newTokenName}
-                    onChange={(e) => setNewTokenName(e.target.value)}
-                    placeholder="e.g., CI/CD Pipeline"
-                    autoFocus
-                  />
-                </div>
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+              {editingToken ? "Close" : "Cancel"}
+            </Button>
+            {editingToken ? (
+              <Button
+                onClick={handleTokenUpdate}
+                disabled={!newTokenName.trim() || !tokenChanged || finalTokenScopes.length === 0}
+              >
+                Save
+              </Button>
+            ) : (
+              <Button
+                onClick={handleCreateToken}
+                disabled={isCreating || finalTokenScopes.length === 0}
+              >
+                {isCreating ? "Creating..." : "Create Token"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-                <div className="border border-border">
-                  <Input
-                    value={tokenScopeSearch}
-                    onChange={(e) => setTokenScopeSearch(e.target.value)}
-                    placeholder="Search scopes..."
-                    className="border-0 border-b border-border rounded-none h-9 text-sm focus-visible:ring-0"
-                  />
-                  <ScopeList
-                    scopes={API_TOKEN_SCOPES.filter(
-                      (scope) =>
-                        selectedScopes.includes(scope.value) ||
-                        hasSelectableScopeBase(userScopes, scope.value)
-                    )}
-                    search={tokenScopeSearch}
-                    selected={selectedScopes}
-                    onToggle={toggleScope}
-                    resources={resourceScopes}
-                    onToggleResource={(scope, caId) => {
-                      setResourceScopes((prev) => {
-                        const current = prev[scope] || [];
-                        const has = current.includes(caId);
-                        return {
-                          ...prev,
-                          [scope]: has ? current.filter((id) => id !== caId) : [...current, caId],
-                        };
-                      });
-                    }}
-                    cas={cas}
-                    nodes={nodesList}
-                    proxyHosts={proxyHostsList}
-                    databases={databasesList}
-                    loggingSchemas={loggingSchemasList}
-                    restrictableScopes={RESOURCE_SCOPABLE_SCOPES}
-                    allowedResourceIds={allowedResourceIdsByScope}
-                    viewportClassName="max-h-[min(20rem,40dvh)] overflow-y-auto overscroll-contain"
-                  />
-                  <div className="border-t border-border px-3 py-2">
-                    <p className="text-xs text-muted-foreground">
-                      {finalTokenScopes.length} scope{finalTokenScopes.length !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                </div>
+      <Dialog
+        open={createdSecretDialogOpen}
+        onOpenChange={(open) => !open && closeCreatedSecretDialog()}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>API Token Created</DialogTitle>
+            <DialogDescription>Copy the token before closing this dialog.</DialogDescription>
+          </DialogHeader>
+
+          {createdSecret && (
+            <div className="space-y-4">
+              <div
+                className="border bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+                style={{ borderColor: "#facc15" }}
+              >
+                <p className="font-medium">Copy this token now. It will not be shown again.</p>
               </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-                  {editingToken ? "Close" : "Cancel"}
-                </Button>
-                {editingToken ? (
-                  <Button
-                    onClick={handleTokenUpdate}
-                    disabled={
-                      !newTokenName.trim() || !tokenChanged || finalTokenScopes.length === 0
-                    }
-                  >
-                    Save
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleCreateToken}
-                    disabled={isCreating || finalTokenScopes.length === 0}
-                  >
-                    {isCreating ? "Creating..." : "Create Token"}
-                  </Button>
-                )}
-              </DialogFooter>
-            </>
+              <CopyValueField
+                label="API token"
+                value={createdSecret}
+                className="[&>p]:hidden"
+                valueClassName="font-mono"
+              />
+            </div>
           )}
+
+          <DialogFooter>
+            <Button onClick={closeCreatedSecretDialog}>Done</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

@@ -40,12 +40,9 @@ export function CertificateExpiryCard({ expiringItems, hasScope }: CertificateEx
             {visible.length}
           </Badge>
         }
-        style={{ borderColor: "rgb(234 179 8 / 0.6)", color: "rgb(234 179 8)" }}
+        style={{ color: "rgb(234 179 8)" }}
       />
-      <div
-        className="divide-y -mb-px [&>*:last-child]:border-b"
-        style={{ borderColor: "rgb(234 179 8 / 0.6)" }}
-      >
+      <div className="divide-y">
         {[...visible]
           .sort((a, b) => a.daysLeft - b.daysLeft)
           .map((item) => (

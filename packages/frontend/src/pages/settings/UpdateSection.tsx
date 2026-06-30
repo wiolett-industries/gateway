@@ -9,6 +9,7 @@ import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { isDevForceUpdatesEnabled } from "@/lib/dev-force-updates";
 import { api } from "@/services/api";
 import { useUpdateStore } from "@/stores/update";
 
@@ -52,6 +53,10 @@ export function UpdateSection({ canUpdate }: UpdateSectionProps) {
       confirmLabel: "Update",
     });
     if (!ok) return;
+    if (isDevForceUpdatesEnabled()) {
+      toast.info("Local update preview only");
+      return;
+    }
     triggerUpdate(updateStatus.latestVersion);
   };
 

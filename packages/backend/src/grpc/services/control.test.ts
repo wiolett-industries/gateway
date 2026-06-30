@@ -286,6 +286,47 @@ describe('diffDockerContainerStateReports', () => {
 });
 
 describe('CommandStream daemon certificate identity', () => {
+  it('stores docker daemon engine version under dockerVersion capabilities', async () => {
+    const setMetadata = vi.fn(() => ({
+      where: vi.fn(async () => undefined),
+    }));
+    const db = {
+      ...makeDbNode({ type: 'docker' }),
+      update: vi.fn(() => ({
+        set: setMetadata,
+      })),
+    } as any;
+    const deps = makeDeps(db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    stream.emit('data', {
+      register: {
+        nodeId,
+        hostname: 'docker-1',
+        nginxVersion: '27.5.1',
+        configVersionHash: 'hash-daemon',
+        daemonVersion: 'dev',
+        cpuModel: 'cpu',
+        cpuCores: 2,
+        architecture: 'x64',
+        kernelVersion: '6.0',
+        daemonType: 'docker',
+        capabilities: ['docker_deployments_v1'],
+      },
+    });
+
+    await vi.waitFor(() => expect(setMetadata).toHaveBeenCalled());
+
+    const metadata = setMetadata.mock.calls[0][0] as { capabilities: Record<string, unknown> };
+    expect(metadata.capabilities).toMatchObject({
+      daemonType: 'docker',
+      dockerVersion: '27.5.1',
+      dockerDeploymentsV1: true,
+    });
+    expect(metadata.capabilities).not.toHaveProperty('nginxVersion');
+  });
+
   it('registers a node when authorized cert CN and serial match DB', async () => {
     const db = makeDbNode({ certificateSerial: 'AA:01' });
     const deps = makeDeps(db);

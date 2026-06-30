@@ -29,12 +29,22 @@ interface SSLCertificateCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
+  devPreview?: SSLCertificateCreateDialogDevPreview | null;
 }
+
+export interface SSLCertificateCreateDialogDevPreview {
+  mode: ACMEChallengeType;
+  domains: string[];
+  dnsChallenges?: DNSChallenge[];
+}
+
+const DEV_PREVIEW_CERT_ID = "__dev_ssl_preview__";
 
 export function SSLCertificateCreateDialog({
   open,
   onOpenChange,
   onCreated,
+  devPreview,
 }: SSLCertificateCreateDialogProps) {
   const resetTimerRef = useRef<number | null>(null);
   // ACME tab state
@@ -80,6 +90,20 @@ export function SSLCertificateCreateDialog({
     loadPkiCerts();
   }, [open]);
 
+  useEffect(() => {
+    if (!open || !devPreview) return;
+    setAcmeDomains(devPreview.domains.length > 0 ? devPreview.domains : ["example.com"]);
+    setChallengeType(devPreview.mode);
+    setAcmeProvider("letsencrypt");
+    if (devPreview.mode === "dns-01") {
+      setDnsChallenges(devPreview.dnsChallenges ?? []);
+      setPendingCertId(DEV_PREVIEW_CERT_ID);
+    } else {
+      setDnsChallenges(null);
+      setPendingCertId(null);
+    }
+  }, [devPreview, open]);
+
   useEffect(
     () => () => {
       if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
@@ -115,6 +139,10 @@ export function SSLCertificateCreateDialog({
   };
 
   const handleRequestACME = async () => {
+    if (devPreview) {
+      toast.info("Local ACME modal preview only");
+      return;
+    }
     const domains = acmeDomains.filter((d) => d.trim() !== "");
     if (domains.length === 0) {
       toast.error("At least one domain is required");
@@ -148,6 +176,10 @@ export function SSLCertificateCreateDialog({
   const handleVerifyDNS = async () => {
     if (!pendingCertId) {
       toast.error("No pending certificate to verify");
+      return;
+    }
+    if (pendingCertId === DEV_PREVIEW_CERT_ID) {
+      toast.info("Local DNS-01 modal preview only");
       return;
     }
     setIsVerifying(true);

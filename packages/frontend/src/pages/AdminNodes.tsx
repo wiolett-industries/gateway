@@ -1,8 +1,10 @@
-import { Check, Copy, FolderPlus, Plus, Server, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { FolderPlus, Plus, Server, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { CopyCodeBlock } from "@/components/common/CopyCodeBlock";
+import { CopyValueField } from "@/components/common/CopyValueField";
 import { EmptyState } from "@/components/common/EmptyState";
 import { FolderedResourceList } from "@/components/common/FolderedResourceList";
 import { LiteModeBackButton } from "@/components/common/LiteModeBackButton";
@@ -100,13 +102,17 @@ export function AdminNodes() {
 
   const [searchInput, setSearchInput] = useState(filters.search);
   const [enrollDialogOpen, setEnrollDialogOpen] = useState(false);
+  const [enrollResultDialogOpen, setEnrollResultDialogOpen] = useState(false);
   const [enrollType, setEnrollType] = useState<string>("nginx");
   const [enrollDisplayName, setEnrollDisplayName] = useState("");
-  const [enrollToken, setEnrollToken] = useState<string | null>(null);
-  const [gatewayCertSha256, setGatewayCertSha256] = useState<string | null>(null);
+  const [enrollResult, setEnrollResult] = useState<{
+    type: string;
+    token: string;
+    gatewayCertSha256: string;
+  } | null>(null);
   const [enrolling, setEnrolling] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [createFolderAction, setCreateFolderAction] = useState<(() => void) | null>(null);
+  const enrollResultResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const daemonUpdates = useDaemonUpdatesStore((s) => s.statuses);
   const fetchDaemonUpdates = useDaemonUpdatesStore((s) => s.fetchDaemonUpdates);
 
@@ -135,6 +141,12 @@ export function AdminNodes() {
     void loadDaemonUpdates();
   }, [loadDaemonUpdates]);
 
+  useEffect(() => {
+    return () => {
+      if (enrollResultResetTimerRef.current) clearTimeout(enrollResultResetTimerRef.current);
+    };
+  }, []);
+
   const handleSearch = () => setFilters({ search: searchInput });
   const hasActiveFilters = filters.search !== "" || filters.status !== "all";
   const canManageFolders = hasScope("nodes:folders:manage");
@@ -160,15 +172,28 @@ export function AdminNodes() {
   );
 
   const handleEnroll = async () => {
+    const displayName = enrollDisplayName.trim();
+    if (!displayName) {
+      toast.error("Node name is required");
+      return;
+    }
+
     setEnrolling(true);
     try {
       const result = await api.createNode({
         type: enrollType,
         hostname: "pending",
-        displayName: enrollDisplayName.trim() || undefined,
+        displayName,
       });
-      setEnrollToken(result.enrollmentToken);
-      setGatewayCertSha256(result.gatewayCertSha256);
+      setEnrollResult({
+        type: enrollType,
+        token: result.enrollmentToken,
+        gatewayCertSha256: result.gatewayCertSha256,
+      });
+      setEnrollDialogOpen(false);
+      setEnrollResultDialogOpen(true);
+      setEnrollType("nginx");
+      setEnrollDisplayName("");
       fetchNodes();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create node");
@@ -179,32 +204,43 @@ export function AdminNodes() {
 
   const closeEnrollDialog = () => {
     setEnrollDialogOpen(false);
-    setEnrollType("nginx");
-    setEnrollDisplayName("");
-    setEnrollToken(null);
-    setGatewayCertSha256(null);
-    setCopiedField(null);
+  };
+
+  const handleEnrollDialogOpenChange = (open: boolean) => {
+    if (open) {
+      setEnrollType("nginx");
+      setEnrollDisplayName("");
+      setEnrollDialogOpen(true);
+      return;
+    }
+
+    closeEnrollDialog();
+  };
+
+  const closeEnrollResultDialog = () => {
+    setEnrollResultDialogOpen(false);
+    if (enrollResultResetTimerRef.current) clearTimeout(enrollResultResetTimerRef.current);
+    enrollResultResetTimerRef.current = setTimeout(() => {
+      setEnrollResult(null);
+      enrollResultResetTimerRef.current = null;
+    }, 220);
   };
 
   const gatewayAddr = `${window.location.hostname}:9443`;
   const scriptUrl = "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh";
 
-  const curlCommand =
-    enrollToken && gatewayCertSha256
-      ? `curl -sSL ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollType} --gateway ${gatewayAddr} --token ${enrollToken} --gateway-cert-sha256 ${gatewayCertSha256}`
-      : "";
+  const curlCommand = enrollResult
+    ? `curl -sSL ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollResult.type} \\\n  --gateway ${gatewayAddr} \\\n  --token ${enrollResult.token} \\\n  --gateway-cert-sha256 ${enrollResult.gatewayCertSha256}`
+    : "";
 
-  const wgetCommand =
-    enrollToken && gatewayCertSha256
-      ? `wget -qO- ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollType} --gateway ${gatewayAddr} --token ${enrollToken} --gateway-cert-sha256 ${gatewayCertSha256}`
-      : "";
+  const wgetCommand = enrollResult
+    ? `wget -qO- ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollResult.type} \\\n  --gateway ${gatewayAddr} \\\n  --token ${enrollResult.token} \\\n  --gateway-cert-sha256 ${enrollResult.gatewayCertSha256}`
+    : "";
 
-  const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text.replace(/\\\n\s*/g, ""));
-    setCopiedField(field);
-    toast.success("Copied to clipboard");
-    setTimeout(() => setCopiedField(null), 2000);
-  };
+  const copyCommandValue = (command: string) => command.replace(/\\\n\s*/g, "");
+  const canCreateNode = enrollDisplayName.trim().length > 0;
+  const warningClassName =
+    "border bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300";
 
   const columns = useMemo<ResourceListColumn<Node>[]>(
     () => [
@@ -408,59 +444,76 @@ export function AdminNodes() {
         />
       </div>
 
-      {/* Enrollment Dialog */}
-      <Dialog open={enrollDialogOpen} onOpenChange={closeEnrollDialog}>
+      {/* Enrollment Create Dialog */}
+      <Dialog open={enrollDialogOpen} onOpenChange={handleEnrollDialogOpenChange}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{enrollToken ? "Node Created" : "Add Node"}</DialogTitle>
-            {!enrollToken && (
-              <DialogDescription>
-                Create a node entry and get the setup command to run on the target host.
-              </DialogDescription>
-            )}
+            <DialogTitle>Add Node</DialogTitle>
+            <DialogDescription>
+              Create a node entry and get the setup command to run on the target host.
+            </DialogDescription>
           </DialogHeader>
 
-          {!enrollToken ? (
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Node Type</label>
-                <Select value={enrollType} onValueChange={setEnrollType}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {NODE_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value} disabled={t.disabled}>
-                        <div className="flex items-center gap-2">
-                          <span>{t.label}</span>
-                          {t.disabled && (
-                            <span className="text-xs text-muted-foreground">(coming soon)</span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {NODE_TYPES.find((t) => t.value === enrollType)?.description}
-                </p>
-              </div>
-              <div>
-                <label className="text-sm font-medium">
-                  Display Name <span className="text-muted-foreground font-normal">(optional)</span>
-                </label>
-                <Input
-                  className="mt-1"
-                  value={enrollDisplayName}
-                  onChange={(e) => setEnrollDisplayName(e.target.value)}
-                  placeholder="US-East Proxy"
-                />
-              </div>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Node Type</label>
+              <Select value={enrollType} onValueChange={setEnrollType}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {NODE_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value} disabled={t.disabled}>
+                      <div className="flex items-center gap-2">
+                        <span>{t.label}</span>
+                        {t.disabled && (
+                          <span className="text-xs text-muted-foreground">(coming soon)</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {NODE_TYPES.find((t) => t.value === enrollType)?.description}
+              </p>
             </div>
-          ) : (
+            <div>
+              <label className="text-sm font-medium">Node Name</label>
+              <Input
+                className="mt-1"
+                value={enrollDisplayName}
+                onChange={(e) => setEnrollDisplayName(e.target.value)}
+                placeholder="US-East Proxy"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEnrollDialog}>
+              Cancel
+            </Button>
+            <Button onClick={handleEnroll} disabled={enrolling || !canCreateNode}>
+              {enrolling ? "Creating..." : "Create Node"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Enrollment Result Dialog */}
+      <Dialog
+        open={enrollResultDialogOpen}
+        onOpenChange={(open) => !open && closeEnrollResultDialog()}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Node Created</DialogTitle>
+          </DialogHeader>
+
+          {enrollResult && (
             <div className="space-y-4">
-              <div className="bg-amber-500/10 border border-amber-500/20 p-3">
-                <p className="text-sm text-amber-600 dark:text-amber-400 font-medium">
+              <div className={warningClassName} style={{ borderColor: "#facc15" }}>
+                <p className="font-medium">
                   The enrollment token is single-use and will not be shown again.
                 </p>
               </div>
@@ -469,38 +522,38 @@ export function AdminNodes() {
                 <label className="text-sm font-medium">Setup Command</label>
                 <p className="text-xs text-muted-foreground mb-2">
                   Run on the target host as root.{" "}
-                  {enrollType === "docker"
+                  {enrollResult.type === "docker"
                     ? "Installs the Docker management daemon and enrolls with this Gateway."
-                    : enrollType === "monitoring"
+                    : enrollResult.type === "monitoring"
                       ? "Installs the monitoring agent and enrolls with this Gateway."
                       : "Installs nginx, the daemon, and enrolls with this Gateway."}
                 </p>
-                <div className="mb-2 border border-amber-500/20 bg-amber-500/10 p-3">
-                  <p className="text-xs text-amber-700 dark:text-amber-300">
-                    If Gateway is behind Cloudflare, replace the generated{" "}
-                    <span className="font-mono">--gateway</span> host with the actual Gateway server
-                    IP or a hostname that exposes <span className="font-mono">9443/tcp</span>{" "}
-                    directly, but keep the generated{" "}
-                    <span className="font-mono">--gateway-cert-sha256</span> fingerprint.
-                  </p>
-                </div>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  If Gateway is behind Cloudflare, replace the generated{" "}
+                  <span className="font-mono">--gateway</span> host with the actual Gateway server
+                  IP or a hostname that exposes <span className="font-mono">9443/tcp</span>{" "}
+                  directly, but keep the generated{" "}
+                  <span className="font-mono">--gateway-cert-sha256</span> fingerprint.
+                </p>
                 <Tabs defaultValue="curl">
                   <TabsList>
                     <TabsTrigger value="curl">curl</TabsTrigger>
                     <TabsTrigger value="wget">wget</TabsTrigger>
                   </TabsList>
-                  <TabsContent value="curl">
-                    <CommandBlock
-                      command={curlCommand}
-                      copied={copiedField === "curl"}
-                      onCopy={() => copyToClipboard(curlCommand, "curl")}
+                  <TabsContent value="curl" className="mt-2">
+                    <CopyCodeBlock
+                      label="curl command"
+                      value={curlCommand}
+                      copyValue={copyCommandValue(curlCommand)}
+                      className="[&>p]:hidden"
                     />
                   </TabsContent>
-                  <TabsContent value="wget">
-                    <CommandBlock
-                      command={wgetCommand}
-                      copied={copiedField === "wget"}
-                      onCopy={() => copyToClipboard(wgetCommand, "wget")}
+                  <TabsContent value="wget" className="mt-2">
+                    <CopyCodeBlock
+                      label="wget command"
+                      value={wgetCommand}
+                      copyValue={copyCommandValue(wgetCommand)}
+                      className="[&>p]:hidden"
                     />
                   </TabsContent>
                 </Tabs>
@@ -511,61 +564,16 @@ export function AdminNodes() {
                 <p className="text-xs text-muted-foreground mb-2">
                   For manual setup. See the documentation for details.
                 </p>
-                <CommandBlock
-                  command={enrollToken!}
-                  copied={copiedField === "token"}
-                  onCopy={() => copyToClipboard(enrollToken!, "token")}
-                />
+                <CopyValueField label="Enrollment token" value={enrollResult.token} />
               </div>
             </div>
           )}
 
           <DialogFooter>
-            {!enrollToken ? (
-              <>
-                <Button variant="outline" onClick={closeEnrollDialog}>
-                  Cancel
-                </Button>
-                <Button onClick={handleEnroll} disabled={enrolling}>
-                  {enrolling ? "Creating..." : "Create Node"}
-                </Button>
-              </>
-            ) : (
-              <Button onClick={closeEnrollDialog}>Done</Button>
-            )}
+            <Button onClick={closeEnrollResultDialog}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </PageTransition>
-  );
-}
-
-function CommandBlock({
-  command,
-  copied,
-  onCopy,
-}: {
-  command: string;
-  copied: boolean;
-  onCopy: () => void;
-}) {
-  return (
-    <div className="relative">
-      <pre className="text-xs bg-muted p-3 pr-10 font-mono whitespace-pre-wrap break-all border border-border min-h-12 flex items-center">
-        {command}
-      </pre>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="absolute top-1.5 right-1.5 h-7 w-7"
-        onClick={onCopy}
-      >
-        {copied ? (
-          <Check className="h-3.5 w-3.5 text-green-500" />
-        ) : (
-          <Copy className="h-3.5 w-3.5" />
-        )}
-      </Button>
-    </div>
   );
 }

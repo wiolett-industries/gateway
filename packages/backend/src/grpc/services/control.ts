@@ -263,6 +263,11 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                 daemonVersion: msg.register.daemonVersion,
               });
             }
+            const reportedDockerVersion =
+              msg.register.daemonType === 'docker'
+                ? (((msg.register as any).dockerVersion as string | undefined) ?? msg.register.nginxVersion)
+                : ((msg.register as any).dockerVersion as string | undefined);
+            const reportedNginxVersion = msg.register.daemonType === 'docker' ? undefined : msg.register.nginxVersion;
 
             try {
               await deps.db
@@ -271,11 +276,9 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                   hostname: msg.register.hostname,
                   daemonVersion: msg.register.daemonVersion,
                   capabilities: {
-                    ...(msg.register.nginxVersion ? { nginxVersion: msg.register.nginxVersion } : {}),
+                    ...(reportedNginxVersion ? { nginxVersion: reportedNginxVersion } : {}),
                     ...(msg.register.daemonType ? { daemonType: msg.register.daemonType } : {}),
-                    ...((msg.register as any).dockerVersion
-                      ? { dockerVersion: (msg.register as any).dockerVersion }
-                      : {}),
+                    ...(reportedDockerVersion ? { dockerVersion: reportedDockerVersion } : {}),
                     ...(msg.register.capabilities?.includes('docker_deployments_v1')
                       ? { dockerDeploymentsV1: true, capabilities: msg.register.capabilities }
                       : {}),

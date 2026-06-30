@@ -1,7 +1,9 @@
-import { Check, Copy, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { CopyCodeBlock } from "@/components/common/CopyCodeBlock";
+import { CopyValueField } from "@/components/common/CopyValueField";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,8 +47,6 @@ export function WebhookSection(props: WebhookSectionProps) {
     isDeployment ? (props.initialWebhook ?? null) : null
   );
   const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
-  const [copiedCurl, setCopiedCurl] = useState(false);
 
   const [cleanup, setCleanup] = useState<DockerImageCleanupSettings | null>(null);
   const [cleanupEnabled, setCleanupEnabled] = useState(false);
@@ -216,17 +216,6 @@ export function WebhookSection(props: WebhookSectionProps) {
     }
   };
 
-  const copyToClipboard = (text: string, type: "url" | "curl") => {
-    navigator.clipboard.writeText(text);
-    if (type === "url") {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } else {
-      setCopiedCurl(true);
-      setTimeout(() => setCopiedCurl(false), 2000);
-    }
-  };
-
   if (loading) return null;
   if (!allowWebhook && !allowCleanup) return null;
 
@@ -251,56 +240,26 @@ export function WebhookSection(props: WebhookSectionProps) {
         >
           {webhookEnabled ? (
             <div className="divide-y divide-border">
-              <div className="flex items-center justify-between gap-4 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">Webhook URL</p>
-                  <div className="flex gap-1.5 mt-1.5">
-                    <Input
-                      className="flex-1"
-                      value={webhookUrl}
-                      readOnly
-                      onClick={(e) => (e.target as HTMLInputElement).select()}
-                    />
+              <div className="px-4 py-3">
+                <CopyValueField
+                  label="Webhook URL"
+                  value={webhookUrl}
+                  actions={
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() => copyToClipboard(webhookUrl, "url")}
-                    >
-                      {copied ? (
-                        <Check className="h-3.5 w-3.5" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
+                      className="h-9 w-9 shrink-0 rounded-none border-l border-input bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"
                       onClick={handleRegenerate}
                       title="Regenerate URL"
                     >
                       <RefreshCw className="h-3.5 w-3.5" />
                     </Button>
-                  </div>
-                </div>
+                  }
+                />
               </div>
 
               <div className="px-4 py-3">
-                <p className="text-sm font-medium">Example</p>
-                <div className="relative mt-1.5">
-                  <pre className="bg-muted/50 border border-border rounded-md p-3 text-xs font-mono overflow-x-auto whitespace-pre">
-                    {curlExample}
-                  </pre>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute top-1.5 right-1.5 h-6 w-6"
-                    onClick={() => copyToClipboard(curlExample, "curl")}
-                  >
-                    {copiedCurl ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                  </Button>
-                </div>
+                <CopyCodeBlock label="Example" value={curlExample} />
               </div>
             </div>
           ) : null}

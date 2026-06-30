@@ -9,7 +9,10 @@ import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderAct
 import { SearchFilterBar } from "@/components/common/SearchFilterBar";
 import { SimpleTable, type SimpleTableColumn } from "@/components/common/SimpleTable";
 import { DNSChallengeVerification } from "@/components/ssl/DNSChallengeVerification";
-import { SSLCertificateCreateDialog } from "@/components/ssl/SSLCertificateCreateDialog";
+import {
+  SSLCertificateCreateDialog,
+  type SSLCertificateCreateDialogDevPreview,
+} from "@/components/ssl/SSLCertificateCreateDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -84,6 +87,8 @@ function SSLStatusBadge({ status }: { status: SSLCertStatus }) {
 
 export function SSLCertificates() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createDialogDevPreview, setCreateDialogDevPreview] =
+    useState<SSLCertificateCreateDialogDevPreview | null>(null);
   const { hasScope } = useAuthStore();
   const canViewSystemCertificates = useAuthStore((s) => s.hasScope("admin:details:certificates"));
   const showSystemCertificatePreference = useUIStore((s) => s.showSystemCertificates);
@@ -98,6 +103,67 @@ export function SSLCertificates() {
       closeModal();
     }
   }, [modal, closeModal]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || typeof window === "undefined") return;
+    const gatewayDev = ((window as Window & { gatewayDev?: Record<string, unknown> }).gatewayDev ??=
+      {});
+    const openDns01Modal = () => {
+      setCreateDialogDevPreview({
+        mode: "dns-01",
+        domains: ["example.com", "*.example.com"],
+        dnsChallenges: [
+          {
+            domain: "example.com",
+            recordName: "_acme-challenge.example.com",
+            recordValue: "dev-preview-token-example-com-8f4d9b2a",
+          },
+          {
+            domain: "*.example.com",
+            recordName: "_acme-challenge.example.com",
+            recordValue: "dev-preview-token-wildcard-example-com-c31a7e0f",
+          },
+        ],
+      });
+      setCreateDialogOpen(true);
+    };
+    const openHttp01Modal = () => {
+      setCreateDialogDevPreview({
+        mode: "http-01",
+        domains: ["example.com"],
+      });
+      setCreateDialogOpen(true);
+    };
+    gatewayDev.openSslDns01Modal = openDns01Modal;
+    gatewayDev.openSslHttp01Modal = openHttp01Modal;
+    (
+      window as Window & {
+        gatewayDevOpenSslDns01Modal?: () => void;
+        gatewayDevOpenSslHttp01Modal?: () => void;
+      }
+    ).gatewayDevOpenSslDns01Modal = openDns01Modal;
+    (
+      window as Window & {
+        gatewayDevOpenSslDns01Modal?: () => void;
+        gatewayDevOpenSslHttp01Modal?: () => void;
+      }
+    ).gatewayDevOpenSslHttp01Modal = openHttp01Modal;
+
+    return () => {
+      if (gatewayDev.openSslDns01Modal === openDns01Modal) delete gatewayDev.openSslDns01Modal;
+      if (gatewayDev.openSslHttp01Modal === openHttp01Modal) delete gatewayDev.openSslHttp01Modal;
+      const win = window as Window & {
+        gatewayDevOpenSslDns01Modal?: () => void;
+        gatewayDevOpenSslHttp01Modal?: () => void;
+      };
+      if (win.gatewayDevOpenSslDns01Modal === openDns01Modal) {
+        delete win.gatewayDevOpenSslDns01Modal;
+      }
+      if (win.gatewayDevOpenSslHttp01Modal === openHttp01Modal) {
+        delete win.gatewayDevOpenSslHttp01Modal;
+      }
+    };
+  }, []);
   const {
     certificates,
     isLoading,
@@ -519,8 +585,12 @@ export function SSLCertificates() {
 
       <SSLCertificateCreateDialog
         open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
+        onOpenChange={(open) => {
+          setCreateDialogOpen(open);
+          if (!open) setCreateDialogDevPreview(null);
+        }}
         onCreated={fetchCertificates}
+        devPreview={createDialogDevPreview}
       />
       <Dialog open={previewOpen} onOpenChange={handlePreviewOpenChange}>
         <DialogContent className="max-w-full sm:max-w-xl">

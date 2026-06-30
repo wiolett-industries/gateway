@@ -1,7 +1,8 @@
-import { Activity, Play, Save } from "lucide-react";
+import { Play, Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PanelShell } from "@/components/common/PanelShell";
+import { SettingsControlRow } from "@/components/common/SettingsControlRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -189,23 +190,23 @@ export function DockerHealthCheckSection({
           </Button>
         </>
       }
+      bodyClassName="divide-y divide-border"
     >
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Enabled</span>
-        </div>
+      <SettingsControlRow
+        title="Enabled"
+        description="Run gateway HTTP checks for this target"
+        controlsClassName="flex justify-end justify-self-end !w-auto !min-w-0 !max-w-none"
+      >
         <Switch
           checked={draft.enabled}
           disabled={disabled || loading}
           onChange={(enabled) => setField("enabled", enabled)}
         />
-      </div>
+      </SettingsControlRow>
 
-      <div className="p-4 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Route</label>
+      <SettingsControlRow title="Route and Scheme" description="Published route used for checks">
+        <div className="grid w-full gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
             <Select
               value={selectedRoute}
               onValueChange={(value) => {
@@ -237,117 +238,100 @@ export function DockerHealthCheckSection({
                 ))}
               </SelectContent>
             </Select>
-            {routeRequired && (
-              <p className="text-xs text-destructive">
-                Select a route before saving enabled checks.
-              </p>
-            )}
+            {routeRequired && <p className="text-xs text-destructive">Select a route.</p>}
           </div>
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Scheme</label>
-            <Select
-              value={draft.scheme}
-              onValueChange={(scheme) => setField("scheme", scheme as "http" | "https")}
-              disabled={disabled || loading}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="http">HTTP</SelectItem>
-                <SelectItem value="https">HTTPS</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Path</label>
-            <Input
-              value={draft.path}
-              onChange={(event) => setField("path", event.target.value)}
-              disabled={disabled || loading}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Slow After Ms</label>
-            <Input
-              inputMode="numeric"
-              value={draft.slowThreshold}
-              onChange={(event) => setField("slowThreshold", Number(event.target.value))}
-              disabled={disabled || loading}
-            />
-          </div>
+          <Select
+            value={draft.scheme}
+            onValueChange={(scheme) => setField("scheme", scheme as "http" | "https")}
+            disabled={disabled || loading}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="http">HTTP</SelectItem>
+              <SelectItem value="https">HTTPS</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
+      </SettingsControlRow>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Status Min</label>
-            <Input
-              inputMode="numeric"
-              value={draft.statusMin}
-              onChange={(event) => setField("statusMin", Number(event.target.value))}
-              disabled={disabled || loading}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Status Max</label>
-            <Input
-              inputMode="numeric"
-              value={draft.statusMax}
-              onChange={(event) => setField("statusMax", Number(event.target.value))}
-              disabled={disabled || loading}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Interval Seconds</label>
-            <Input
-              inputMode="numeric"
-              value={draft.intervalSeconds}
-              onChange={(event) => setField("intervalSeconds", Number(event.target.value))}
-              disabled={disabled || loading}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Timeout Seconds</label>
-            <Input
-              inputMode="numeric"
-              value={draft.timeoutSeconds}
-              onChange={(event) => setField("timeoutSeconds", Number(event.target.value))}
-              disabled={disabled || loading}
-            />
-          </div>
+      <SettingsControlRow title="Request" description="Path and slow response threshold">
+        <div className="grid w-full gap-2 sm:grid-cols-2">
+          <Input
+            value={draft.path}
+            onChange={(event) => setField("path", event.target.value)}
+            disabled={disabled || loading}
+          />
+          <Input
+            inputMode="numeric"
+            value={draft.slowThreshold}
+            onChange={(event) => setField("slowThreshold", Number(event.target.value))}
+            disabled={disabled || loading}
+          />
         </div>
+      </SettingsControlRow>
 
-        <div className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-4">
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Body Match</label>
-            <Select
-              value={draft.bodyMatchMode}
-              onValueChange={(mode) =>
-                setField("bodyMatchMode", mode as DockerHealthCheck["bodyMatchMode"])
-              }
-              disabled={disabled || loading}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="includes">Includes</SelectItem>
-                <SelectItem value="exact">Exact</SelectItem>
-                <SelectItem value="starts_with">Starts With</SelectItem>
-                <SelectItem value="ends_with">Ends With</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Expected Body</label>
-            <Input
-              value={draft.expectedBody ?? ""}
-              onChange={(event) => setField("expectedBody", event.target.value)}
-              disabled={disabled || loading}
-            />
-          </div>
+      <SettingsControlRow title="Status Range" description="Accepted HTTP status codes">
+        <div className="grid w-full gap-2 sm:grid-cols-2">
+          <Input
+            inputMode="numeric"
+            value={draft.statusMin}
+            onChange={(event) => setField("statusMin", Number(event.target.value))}
+            disabled={disabled || loading}
+          />
+          <Input
+            inputMode="numeric"
+            value={draft.statusMax}
+            onChange={(event) => setField("statusMax", Number(event.target.value))}
+            disabled={disabled || loading}
+          />
         </div>
-      </div>
+      </SettingsControlRow>
+
+      <SettingsControlRow title="Timing" description="Check interval and request timeout">
+        <div className="grid w-full gap-2 sm:grid-cols-2">
+          <Input
+            inputMode="numeric"
+            value={draft.intervalSeconds}
+            onChange={(event) => setField("intervalSeconds", Number(event.target.value))}
+            disabled={disabled || loading}
+          />
+          <Input
+            inputMode="numeric"
+            value={draft.timeoutSeconds}
+            onChange={(event) => setField("timeoutSeconds", Number(event.target.value))}
+            disabled={disabled || loading}
+          />
+        </div>
+      </SettingsControlRow>
+
+      <SettingsControlRow title="Body Match" description="Optional response body assertion">
+        <div className="grid w-full gap-2 sm:grid-cols-[8rem_minmax(0,1fr)]">
+          <Select
+            value={draft.bodyMatchMode}
+            onValueChange={(mode) =>
+              setField("bodyMatchMode", mode as DockerHealthCheck["bodyMatchMode"])
+            }
+            disabled={disabled || loading}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="includes">Includes</SelectItem>
+              <SelectItem value="exact">Exact</SelectItem>
+              <SelectItem value="starts_with">Starts With</SelectItem>
+              <SelectItem value="ends_with">Ends With</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            value={draft.expectedBody ?? ""}
+            onChange={(event) => setField("expectedBody", event.target.value)}
+            disabled={disabled || loading}
+          />
+        </div>
+      </SettingsControlRow>
     </PanelShell>
   );
 }
