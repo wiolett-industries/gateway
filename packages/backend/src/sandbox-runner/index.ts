@@ -26,6 +26,8 @@ import type {
   SandboxRunnerRunProcessParams,
   SandboxRunnerSendArtifactParams,
   SandboxRunnerSendArtifactResult,
+  SandboxRunnerWaitProcessParams,
+  SandboxRunnerWaitProcessResult,
   SandboxRunnerWriteStdinParams,
   SandboxRunnerWriteStdinResult,
 } from '@/modules/ai/ai.sandbox-runner.protocol.js';
@@ -46,7 +48,10 @@ const CPU_PERIOD = 100_000;
 const RECONCILE_INTERVAL_MS = 30_000;
 const ARTIFACT_ROOT = '/workspace';
 const WORKSPACE_HOST_ROOT =
-  process.env.SANDBOX_RUNNER_WORKSPACE_DIR || path.join(os.tmpdir(), 'gateway-sandbox-workspaces');
+  process.env.SANDBOX_RUNNER_WORKSPACE_DIR ||
+  (process.env.NODE_ENV === 'production'
+    ? '/var/lib/gateway/sandbox-workspaces'
+    : path.join(os.tmpdir(), 'gateway-sandbox-workspaces'));
 
 const docker = new DockerService(DOCKER_SOCKET, '');
 const runningTimeouts = new Map<string, NodeJS.Timeout>();
@@ -334,8 +339,7 @@ async function containerConfig(
 function scheduleKill(containerId: string, ttlSeconds: number): void {
   const timeout = setTimeout(() => {
     runningTimeouts.delete(containerId);
-    docker
-      .killContainer(containerId)
+    killContainerIfRunning(containerId)
       .catch((error) => {
         logger.warn('Failed to kill expired sandbox container', { containerId, error });
       })
@@ -351,6 +355,17 @@ function clearKill(containerId: string): void {
   const timeout = runningTimeouts.get(containerId);
   if (timeout) clearTimeout(timeout);
   runningTimeouts.delete(containerId);
+}
+
+function isContainerAlreadyStoppedError(error: unknown): boolean {
+  return error instanceof Error && /Docker container kill failed \(409\):.*not running/i.test(error.message);
+}
+
+async function killContainerIfRunning(containerId: string): Promise<void> {
+  await docker.killContainer(containerId).catch((error) => {
+    if (isContainerAlreadyStoppedError(error)) return;
+    throw error;
+  });
 }
 
 async function executeScript(params: SandboxRunnerExecuteScriptParams): Promise<SandboxRunnerExecutionResult> {
@@ -375,7 +390,7 @@ async function executeScript(params: SandboxRunnerExecuteScriptParams): Promise<
       .waitContainer(containerId, params.policy.ttlSeconds * 1000 + 10_000)
       .catch(async (error) => {
         timedOut = true;
-        await docker.killContainer(containerId).catch(() => {});
+        await killContainerIfRunning(containerId).catch(() => {});
         throw error;
       });
     const output = truncateOutput(await docker.getContainerLogs(containerId));
@@ -541,6 +556,16 @@ async function readProcessOutput(params: SandboxRunnerReadOutputParams): Promise
   };
 }
 
+async function waitProcess(params: SandboxRunnerWaitProcessParams): Promise<SandboxRunnerWaitProcessResult> {
+  const exitCode = await docker.waitContainer(params.processId, params.timeoutMs ?? 25 * 60 * 1000);
+  const output = truncateOutput(await docker.getContainerLogs(params.processId).catch(() => ''));
+  return {
+    processId: params.processId,
+    exitCode,
+    outputBytes: Buffer.byteLength(output),
+  };
+}
+
 async function writeProcessStdin(params: SandboxRunnerWriteStdinParams): Promise<SandboxRunnerWriteStdinResult> {
   const payload = Buffer.from(params.data);
   if (payload.byteLength > STDIN_LIMIT_BYTES) {
@@ -559,7 +584,7 @@ async function writeProcessStdin(params: SandboxRunnerWriteStdinParams): Promise
 }
 
 async function killProcess(params: SandboxRunnerProcessParams): Promise<SandboxRunnerKillResult> {
-  await docker.killContainer(params.processId);
+  await killContainerIfRunning(params.processId);
   clearKill(params.processId);
   await removeContainerAndWorkspace(params.processId);
   return { processId: params.processId, killed: true };
@@ -573,7 +598,7 @@ async function revokeUserSandboxAccess(params: SandboxRunnerRevokeUserParams): P
     const required = (container.Labels?.['gateway.sandbox.required_scopes'] ?? '').split(',').filter(Boolean);
     const stillAllowed = required.every((scope) => params.currentScopes.includes(scope));
     if (stillAllowed) continue;
-    await docker.killContainer(container.Id).catch(() => {});
+    await killContainerIfRunning(container.Id).catch(() => {});
     await removeContainerAndWorkspace(container.Id);
     clearKill(container.Id);
     revoked += 1;
@@ -594,7 +619,7 @@ async function reconcileSandboxContainers(): Promise<{ removed: number }> {
       continue;
     }
 
-    await docker.killContainer(container.Id).catch(() => {});
+    await killContainerIfRunning(container.Id).catch(() => {});
     await removeContainerAndWorkspace(container.Id);
     clearKill(container.Id);
     removed += 1;
@@ -621,6 +646,8 @@ async function handle(request: SandboxRunnerRequest): Promise<unknown> {
       return sendArtifact(request.params as SandboxRunnerSendArtifactParams);
     case 'readProcessOutput':
       return readProcessOutput(request.params as SandboxRunnerReadOutputParams);
+    case 'waitProcess':
+      return waitProcess(request.params as SandboxRunnerWaitProcessParams);
     case 'writeProcessStdin': {
       const params = request.params as SandboxRunnerWriteStdinParams;
       return writeProcessStdin(params);

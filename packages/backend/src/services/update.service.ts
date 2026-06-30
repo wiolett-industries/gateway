@@ -297,14 +297,16 @@ export class UpdateService {
         '-c',
         `set -eu
 tmp="/host/.env.tmp"
-awk -v version="$GATEWAY_VERSION" -v image_ref="$GATEWAY_IMAGE_REF" '
-  BEGIN { seen_version = 0; seen_ref = 0 }
+awk -v version="$GATEWAY_VERSION" -v image_ref="$GATEWAY_IMAGE_REF" -v sandbox_workspace="$SANDBOX_RUNNER_WORKSPACE_DIR" '
+  BEGIN { seen_version = 0; seen_ref = 0; seen_sandbox_workspace = 0 }
   /^GATEWAY_VERSION=/ { print "GATEWAY_VERSION=" version; seen_version = 1; next }
   /^GATEWAY_IMAGE_REF=/ { print "GATEWAY_IMAGE_REF=" image_ref; seen_ref = 1; next }
+  /^SANDBOX_RUNNER_WORKSPACE_DIR=/ { print "SANDBOX_RUNNER_WORKSPACE_DIR=" sandbox_workspace; seen_sandbox_workspace = 1; next }
   { print }
   END {
     if (!seen_version) print "GATEWAY_VERSION=" version
     if (!seen_ref) print "GATEWAY_IMAGE_REF=" image_ref
+    if (!seen_sandbox_workspace) print "SANDBOX_RUNNER_WORKSPACE_DIR=" sandbox_workspace
   }
 ' /host/.env > "$tmp"
 mv "$tmp" /host/.env
@@ -315,9 +317,28 @@ elif grep -q 'image: \${GATEWAY_IMAGE_REF}' /host/docker-compose.yml; then
 else
   echo "Unrecognized gateway app image line in docker-compose.yml" >&2
   exit 42
+fi
+if ! grep -q 'SANDBOX_RUNNER_WORKSPACE_DIR.*SANDBOX_RUNNER_WORKSPACE_DIR' /host/docker-compose.yml && ! grep -q '/var/lib/gateway/sandbox-workspaces:/var/lib/gateway/sandbox-workspaces' /host/docker-compose.yml; then
+  tmp="/host/docker-compose.yml.tmp"
+  awk '
+    BEGIN { in_app = 0; inserted = 0 }
+    /^  app:/ { in_app = 1 }
+    in_app && /^  [A-Za-z0-9_-]+:/ && $0 !~ /^  app:/ { in_app = 0 }
+    { print }
+    in_app && /^[[:space:]]+-[[:space:]]+\\/var\\/run\\/docker\\.sock:/ && !inserted {
+      print "      - \${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}:\${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}"
+      inserted = 1
+    }
+    END { if (!inserted) exit 43 }
+  ' /host/docker-compose.yml > "$tmp"
+  mv "$tmp" /host/docker-compose.yml
 fi`,
       ],
-      Env: [`GATEWAY_VERSION=${tag}`, `GATEWAY_IMAGE_REF=${artifact.imageRef}`],
+      Env: [
+        `GATEWAY_VERSION=${tag}`,
+        `GATEWAY_IMAGE_REF=${artifact.imageRef}`,
+        'SANDBOX_RUNNER_WORKSPACE_DIR=/var/lib/gateway/sandbox-workspaces',
+      ],
       HostConfig: { Binds: [`${composeDir}:/host`] },
     });
 

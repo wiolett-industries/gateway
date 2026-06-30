@@ -1179,6 +1179,9 @@ EXPIRY_CHECK_CRON=0 6 * * *
 GRPC_PORT=9443
 GRPC_TLS_EXTRA_SANS=${GRPC_EXTRA_SANS}
 
+# AI sandbox runner
+SANDBOX_RUNNER_WORKSPACE_DIR=/var/lib/gateway/sandbox-workspaces
+
 # Setup token (for bootstrap API — management SSL provisioning)
 SETUP_TOKEN=${SETUP_TOKEN}
 SETUP_BOOTSTRAP=${SETUP_BOOTSTRAP:-false}
@@ -1246,15 +1249,17 @@ LOGGING_GLOBAL_EVENTS_PER_WINDOW=60000"
 LOGGING_TOKEN_REQUESTS_PER_WINDOW=300"
     grep -q '^LOGGING_TOKEN_EVENTS_PER_WINDOW=' .env || additions="${additions}
 LOGGING_TOKEN_EVENTS_PER_WINDOW=10000"
+    grep -q '^SANDBOX_RUNNER_WORKSPACE_DIR=' .env || additions="${additions}
+SANDBOX_RUNNER_WORKSPACE_DIR=/var/lib/gateway/sandbox-workspaces"
 
     if [ -n "$additions" ]; then
         backup_if_exists ".env"
         {
             echo ""
-            echo "# ClickHouse (external structured logging)"
+            echo "# Added defaults"
             printf "%s\n" "$additions" | sed '/^$/d'
         } >> .env
-        info "Added ClickHouse logging defaults to .env"
+        info "Added missing defaults to .env"
     fi
 }
 
@@ -1402,6 +1407,7 @@ ${app_port}
     mem_limit: ${APP_MEM_LIMIT}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - \${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}:\${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}
       - ./docker-compose.yml:/app/docker-compose.yml:ro
 $(compose_depends_on)
     healthcheck:

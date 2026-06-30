@@ -9,6 +9,7 @@ export type SandboxRunnerMethod =
   | 'readArtifact'
   | 'sendArtifact'
   | 'readProcessOutput'
+  | 'waitProcess'
   | 'writeProcessStdin'
   | 'killProcess'
   | 'revokeUserSandboxAccess'
@@ -81,6 +82,10 @@ export interface SandboxRunnerReadOutputParams extends SandboxRunnerProcessParam
   tail?: number;
 }
 
+export interface SandboxRunnerWaitProcessParams extends SandboxRunnerProcessParams {
+  timeoutMs?: number;
+}
+
 export interface SandboxRunnerWriteStdinParams extends SandboxRunnerProcessParams {
   data: string;
   close?: boolean;
@@ -111,6 +116,12 @@ export interface SandboxRunnerProcessResult {
 export interface SandboxRunnerReadOutputResult {
   processId: string;
   output: string;
+  outputBytes: number;
+}
+
+export interface SandboxRunnerWaitProcessResult {
+  processId: string;
+  exitCode: number;
   outputBytes: number;
 }
 

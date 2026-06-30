@@ -128,6 +128,33 @@ export class AISandboxJobsService {
     });
   }
 
+  async markFinishedIfActive(
+    id: string,
+    status: Extract<SandboxJobStatus, 'exited' | 'killed' | 'timeout' | 'failed' | 'revoked' | 'expired'>,
+    updates: {
+      exitCode?: number | null;
+      error?: string | null;
+      revocationReason?: string | null;
+      outputBytes?: number;
+    } = {}
+  ) {
+    const now = new Date();
+    const [row] = await this.db
+      .update(sandboxJobs)
+      .set({
+        status,
+        exitCode: updates.exitCode ?? null,
+        error: updates.error ?? null,
+        revocationReason: updates.revocationReason ?? null,
+        outputBytes: updates.outputBytes,
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(sandboxJobs.id, id), inArray(sandboxJobs.status, ACTIVE_SANDBOX_STATUSES)))
+      .returning();
+    return row ?? null;
+  }
+
   async update(id: string, values: Partial<NewSandboxJob>) {
     const [row] = await this.db.update(sandboxJobs).set(values).where(eq(sandboxJobs.id, id)).returning();
     if (!row) throw new AppError(404, 'SANDBOX_JOB_NOT_FOUND', 'Sandbox job not found');

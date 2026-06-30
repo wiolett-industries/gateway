@@ -42,7 +42,7 @@ ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
 
 RUN apk add --no-cache nginx && \
-    mkdir -p /var/lib/gateway/tls && \
+    mkdir -p /var/lib/gateway/tls /var/lib/gateway/sandbox-workspaces && \
     corepack enable && \
     corepack prepare pnpm@9.15.0 --activate
 

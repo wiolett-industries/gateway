@@ -62,6 +62,7 @@ services:
       - EXPIRY_CHECK_CRON=${EXPIRY_CHECK_CRON:-0 6 * * *}
       - GRPC_PORT=${GRPC_PORT:-9443}
       - GRPC_TLS_AUTO_DIR=${GRPC_TLS_AUTO_DIR:-/var/lib/gateway/tls}
+      - SANDBOX_RUNNER_WORKSPACE_DIR=${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}
       - GRPC_TLS_CERT=${GRPC_TLS_CERT:-}
       - GRPC_TLS_KEY=${GRPC_TLS_KEY:-}
       - GRPC_TLS_EXTRA_SANS=${GRPC_TLS_EXTRA_SANS:-}
@@ -70,6 +71,7 @@ services:
       - APP_VERSION=${GATEWAY_VERSION:-dev}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}:${SANDBOX_RUNNER_WORKSPACE_DIR:-/var/lib/gateway/sandbox-workspaces}
     depends_on:
       postgres:
         condition: service_healthy

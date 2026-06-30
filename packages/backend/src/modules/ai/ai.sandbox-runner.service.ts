@@ -25,6 +25,8 @@ import type {
   SandboxRunnerRunProcessParams,
   SandboxRunnerSendArtifactParams,
   SandboxRunnerSendArtifactResult,
+  SandboxRunnerWaitProcessParams,
+  SandboxRunnerWaitProcessResult,
   SandboxRunnerWriteStdinParams,
   SandboxRunnerWriteStdinResult,
 } from './ai.sandbox-runner.protocol.js';
@@ -119,6 +121,11 @@ export class AISandboxRunnerService {
   async readProcessOutput(params: SandboxRunnerReadOutputParams) {
     await this.ensureStarted();
     return this.callRunner<SandboxRunnerReadOutputResult>('readProcessOutput', params);
+  }
+
+  async waitProcess(params: SandboxRunnerWaitProcessParams) {
+    await this.ensureStarted();
+    return this.callRunner<SandboxRunnerWaitProcessResult>('waitProcess', params);
   }
 
   async writeProcessStdin(params: SandboxRunnerWriteStdinParams) {

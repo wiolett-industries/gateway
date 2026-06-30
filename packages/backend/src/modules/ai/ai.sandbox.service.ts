@@ -165,6 +165,7 @@ export class AISandboxService {
         command: input.command,
       });
       await this.jobs.markRunning(job.id, result.containerId);
+      this.monitorProcessJob(job.id, result.containerId, result.expiresAt);
       return {
         jobId: job.id,
         processId: result.processId,
@@ -254,6 +255,23 @@ export class AISandboxService {
     const result = await this.runner.killProcess({ processId: job.containerId });
     await this.jobs.markFinished(job.id, 'killed');
     return result;
+  }
+
+  private monitorProcessJob(jobId: string, containerId: string, expiresAt: string) {
+    void (async () => {
+      try {
+        const expiresAtMs = Date.parse(expiresAt);
+        const timeoutMs = Number.isFinite(expiresAtMs) ? Math.max(1_000, expiresAtMs - Date.now() + 10_000) : undefined;
+        const result = await this.runner.waitProcess({ processId: containerId, timeoutMs });
+        const status = Number.isFinite(expiresAtMs) && Date.now() >= expiresAtMs ? 'timeout' : 'exited';
+        await this.jobs.markFinishedIfActive(jobId, status, {
+          exitCode: result.exitCode,
+          outputBytes: result.outputBytes,
+        });
+      } catch (error) {
+        logger.warn('Failed to monitor sandbox process completion', { jobId, containerId, error });
+      }
+    })();
   }
 
   async killConversationJobs(userId: string, conversationId: string) {
