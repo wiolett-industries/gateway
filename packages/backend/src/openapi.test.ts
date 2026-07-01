@@ -61,6 +61,25 @@ vi.mock('@/modules/auth/auth.middleware.js', () => {
   };
 });
 
+vi.mock('@/middleware/rate-limit.js', () => {
+  const pass = async (_c: any, next: any) => {
+    await next();
+  };
+
+  return {
+    aiWebSocketRateLimitMiddleware: pass,
+    authCallbackRateLimitMiddleware: pass,
+    authLoginRateLimitMiddleware: pass,
+    authRateLimitMiddleware: pass,
+    pkiRateLimitMiddleware: pass,
+    publicStatusRateLimitMiddleware: pass,
+    publicWebhookRateLimitMiddleware: pass,
+    rateLimitMiddleware: pass,
+    setupRateLimitMiddleware: pass,
+    streamRateLimitMiddleware: pass,
+  };
+});
+
 function seedEnv() {
   process.env.NODE_ENV = 'test';
   process.env.DATABASE_URL = 'http://localhost/db';
@@ -78,16 +97,28 @@ describe('OpenAPI documentation', () => {
     const { createApp } = await import('./app.js');
     const { app } = createApp();
 
-    expect((await app.request('/openapi.json')).status).toBe(401);
+    expect((await app.request('/api/openapi.json')).status).toBe(401);
     expect((await app.request('/docs')).status).toBe(401);
-    expect((await app.request('/openapi.json', { headers: { Authorization: 'Bearer gw_empty' } })).status).toBe(403);
+    expect((await app.request('/api/openapi.json', { headers: { Authorization: 'Bearer gw_empty' } })).status).toBe(
+      403
+    );
 
     const docsResponse = await app.request('/docs', { headers: { Cookie: 'session_id=test' } });
     expect(docsResponse.status).toBe(200);
-    await expect(docsResponse.text()).resolves.toContain('/openapi.json');
+    const docsCsp = docsResponse.headers.get('Content-Security-Policy');
+    expect(docsCsp).toContain('https://cdn.jsdelivr.net');
+    expect(docsCsp).toContain('https://api.scalar.com');
+    expect(docsCsp).toContain("font-src 'self' https: data:");
+    const docsHtml = await docsResponse.text();
+    expect(docsHtml).toContain('/api/openapi.json');
+    expect(docsHtml).toContain('https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.62.1');
 
-    const response = await app.request('/openapi.json', { headers: { Authorization: 'Bearer gw_test' } });
+    const response = await app.request('/api/openapi.json', { headers: { Authorization: 'Bearer gw_test' } });
     expect(response.status).toBe(200);
+    const openApiCsp = response.headers.get('Content-Security-Policy');
+    expect(openApiCsp).toContain("frame-ancestors 'none'");
+    expect(openApiCsp).toContain("object-src 'none'");
+    expect(openApiCsp).not.toContain('https://cdn.jsdelivr.net');
 
     const document = (await response.json()) as { paths?: Record<string, any> };
     const paths = Object.keys(document.paths ?? {});
@@ -124,5 +155,8 @@ describe('OpenAPI documentation', () => {
       code: 'VALIDATION_ERROR',
       message: 'Request validation failed',
     });
+
+    const legacyResponse = await app.request('/openapi.json', { headers: { Authorization: 'Bearer gw_test' } });
+    expect(legacyResponse.status).toBe(200);
   });
 });

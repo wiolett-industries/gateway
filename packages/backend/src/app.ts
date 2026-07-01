@@ -9,7 +9,6 @@ import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { requestId } from 'hono/request-id';
-import { secureHeaders } from 'hono/secure-headers';
 
 import { getEnv, isDevelopment } from '@/config/env.js';
 import { container, TOKENS } from '@/container.js';
@@ -29,6 +28,7 @@ import {
   setupRateLimitMiddleware,
   streamRateLimitMiddleware,
 } from '@/middleware/rate-limit.js';
+import { SCALAR_API_REFERENCE_CDN, securityHeadersMiddleware } from '@/middleware/security-headers.js';
 import { accessListRoutes } from '@/modules/access-lists/access-list.routes.js';
 import { adminRoutes } from '@/modules/admin/admin.routes.js';
 import { aiRoutes } from '@/modules/ai/ai.routes.js';
@@ -77,6 +77,7 @@ import type { AppEnv } from '@/types.js';
 import { authenticateEventsConnection, createEventsWSHandlers } from '@/ws/events.ws.js';
 
 const STATUS_PREVIEW_PREFIX = '/_status-preview';
+const OPENAPI_DOCUMENT_PATH = '/api/openapi.json';
 const HEALTH_REDIS_TIMEOUT_MS = 1000;
 const DOCKER_FILE_BODY_LIMIT_PATH =
   /^\/api\/docker\/nodes\/[^/]+\/(?:containers\/[^/]+\/files\/(?:write|create|uploads\/[^/]+\/chunks)|volumes\/[^/]+\/files\/(?:write|create|uploads\/[^/]+\/chunks))$/;
@@ -177,7 +178,7 @@ export function createApp() {
   app.use('*', requestId());
   app.use('*', auditContextMiddleware);
   app.use('*', loggerMiddleware);
-  app.use('*', secureHeaders());
+  app.use('*', securityHeadersMiddleware);
   app.use(
     '*',
     cors({
@@ -512,8 +513,7 @@ export function createApp() {
 
   // OpenAPI documentation
   app.openAPIRegistry.registerComponent('securitySchemes', 'bearerAuth', securitySchemes.bearerAuth as any);
-  app.use('/openapi.json', authMiddleware, requireActiveUser, requireAnyEffectiveScope);
-  app.doc31('/openapi.json', {
+  const openApiDocument = {
     openapi: '3.1.0',
     info: {
       title: 'Gateway API',
@@ -528,7 +528,11 @@ export function createApp() {
       },
     ],
     tags: openApiTags,
-  });
+  };
+  app.use(OPENAPI_DOCUMENT_PATH, authMiddleware, requireActiveUser, requireAnyEffectiveScope);
+  app.doc31(OPENAPI_DOCUMENT_PATH, openApiDocument);
+  app.use('/openapi.json', authMiddleware, requireActiveUser, requireAnyEffectiveScope);
+  app.doc31('/openapi.json', openApiDocument);
 
   // Scalar API Reference UI
   app.use('/docs', authMiddleware, requireActiveUser, requireAnyEffectiveScope);
@@ -536,7 +540,8 @@ export function createApp() {
   app.get(
     '/docs',
     apiReference({
-      spec: { url: '/openapi.json' },
+      spec: { url: OPENAPI_DOCUMENT_PATH },
+      cdn: SCALAR_API_REFERENCE_CDN,
       theme: 'default',
       layout: 'modern',
     })
