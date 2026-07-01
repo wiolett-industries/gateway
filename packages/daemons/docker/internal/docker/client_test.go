@@ -1,13 +1,19 @@
 package docker
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
+	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
 	imagetypes "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 )
 
 func TestContainerCreateConfigParsesRestartPolicyFromCamelCase(t *testing.T) {
@@ -135,5 +141,52 @@ func TestAnnotateImageUsageMatchesByRepoTagWhenImageIDMissing(t *testing.T) {
 
 	if result[0].Containers != 1 {
 		t.Fatalf("expected busybox usage count 1, got %d", result[0].Containers)
+	}
+}
+
+func TestContainerTopFallsBackWhenDetailedPsArgsFail(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.String())
+		if !strings.HasPrefix(r.URL.Path, "/v1.43/containers/container-1/top") {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Has("ps_args") {
+			http.Error(w, "ps: unrecognized option: o", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"Titles":["PID","COMMAND"],"Processes":[["1","sleep"]]}`))
+	}))
+	defer server.Close()
+
+	cli, err := client.NewClientWithOpts(client.WithHost(server.URL), client.WithVersion("1.43"))
+	if err != nil {
+		t.Fatalf("create docker client: %v", err)
+	}
+	defer cli.Close()
+
+	c := &Client{cli: cli, logger: slog.Default()}
+	data, err := c.ContainerTop(context.Background(), "container-1")
+	if err != nil {
+		t.Fatalf("container top: %v", err)
+	}
+
+	var top container.TopResponse
+	if err := json.Unmarshal(data, &top); err != nil {
+		t.Fatalf("unmarshal top response: %v", err)
+	}
+	if len(top.Processes) != 1 || top.Processes[0][1] != "sleep" {
+		t.Fatalf("unexpected top response: %#v", top)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("expected detailed request and fallback request, got %#v", requests)
+	}
+	if !strings.Contains(requests[0], "ps_args=") {
+		t.Fatalf("expected first request to include ps_args, got %q", requests[0])
+	}
+	if strings.Contains(requests[1], "ps_args=") {
+		t.Fatalf("expected fallback request without ps_args, got %q", requests[1])
 	}
 }

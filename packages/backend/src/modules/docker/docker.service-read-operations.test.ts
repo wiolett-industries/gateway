@@ -53,12 +53,18 @@ describe('DockerManagementService read and file operations', () => {
       sendDockerContainerCommand: vi
         .fn()
         .mockResolvedValueOnce({ success: true, detail: JSON.stringify({ cpu: 12 }) })
-        .mockResolvedValueOnce({ success: true, detail: JSON.stringify({ processes: ['node'] }) }),
+        .mockResolvedValueOnce({
+          success: true,
+          detail: JSON.stringify({ Titles: ['PID', 'COMMAND'], Processes: [['1', 'node']] }),
+        }),
     };
     const { service } = createService(dispatch);
 
     await expect(service.getContainerStats('node-1', 'container-1')).resolves.toEqual({ cpu: 12 });
-    await expect(service.getContainerTop('node-1', 'container-1')).resolves.toEqual({ processes: ['node'] });
+    await expect(service.getContainerTop('node-1', 'container-1')).resolves.toEqual({
+      Titles: ['PID', 'COMMAND'],
+      Processes: [['1', 'node']],
+    });
     expect(dispatch.sendDockerContainerCommand).toHaveBeenNthCalledWith(1, 'node-1', 'stats', {
       containerId: 'container-1',
     });

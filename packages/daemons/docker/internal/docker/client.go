@@ -26,6 +26,8 @@ import (
 
 const defaultContainerStopTimeoutSeconds = 20
 
+var detailedContainerTopArgs = []string{"-eo", "pid,user,%cpu,%mem,vsz,rss,tty,stat,start,time,comm"}
+
 // Client wraps the Docker SDK client with convenience methods.
 type Client struct {
 	cli    *client.Client
@@ -245,11 +247,13 @@ func (c *Client) ContainerStatsOnce(ctx context.Context, id string) (json.RawMes
 
 // ContainerTop returns the running processes inside a container (like docker top).
 func (c *Client) ContainerTop(ctx context.Context, id string) (json.RawMessage, error) {
-	top, err := c.cli.ContainerTop(ctx, id, client.ContainerTopOptions{
-		Arguments: []string{"-eo", "pid,user,%cpu,%mem,vsz,rss,tty,stat,start,time,comm"},
-	})
+	top, err := c.cli.ContainerTop(ctx, id, client.ContainerTopOptions{Arguments: detailedContainerTopArgs})
 	if err != nil {
-		return nil, fmt.Errorf("container top: %w", err)
+		fallbackTop, fallbackErr := c.cli.ContainerTop(ctx, id, client.ContainerTopOptions{})
+		if fallbackErr != nil {
+			return nil, fmt.Errorf("container top: detailed ps args failed: %w; fallback without ps_args failed: %v", err, fallbackErr)
+		}
+		top = fallbackTop
 	}
 	data, err := json.Marshal(top)
 	if err != nil {
