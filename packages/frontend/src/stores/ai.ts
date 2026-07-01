@@ -1011,7 +1011,12 @@ export const useAIStore = create<AIState>()((set, get) => ({
       const conversation = await getConversation(conversationId);
       if (loadGeneration !== conversationLoadGeneration) return;
       set({
-        messages: normalizeConversationMessages(conversation.messages, conversation.id),
+        messages: applyConversationStatus(
+          normalizeConversationMessages(conversation.messages, conversation.id),
+          conversation.id,
+          conversation.status,
+          conversation.blockReason
+        ),
         savedName: conversation.title,
         activeConversationId: conversation.id,
         sidebarActiveConversationId: conversation.id,
@@ -1367,15 +1372,20 @@ function projectConversationSnapshot(
         ? [snapshot.runtime.pendingQuestion]
         : [];
   const pendingQuestionToolCalls = pendingQuestions.map(pendingQuestionToToolCall);
-  const messages = preserveFreshRuntimeDraft(
-    attachRuntimeToolCallsToMessages(
-      normalizeSnapshotMessages(snapshot),
-      [...runtimeToolCalls, ...pendingQuestionToolCalls],
-      Boolean(snapshot.runtime.activeRun),
-      snapshot.runtime.activeRun?.id ?? null
+  const messages = applyConversationStatus(
+    preserveFreshRuntimeDraft(
+      attachRuntimeToolCallsToMessages(
+        normalizeSnapshotMessages(snapshot),
+        [...runtimeToolCalls, ...pendingQuestionToolCalls],
+        Boolean(snapshot.runtime.activeRun),
+        snapshot.runtime.activeRun?.id ?? null
+      ),
+      currentMessages,
+      snapshotDraftIsStale ? activeRunId : null
     ),
-    currentMessages,
-    snapshotDraftIsStale ? activeRunId : null
+    snapshot.conversation.id,
+    snapshot.conversation.status,
+    snapshot.conversation.blockReason
   );
 
   return {
@@ -1482,8 +1492,37 @@ function normalizeConversationMessage(
     toolCalls: Array.isArray(message.toolCalls)
       ? normalizeMessageToolCalls(message.toolCalls, id)
       : undefined,
+    conversationStatus: normalizeConversationBlockStatus(message.conversationStatus),
+    blockReason: typeof message.blockReason === "string" ? message.blockReason : undefined,
     isStreaming: false,
   };
+}
+
+function normalizeConversationBlockStatus(
+  value: unknown
+): Exclude<AIConversationStatus, "active"> | undefined {
+  return value === "ended" || value === "context_blocked" ? value : undefined;
+}
+
+function applyConversationStatus(
+  messages: AIMessage[],
+  conversationId: string,
+  status: AIConversationStatus | undefined,
+  blockReason: string | null | undefined
+): AIMessage[] {
+  if (status !== "ended" && status !== "context_blocked") return messages;
+  if (getConversationBlock(messages)) return messages;
+  return sortMessagesBySequence([
+    ...messages,
+    {
+      id: `${conversationId}:status:${status}`,
+      role: "assistant",
+      content: "",
+      sequence: nextMessageSequence(messages),
+      conversationStatus: status,
+      blockReason: blockReason ?? undefined,
+    },
+  ]);
 }
 
 function normalizeMessageToolCalls(value: unknown[], messageId: string): AIToolCall[] {
@@ -1630,7 +1669,7 @@ function attachRuntimeToolCallsToMessages(
     targetIndex = nextMessages.length - 1;
   }
   if (targetIndex === -1) {
-    targetIndex = findLastAssistantIndex(nextMessages);
+    targetIndex = findLastAssistantIndexAfterLastUser(nextMessages);
   }
   if (targetIndex === -1) {
     const sequence = nextMessageSequence(nextMessages);
@@ -1765,9 +1804,17 @@ function snapshotLastUserMessageAt(messages: unknown[]): string | null {
   return null;
 }
 
-function findLastAssistantIndex(messages: AIMessage[]): number {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
+function findLastAssistantIndexAfterLastUser(messages: AIMessage[]): number {
+  const lastUserIndex = findLastUserIndex(messages);
+  for (let index = messages.length - 1; index > lastUserIndex; index -= 1) {
     if (messages[index].role === "assistant") return index;
+  }
+  return -1;
+}
+
+function findLastUserIndex(messages: AIMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") return index;
   }
   return -1;
 }

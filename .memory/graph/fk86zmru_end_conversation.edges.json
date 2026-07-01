@@ -1,0 +1,35 @@
+{
+  "file_name": "fk86zmru_end_conversation",
+  "edges": [
+    {
+      "from_id": "fk86zmru",
+      "to_id": "pstn8fla",
+      "relation": "same_area",
+      "weight": 0.7,
+      "reason": "both cover enterprise-grade AI conversation retrieval and context persistence in gateway.",
+      "source": "auto",
+      "created_at": 1782909986748,
+      "updated_at": 1782909986748
+    },
+    {
+      "from_id": "fk86zmru",
+      "to_id": "ph8ejel0",
+      "relation": "same_area",
+      "weight": 0.65,
+      "reason": "web-search extraction and ai service layering in gateway AI pipeline.",
+      "source": "auto",
+      "created_at": 1782909986748,
+      "updated_at": 1782909986748
+    },
+    {
+      "from_id": "fk86zmru",
+      "to_id": "sg6sqaui",
+      "relation": "same_area",
+      "weight": 0.6,
+      "reason": "gateway AI service helpers refactor related to AI tooling and safety guardrails.",
+      "source": "auto",
+      "created_at": 1782909986748,
+      "updated_at": 1782909986748
+    }
+  ]
+}

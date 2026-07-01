@@ -1,0 +1,45 @@
+{
+  "file_name": "nr9hvzr3_gateway_startup_recovery",
+  "edges": [
+    {
+      "from_id": "nr9hvzr3",
+      "to_id": "c8ql9nhv",
+      "relation": "uses_service",
+      "weight": 0.65,
+      "reason": "startup recovery notes reference and rely on existing gateway-dind/daemon containers; c8ql9nhv describes local daemon startup using nginx-daemon and docker-daemon counterparts.",
+      "source": "auto",
+      "created_at": 1782916298075,
+      "updated_at": 1782916298075
+    },
+    {
+      "from_id": "nr9hvzr3",
+      "to_id": "412x4uua",
+      "relation": "uses_service",
+      "weight": 0.6,
+      "reason": "API client refactor and tests align with gateway API verification patterns for proxies, databases, and Docker methods.",
+      "source": "auto",
+      "created_at": 1782916298075,
+      "updated_at": 1782916298075
+    },
+    {
+      "from_id": "nr9hvzr3",
+      "to_id": "4tmpz7of",
+      "relation": "related_to",
+      "weight": 0.5,
+      "reason": "both discuss Docker detail mutations and frontend/backend mutation handling patterns in the gateway.",
+      "source": "auto",
+      "created_at": 1782916298075,
+      "updated_at": 1782916298075
+    },
+    {
+      "from_id": "nr9hvzr3",
+      "to_id": "37llsl1w",
+      "relation": "related_to",
+      "weight": 0.4,
+      "reason": "API error handling and normalization concerns span both API errors and frontend display logic mentioned across paths.",
+      "source": "auto",
+      "created_at": 1782916298075,
+      "updated_at": 1782916298075
+    }
+  ]
+}

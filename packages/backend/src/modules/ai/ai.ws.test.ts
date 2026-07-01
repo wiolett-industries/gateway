@@ -285,6 +285,57 @@ describe('AI websocket backend runtime commands', () => {
     handlers.onClose(new Event('close'), ws as any);
   });
 
+  it('rejects send-message commands for locked conversations without starting a run', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    container.registerInstance(TOKENS.RedisClient, allowingRedis() as any);
+
+    const startUserRun = vi
+      .fn()
+      .mockRejectedValue(new AppError(409, 'AI_CONVERSATION_ENDED', 'This conversation has ended'));
+    const getConversationSnapshot = vi.fn();
+    const startRunExecution = vi.fn();
+    container.registerInstance(AIRunService, {
+      startUserRun,
+      getConversationSnapshot,
+      startRunExecution,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'conversation.send_message',
+          conversationId: 'conversation-1',
+          clientCommandId: 'cmd-locked',
+          content: 'let me continue',
+        }),
+      }),
+      ws as any
+    );
+
+    expect(startUserRun).toHaveBeenCalledWith({
+      conversationId: 'conversation-1',
+      userId: USER.id,
+      title: 'let me continue',
+      userMessage: { role: 'user', content: 'let me continue' },
+      clientCommandId: 'cmd-locked',
+      lastContext: null,
+    });
+    expect(getConversationSnapshot).not.toHaveBeenCalled();
+    expect(startRunExecution).not.toHaveBeenCalled();
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'command.error',
+        commandType: 'conversation.send_message',
+        clientCommandId: 'cmd-locked',
+        conversationId: 'conversation-1',
+        code: 'AI_CONVERSATION_ENDED',
+        message: 'This conversation has ended',
+        statusCode: 409,
+      })
+    );
+    handlers.onClose(new Event('close'), ws as any);
+  });
+
   it('forwards assistant deltas without fetching a fresh conversation snapshot', async () => {
     const { ws, handlers } = await openAuthenticatedWs();
     const getConversationSnapshot = vi.fn().mockResolvedValue(createSnapshot(createRun()));

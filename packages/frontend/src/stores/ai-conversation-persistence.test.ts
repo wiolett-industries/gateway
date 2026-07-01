@@ -1036,6 +1036,112 @@ describe("AI backend runtime store", () => {
     });
   });
 
+  it("keeps unassigned completed tool calls after the latest user turn", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [
+          { id: "assistant-old", sequence: 0, role: "assistant", content: "Previous answer" },
+          { id: "user-new", sequence: 1, role: "user", content: "Off-topic request" },
+        ],
+        runtime: {
+          activeRun: null,
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [
+            {
+              id: "tool-row-1",
+              runId: "run-1",
+              conversationId: "conversation-1",
+              assistantMessageId: null,
+              toolCallId: "tool-1",
+              toolName: "end_conversation",
+              toolArgs: { reason: "I can only help with Gateway infrastructure." },
+              classification: "read",
+              approvalPolicy: "auto_approved",
+              requiredScopes: [],
+              status: "completed",
+              decision: null,
+              result: { ended: true },
+              error: null,
+            },
+          ],
+        },
+      },
+    });
+
+    const { messages } = useAIStore.getState();
+    expect(messages.find((message) => message.id === "assistant-old")?.toolCalls).toBeUndefined();
+    expect(messages.map((message) => message.role)).toEqual(["assistant", "user", "assistant"]);
+    expect(messages.at(-1)).toMatchObject({
+      role: "assistant",
+      toolCalls: [expect.objectContaining({ id: "tool-1", name: "end_conversation" })],
+    });
+  });
+
+  it("blocks new sends after a conversation status marker is restored", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Ended chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+          status: "ended",
+          blockReason: "I can only help with Gateway infrastructure.",
+        },
+        messages: [
+          { id: "user-1", sequence: 0, role: "user", content: "Give me a recipe" },
+          {
+            id: "status-1",
+            sequence: 1,
+            role: "assistant",
+            content: "",
+            conversationStatus: "ended",
+            blockReason: "I can only help with Gateway infrastructure.",
+          },
+        ],
+        runtime: {
+          activeRun: null,
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [],
+        },
+      },
+    });
+
+    useAIStore.getState().sendMessage("let me continue");
+
+    expect(sentPayloads(socket)).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "conversation.send_message", content: "let me continue" }),
+      ])
+    );
+  });
+
   it("ignores stale snapshots after the active conversation changes", async () => {
     const socket = await connectAI();
     useAIStore.setState({

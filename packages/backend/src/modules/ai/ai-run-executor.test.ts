@@ -174,6 +174,48 @@ describe('AIRunExecutor live assistant draft streaming', () => {
     );
   });
 
+  it('persists a hidden conversation-ended marker after end_conversation', async () => {
+    const harness = createExecutorHarness([
+      {
+        type: 'tool_call_start',
+        requestId: 'request-1',
+        id: 'call-end',
+        name: 'end_conversation',
+        arguments: { reason: 'I can only help with Gateway infrastructure.' },
+      },
+      {
+        type: 'tool_result',
+        requestId: 'request-1',
+        id: 'call-end',
+        name: 'end_conversation',
+        result: { ended: true, reason: 'I can only help with Gateway infrastructure.' },
+      },
+      {
+        type: 'conversation_ended',
+        requestId: 'request-1',
+        reason: 'I can only help with Gateway infrastructure.',
+      },
+      { type: 'done', requestId: 'request-1' },
+    ]);
+
+    await executeRun(harness.executor);
+
+    expect(harness.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conversation-1',
+        role: 'assistant',
+        content: '',
+        uiMessage: expect.objectContaining({
+          role: 'assistant',
+          content: '',
+          conversationStatus: 'ended',
+          blockReason: 'I can only help with Gateway infrastructure.',
+        }),
+      })
+    );
+    expect(harness.updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+  });
+
   it('persists a redacted copy of one-time API token tool results', async () => {
     const harness = createExecutorHarness([
       {

@@ -5,6 +5,8 @@ import { type AIApprovalMode, isAIApprovalMode } from "@/lib/ai-approval-mode";
 type Theme = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";
 
+export const UI_STORAGE_KEY = "gateway-ui";
+
 interface ModalState {
   type: string | null;
   props?: Record<string, unknown>;
@@ -142,7 +144,7 @@ export const useUIStore = create<UIState>()(
       closeModal: () => set({ modal: { type: null } }),
     }),
     {
-      name: "gateway-ui",
+      name: UI_STORAGE_KEY,
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
@@ -178,3 +180,23 @@ export const useUIStore = create<UIState>()(
     }
   )
 );
+
+export function syncAILiteModeFromStorageValue(value: string | null): void {
+  if (value == null) return;
+
+  try {
+    const parsed = JSON.parse(value) as { state?: { aiLiteMode?: unknown } };
+    const aiLiteMode = parsed.state?.aiLiteMode;
+    if (typeof aiLiteMode !== "boolean") return;
+
+    const current = useUIStore.getState();
+    if (current.aiLiteMode === aiLiteMode && (!aiLiteMode || !current.aiPanelOpen)) return;
+
+    useUIStore.setState({
+      aiLiteMode,
+      ...(aiLiteMode ? { aiPanelOpen: false } : {}),
+    });
+  } catch {
+    // Ignore malformed persisted UI state from another tab.
+  }
+}

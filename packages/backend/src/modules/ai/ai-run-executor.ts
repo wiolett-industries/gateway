@@ -354,6 +354,9 @@ export class AIRunExecutor {
       );
       assistantMessageWritten = true;
       if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
+      if (event.type === 'context_blocked') {
+        await this.persistConversationStatus(run.conversationId, 'context_blocked', event.reason);
+      }
       await this.updateRunStatus(run.id, 'failed', event.type === 'error' ? event.message : event.reason);
       this.forgetAssistantDraftState(run.id);
       this.publishConversationChanged(user.id, run.conversationId);
@@ -369,6 +372,7 @@ export class AIRunExecutor {
       );
       assistantMessageWritten = true;
       if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
+      await this.persistConversationStatus(run.conversationId, 'ended', event.reason);
     }
 
     if (event.type === 'done') {
@@ -452,6 +456,27 @@ export class AIRunExecutor {
     const assistantMessageId = await this.persistAssistantMessageIfNeeded(userId, conversationId, content);
     await this.clearAssistantDraftState(runId);
     return assistantMessageId;
+  }
+
+  private async persistConversationStatus(
+    conversationId: string,
+    status: 'ended' | 'context_blocked',
+    reason: string
+  ): Promise<void> {
+    const sequence = await nextMessageSequence(this.db, conversationId);
+    await this.db.insert(aiConversationMessages).values(
+      toConversationMessage(
+        conversationId,
+        {
+          role: 'assistant',
+          content: '',
+          conversationStatus: status,
+          blockReason: reason,
+        },
+        sequence
+      )
+    );
+    await this.db.update(aiConversations).set({ updatedAt: new Date() }).where(eq(aiConversations.id, conversationId));
   }
 
   private async clearAssistantDraftState(runId: string): Promise<void> {

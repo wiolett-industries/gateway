@@ -49,7 +49,7 @@ import { eventStream } from "@/services/event-stream";
 import { APP_STATUS_STORAGE_KEY, useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
 import { useSystemConfigStore } from "@/stores/system-config";
-import { useUIStore } from "@/stores/ui";
+import { syncAILiteModeFromStorageValue, UI_STORAGE_KEY, useUIStore } from "@/stores/ui";
 
 /** Helper to wrap a page element with a scope guard */
 function scoped(scope: string, element: React.ReactElement) {
@@ -519,6 +519,11 @@ export default function App() {
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
+      if (event.key === UI_STORAGE_KEY) {
+        syncAILiteModeFromStorageValue(event.newValue);
+        return;
+      }
+
       if (event.key !== APP_STATUS_STORAGE_KEY || event.newValue == null) return;
 
       try {

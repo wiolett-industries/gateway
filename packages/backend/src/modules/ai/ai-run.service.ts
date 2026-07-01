@@ -163,6 +163,10 @@ export class AIRunService {
         };
       }
 
+      if (input.conversationId) {
+        await assertConversationCanAcceptUserTurn(tx, conversation.id);
+      }
+
       const activeRun = await getActiveRunForUpdate(tx, conversation.id);
       if (activeRun) {
         throw new AppError(409, 'AI_RUN_ACTIVE', 'Conversation already has an active AI run');
@@ -569,7 +573,7 @@ export class AIRunService {
     const snapshotMessages = messages.map((message) =>
       toSnapshotMessage(message.id, message.sequence, message.uiMessage, message.createdAt)
     );
-    const uiMessages = snapshotMessages.map((message) => message.uiMessage);
+    const uiMessages = snapshotMessages;
     const loadedMessageRows = messages.map((message) => ({
       role: readMessageRole(message.uiMessage),
       uiMessage: message.uiMessage,
@@ -778,6 +782,22 @@ async function getActiveRunForUpdate(db: DbLike, conversationId: string): Promis
     .orderBy(desc(aiRuns.createdAt))
     .limit(1);
   return rows[0] ?? null;
+}
+
+async function assertConversationCanAcceptUserTurn(db: DbLike, conversationId: string): Promise<void> {
+  const rows = await db
+    .select({ uiMessage: aiConversationMessages.uiMessage })
+    .from(aiConversationMessages)
+    .where(eq(aiConversationMessages.conversationId, conversationId))
+    .orderBy(desc(aiConversationMessages.sequence))
+    .limit(50);
+  const status = deriveConversationStatus(rows.map((row) => row.uiMessage));
+  if (status.status === 'ended') {
+    throw new AppError(409, 'AI_CONVERSATION_ENDED', status.blockReason ?? 'This conversation has ended');
+  }
+  if (status.status === 'context_blocked') {
+    throw new AppError(409, 'AI_CONVERSATION_CONTEXT_BLOCKED', status.blockReason ?? 'This conversation is blocked');
+  }
 }
 
 async function nextMessageSequence(db: DbLike, conversationId: string): Promise<number> {

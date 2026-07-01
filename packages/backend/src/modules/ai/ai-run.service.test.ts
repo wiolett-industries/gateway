@@ -142,7 +142,7 @@ describe('AIRunService startUserRun', () => {
       status: 'queued',
     };
     const harness = createStartRunDb({
-      selectRows: [[], [conversation], [], [], [{ sequence: 4 }]],
+      selectRows: [[], [conversation], [], [], [], [{ sequence: 4 }]],
       insertRows: [[message], [run]],
     });
     const service = new AIRunService(harness.db as never);
@@ -233,7 +233,7 @@ describe('AIRunService startUserRun', () => {
     const conversation = { id: 'conversation-1', lastContext: null };
     const activeRun = { id: 'run-active', status: 'running' };
     const harness = createStartRunDb({
-      selectRows: [[], [conversation], [], [activeRun]],
+      selectRows: [[], [conversation], [], [], [activeRun]],
     });
     const service = new AIRunService(harness.db as never);
 
@@ -247,6 +247,80 @@ describe('AIRunService startUserRun', () => {
       })
     ).rejects.toMatchObject({
       code: 'AI_RUN_ACTIVE',
+      statusCode: 409,
+    });
+
+    expect(harness.insert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a new message when the conversation has ended', async () => {
+    const conversation = { id: 'conversation-1', lastContext: null };
+    const harness = createStartRunDb({
+      selectRows: [
+        [],
+        [conversation],
+        [],
+        [
+          {
+            uiMessage: {
+              role: 'assistant',
+              content: '',
+              conversationStatus: 'ended',
+              blockReason: 'I can only help with Gateway infrastructure.',
+            },
+          },
+        ],
+      ],
+    });
+    const service = new AIRunService(harness.db as never);
+
+    await expect(
+      service.startUserRun({
+        conversationId: 'conversation-1',
+        userId: 'user-1',
+        title: 'Existing chat',
+        userMessage: { role: 'user', content: 'hello' },
+        clientCommandId: 'cmd-2',
+      })
+    ).rejects.toMatchObject({
+      code: 'AI_CONVERSATION_ENDED',
+      statusCode: 409,
+    });
+
+    expect(harness.insert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a new message when the conversation is context-blocked', async () => {
+    const conversation = { id: 'conversation-1', lastContext: null };
+    const harness = createStartRunDb({
+      selectRows: [
+        [],
+        [conversation],
+        [],
+        [
+          {
+            uiMessage: {
+              role: 'assistant',
+              content: '',
+              conversationStatus: 'context_blocked',
+              blockReason: 'Context limit reached. Start a new chat to continue.',
+            },
+          },
+        ],
+      ],
+    });
+    const service = new AIRunService(harness.db as never);
+
+    await expect(
+      service.startUserRun({
+        conversationId: 'conversation-1',
+        userId: 'user-1',
+        title: 'Existing chat',
+        userMessage: { role: 'user', content: 'hello' },
+        clientCommandId: 'cmd-2',
+      })
+    ).rejects.toMatchObject({
+      code: 'AI_CONVERSATION_CONTEXT_BLOCKED',
       statusCode: 409,
     });
 
@@ -508,6 +582,61 @@ describe('AIRunService stopRun', () => {
 });
 
 describe('AIRunService runtime snapshots', () => {
+  it('derives ended status from hidden conversation status messages', async () => {
+    const now = new Date('2026-06-26T10:00:00.000Z');
+    let whereCall = 0;
+    const limit = vi.fn(async () => [
+      {
+        id: 'conversation-1',
+        userId: 'user-1',
+        title: 'Ended chat',
+        createdAt: now,
+        updatedAt: now,
+        folderId: null,
+        lastContext: null,
+        discoveredToolsets: [],
+        checkpoint: null,
+      },
+    ]);
+    const orderBy = vi.fn(async () => [
+      {
+        id: 'status-1',
+        sequence: 0,
+        uiMessage: {
+          role: 'assistant',
+          content: '',
+          conversationStatus: 'ended',
+          blockReason: 'I can only help with Gateway infrastructure.',
+        },
+        createdAt: now,
+      },
+    ]);
+    const where = vi.fn(() => {
+      whereCall += 1;
+      return whereCall === 1 ? { limit } : { orderBy };
+    });
+    const from = vi.fn(() => ({ where }));
+    const select = vi.fn(() => ({ from }));
+    const service = new AIRunService({ select } as never);
+    (service as unknown as { getRuntimeSnapshot: (conversationId: string) => Promise<unknown> }).getRuntimeSnapshot = vi
+      .fn()
+      .mockResolvedValue({
+        activeRun: null,
+        assistantDraftContent: null,
+        assistantDraftVersion: null,
+        pendingApprovals: [],
+        pendingQuestion: null,
+        pendingQuestions: [],
+        toolCalls: [],
+      });
+
+    const snapshot = await service.getConversationSnapshot('user-1', 'conversation-1');
+
+    expect(snapshot?.conversation.status).toBe('ended');
+    expect(snapshot?.conversation.blockReason).toBe('I can only help with Gateway infrastructure.');
+    expect(snapshot?.conversation.messageCount).toBe(0);
+  });
+
   it('returns only client-safe checkpoint metadata in conversation snapshots', async () => {
     const now = new Date('2026-06-26T10:00:00.000Z');
     let whereCall = 0;

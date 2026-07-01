@@ -22,13 +22,13 @@ export function AIConversationBlockedBlock({
       }
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="flex min-w-0 items-center gap-3">
+          <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">
               {isContextBlocked ? "Context limit reached" : "Conversation ended"}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">{block.reason}</p>
+            <p className="text-sm text-muted-foreground">{block.reason}</p>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
