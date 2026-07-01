@@ -1,6 +1,6 @@
 import type { ServerDuplexStream } from '@grpc/grpc-js';
-import { eq } from 'drizzle-orm';
-import { nodes } from '@/db/schema/index.js';
+import { and, eq } from 'drizzle-orm';
+import { nodes, proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { logRelay, NGINX_LOG_SUBSCRIBE_ACK_EVENT } from '@/modules/monitoring/log-relay.service.js';
 import type { LogStreamControl, LogStreamMessage } from '../generated/types.js';
@@ -8,6 +8,14 @@ import { extractDaemonCertificateIdentity, normalizeCertificateSerial } from '..
 import type { GrpcServerDeps } from '../server.js';
 
 const logger = createChildLogger('GrpcLogStream');
+const MAX_HOST_OWNERSHIP_CACHE_SIZE = 512;
+const HOST_OWNERSHIP_CACHE_TTL_MS = 5_000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type HostOwnershipCacheEntry = {
+  allowed: boolean;
+  expiresAt: number;
+};
 
 export function createLogStreamHandlers(deps: GrpcServerDeps) {
   return {
@@ -89,19 +97,67 @@ export function createLogStreamHandlers(deps: GrpcServerDeps) {
         connectedNode.logStream = stream as any;
         logger.debug('Log stream associated with node', { nodeId });
 
-        stream.on('data', (msg: LogStreamMessage) => {
-          if (!nodeId || deps.registry.getNode(nodeId)?.logStream !== stream) {
+        const hostOwnershipCache = new Map<string, HostOwnershipCacheEntry>();
+        const isCurrentLogStream = () => !!nodeId && !closed && deps.registry.getNode(nodeId)?.logStream === stream;
+        const isHostOwnedByNode = async (hostId: string): Promise<boolean> => {
+          if (!UUID_RE.test(hostId)) return false;
+          const now = Date.now();
+          const cached = hostOwnershipCache.get(hostId);
+          if (cached && cached.expiresAt > now) return cached.allowed;
+          if (cached) hostOwnershipCache.delete(hostId);
+          if (hostOwnershipCache.size >= MAX_HOST_OWNERSHIP_CACHE_SIZE) hostOwnershipCache.clear();
+
+          try {
+            const rows = await deps.db
+              .select({ id: proxyHosts.id })
+              .from(proxyHosts)
+              .where(and(eq(proxyHosts.id, hostId), eq(proxyHosts.nodeId, authenticatedNodeId)))
+              .limit(1);
+            const allowed = rows.length > 0;
+            hostOwnershipCache.set(hostId, { allowed, expiresAt: now + HOST_OWNERSHIP_CACHE_TTL_MS });
+            return allowed;
+          } catch (error) {
+            logger.warn('Failed to verify nginx log host ownership', {
+              nodeId: authenticatedNodeId,
+              hostId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return false;
+          }
+        };
+
+        const handleLogStreamMessage = async (msg: LogStreamMessage) => {
+          if (!isCurrentLogStream()) {
             closed = true;
             stream.end();
             return;
           }
           if (msg.subscribeAck) {
-            logger.debug('Log subscribe ack', { hostId: msg.subscribeAck.hostId });
-            logRelay.emit(NGINX_LOG_SUBSCRIBE_ACK_EVENT, { hostId: msg.subscribeAck.hostId });
+            const hostId = msg.subscribeAck.hostId;
+            if (!(await isHostOwnedByNode(hostId))) {
+              logger.warn('Rejected nginx log subscribe ack for host not owned by node', {
+                nodeId: authenticatedNodeId,
+                hostId,
+              });
+              return;
+            }
+            if (!isCurrentLogStream()) return;
+            logger.debug('Log subscribe ack', { nodeId: authenticatedNodeId, hostId });
+            logRelay.emit(NGINX_LOG_SUBSCRIBE_ACK_EVENT, { nodeId: authenticatedNodeId, hostId });
           } else if (msg.entry) {
+            const hostId = msg.entry.hostId;
+            if (!(await isHostOwnedByNode(hostId))) {
+              logger.warn('Rejected nginx log entry for host not owned by node', {
+                nodeId: authenticatedNodeId,
+                hostId,
+              });
+              return;
+            }
+            if (!isCurrentLogStream()) return;
             // Relay log entry to SSE consumers via the in-memory relay.
             logRelay.emit('log', {
-              hostId: msg.entry.hostId,
+              nodeId: authenticatedNodeId,
+              hostId,
               timestamp: msg.entry.timestamp,
               remoteAddr: msg.entry.remoteAddr,
               method: msg.entry.method,
@@ -113,6 +169,15 @@ export function createLogStreamHandlers(deps: GrpcServerDeps) {
               level: msg.entry.level || '',
             });
           }
+        };
+
+        stream.on('data', (msg: LogStreamMessage) => {
+          handleLogStreamMessage(msg).catch((error) => {
+            logger.warn('Failed to handle nginx log stream message', {
+              nodeId: authenticatedNodeId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
         });
       })().catch((err) => {
         logger.error('Log stream authentication failed', { error: (err as Error).message });

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
-import { resetNginxLogSubscriptionsForTest, subscribeNginxHostLogs } from './nginx-log-subscriptions.js';
+import { logRelay, NGINX_LOG_SUBSCRIBE_ACK_EVENT, type RelayedLogEntry } from './log-relay.service.js';
+import {
+  requestNginxHostLogHistory,
+  resetNginxLogSubscriptionsForTest,
+  subscribeNginxHostLogs,
+} from './nginx-log-subscriptions.js';
 
 function createRegistry(node: unknown): NodeRegistryService {
   return {
@@ -74,5 +79,42 @@ describe('subscribeNginxHostLogs', () => {
     const subscription = subscribeNginxHostLogs(registry, 'node-1', 'host-1', 50);
 
     expect(subscription).toEqual({ ok: false, message: 'Nginx log stream is not connected' });
+  });
+
+  it('loads history only from the requested node and host', async () => {
+    const write = vi.fn();
+    const registry = createRegistry({ type: 'nginx', logStream: { write } });
+    const entry: RelayedLogEntry = {
+      nodeId: 'node-1',
+      hostId: 'host-1',
+      timestamp: '2026-05-02T00:00:00.000Z',
+      remoteAddr: '127.0.0.1',
+      method: 'GET',
+      path: '/',
+      status: 200,
+      bodyBytesSent: '0',
+      raw: 'log',
+      logType: 'access',
+      level: '',
+    };
+
+    const resultPromise = requestNginxHostLogHistory(registry, 'node-1', 'host-1', 1, 50);
+    logRelay.emit('log', { ...entry, nodeId: 'node-2' });
+    logRelay.emit('log', entry);
+    logRelay.emit(NGINX_LOG_SUBSCRIBE_ACK_EVENT, { nodeId: 'node-2', hostId: 'host-1' });
+    logRelay.emit(NGINX_LOG_SUBSCRIBE_ACK_EVENT, { nodeId: 'node-1', hostId: 'host-1' });
+
+    await expect(resultPromise).resolves.toEqual({ ok: true, entries: [entry] });
+    expect(write).toHaveBeenCalledWith({ subscribe: { hostId: 'host-1', tailLines: -1 } });
+  });
+
+  it('does not complete history requests from another node ack', async () => {
+    const write = vi.fn();
+    const registry = createRegistry({ type: 'nginx', logStream: { write } });
+
+    const resultPromise = requestNginxHostLogHistory(registry, 'node-1', 'host-1', 1, 10);
+    logRelay.emit(NGINX_LOG_SUBSCRIBE_ACK_EVENT, { nodeId: 'node-2', hostId: 'host-1' });
+
+    await expect(resultPromise).resolves.toEqual({ ok: false, message: 'Timed out while loading nginx log history' });
   });
 });

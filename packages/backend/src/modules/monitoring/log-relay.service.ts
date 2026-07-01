@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 
 export interface RelayedLogEntry {
+  nodeId: string;
   hostId: string;
   timestamp: string;
   remoteAddr: string;
@@ -23,6 +24,7 @@ export interface RelayedDaemonLogEntry {
 }
 
 export interface NginxLogSubscribeAck {
+  nodeId: string;
   hostId: string;
 }
 
@@ -40,6 +42,7 @@ const nginxLogBuffers = new Map<string, RelayedLogEntry[]>();
 
 function nginxLogEntryKey(entry: RelayedLogEntry): string {
   return [
+    entry.nodeId,
     entry.logType,
     entry.timestamp,
     entry.remoteAddr,

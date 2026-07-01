@@ -174,7 +174,7 @@ async function authenticateAndStartStream(
   }
 
   const onLog = (entry: RelayedLogEntry) => {
-    if (entry.hostId !== hostId) return;
+    if (entry.nodeId !== nodeId || entry.hostId !== hostId) return;
     if (state.loadingMore) {
       state.pendingWhileLoading.push(entry);
       return;

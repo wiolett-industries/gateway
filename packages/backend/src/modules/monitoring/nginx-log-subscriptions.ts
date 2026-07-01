@@ -125,11 +125,11 @@ export function requestNginxHostLogHistory(
     };
 
     const onLog = (entry: RelayedLogEntry) => {
-      if (entry.hostId === hostId) entries.push(entry);
+      if (entry.nodeId === nodeId && entry.hostId === hostId) entries.push(entry);
     };
 
     const onAck = (ack: NginxLogSubscribeAck) => {
-      if (ack.hostId !== hostId) return;
+      if (ack.nodeId !== nodeId || ack.hostId !== hostId) return;
       settle({ ok: true, entries });
     };
 

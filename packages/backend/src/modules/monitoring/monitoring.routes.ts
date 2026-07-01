@@ -113,13 +113,14 @@ monitoringRoutes.openapi(
 
       // Subscribe to log entries for this host
       const onLog = (entry: RelayedLogEntry) => {
-        if (entry.hostId === hostId) {
+        if (entry.nodeId === host.nodeId && entry.hostId === hostId) {
           stream.writeSSE({ data: JSON.stringify(entry), event: 'log' }).catch(() => {});
         }
       };
       logRelay.on('log', onLog);
 
       for (const entry of getNginxLogHistory(hostId)) {
+        if (entry.nodeId !== host.nodeId) continue;
         await stream.writeSSE({ data: JSON.stringify(entry), event: 'log' });
       }
 

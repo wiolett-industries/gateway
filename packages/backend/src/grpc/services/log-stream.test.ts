@@ -1,28 +1,47 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
-import { logRelay } from '@/modules/monitoring/log-relay.service.js';
+import { logRelay, NGINX_LOG_SUBSCRIBE_ACK_EVENT } from '@/modules/monitoring/log-relay.service.js';
 import { createLogStreamHandlers } from './log-stream.js';
 
 const nodeId = '11111111-1111-4111-8111-111111111111';
+const ownedHostId = '22222222-2222-4222-8222-222222222222';
+const otherHostId = '33333333-3333-4333-8333-333333333333';
 
-function makeDbNode(node: null | { certificateSerial?: string | null; status?: string }) {
+function makeDbNode(
+  node: null | { certificateSerial?: string | null; status?: string },
+  hostOwnership: boolean | Array<boolean | Error> = true
+) {
+  const nodeRows = node
+    ? [
+        {
+          certificateSerial: 'certificateSerial' in node ? node.certificateSerial : 'aa01',
+          status: node.status ?? 'online',
+        },
+      ]
+    : [];
+  const ownershipResults = Array.isArray(hostOwnership) ? [...hostOwnership] : null;
+  const defaultHostOwned = Array.isArray(hostOwnership) ? true : hostOwnership;
+  const ownershipRows = defaultHostOwned ? [{ id: ownedHostId }] : [];
+  const queuedRows = [nodeRows, ownershipRows];
+
   return {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn(async () =>
-            node
-              ? [
-                  {
-                    certificateSerial: 'certificateSerial' in node ? node.certificateSerial : 'aa01',
-                    status: node.status ?? 'online',
-                  },
-                ]
-              : []
-          ),
+    select: vi.fn(() => {
+      const rows = queuedRows.shift() ?? ownershipRows;
+      return {
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(async () => {
+              if (rows === ownershipRows && ownershipResults) {
+                const result = ownershipResults.shift() ?? defaultHostOwned;
+                if (result instanceof Error) throw result;
+                return result ? ownershipRows : [];
+              }
+              return rows;
+            }),
+          })),
         })),
-      })),
-    })),
+      };
+    }),
   } as any;
 }
 
@@ -148,7 +167,7 @@ describe('StreamLogs daemon certificate identity', () => {
     connectedNode.logStream = null;
     stream.emit('data', {
       entry: {
-        hostId: 'host-1',
+        hostId: ownedHostId,
         timestamp: '2026-05-02T00:00:00.000Z',
         remoteAddr: '127.0.0.1',
         method: 'GET',
@@ -163,6 +182,148 @@ describe('StreamLogs daemon certificate identity', () => {
 
     expect(stream.end).toHaveBeenCalled();
     expect(emitSpy).not.toHaveBeenCalledWith('log', expect.anything());
+    emitSpy.mockRestore();
+  });
+
+  it('relays nginx log entries only after host ownership is verified', async () => {
+    const connectedNode = { connectionId: 'conn-1', logStream: null };
+    const deps = makeDeps(makeDbNode({ certificateSerial: 'AA:01' }, true), connectedNode);
+    const stream = makeStream({ serialNumber: 'aa01' });
+    const emitSpy = vi.spyOn(logRelay, 'emit');
+
+    createLogStreamHandlers(deps).StreamLogs(stream);
+
+    await vi.waitFor(() => {
+      expect(connectedNode.logStream).toBe(stream);
+    });
+    stream.emit('data', {
+      entry: {
+        hostId: ownedHostId,
+        timestamp: '2026-05-02T00:00:00.000Z',
+        remoteAddr: '127.0.0.1',
+        method: 'GET',
+        path: '/',
+        status: 200,
+        bodyBytesSent: '0',
+        raw: 'log',
+        logType: 'access',
+        level: '',
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(emitSpy).toHaveBeenCalledWith(
+        'log',
+        expect.objectContaining({
+          nodeId,
+          hostId: ownedHostId,
+          raw: 'log',
+        })
+      );
+    });
+    emitSpy.mockRestore();
+  });
+
+  it('rejects nginx log entries for hosts not owned by the authenticated node', async () => {
+    const connectedNode = { connectionId: 'conn-1', logStream: null };
+    const deps = makeDeps(makeDbNode({ certificateSerial: 'AA:01' }, false), connectedNode);
+    const stream = makeStream({ serialNumber: 'aa01' });
+    const emitSpy = vi.spyOn(logRelay, 'emit');
+
+    createLogStreamHandlers(deps).StreamLogs(stream);
+
+    await vi.waitFor(() => {
+      expect(connectedNode.logStream).toBe(stream);
+    });
+    stream.emit('data', {
+      entry: {
+        hostId: otherHostId,
+        timestamp: '2026-05-02T00:00:00.000Z',
+        remoteAddr: '127.0.0.1',
+        method: 'GET',
+        path: '/',
+        status: 200,
+        bodyBytesSent: '0',
+        raw: 'spoofed',
+        logType: 'access',
+        level: '',
+      },
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(emitSpy).not.toHaveBeenCalledWith('log', expect.anything());
+    expect(stream.end).not.toHaveBeenCalled();
+    emitSpy.mockRestore();
+  });
+
+  it('does not cache transient host ownership lookup failures', async () => {
+    const connectedNode = { connectionId: 'conn-1', logStream: null };
+    const deps = makeDeps(
+      makeDbNode({ certificateSerial: 'AA:01' }, [new Error('database unavailable'), true]),
+      connectedNode
+    );
+    const stream = makeStream({ serialNumber: 'aa01' });
+    const emitSpy = vi.spyOn(logRelay, 'emit');
+
+    createLogStreamHandlers(deps).StreamLogs(stream);
+
+    await vi.waitFor(() => {
+      expect(connectedNode.logStream).toBe(stream);
+    });
+    const entry = {
+      hostId: ownedHostId,
+      timestamp: '2026-05-02T00:00:00.000Z',
+      remoteAddr: '127.0.0.1',
+      method: 'GET',
+      path: '/',
+      status: 200,
+      bodyBytesSent: '0',
+      raw: 'log',
+      logType: 'access',
+      level: '',
+    };
+    stream.emit('data', { entry: { ...entry, raw: 'first' } });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(emitSpy).not.toHaveBeenCalledWith('log', expect.anything());
+
+    stream.emit('data', { entry: { ...entry, raw: 'second' } });
+
+    await vi.waitFor(() => {
+      expect(emitSpy).toHaveBeenCalledWith(
+        'log',
+        expect.objectContaining({
+          nodeId,
+          hostId: ownedHostId,
+          raw: 'second',
+        })
+      );
+    });
+    emitSpy.mockRestore();
+  });
+
+  it('rejects nginx subscribe acks for hosts not owned by the authenticated node', async () => {
+    const connectedNode = { connectionId: 'conn-1', logStream: null };
+    const deps = makeDeps(makeDbNode({ certificateSerial: 'AA:01' }, false), connectedNode);
+    const stream = makeStream({ serialNumber: 'aa01' });
+    const emitSpy = vi.spyOn(logRelay, 'emit');
+
+    createLogStreamHandlers(deps).StreamLogs(stream);
+
+    await vi.waitFor(() => {
+      expect(connectedNode.logStream).toBe(stream);
+    });
+    stream.emit('data', {
+      subscribeAck: {
+        hostId: otherHostId,
+      },
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(emitSpy).not.toHaveBeenCalledWith(NGINX_LOG_SUBSCRIBE_ACK_EVENT, expect.anything());
+    expect(stream.end).not.toHaveBeenCalled();
     emitSpy.mockRestore();
   });
 

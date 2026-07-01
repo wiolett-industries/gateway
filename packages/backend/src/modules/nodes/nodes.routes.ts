@@ -761,6 +761,7 @@ nodesRoutes.openapi({ ...nodeNginxLogsRoute, middleware: requireScopeForResource
     const nodeRegistry = container.resolve(NodeRegistryService);
     const sentKeys = new Set<string>();
     const writeLog = async (entry: RelayedLogEntry) => {
+      if (entry.nodeId !== nodeId) return;
       if (!matchesFilter(entry)) return;
       const key = nginxLogEntryKey(entry);
       if (sentKeys.has(key)) return;
