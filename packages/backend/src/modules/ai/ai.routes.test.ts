@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { container, TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
+import { AuditService } from '@/modules/audit/audit.service.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import { SessionService } from '@/services/session.service.js';
 import type { AppEnv, SessionData, User } from '@/types.js';
@@ -18,7 +19,7 @@ const USER: User = {
   avatarUrl: null,
   groupId: 'group-1',
   groupName: 'admin',
-  scopes: ['feat:ai:use'],
+  scopes: ['feat:ai:use', 'feat:ai:configure'],
   isBlocked: false,
 };
 
@@ -70,7 +71,7 @@ function createApp() {
   return app;
 }
 
-function registerServices() {
+function registerServices(aiSettings?: Partial<AISettingsService>) {
   container.registerInstance(SessionService, {
     getSession: vi.fn().mockResolvedValue(SESSION),
     validateCsrfToken: vi.fn().mockResolvedValue(true),
@@ -80,6 +81,7 @@ function registerServices() {
   container.registerInstance(TOKENS.DrizzleClient, createDb());
   container.registerInstance(AISettingsService, {
     isEnabled: vi.fn().mockResolvedValue(true),
+    ...aiSettings,
   } as unknown as AISettingsService);
 }
 
@@ -231,5 +233,115 @@ describe('AI routes session-only authentication', () => {
         conversation: { id: 'conversation-1', messages: [] },
       },
     });
+  });
+
+  it('audits custom system prompt changes without storing raw prompt text', async () => {
+    const auditLog = vi.fn().mockResolvedValue(true);
+    const getConfig = vi.fn().mockResolvedValue({ customSystemPrompt: 'old private instruction' });
+    const updateConfig = vi.fn().mockResolvedValue({ customSystemPrompt: 'new private instruction', model: 'gpt-5' });
+    const getConfigForAdmin = vi.fn().mockResolvedValue({
+      customSystemPrompt: 'new private instruction',
+      model: 'gpt-5',
+      hasApiKey: false,
+      apiKeyLast4: '',
+      hasWebSearchKey: false,
+      webSearchApiKeyLast4: '',
+    });
+    registerServices({ getConfig, updateConfig, getConfigForAdmin });
+    container.registerInstance(AuditService, { log: auditLog } as unknown as AuditService);
+
+    const response = await createApp().request('/api/ai/config', {
+      method: 'PUT',
+      headers: { Cookie: 'session_id=session-1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customSystemPrompt: 'new private instruction', model: 'gpt-5' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(updateConfig).toHaveBeenCalledWith({ customSystemPrompt: 'new private instruction', model: 'gpt-5' });
+    expect(auditLog).toHaveBeenCalledTimes(2);
+    expect(auditLog).toHaveBeenNthCalledWith(1, {
+      userId: USER.id,
+      action: 'ai.config.update',
+      resourceType: 'ai-config',
+      details: {
+        changedFields: ['customSystemPrompt', 'model'],
+        customSystemPromptChanged: true,
+      },
+    });
+    expect(auditLog).toHaveBeenNthCalledWith(2, {
+      userId: USER.id,
+      action: 'ai.config.prompt.update',
+      resourceType: 'ai-config',
+      details: {
+        old: {
+          hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          length: 'old private instruction'.length,
+          empty: false,
+        },
+        new: {
+          hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          length: 'new private instruction'.length,
+          empty: false,
+        },
+      },
+    });
+    expect(JSON.stringify(auditLog.mock.calls)).not.toContain('old private instruction');
+    expect(JSON.stringify(auditLog.mock.calls)).not.toContain('new private instruction');
+  });
+
+  it('keeps fallback audit available when the generic prompt-change audit write fails', async () => {
+    const auditLog = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const getConfig = vi.fn().mockResolvedValue({ customSystemPrompt: 'old private instruction' });
+    const updateConfig = vi.fn().mockResolvedValue({ customSystemPrompt: 'new private instruction' });
+    const getConfigForAdmin = vi.fn().mockResolvedValue({
+      customSystemPrompt: 'new private instruction',
+      hasApiKey: false,
+      apiKeyLast4: '',
+      hasWebSearchKey: false,
+      webSearchApiKeyLast4: '',
+    });
+    registerServices({ getConfig, updateConfig, getConfigForAdmin });
+    container.registerInstance(AuditService, { log: auditLog } as unknown as AuditService);
+
+    const response = await createApp().request('/api/ai/config', {
+      method: 'PUT',
+      headers: { Cookie: 'session_id=session-1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customSystemPrompt: 'new private instruction' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(auditLog).toHaveBeenCalledTimes(2);
+    expect(auditLog).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        action: 'ai.config.prompt.update',
+        resourceType: 'ai-config',
+      }),
+      { markRequest: false }
+    );
+  });
+
+  it('does not audit custom system prompt updates when the prompt is unchanged', async () => {
+    const auditLog = vi.fn().mockResolvedValue(true);
+    const getConfig = vi.fn().mockResolvedValue({ customSystemPrompt: 'same instruction' });
+    const updateConfig = vi.fn().mockResolvedValue({ customSystemPrompt: 'same instruction' });
+    const getConfigForAdmin = vi.fn().mockResolvedValue({
+      customSystemPrompt: 'same instruction',
+      hasApiKey: false,
+      apiKeyLast4: '',
+      hasWebSearchKey: false,
+      webSearchApiKeyLast4: '',
+    });
+    registerServices({ getConfig, updateConfig, getConfigForAdmin });
+    container.registerInstance(AuditService, { log: auditLog } as unknown as AuditService);
+
+    const response = await createApp().request('/api/ai/config', {
+      method: 'PUT',
+      headers: { Cookie: 'session_id=session-1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customSystemPrompt: 'same instruction' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(auditLog).not.toHaveBeenCalled();
   });
 });

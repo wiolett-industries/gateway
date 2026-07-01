@@ -42,6 +42,10 @@ export interface AuditEntry {
   userAgent?: string;
 }
 
+interface AuditLogOptions {
+  markRequest?: boolean;
+}
+
 interface AuditLogRow {
   id: string;
   userId: string | null;
@@ -61,7 +65,7 @@ interface AuditLogRow {
 export class AuditService {
   constructor(@inject(TOKENS.DrizzleClient) private readonly db: DrizzleClient) {}
 
-  async log(entry: AuditEntry): Promise<void> {
+  async log(entry: AuditEntry, options: AuditLogOptions = {}): Promise<boolean> {
     try {
       const requestContext = getAuditRequestContext();
       await this.db.insert(auditLog).values({
@@ -73,9 +77,13 @@ export class AuditService {
         ipAddress: entry.ipAddress ?? requestContext?.ipAddress,
         userAgent: entry.userAgent ?? requestContext?.userAgent,
       });
-      markAuditEmitted();
+      if (options.markRequest ?? true) {
+        markAuditEmitted();
+      }
+      return true;
     } catch (error) {
       logger.error('Failed to write audit log', { error, entry });
+      return false;
     }
   }
 

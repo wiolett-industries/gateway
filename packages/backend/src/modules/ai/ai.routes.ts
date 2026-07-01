@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { z } from 'zod';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
+import { AuditService } from '@/modules/audit/audit.service.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { aiStatusRoute, getAiConfigRoute, listAiToolsRoute, updateAiConfigRoute } from './ai.openapi.js';
@@ -17,6 +19,22 @@ import { AIConversationService } from './ai-conversation.service.js';
 import { AIConversationFolderService } from './ai-conversation-folder.service.js';
 
 export const aiRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
+
+function hashPrompt(prompt: string): string {
+  return createHash('sha256').update(prompt).digest('hex');
+}
+
+function promptAuditSummary(prompt: string): { hash: string; length: number; empty: boolean } {
+  return {
+    hash: hashPrompt(prompt),
+    length: prompt.length,
+    empty: prompt.trim().length === 0,
+  };
+}
+
+function changedConfigFields(config: Record<string, unknown>): string[] {
+  return Object.keys(config).sort();
+}
 
 function humanizeToolName(name: string): string {
   const acronyms = new Set(['ai', 'api', 'ca', 'crl', 'dns', 'http', 'https', 'id', 'ip', 'pki', 'ssl', 'url']);
@@ -232,8 +250,38 @@ aiRoutes.openapi({ ...updateAiConfigRoute, middleware: requireScope('feat:ai:con
   }
 
   const settingsService = container.resolve(AISettingsService);
+  const oldCustomSystemPrompt = Object.hasOwn(body.data, 'customSystemPrompt')
+    ? (await settingsService.getConfig()).customSystemPrompt
+    : undefined;
   await settingsService.updateConfig(body.data);
   const config = await settingsService.getConfigForAdmin();
+  if (oldCustomSystemPrompt !== undefined && oldCustomSystemPrompt !== config.customSystemPrompt) {
+    const user = c.get('user')!;
+    const auditService = container.resolve(AuditService);
+    const genericAuditEmitted = await auditService.log({
+      userId: user.id,
+      action: 'ai.config.update',
+      resourceType: 'ai-config',
+      details: {
+        changedFields: changedConfigFields(body.data),
+        customSystemPromptChanged: true,
+      },
+    });
+    const promptAuditEntry = {
+      userId: user.id,
+      action: 'ai.config.prompt.update',
+      resourceType: 'ai-config',
+      details: {
+        old: promptAuditSummary(oldCustomSystemPrompt),
+        new: promptAuditSummary(config.customSystemPrompt),
+      },
+    };
+    if (genericAuditEmitted) {
+      await auditService.log(promptAuditEntry);
+    } else {
+      await auditService.log(promptAuditEntry, { markRequest: false });
+    }
+  }
   return c.json({ data: config });
 });
 

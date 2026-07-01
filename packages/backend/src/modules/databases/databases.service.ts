@@ -97,7 +97,9 @@ export class DatabaseConnectionService {
     return {
       withPostgresPool: (id, operation, fn) => this.withPostgresPool(id, operation, fn),
       withRedisClient: (id, operation, fn) => this.withRedisClient(id, operation, fn),
-      auditLog: (entry) => this.auditService.log(entry),
+      auditLog: async (entry) => {
+        await this.auditService.log(entry);
+      },
       emitChange: (id, action, extra) => this.emitChange(id, action, extra),
     };
   }
@@ -106,7 +108,7 @@ export class DatabaseConnectionService {
     return {
       withPostgresPool: (id, operation, fn) => this.withPostgresPool(id, operation, fn),
       getPostgresTableMetadata: (id, schema, table) => this.getPostgresTableMetadata(id, schema, table),
-      auditLog: (entry) => this.auditService.log(entry),
+      auditLog: (entry, options) => this.auditService.log(entry, options),
       emitChange: (id, action, extra) => this.emitChange(id, action, extra),
     };
   }
