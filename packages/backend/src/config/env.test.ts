@@ -48,6 +48,13 @@ describe('getEnv gRPC TLS config', () => {
     expect(env.GRPC_TLS_AUTO_DIR).toBe('/var/lib/gateway/tls');
   });
 
+  it('does not require a session secret for Redis-backed browser sessions', async () => {
+    const env = await loadEnv({ SESSION_EXPIRY: '600' });
+
+    expect(env.SESSION_EXPIRY).toBe(600);
+    expect('SESSION_SECRET' in env).toBe(false);
+  });
+
   it('defaults the auto-generated gRPC TLS directory when the env value is empty', async () => {
     const env = await loadEnv({ GRPC_TLS_AUTO_DIR: '' });
 

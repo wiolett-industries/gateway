@@ -61,8 +61,7 @@ The installer writes `.env`. Important settings:
 | `OIDC_CLIENT_SECRET` | OIDC client secret. |
 | `OIDC_REDIRECT_URI` | OIDC callback URL. |
 | `OIDC_SCOPES` | OIDC scopes, usually `openid email profile`. |
-| `SESSION_SECRET` | Long random session secret. |
-| `SESSION_EXPIRY` | Session lifetime in seconds. |
+| `SESSION_EXPIRY` | Browser session lifetime in seconds. Browser sessions are opaque Redis-backed session IDs. |
 | `PKI_MASTER_KEY` | 64-character hex key for encrypted PKI material. |
 | `RATE_LIMIT_WINDOW_MS` | Default rate-limit window. |
 | `RATE_LIMIT_MAX_REQUESTS` | Default request limit. |
@@ -331,7 +330,7 @@ Back up:
 Critical secrets:
 
 - `PKI_MASTER_KEY` is required to decrypt PKI private key material.
-- `SESSION_SECRET` affects session validity.
+- Redis session data controls browser session validity; preserve Redis data only when session continuity matters.
 - OIDC client secret is needed for login.
 - ClickHouse and database credentials are needed for service startup.
 

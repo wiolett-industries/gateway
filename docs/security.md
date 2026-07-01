@@ -174,7 +174,7 @@ Use this baseline for production:
 - Do not run unrelated workloads on the same Docker host.
 - Use HTTPS for the UI/API.
 - Use an OIDC provider with MFA.
-- Protect `.env`, `SESSION_SECRET`, `PKI_MASTER_KEY`, database credentials, and OIDC client secret.
+- Protect `.env`, `PKI_MASTER_KEY`, database credentials, and OIDC client secret.
 - Keep Redis healthy and monitored. Gateway treats Redis as required security infrastructure for sessions and rate limiting; Redis-backed limiter failures fail closed with `503` instead of allowing unchecked traffic.
 - Back up PostgreSQL, Redis data if needed, ClickHouse data if logging is enabled, custom TLS files, and `PKI_MASTER_KEY`.
 - Limit `admin:system`, update, secret reveal, certificate export, console, and file-access scopes to trusted operators.

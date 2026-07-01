@@ -1046,7 +1046,6 @@ generate_secrets() {
     title "Security"
 
     PKI_MASTER_KEY=$(openssl rand -hex 32)
-    SESSION_SECRET=$(openssl rand -hex 32)
     DB_PASSWORD=$(openssl rand -hex 16)
     if [ "$DATABASE_MODE" = "local" ]; then
         DATABASE_URL="postgres://gateway:${DB_PASSWORD}@postgres:5432/gateway"
@@ -1064,7 +1063,6 @@ generate_secrets() {
     fi
 
     info "PKI Master Key generated"
-    info "Session secret generated"
     [ "$DATABASE_MODE" = "local" ] && info "Database password generated"
     [ "$LOGGING_MODE" = "local" ] && info "ClickHouse password generated"
     info "Setup token generated"
@@ -1141,7 +1139,6 @@ OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI}
 OIDC_SCOPES=openid email profile
 
 # Session
-SESSION_SECRET=${SESSION_SECRET}
 SESSION_EXPIRY=2592000
 
 # PKI Master Key (DO NOT CHANGE after initial setup)

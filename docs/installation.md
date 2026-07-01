@@ -273,7 +273,7 @@ The installer writes `.env`. Important variables:
 | `OIDC_CLIENT_ID` | OIDC client ID. |
 | `OIDC_CLIENT_SECRET` | OIDC client secret. |
 | `OIDC_REDIRECT_URI` | OIDC callback URL. |
-| `SESSION_SECRET` | Long random secret for sessions. |
+| `SESSION_EXPIRY` | Browser session lifetime in seconds. Browser sessions are opaque Redis-backed session IDs. |
 | `PKI_MASTER_KEY` | 64-character hex key used to encrypt PKI material. |
 | `GRPC_PORT` | Gateway gRPC port for daemon connections. |
 | `GRPC_TLS_AUTO_DIR` | Directory for Gateway's auto-issued internal gRPC TLS certificate and key. |
@@ -297,7 +297,7 @@ The production stack includes:
 |---------|---------|
 | `app` | Gateway backend, frontend, API, OAuth, MCP, WebSockets, and gRPC server. |
 | `postgres` | Main database, only when local PostgreSQL is selected. |
-| `redis` | Required sessions, cache, and rate limiting dependency. Gateway health and rate-limited endpoints fail closed when Redis is unavailable. |
+| `redis` | Required sessions, cache, and rate limiting dependency. Browser cookies contain opaque session IDs; session state lives in Redis. Gateway health and rate-limited endpoints fail closed when Redis is unavailable. |
 | `clickhouse` | Structured logging storage, only when local ClickHouse is selected. |
 
 The bundled ClickHouse service uses a pinned image tag; treat ClickHouse upgrades as explicit version changes, not automatic `latest` pulls.
