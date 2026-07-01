@@ -123,27 +123,3 @@ export interface LoggingMetadata {
   fieldKeys: string[];
   labelValues: Record<string, string[]>;
 }
-
-export interface LoggingFeatureStatus {
-  enabled: boolean;
-  available: boolean;
-  reason?: string | null;
-  config?: {
-    database: string;
-    table: string;
-    requestTimeoutMs: number;
-    ingestMaxBodyBytes: number;
-    ingestMaxBatchSize: number;
-    ingestMaxMessageBytes: number;
-    ingestMaxLabels: number;
-    ingestMaxFields: number;
-    ingestMaxKeyLength: number;
-    ingestMaxValueBytes: number;
-    ingestMaxJsonDepth: number;
-    rateLimitWindowSeconds: number;
-    globalRequestsPerWindow: number;
-    globalEventsPerWindow: number;
-    tokenRequestsPerWindow: number;
-    tokenEventsPerWindow: number;
-  };
-}

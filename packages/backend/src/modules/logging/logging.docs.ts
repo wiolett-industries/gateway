@@ -39,14 +39,6 @@ const LoggingSearchDocsSchema = z.object({
   expression: z.unknown().optional(),
 });
 
-export const loggingStatusRoute = appRoute({
-  method: 'get',
-  path: '/status',
-  tags: ['Logging'],
-  summary: 'Get logging feature status',
-  security: [],
-  responses: okJson(UnknownDataResponseSchema),
-});
 export const loggingIngestRoute = appRoute({
   method: 'post',
   path: '/ingest',

@@ -17,6 +17,7 @@ export interface SystemConfig {
 export interface GatewayFeatureConfig {
   pkiEnabled: boolean;
   domainsEnabled: boolean;
+  loggingEnabled: boolean;
 }
 
 export type LicenseTier = "community" | "homelab" | "enterprise";

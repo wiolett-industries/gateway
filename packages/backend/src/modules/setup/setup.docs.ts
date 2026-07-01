@@ -22,7 +22,7 @@ const EnrollNodeResponseSchema = dataResponseSchema(
       .catchall(z.any()),
     enrollmentToken: z.string().openapi({
       description: 'One-time enrollment token returned only once during setup.',
-      example: 'gw_node_abc123',
+      example: 'gw_node_v2_0123456789abcdef_0123456789abcdef0123456789abcdef0123456789abcdef',
     }),
     gatewayCertSha256: z
       .string()

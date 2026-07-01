@@ -36,7 +36,6 @@ import {
   loggingFacetsRoute,
   loggingIngestRoute,
   loggingMetadataRoute,
-  loggingStatusRoute,
   moveLoggingEnvironmentFolderRoute,
   moveLoggingEnvironmentsToFolderRoute,
   moveLoggingSchemaFolderRoute,
@@ -75,16 +74,14 @@ import { LoggingTokenService } from './logging-token.service.js';
 
 export const loggingRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
-loggingRoutes.openapi(loggingStatusRoute, (c) => {
-  const feature = container.resolve(LoggingFeatureService);
-  return c.json({ data: feature.getStatus() });
-});
-
-loggingRoutes.use('*', async (_c, next) => {
+const requireLoggingEnabledMiddleware = async (_c: any, next: () => Promise<void>) => {
   const feature = container.resolve(LoggingFeatureService);
   feature.requireEnabled();
   await next();
-});
+};
+
+loggingRoutes.use('/ingest', requireLoggingEnabledMiddleware);
+loggingRoutes.use('/ingest/batch', requireLoggingEnabledMiddleware);
 
 loggingRoutes.openapi({ ...loggingIngestRoute, middleware: loggingIngestAuthMiddleware }, async (c) => {
   const body = await c.req.json();
@@ -98,6 +95,11 @@ loggingRoutes.openapi({ ...loggingBatchIngestRoute, middleware: loggingIngestAut
 });
 
 loggingRoutes.use('*', authMiddleware);
+
+for (const path of ['/environments', '/environment-folders', '/schemas', '/schema-folders']) {
+  loggingRoutes.use(path, requireLoggingEnabledMiddleware);
+  loggingRoutes.use(`${path}/*`, requireLoggingEnabledMiddleware);
+}
 
 loggingRoutes.openapi(
   { ...listLoggingEnvironmentsRoute, middleware: requireLoggingEnvironmentListScope() },

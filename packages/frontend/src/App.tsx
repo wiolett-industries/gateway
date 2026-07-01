@@ -344,7 +344,11 @@ function NotificationsPageGuard() {
 
 function LoggingPageGuard() {
   const { section, id } = useParams<{ section?: string; id?: string }>();
-  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const loggingEnabled = useSystemConfigStore((s) => s.config.features.loggingEnabled);
+  const systemConfigLoaded = useSystemConfigStore((s) => s.loaded);
+  const systemConfigLoading = useSystemConfigStore((s) => s.isLoading);
+  const loadSystemConfig = useSystemConfigStore((s) => s.load);
+  const [systemConfigLoadFailed, setSystemConfigLoadFailed] = useState(false);
   const user = useAuthStore((s) => s.user);
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
@@ -372,21 +376,16 @@ function LoggingPageGuard() {
       : canAccessLogging;
 
   useEffect(() => {
-    let cancelled = false;
-    api
-      .getLoggingStatus()
-      .then((status) => {
-        if (!cancelled) setEnabled(status.enabled);
-      })
-      .catch(() => {
-        if (!cancelled) setEnabled(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!systemConfigLoaded && !systemConfigLoading && !systemConfigLoadFailed) {
+      void loadSystemConfig().catch(() => setSystemConfigLoadFailed(true));
+    }
+  }, [loadSystemConfig, systemConfigLoaded, systemConfigLoadFailed, systemConfigLoading]);
 
-  if (enabled === null) {
+  if (systemConfigLoadFailed) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (!systemConfigLoaded || systemConfigLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -394,7 +393,7 @@ function LoggingPageGuard() {
     );
   }
 
-  if (!enabled || !canAccessRequestedRoute) {
+  if (!loggingEnabled || !canAccessRequestedRoute) {
     return <Navigate to="/" replace />;
   }
 

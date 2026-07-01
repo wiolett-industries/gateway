@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { asc, count, eq, ilike, inArray, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
@@ -12,6 +11,7 @@ import type { EventBusService } from '@/services/event-bus.service.js';
 import type { GrpcIdentityService } from '@/services/grpc-identity.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { NodeRegistryService } from '@/services/node-registry.service.js';
+import { createNodeEnrollmentToken } from './node-enrollment-token.js';
 import {
   abortNodeFileUpload,
   appendNodeFileUploadChunk,
@@ -206,8 +206,8 @@ export class NodesService {
 
   async create(input: CreateNodeInput, userId: string) {
     // Generate enrollment token
-    const tokenRaw = `gw_node_${randomBytes(24).toString('hex')}`;
-    const tokenHash = await bcrypt.hash(tokenRaw, 10);
+    const enrollmentToken = createNodeEnrollmentToken();
+    const tokenHash = await bcrypt.hash(enrollmentToken.token, 10);
 
     const [node] = await this.db
       .insert(nodes)
@@ -215,6 +215,7 @@ export class NodesService {
         type: input.type,
         hostname: input.hostname,
         displayName: input.displayName,
+        enrollmentTokenSelector: enrollmentToken.selector,
         enrollmentTokenHash: tokenHash,
         status: 'pending',
       })
@@ -233,7 +234,7 @@ export class NodesService {
 
     return {
       node,
-      enrollmentToken: tokenRaw, // Shown once only
+      enrollmentToken: enrollmentToken.token, // Shown once only
       gatewayCertSha256: await this.grpcIdentityService.getGatewayCertSha256(),
     };
   }

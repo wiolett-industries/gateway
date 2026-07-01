@@ -6,6 +6,7 @@ import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
 import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
+import { LoggingFeatureService } from '@/modules/logging/logging-feature.service.js';
 import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import { EventBusService } from '@/services/event-bus.service.js';
@@ -45,12 +46,16 @@ systemRoutes.openapi(systemVersionRoute, async (c) => {
 
 systemRoutes.openapi(systemConfigRoute, async (c) => {
   const service = container.resolve(GeneralSettingsService);
+  const loggingFeature = container.resolve(LoggingFeatureService);
   const config = await service.getConfig();
   return c.json({
     data: {
       fileUploadMaxBytes: config.fileUploadMaxBytes,
       fileOpenMaxBytes: config.fileOpenMaxBytes,
-      features: config.features,
+      features: {
+        ...config.features,
+        loggingEnabled: loggingFeature.isEnabled(),
+      },
     },
   });
 });

@@ -5,7 +5,7 @@ import {
   findDockerNode,
   firstId,
   getDockerContainerId,
-  getLoggingStatus,
+  getSystemConfig,
   isLocalDockerRuntimeUnavailable,
   listRows,
   type Row,
@@ -92,6 +92,7 @@ export const scenarios: TestCase[] = [
       '/api/monitoring/dashboard',
       '/api/monitoring/health-status',
       '/api/system/version',
+      '/api/system/config',
       '/api/system/daemon-updates',
       '/api/system/license/status',
       '/api/housekeeping/config',
@@ -102,7 +103,6 @@ export const scenarios: TestCase[] = [
       '/api/notifications/webhooks',
       '/api/notifications/deliveries',
       '/api/notifications/deliveries/stats',
-      '/api/logging/status',
       '/api/logging/environments',
       '/api/logging/schemas',
       '/api/status-page/settings',
@@ -610,8 +610,8 @@ export const scenarios: TestCase[] = [
   test(
     'logging mutations cover schema, environment, token, and ingest when available',
     async (ctx) => {
-      const loggingStatus = await getLoggingStatus(ctx);
-      if (!loggingStatus.enabled) return;
+      const systemConfig = await getSystemConfig(ctx);
+      if (!systemConfig.features?.loggingEnabled) return;
 
       const schemaSlug = e2eName('schema');
       const schema = await ctx.client.post('/api/logging/schemas', {
@@ -676,7 +676,7 @@ export const scenarios: TestCase[] = [
           );
         }
 
-        if (loggingStatus.available && typeof rawToken === 'string') {
+        if (typeof rawToken === 'string') {
           expectOk(
             await ctx.client.post(
               '/api/logging/ingest',

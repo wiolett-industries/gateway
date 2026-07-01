@@ -7,6 +7,7 @@ const BYTES_PER_MEGABYTE = 1024 * 1024;
 export const DEFAULT_GATEWAY_FEATURES: GatewayFeatureConfig = {
   pkiEnabled: true,
   domainsEnabled: true,
+  loggingEnabled: false,
 };
 
 export const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
@@ -14,6 +15,8 @@ export const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
   fileOpenMaxBytes: 10 * BYTES_PER_MEGABYTE,
   features: DEFAULT_GATEWAY_FEATURES,
 };
+
+const cachedSystemConfig = api.getCached<SystemConfig>("system:config");
 
 export function withDefaultSystemConfig(
   config: Partial<SystemConfig> | null | undefined
@@ -31,20 +34,22 @@ export function withDefaultSystemConfig(
 interface SystemConfigState {
   config: SystemConfig;
   isLoading: boolean;
+  loaded: boolean;
   load: () => Promise<SystemConfig>;
   setConfig: (config: Partial<SystemConfig>) => void;
   reset: () => void;
 }
 
 export const useSystemConfigStore = create<SystemConfigState>((set) => ({
-  config: withDefaultSystemConfig(api.getCached<SystemConfig>("system:config") ?? null),
+  config: withDefaultSystemConfig(cachedSystemConfig ?? null),
   isLoading: false,
+  loaded: cachedSystemConfig !== undefined,
   load: async () => {
     set({ isLoading: true });
     try {
       const config = withDefaultSystemConfig(await api.getSystemConfig());
       api.setCache("system:config", config);
-      set({ config, isLoading: false });
+      set({ config, isLoading: false, loaded: true });
       return config;
     } catch (error) {
       set({ isLoading: false });
@@ -54,7 +59,7 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
   setConfig: (config) => {
     const next = withDefaultSystemConfig(config);
     api.setCache("system:config", next);
-    set({ config: next });
+    set({ config: next, loaded: true });
   },
-  reset: () => set({ config: DEFAULT_SYSTEM_CONFIG, isLoading: false }),
+  reset: () => set({ config: DEFAULT_SYSTEM_CONFIG, isLoading: false, loaded: false }),
 }));

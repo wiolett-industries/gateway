@@ -25,13 +25,8 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn, formatBytes } from "@/lib/utils";
-import type {
-  LoggingEnvironment,
-  LoggingFeatureStatus,
-  LoggingSchema,
-  LoggingSchemaMode,
-} from "@/types";
+import { cn } from "@/lib/utils";
+import type { LoggingEnvironment, LoggingSchema, LoggingSchemaMode } from "@/types";
 import { LoggingExplorer } from "./LoggingExplorer";
 import { LoggingSchemaEditor } from "./LoggingSchemaEditor";
 import { LoggingTokenPanel } from "./LoggingTokenPanel";
@@ -207,7 +202,7 @@ export function LoggingSchemaDetail({
 export function LoggingEnvironmentDetail({
   environment,
   schemas,
-  status,
+  loggingEnabled,
   loading,
   activeTab,
   canEdit,
@@ -219,7 +214,7 @@ export function LoggingEnvironmentDetail({
 }: {
   environment: LoggingEnvironment | null;
   schemas: LoggingSchema[];
-  status: LoggingFeatureStatus | null;
+  loggingEnabled: boolean;
   loading: boolean;
   activeTab: LoggingEnvironmentTab;
   canEdit: boolean;
@@ -292,7 +287,7 @@ export function LoggingEnvironmentDetail({
             {activeTab === "logs" && (
               <RefreshButton
                 onClick={() => setLogsRefreshKey((current) => current + 1)}
-                disabled={status?.available !== true}
+                disabled={!loggingEnabled}
                 minDurationMs={1000}
               />
             )}
@@ -354,7 +349,7 @@ export function LoggingEnvironmentDetail({
           <TabsContent value="logs" className="flex flex-col flex-1 min-h-0">
             <LoggingExplorer
               environment={environment}
-              storageAvailable={status?.available === true}
+              storageAvailable={loggingEnabled}
               refreshKey={logsRefreshKey}
             />
           </TabsContent>
@@ -605,50 +600,26 @@ function SettingsValueRow({
 }
 
 export function LoggingGlobalSettings({
-  status,
+  loggingEnabled,
   environmentCount,
   schemaCount,
 }: {
-  status: LoggingFeatureStatus | null;
+  loggingEnabled: boolean;
   environmentCount: number;
   schemaCount: number;
 }) {
-  const config = status?.config;
-
   return (
     <div className="space-y-6 pb-6">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <SettingsPanel title="Storage" description="ClickHouse storage backend">
+        <SettingsPanel title="Storage" description="External structured log storage">
           <SettingsValueRow
             label="Status"
             description="External structured log storage"
             value={
-              <Badge
-                variant={
-                  status?.enabled ? (status.available ? "success" : "destructive") : "secondary"
-                }
-              >
-                {status?.enabled ? (status.available ? "Available" : "Unavailable") : "Disabled"}
+              <Badge variant={loggingEnabled ? "success" : "secondary"}>
+                {loggingEnabled ? "Enabled" : "Disabled"}
               </Badge>
             }
-          />
-          {status?.reason && (
-            <div className="px-4 py-3 text-sm text-muted-foreground">{status.reason}</div>
-          )}
-          <SettingsValueRow
-            label="Database"
-            description="Configured ClickHouse database"
-            value={<span className="font-mono">{config?.database ?? "-"}</span>}
-          />
-          <SettingsValueRow
-            label="Table"
-            description="Shared log event table"
-            value={<span className="font-mono">{config?.table ?? "-"}</span>}
-          />
-          <SettingsValueRow
-            label="Request timeout"
-            description="ClickHouse request timeout"
-            value={config ? `${config.requestTimeoutMs} ms` : "-"}
           />
         </SettingsPanel>
 
@@ -662,77 +633,6 @@ export function LoggingGlobalSettings({
             label="Schemas"
             description="Reusable validation schemas"
             value={<Badge variant="outline">{schemaCount}</Badge>}
-          />
-        </SettingsPanel>
-
-        <SettingsPanel title="Ingest Limits" description="Global payload guardrails">
-          <SettingsValueRow
-            label="Body size"
-            description="Maximum request body"
-            value={config ? formatBytes(config.ingestMaxBodyBytes) : "-"}
-          />
-          <SettingsValueRow
-            label="Batch size"
-            description="Maximum events per batch"
-            value={config?.ingestMaxBatchSize ?? "-"}
-          />
-          <SettingsValueRow
-            label="Message size"
-            description="Maximum message field size"
-            value={config ? formatBytes(config.ingestMaxMessageBytes) : "-"}
-          />
-          <SettingsValueRow
-            label="Labels"
-            description="Maximum labels per event"
-            value={config?.ingestMaxLabels ?? "-"}
-          />
-          <SettingsValueRow
-            label="Fields"
-            description="Maximum typed fields per event"
-            value={config?.ingestMaxFields ?? "-"}
-          />
-          <SettingsValueRow
-            label="Key length"
-            description="Maximum label or field key length"
-            value={config?.ingestMaxKeyLength ?? "-"}
-          />
-          <SettingsValueRow
-            label="Value size"
-            description="Maximum custom value size"
-            value={config ? formatBytes(config.ingestMaxValueBytes) : "-"}
-          />
-          <SettingsValueRow
-            label="JSON depth"
-            description="Maximum nested JSON depth"
-            value={config?.ingestMaxJsonDepth ?? "-"}
-          />
-        </SettingsPanel>
-
-        <SettingsPanel title="Rate Limits" description="Fixed-window ingest throttles">
-          <SettingsValueRow
-            label="Window"
-            description="Rate-limit accounting period"
-            value={config ? `${config.rateLimitWindowSeconds}s` : "-"}
-          />
-          <SettingsValueRow
-            label="Global requests"
-            description="Requests across all logging tokens"
-            value={config?.globalRequestsPerWindow ?? "-"}
-          />
-          <SettingsValueRow
-            label="Global events"
-            description="Events across all logging tokens"
-            value={config?.globalEventsPerWindow ?? "-"}
-          />
-          <SettingsValueRow
-            label="Token requests"
-            description="Default request limit per token"
-            value={config?.tokenRequestsPerWindow ?? "-"}
-          />
-          <SettingsValueRow
-            label="Token events"
-            description="Default event limit per token"
-            value={config?.tokenEventsPerWindow ?? "-"}
           />
         </SettingsPanel>
       </div>

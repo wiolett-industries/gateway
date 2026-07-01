@@ -5,6 +5,7 @@ import { resolveWebSocketCredential, type WebSocketCredential } from '@/modules/
 import { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { User } from '@/types.js';
+import { DockerManagementService } from './docker.service.js';
 
 const logger = createChildLogger('DockerExec');
 
@@ -18,6 +19,25 @@ function send(ws: WSContext, msg: Record<string, unknown>): void {
     ws.send(JSON.stringify(msg));
   } catch {
     // Connection may already be closed
+  }
+}
+
+export async function resolveDockerExecUser(
+  docker: Pick<DockerManagementService, 'inspectContainer'>,
+  nodeId: string,
+  containerId: string
+): Promise<string> {
+  try {
+    const inspectData = await docker.inspectContainer(nodeId, containerId);
+    const configuredUser = (inspectData as { Config?: { User?: unknown } } | null | undefined)?.Config?.User;
+    return typeof configuredUser === 'string' && configuredUser.trim().length > 0 ? configuredUser.trim() : 'root';
+  } catch (error) {
+    logger.warn('Failed to inspect container user for Docker exec; falling back to root', {
+      nodeId,
+      containerId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 'root';
   }
 }
 
@@ -53,6 +73,7 @@ export function createDockerExecWSHandlers(
 ) {
   const dispatch = container.resolve(NodeDispatchService);
   const registry = container.resolve(NodeRegistryService);
+  const docker = container.resolve(DockerManagementService);
 
   return {
     onOpen(_event: Event, ws: WSContext) {
@@ -72,14 +93,16 @@ export function createDockerExecWSHandlers(
       }, 30_000);
 
       // Authenticate immediately from the session cookie.
-      authenticateAndCreateExec(ws, state, credential, nodeId, containerId, shell, dispatch, registry).catch((err) => {
-        logger.error('Auth/exec creation failed', { error: err instanceof Error ? err.message : String(err) });
-        try {
-          ws.close();
-        } catch {
-          /* ignore */
+      authenticateAndCreateExec(ws, state, credential, nodeId, containerId, shell, dispatch, registry, docker).catch(
+        (err) => {
+          logger.error('Auth/exec creation failed', { error: err instanceof Error ? err.message : String(err) });
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
         }
-      });
+      );
     },
 
     async onMessage(event: MessageEvent, ws: WSContext) {
@@ -175,7 +198,8 @@ async function authenticateAndCreateExec(
   containerId: string,
   shell: string,
   dispatch: NodeDispatchService,
-  registry: NodeRegistryService
+  registry: NodeRegistryService,
+  docker: DockerManagementService
 ): Promise<void> {
   const user = await authorizeExecAccess(credential, nodeId);
   if (!user) {
@@ -229,12 +253,13 @@ async function authenticateAndCreateExec(
   // Create or reuse exec session on daemon
   let result: import('@/grpc/generated/types.js').CommandResult;
   try {
+    const execUser = await resolveDockerExecUser(docker, nodeId, containerId);
     result = await dispatch.sendDockerExecCommand(nodeId, 'create', {
       containerId,
       command: [usedShell],
       tty: true,
       stdin: true,
-      user: 'root',
+      user: execUser,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create exec session';

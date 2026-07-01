@@ -27,10 +27,14 @@ export async function findDockerNode(ctx: Parameters<TestCase['run']>[0]) {
   return nodes.find((row) => row.status === 'online' && row.isConnected !== false) ?? nodes[0] ?? null;
 }
 
-export async function getLoggingStatus(ctx: Parameters<TestCase['run']>[0]) {
-  const response = await ctx.client.get('/api/logging/status');
-  expectOk(response, 'GET /api/logging/status');
-  return asRow(response.body) as { enabled?: boolean; available?: boolean };
+export async function getSystemConfig(ctx: Parameters<TestCase['run']>[0]) {
+  const response = await ctx.client.get('/api/system/config');
+  expectOk(response, 'GET /api/system/config');
+  return asRow(response.body) as {
+    features?: {
+      loggingEnabled?: boolean;
+    };
+  };
 }
 
 export function getDockerContainerId(value: unknown) {

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import { LoggingEnvironmentDetail, LoggingSchemaDetail } from "@/pages/logging/LoggingDetails";
 import { renderWithRouter } from "@/test/render";
-import type { LoggingEnvironment, LoggingFeatureStatus, LoggingSchema } from "@/types";
+import type { LoggingEnvironment, LoggingSchema } from "@/types";
 
 vi.mock("./logging/LoggingExplorer", () => ({
   LoggingExplorer: () => <div data-testid="logging-explorer" />,
@@ -49,13 +49,6 @@ function makeEnvironment(overrides: Partial<LoggingEnvironment> = {}): LoggingEn
   };
 }
 
-function makeStatus(): LoggingFeatureStatus {
-  return {
-    enabled: true,
-    available: true,
-  };
-}
-
 describe("Logging detail views", () => {
   it("saves schema draft changes from the detail form", async () => {
     const user = userEvent.setup();
@@ -98,7 +91,7 @@ describe("Logging detail views", () => {
       <LoggingEnvironmentDetail
         environment={environment}
         schemas={[makeSchema()]}
-        status={makeStatus()}
+        loggingEnabled={true}
         loading={false}
         activeTab="settings"
         canEdit={true}

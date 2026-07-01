@@ -76,13 +76,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { setTheme, theme, toggleSidebar } = useUIStore();
   const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
   const domainsEnabled = useSystemConfigStore((s) => s.config.features.domainsEnabled);
+  const loggingEnabled = useSystemConfigStore((s) => s.config.features.loggingEnabled);
   const recentPages = useUIStore((s) => s.recentPages);
   const containers = useDockerStore((s) => s.containers);
 
   // Lazy-loaded entities
   const [nodes, setNodes] = useState<Node[]>([]);
   const [proxyHosts, setProxyHosts] = useState<ProxyHost[]>([]);
-  const [loggingEnabled, setLoggingEnabled] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -98,10 +98,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       .listProxyHosts({ limit: 100 })
       .then((r) => setProxyHosts(r.data ?? []))
       .catch(() => {});
-    api
-      .getLoggingStatus()
-      .then((status) => setLoggingEnabled(status.enabled))
-      .catch(() => setLoggingEnabled(false));
     // Containers are preloaded on app startup via DashboardLayout
   }, [open]);
 

@@ -85,6 +85,7 @@ export const nodes = pgTable(
     serviceCreationLocked: boolean('service_creation_locked').notNull().default(false),
 
     // Enrollment
+    enrollmentTokenSelector: varchar('enrollment_token_selector', { length: 32 }),
     enrollmentTokenHash: varchar('enrollment_token_hash', { length: 255 }),
     certificateSerial: varchar('certificate_serial', { length: 255 }),
     certificateExpiresAt: timestamp('certificate_expires_at', { withTimezone: true }),
@@ -119,6 +120,7 @@ export const nodes = pgTable(
     typeIdx: index('node_type_idx').on(table.type),
     statusIdx: index('node_status_idx').on(table.status),
     hostnameIdx: index('node_hostname_idx').on(table.hostname),
+    enrollmentTokenSelectorIdx: index('node_enrollment_token_selector_idx').on(table.enrollmentTokenSelector),
     folderIdx: index('node_folder_idx').on(table.folderId),
   })
 );

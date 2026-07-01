@@ -1,13 +1,54 @@
 import type { ServerUnaryCall, sendUnaryData } from '@grpc/grpc-js';
 import bcrypt from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { nodes } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { parseNodeEnrollmentToken } from '@/modules/nodes/node-enrollment-token.js';
 import type { EnrollRequest, EnrollResponse, RenewCertRequest, RenewCertResponse } from '../generated/types.js';
 import { extractDaemonCertificateIdentity, normalizeCertificateSerial } from '../interceptors/auth.js';
 import type { GrpcServerDeps } from '../server.js';
 
 const logger = createChildLogger('GrpcEnrollment');
+
+async function findPendingNodeByEnrollmentToken(deps: GrpcServerDeps, token: string) {
+  const parsedToken = parseNodeEnrollmentToken(token);
+
+  if (parsedToken.kind === 'v2') {
+    const [candidate] = await deps.db
+      .select()
+      .from(nodes)
+      .where(and(eq(nodes.status, 'pending'), eq(nodes.enrollmentTokenSelector, parsedToken.selector)))
+      .limit(1);
+
+    if (!candidate?.enrollmentTokenHash) {
+      return null;
+    }
+
+    return (await bcrypt.compare(token, candidate.enrollmentTokenHash)) ? candidate : null;
+  }
+
+  if (parsedToken.kind !== 'legacy') {
+    return null;
+  }
+
+  // Compatibility for pending nodes created before selector-based tokens.
+  const legacyPendingNodes = await deps.db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.status, 'pending'), isNull(nodes.enrollmentTokenSelector)));
+
+  let matchedNode = null;
+  for (const node of legacyPendingNodes) {
+    if (node.enrollmentTokenHash && (await bcrypt.compare(token, node.enrollmentTokenHash))) {
+      if (!matchedNode) {
+        matchedNode = node;
+      }
+    }
+    // Compare every legacy candidate to avoid turning old tokens into a position oracle.
+  }
+
+  return matchedNode;
+}
 
 export function createEnrollmentHandlers(deps: GrpcServerDeps) {
   return {
@@ -16,18 +57,8 @@ export function createEnrollmentHandlers(deps: GrpcServerDeps) {
         const req = call.request;
         logger.info('Enrollment request', { hostname: req.hostname });
 
-        // Find a pending node with matching token
-        const pendingNodes = await deps.db.select().from(nodes).where(eq(nodes.status, 'pending'));
-
-        let matchedNode = null;
-        for (const node of pendingNodes) {
-          if (node.enrollmentTokenHash && (await bcrypt.compare(req.token, node.enrollmentTokenHash))) {
-            if (!matchedNode) {
-              matchedNode = node;
-            }
-          }
-          // Don't break — always compare all to prevent timing oracle
-        }
+        const token = req.token.trim();
+        const matchedNode = await findPendingNodeByEnrollmentToken(deps, token);
 
         if (!matchedNode) {
           callback({ code: 16, message: 'Invalid enrollment token' });
@@ -52,6 +83,7 @@ export function createEnrollmentHandlers(deps: GrpcServerDeps) {
               ...(req.daemonType ? { daemonType: req.daemonType } : {}),
             },
             lastSeenAt: new Date(),
+            enrollmentTokenSelector: null,
             enrollmentTokenHash: null,
             certificateSerial: certResult.serial,
             certificateExpiresAt: certResult.expiresAt,

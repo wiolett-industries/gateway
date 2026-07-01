@@ -42,7 +42,11 @@ function createApp() {
   return app;
 }
 
-function registerServices(scopes: string[], schemaService: Partial<LoggingSchemaService>) {
+function registerServices(
+  scopes: string[],
+  schemaService: Partial<LoggingSchemaService>,
+  featureService: Partial<LoggingFeatureService> = { requireEnabled: vi.fn() }
+) {
   container.registerInstance(TokensService, {
     validateToken: vi.fn().mockResolvedValue({
       user: { ...USER, scopes },
@@ -51,9 +55,7 @@ function registerServices(scopes: string[], schemaService: Partial<LoggingSchema
       tokenPrefix: 'gw_abc1234',
     }),
   } as unknown as TokensService);
-  container.registerInstance(LoggingFeatureService, {
-    requireEnabled: vi.fn(),
-  } as unknown as LoggingFeatureService);
+  container.registerInstance(LoggingFeatureService, featureService as LoggingFeatureService);
   container.registerInstance(LoggingSchemaService, schemaService as LoggingSchemaService);
 }
 
@@ -69,6 +71,24 @@ afterEach(() => {
 });
 
 describe('logging schema route permissions', () => {
+  it('does not expose logging status without authentication', async () => {
+    const response = await createApp().request('/api/logging/status');
+
+    expect(response.status).toBe(401);
+  });
+
+  it('does not expose logging status to authenticated callers when logging is disabled', async () => {
+    const requireEnabled = vi.fn(() => {
+      throw new Error('should not run for removed status route');
+    });
+    registerServices([], {}, { requireEnabled });
+
+    const response = await createApp().request('/api/logging/status', { headers: authHeaders() });
+
+    expect(response.status).toBe(404);
+    expect(requireEnabled).not.toHaveBeenCalled();
+  });
+
   it('lists only resource-scoped schemas when the token lacks global schema list scope', async () => {
     registerServices(['logs:schemas:view:schema-1'], {
       list: vi.fn().mockResolvedValue([SCHEMA_1, SCHEMA_2]),

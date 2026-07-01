@@ -28,12 +28,8 @@ import { deriveAllowedResourceIdsByScope, scopeMatches } from "@/lib/scope-utils
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
-import type {
-  LoggingEnvironment,
-  LoggingFeatureStatus,
-  LoggingSchema,
-  LoggingSchemaMode,
-} from "@/types";
+import { useSystemConfigStore } from "@/stores/system-config";
+import type { LoggingEnvironment, LoggingSchema, LoggingSchemaMode } from "@/types";
 import {
   LoggingEnvironmentDetail,
   LoggingGlobalSettings,
@@ -67,15 +63,13 @@ export function Logging() {
     hasAnyScope("logs:schemas:view", "logs:manage") || hasResourceScopedSchemaView;
   const canAccessSchemas = canListSchemas || hasAnyScope("logs:schemas:create");
   const canViewSchemaDetails = hasAnyScope("logs:schemas:view", "logs:schemas:view", "logs:manage");
+  const loggingEnabled = useSystemConfigStore((s) => s.config.features.loggingEnabled);
   const canViewSelectedSchema =
     isSchemaDetail &&
     !!id &&
     (hasAnyScope("logs:schemas:view", "logs:manage") ||
       scopeMatches(userScopes, `logs:schemas:view:${id}`));
   const canAccessLoggingSettings = canAccessEnvironments || canAccessSchemas;
-  const [status, setStatus] = useState<LoggingFeatureStatus | null>(
-    () => api.getCached<LoggingFeatureStatus>("logging:status") ?? null
-  );
   const [environments, setEnvironments] = useState<LoggingEnvironment[]>(() =>
     canAccessEnvironments ? (api.getCached<LoggingEnvironment[]>("logging:environments") ?? []) : []
   );
@@ -84,9 +78,6 @@ export function Logging() {
   );
   const [environmentSearch, setEnvironmentSearch] = useState("");
   const [schemaSearch, setSchemaSearch] = useState("");
-  const [statusLoading, setStatusLoading] = useState(
-    () => api.getCached<LoggingFeatureStatus>("logging:status") === undefined
-  );
   const [environmentsLoading, setEnvironmentsLoading] = useState(
     () =>
       canAccessEnvironments &&
@@ -177,20 +168,16 @@ export function Logging() {
     hasAnyScope("logs:schemas:delete", `logs:schemas:delete:${selectedSchema.id}`, "logs:manage");
 
   const load = useCallback(async () => {
-    const cachedStatus = api.getCached<LoggingFeatureStatus>("logging:status");
     const cachedEnvironments = api.getCached<LoggingEnvironment[]>("logging:environments");
     const cachedSchemas = api.getCached<LoggingSchema[]>("logging:schemas");
-    if (cachedStatus) setStatus(cachedStatus);
     if (canAccessEnvironments && cachedEnvironments) setEnvironments(cachedEnvironments);
     if (!canAccessEnvironments) setEnvironments([]);
     if (canListSchemas && cachedSchemas) setSchemas(cachedSchemas);
     if (!canListSchemas && !canViewSelectedSchema) setSchemas([]);
-    setStatusLoading(cachedStatus === undefined);
     setEnvironmentsLoading(canAccessEnvironments && cachedEnvironments === undefined);
     setSchemasLoading((canListSchemas || canViewSelectedSchema) && cachedSchemas === undefined);
     try {
-      const [featureStatus, environmentList, schemaList] = await Promise.all([
-        api.getLoggingStatus(),
+      const [environmentList, schemaList] = await Promise.all([
         canAccessEnvironments ? api.listLoggingEnvironments() : Promise.resolve([]),
         canListSchemas
           ? api.listLoggingSchemas()
@@ -198,16 +185,13 @@ export function Logging() {
             ? api.getLoggingSchema(id).then((schema) => [schema])
             : Promise.resolve([]),
       ]);
-      api.setCache("logging:status", featureStatus);
       if (canAccessEnvironments) api.setCache("logging:environments", environmentList);
       if (canListSchemas) api.setCache("logging:schemas", schemaList);
-      setStatus(featureStatus);
       setEnvironments(environmentList);
       setSchemas(schemaList);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load logging");
     } finally {
-      setStatusLoading(false);
       setEnvironmentsLoading(false);
       setSchemasLoading(false);
     }
@@ -316,7 +300,7 @@ export function Logging() {
       <LoggingEnvironmentDetail
         environment={selectedEnvironment}
         schemas={schemas}
-        status={status}
+        loggingEnabled={loggingEnabled}
         loading={environmentsLoading}
         activeTab={activeEnvironmentTab as (typeof ENV_TABS)[number]}
         canEdit={canEditEnvironment}
@@ -352,11 +336,7 @@ export function Logging() {
   }
 
   const activeTabLoading =
-    topTab === "environments"
-      ? environmentsLoading
-      : topTab === "schemas"
-        ? schemasLoading
-        : statusLoading;
+    topTab === "environments" ? environmentsLoading : topTab === "schemas" ? schemasLoading : false;
 
   return (
     <PageTransition>
@@ -502,7 +482,7 @@ export function Logging() {
 
           <TabsContent value="settings">
             <LoggingGlobalSettings
-              status={status}
+              loggingEnabled={loggingEnabled}
               environmentCount={environments.length}
               schemaCount={schemas.length}
             />

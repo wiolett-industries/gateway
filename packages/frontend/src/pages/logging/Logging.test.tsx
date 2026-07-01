@@ -4,9 +4,10 @@ import { vi } from "vitest";
 import { Logging } from "@/pages/Logging";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
+import { useSystemConfigStore } from "@/stores/system-config";
 import { makeUser } from "@/test/fixtures";
 import { renderWithRouter } from "@/test/render";
-import type { LoggingEnvironment, LoggingFeatureStatus, LoggingSchema } from "@/types";
+import type { LoggingEnvironment, LoggingSchema } from "@/types";
 import { LoggingExplorer } from "./LoggingExplorer";
 import { LoggingSchemaEditor } from "./LoggingSchemaEditor";
 import { LoggingTokenPanel } from "./LoggingTokenPanel";
@@ -25,7 +26,6 @@ vi.mock("@/services/api", () => ({
     deleteLoggingToken: vi.fn(),
     getCached: vi.fn(),
     setCache: vi.fn(),
-    getLoggingStatus: vi.fn(),
     listLoggingEnvironments: vi.fn(),
     listLoggingSchemas: vi.fn(),
     getLoggingSchema: vi.fn(),
@@ -52,29 +52,6 @@ const environment: LoggingEnvironment = {
   updatedAt: "2026-04-27T00:00:00.000Z",
 };
 
-const featureStatus: LoggingFeatureStatus = {
-  enabled: true,
-  available: true,
-  config: {
-    database: "gateway",
-    table: "logs",
-    requestTimeoutMs: 5000,
-    ingestMaxBodyBytes: 1_048_576,
-    ingestMaxBatchSize: 100,
-    ingestMaxMessageBytes: 8192,
-    ingestMaxLabels: 16,
-    ingestMaxFields: 32,
-    ingestMaxKeyLength: 64,
-    ingestMaxValueBytes: 4096,
-    ingestMaxJsonDepth: 8,
-    rateLimitWindowSeconds: 60,
-    globalRequestsPerWindow: 1000,
-    globalEventsPerWindow: 10_000,
-    tokenRequestsPerWindow: 100,
-    tokenEventsPerWindow: 1000,
-  },
-};
-
 const schema: LoggingSchema = {
   id: "schema-1",
   name: "Audit Events",
@@ -91,10 +68,22 @@ describe("Logging UI", () => {
   beforeEach(() => {
     vi.mocked(api.getCached).mockReturnValue(undefined);
     vi.mocked(api.setCache).mockReturnValue(undefined);
-    vi.mocked(api.getLoggingStatus).mockResolvedValue(featureStatus);
     vi.mocked(api.listLoggingEnvironments).mockResolvedValue([]);
     vi.mocked(api.listLoggingSchemas).mockResolvedValue([]);
     vi.mocked(api.getLoggingSchema).mockResolvedValue(schema);
+    useSystemConfigStore.setState({
+      config: {
+        fileUploadMaxBytes: 100 * 1024 * 1024,
+        fileOpenMaxBytes: 10 * 1024 * 1024,
+        features: {
+          pkiEnabled: true,
+          domainsEnabled: true,
+          loggingEnabled: true,
+        },
+      },
+      isLoading: false,
+      loaded: true,
+    });
   });
 
   it("prevents adding schema rows while duplicate keys exist", async () => {

@@ -200,9 +200,9 @@ export function SidebarContent({
   const pinnedRefreshTick = usePinnedNodesStore((s) => s.refreshTick);
   const [pinnedNodes, setPinnedNodes] = useState<Node[]>([]);
   const [statusPageEnabled, setStatusPageEnabled] = useState(false);
-  const [loggingEnabled, setLoggingEnabled] = useState(false);
   const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
   const domainsEnabled = useSystemConfigStore((s) => s.config.features.domainsEnabled);
+  const loggingEnabled = useSystemConfigStore((s) => s.config.features.loggingEnabled);
 
   const sidebarPinnedProxyIds = usePinnedProxiesStore((s) => s.sidebarProxyIds);
   const pinnedProxyRefreshTick = usePinnedProxiesStore((s) => s.refreshTick);
@@ -449,12 +449,6 @@ export function SidebarContent({
     onNavigate?.();
   }, [navigate, onNavigate, setAIPanelOpen, setAILiteMode]);
 
-  useEffect(() => {
-    api
-      .getLoggingStatus()
-      .then((status) => setLoggingEnabled(status.enabled))
-      .catch(() => setLoggingEnabled(false));
-  }, []);
   // Build nav groups with scope + context filtering
   const effectiveGroups = navigationGroups
     .map((group) => {

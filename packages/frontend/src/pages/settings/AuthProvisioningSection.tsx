@@ -221,11 +221,15 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       setFileOpenLimitMb(String(bytesToMegabytes(updated.generalSettings.fileOpenMaxBytes)));
       setPkiEnabled(nextSettings.generalSettings.features.pkiEnabled);
       setDomainsEnabled(nextSettings.generalSettings.features.domainsEnabled);
+      const currentFeatures = useSystemConfigStore.getState().config.features;
       useSystemConfigStore.getState().setConfig(
         withDefaultSystemConfig({
           fileUploadMaxBytes: nextSettings.generalSettings.fileUploadMaxBytes,
           fileOpenMaxBytes: nextSettings.generalSettings.fileOpenMaxBytes,
-          features: nextSettings.generalSettings.features,
+          features: {
+            ...currentFeatures,
+            ...nextSettings.generalSettings.features,
+          },
         })
       );
       toast.success("Gateway settings updated");

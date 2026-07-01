@@ -1,4 +1,6 @@
+import bcrypt from 'bcryptjs';
 import { describe, expect, it, vi } from 'vitest';
+import { createNodeEnrollmentToken } from '@/modules/nodes/node-enrollment-token.js';
 import { createEnrollmentHandlers } from './enrollment.js';
 
 const nodeId = '11111111-1111-4111-8111-111111111111';
@@ -35,6 +37,54 @@ function makeDbNode(
       }),
     })),
   } as any;
+}
+
+function makeThenableRows(rows: any[]) {
+  return Object.assign(Promise.resolve(rows), {
+    limit: vi.fn(async () => rows),
+  });
+}
+
+function makeEnrollDb(rows: any[], updateSet = vi.fn()) {
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => makeThenableRows(rows)),
+      })),
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn((value) => {
+        updateSet(value);
+        return {
+          where: vi.fn(async () => undefined),
+        };
+      }),
+    })),
+  } as any;
+}
+
+function makeEnrollCall(token: string) {
+  return {
+    request: {
+      token,
+      hostname: 'daemon-host',
+      daemonVersion: '1.2.3',
+      osInfo: 'linux',
+      nginxVersion: '',
+      daemonType: 'docker',
+    },
+  } as any;
+}
+
+function makePendingNode(enrollmentTokenHash: string, enrollmentTokenSelector: string | null = null) {
+  return {
+    id: nodeId,
+    type: 'docker',
+    hostname: 'pending-node',
+    status: 'pending',
+    enrollmentTokenHash,
+    enrollmentTokenSelector,
+  };
 }
 
 function makeCall(options: {
@@ -99,16 +149,95 @@ function makeDeps(db: any, connected = true) {
       issueNodeCert: vi.fn(async () => ({
         serial: 'new01',
         expiresAt,
+        caCertPem: 'ca-cert-pem',
         certPem: 'cert-pem',
         keyPem: 'key-pem',
       })),
     },
     dispatch: {},
-    auditService: {},
+    auditService: {
+      log: vi.fn(async () => undefined),
+    },
     caService: {},
     cryptoService: {},
   } as any;
 }
+
+describe('Enroll token lookup', () => {
+  it('enrolls a v2 token with a selector lookup and one bcrypt comparison', async () => {
+    const enrollmentToken = createNodeEnrollmentToken();
+    const tokenHash = await bcrypt.hash(enrollmentToken.token, 4);
+    const updateSet = vi.fn();
+    const deps = makeDeps(makeEnrollDb([makePendingNode(tokenHash, enrollmentToken.selector)], updateSet));
+    const compareSpy = vi.spyOn(bcrypt, 'compare');
+    const callback = vi.fn();
+
+    await createEnrollmentHandlers(deps).Enroll(makeEnrollCall(enrollmentToken.token), callback);
+
+    expect(deps.systemCA.issueNodeCert).toHaveBeenCalledWith(nodeId, 'daemon-host');
+    expect(compareSpy).toHaveBeenCalledTimes(1);
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'online',
+        enrollmentTokenSelector: null,
+        enrollmentTokenHash: null,
+        certificateSerial: 'new01',
+      })
+    );
+    expect(callback).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        nodeId,
+        caCertificate: Buffer.from('ca-cert-pem'),
+        clientCertificate: Buffer.from('cert-pem'),
+        clientKey: Buffer.from('key-pem'),
+      })
+    );
+    compareSpy.mockRestore();
+  });
+
+  it('keeps legacy pending-token compatibility without exiting early', async () => {
+    const legacyToken = `gw_node_${'a'.repeat(48)}`;
+    const wrongHash = await bcrypt.hash(`gw_node_${'b'.repeat(48)}`, 4);
+    const tokenHash = await bcrypt.hash(legacyToken, 4);
+    const deps = makeDeps(makeEnrollDb([makePendingNode(wrongHash), makePendingNode(tokenHash)]));
+    const compareSpy = vi.spyOn(bcrypt, 'compare');
+    const callback = vi.fn();
+
+    await createEnrollmentHandlers(deps).Enroll(makeEnrollCall(legacyToken), callback);
+
+    expect(deps.systemCA.issueNodeCert).toHaveBeenCalledWith(nodeId, 'daemon-host');
+    expect(compareSpy).toHaveBeenCalledTimes(2);
+    expect(callback).toHaveBeenCalledWith(null, expect.objectContaining({ nodeId }));
+    compareSpy.mockRestore();
+  });
+
+  it('rejects malformed v2 tokens without bcrypt work', async () => {
+    const deps = makeDeps(makeEnrollDb([]));
+    const compareSpy = vi.spyOn(bcrypt, 'compare');
+    const callback = vi.fn();
+
+    await createEnrollmentHandlers(deps).Enroll(makeEnrollCall('gw_node_v2_bad_selector_secret'), callback);
+
+    expect(deps.systemCA.issueNodeCert).not.toHaveBeenCalled();
+    expect(compareSpy).not.toHaveBeenCalled();
+    expect(callback.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ code: 16 }));
+    compareSpy.mockRestore();
+  });
+
+  it('rejects malformed legacy-like tokens without bcrypt work', async () => {
+    const deps = makeDeps(makeEnrollDb([]));
+    const compareSpy = vi.spyOn(bcrypt, 'compare');
+    const callback = vi.fn();
+
+    await createEnrollmentHandlers(deps).Enroll(makeEnrollCall('gw_node_nothex'), callback);
+
+    expect(deps.systemCA.issueNodeCert).not.toHaveBeenCalled();
+    expect(compareSpy).not.toHaveBeenCalled();
+    expect(callback.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ code: 16 }));
+    compareSpy.mockRestore();
+  });
+});
 
 describe('RenewCertificate daemon certificate identity', () => {
   it('renews a certificate when authorized cert CN and serial match DB', async () => {
