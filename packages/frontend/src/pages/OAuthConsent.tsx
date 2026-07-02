@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { ScopeList } from "@/components/common/ScopeList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { api } from "@/services/api";
 import type { OAuthConsentPreview } from "@/types";
 import { TOKEN_SCOPES } from "@/types";
@@ -41,6 +42,7 @@ export function OAuthConsent() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<ConsentResult | null>(null);
+  const [scopeSearch, setScopeSearch] = useState("");
 
   const load = useCallback(async () => {
     if (!requestId) {
@@ -206,8 +208,8 @@ export function OAuthConsent() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
-      <div className="w-full max-w-2xl border border-border bg-card">
+    <div className="flex h-[100dvh] min-h-[48rem] items-center justify-center bg-background px-4 py-8">
+      <div className="flex h-full w-full max-w-2xl flex-col border border-border bg-card">
         <div className="border-b border-border p-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -232,7 +234,7 @@ export function OAuthConsent() {
           </div>
         </div>
 
-        <div className="divide-y divide-border">
+        <div className="flex min-h-0 flex-1 flex-col divide-y divide-border overflow-hidden">
           <section className="p-5">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center border border-border bg-muted text-sm font-semibold">
@@ -247,7 +249,7 @@ export function OAuthConsent() {
             </div>
           </section>
 
-          <section className="bg-amber-500/15 p-5">
+          <section className="bg-amber-500/15 px-5 py-3">
             <div className="flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
               <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">
@@ -258,7 +260,7 @@ export function OAuthConsent() {
           </section>
 
           {preview.redirect.isExternal && (
-            <section className="bg-destructive/10 p-5">
+            <section className="bg-destructive/10 px-5 py-3">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
                 <p className="text-sm font-semibold text-destructive">
@@ -270,7 +272,7 @@ export function OAuthConsent() {
           )}
 
           {hasManualApprovalScopes && (
-            <section className="bg-destructive/10 p-5">
+            <section className="bg-destructive/10 px-5 py-3">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
                 <p className="text-sm font-semibold text-destructive">
@@ -282,18 +284,25 @@ export function OAuthConsent() {
             </section>
           )}
 
-          <section className="p-5">
+          <section className="flex min-h-[12rem] flex-1 flex-col p-5">
             <div className="mb-3 flex items-center gap-2">
               <Shield className="h-4 w-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold text-foreground">Requested scopes</h2>
             </div>
-            <div className="divide-y divide-border border border-border">
+            <div className="flex min-h-0 flex-1 flex-col border border-border">
+              <Input
+                value={scopeSearch}
+                onChange={(event) => setScopeSearch(event.target.value)}
+                placeholder="Search scopes..."
+                className="h-9 rounded-none border-0 border-b border-border text-sm focus-visible:ring-0"
+              />
               <ScopeList
                 scopes={grantableScopeItems}
-                search=""
+                search={scopeSearch}
                 selected={selectedScopes}
                 onToggle={(scope) => setScopeSelected(scope, !selectedScopes.includes(scope))}
                 readOnly={isSubmitting}
+                viewportClassName="min-h-0 flex-1 overflow-y-auto overscroll-contain"
               />
             </div>
           </section>

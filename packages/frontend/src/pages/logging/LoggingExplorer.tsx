@@ -440,16 +440,11 @@ export function LoggingExplorer({
         scrollRef={tableScrollRef}
         footer={
           nextCursor ? (
-            <div
-              ref={loadMoreRef}
-              className="border-t border-border p-3 text-center text-xs text-muted-foreground"
-            >
+            <div ref={loadMoreRef} className="p-3 text-center text-xs text-muted-foreground">
               {loadingMore ? "Loading older logs..." : "Scroll to load older logs"}
             </div>
           ) : rows.length > 0 ? (
-            <div className="border-t border-border p-3 text-center text-xs text-muted-foreground">
-              End of log history
-            </div>
+            <div className="p-3 text-center text-xs text-muted-foreground">End of log history</div>
           ) : null
         }
       />

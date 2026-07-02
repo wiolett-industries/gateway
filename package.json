@@ -39,12 +39,26 @@
   "pnpm": {
     "overrides": {
       "@hono/node-server": "1.19.13",
-      "axios": "1.15.0",
+      "axios": "1.16.0",
       "follow-redirects": "1.16.0",
-      "hono": "4.12.14",
+      "fast-uri": "3.1.2",
+      "hono": "4.12.25",
       "postcss": "8.5.10",
-      "protobufjs": "7.5.5",
-      "esbuild": "0.25.12"
+      "protobufjs": "7.6.3",
+      "esbuild": "0.25.12",
+      "vite": "7.3.5",
+      "ip-address": "10.1.1",
+      "@protobufjs/utf8": "1.1.1",
+      "ws": "8.21.0",
+      "qs": "6.15.2",
+      "react-router": "7.18.1",
+      "brace-expansion": "5.0.6",
+      "@grpc/grpc-js": "1.14.4",
+      "tmp": "0.2.7",
+      "form-data": "4.0.6",
+      "@babel/core": "7.29.6",
+      "js-yaml@3.15.0": "4.2.0",
+      "js-yaml@4.1.1": "4.2.0"
     }
   },
   "devDependencies": {

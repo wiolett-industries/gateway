@@ -71,11 +71,15 @@ describe('canonical scope definitions', () => {
     expect(API_TOKEN_SCOPES).not.toContain('proxy:raw:write');
     expect(API_TOKEN_SCOPES).not.toContain('proxy:raw:bypass');
     expect(API_TOKEN_SCOPES).not.toContain('proxy:advanced:bypass');
+    expect(API_TOKEN_SCOPES).toContain('nodes:files:read');
+    expect(API_TOKEN_SCOPES).toContain('nodes:files:write');
     expect(isApiTokenScope('admin:system')).toBe(false);
     expect(isApiTokenScope('mcp:use')).toBe(false);
     expect(isApiTokenScope('admin:users')).toBe(false);
     expect(isApiTokenScope('proxy:raw:write:host-1')).toBe(false);
     expect(isApiTokenScope('proxy:raw:bypass:host-1')).toBe(false);
+    expect(isApiTokenScope('nodes:files:read:node-1')).toBe(true);
+    expect(isApiTokenScope('nodes:files:write:node-1')).toBe(true);
   });
 
   it('keeps OAuth manual approval scopes focused on high-risk delegated access', () => {

@@ -37,6 +37,8 @@ describe("scope constants", () => {
     expect(apiTokenValues).not.toContain("admin:users");
     expect(apiTokenValues).not.toContain("proxy:raw:write");
     expect(apiTokenValues).not.toContain("nodes:config:edit");
+    expect(apiTokenValues).toContain("nodes:files:read");
+    expect(apiTokenValues).toContain("nodes:files:write");
     expect(apiTokenValues).toContain("docker:containers:view");
     expect(apiTokenValues).toContain("databases:query:read");
 

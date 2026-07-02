@@ -208,8 +208,6 @@ export const PROGRAMMATIC_DENIED_BASE_SCOPES = [
   'proxy:advanced:bypass',
   'nodes:config:view',
   'nodes:config:edit',
-  'nodes:files:read',
-  'nodes:files:write',
 ] as const;
 
 const PROGRAMMATIC_DENIED_SCOPE_SET = new Set<string>(PROGRAMMATIC_DENIED_BASE_SCOPES);
