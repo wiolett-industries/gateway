@@ -41,6 +41,10 @@ export class NotificationDispatcherService {
     private outboundWebhookPolicyService: OutboundWebhookPolicyService
   ) {}
 
+  getGatewayUrl(): string {
+    return (this.env as any).PUBLIC_URL || (this.env as any).MANAGEMENT_DOMAIN || '';
+  }
+
   /**
    * Dispatch a notification event to a single webhook.
    * Renders the template, signs the payload, sends the HTTP request,
@@ -61,8 +65,7 @@ export class NotificationDispatcherService {
     event: NotificationEvent,
     isTest = false
   ): Promise<{ success: boolean; statusCode?: number; error?: string; rendered?: string }> {
-    const gatewayUrl = (this.env as any).PUBLIC_URL || (this.env as any).MANAGEMENT_DOMAIN || '';
-    const context = buildTemplateContext(event, gatewayUrl);
+    const context = buildTemplateContext(event, this.getGatewayUrl());
 
     // Render template
     const body = webhook.bodyTemplate ? renderTemplate(webhook.bodyTemplate, context) : JSON.stringify(context);

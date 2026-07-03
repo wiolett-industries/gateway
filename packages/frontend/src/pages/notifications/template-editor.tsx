@@ -30,26 +30,36 @@ export const STEP_ANIMATION = {
 };
 
 export const UNIVERSAL_VARIABLES = [
-  { name: "{{message}}", description: "Alert's rendered message" },
-  { name: "{{title}}", description: "Alert title" },
-  { name: "{{alert_name}}", description: "Alert rule name" },
-  { name: "{{severity}}", description: "Alert severity" },
-  { name: "{{severity_emoji}}", description: "Severity emoji" },
-  { name: "{{severity_color}}", description: "Severity color (int)" },
-  { name: "{{resource.name}}", description: "Resource display name" },
-  { name: "{{resource.id}}", description: "Resource ID" },
+  { name: "{{notification.type}}", description: "Notification event type" },
+  { name: "{{notification.title}}", description: "Notification title" },
+  { name: "{{notification.message}}", description: "Rendered alert message" },
+  { name: "{{notification.timestamp}}", description: "Notification ISO timestamp" },
+  { name: "{{alert.id}}", description: "Alert rule ID" },
+  { name: "{{alert.name}}", description: "Alert rule name" },
+  { name: "{{alert.status}}", description: "Alert status" },
+  { name: "{{alert.severity}}", description: "Alert severity" },
+  { name: "{{alert.severity.emoji}}", description: "Severity emoji" },
+  { name: "{{alert.severity.color}}", description: "Severity color (int)" },
   { name: "{{resource.type}}", description: "Resource type" },
-  { name: "{{timestamp}}", description: "ISO timestamp" },
-  { name: "{{value}}", description: "Current metric value" },
-  { name: "{{threshold}}", description: "Configured threshold" },
-  { name: "{{operator}}", description: "Comparison operator" },
-  { name: "{{metric}}", description: "Metric name" },
-  { name: "{{duration}}", description: "Fire-after duration (seconds)" },
-  { name: "{{node_name}}", description: "Node hostname" },
-  { name: "{{fired_at}}", description: "When alert started firing" },
-  { name: "{{fired_duration}}", description: "Seconds alert was firing" },
-  { name: "{{event}}", description: "Event type" },
-  { name: "{{gateway_url}}", description: "Gateway URL" },
+  { name: "{{resource.id}}", description: "Real resource ID when known" },
+  { name: "{{resource.key}}", description: "Internal alert resource key" },
+  { name: "{{resource.name}}", description: "Resource display name" },
+  { name: "{{metric.name}}", description: "Metric name" },
+  { name: "{{metric.value}}", description: "Current metric value" },
+  { name: "{{metric.threshold}}", description: "Configured threshold" },
+  { name: "{{metric.operator}}", description: "Comparison operator" },
+  { name: "{{metric.duration}}", description: "Fire-after duration (seconds)" },
+  { name: "{{node.id}}", description: "Node ID when related" },
+  { name: "{{node.name}}", description: "Node hostname/display name" },
+  { name: "{{health.status}}", description: "Health status" },
+  { name: "{{certificate.days_until_expiry}}", description: "Days until certificate expiry" },
+  { name: "{{certificate.expiry_date}}", description: "Certificate expiry date" },
+  { name: "{{state.current}}", description: "Current state for stateful events" },
+  { name: "{{event.name}}", description: "Event pattern/name" },
+  { name: "{{fired.at}}", description: "When alert started firing" },
+  { name: "{{fired.duration}}", description: "Seconds alert was firing" },
+  { name: "{{resolution.reason}}", description: "Resolve reason when known" },
+  { name: "{{gateway.url}}", description: "Gateway URL" },
 ];
 
 // ── Animated Height Container ───────────────────────────────────────
@@ -189,6 +199,11 @@ const HELPERS_CHEATSHEET = [
   { name: "lowercase", usage: "{{lowercase str}}", description: "lowercase" },
   { name: "truncate", usage: "{{truncate str 50}}", description: "Truncate with ellipsis" },
   { name: "default", usage: '{{default value "N/A"}}', description: "Fallback for null" },
+  {
+    name: "coalesce",
+    usage: "{{coalesce node.name resource.name resource.key}}",
+    description: "First non-empty value",
+  },
   { name: "json", usage: "{{json obj}}", description: "JSON.stringify" },
   { name: "join", usage: '{{join array ", "}}', description: "Join array elements" },
   {
@@ -300,7 +315,7 @@ export const TemplateEditor = React.forwardRef<
         hbsHighlighter,
         cmTheme,
         cmPlaceholder(
-          "CPU at {{value}}% on {{resource.name}} (threshold: {{operator}} {{threshold}}%)"
+          "CPU at {{metric.value}}% on {{resource.name}} (threshold: {{metric.operator}} {{metric.threshold}}%)"
         ),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {

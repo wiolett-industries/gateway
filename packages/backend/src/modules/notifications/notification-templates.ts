@@ -19,14 +19,23 @@ hbs.registerHelper('and', (a, b) => a && b);
 hbs.registerHelper('or', (a, b) => a || b);
 hbs.registerHelper('not', (a) => !a);
 hbs.registerHelper('json', (obj) => JSON.stringify(obj));
-hbs.registerHelper('uppercase', (str) => (typeof str === 'string' ? str.toUpperCase() : str));
-hbs.registerHelper('lowercase', (str) => (typeof str === 'string' ? str.toLowerCase() : str));
+hbs.registerHelper('uppercase', (str) =>
+  typeof str === 'string' || str instanceof String ? String(str).toUpperCase() : str
+);
+hbs.registerHelper('lowercase', (str) =>
+  typeof str === 'string' || str instanceof String ? String(str).toLowerCase() : str
+);
 hbs.registerHelper('truncate', (str, len) => {
-  if (typeof str !== 'string') return str;
+  if (typeof str !== 'string' && !(str instanceof String)) return str;
+  const value = String(str);
   const n = typeof len === 'number' ? len : 50;
-  return str.length > n ? `${str.slice(0, n)}...` : str;
+  return value.length > n ? `${value.slice(0, n)}...` : value;
 });
 hbs.registerHelper('default', (value, defaultValue) => value ?? defaultValue);
+hbs.registerHelper('coalesce', (...args) => {
+  const values = args.slice(0, -1);
+  return values.find((value) => value !== null && value !== undefined && String(value) !== '') ?? null;
+});
 hbs.registerHelper('join', (arr, sep) => (Array.isArray(arr) ? arr.join(typeof sep === 'string' ? sep : ', ') : arr));
 hbs.registerHelper('round', (value, decimals) => {
   const n = typeof value === 'number' ? value : Number.parseFloat(value);
@@ -100,8 +109,8 @@ hbs.registerHelper('pluralize', (count, singular, plural) => {
 
 // JSON-escape helper — use in JSON templates: {{jsonescape resource.name}}
 hbs.registerHelper('jsonescape', (str) => {
-  if (typeof str !== 'string') return str;
-  return str
+  if (typeof str !== 'string' && !(str instanceof String)) return str;
+  return String(str)
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
     .replace(/\n/g, '\\n')
@@ -113,7 +122,7 @@ hbs.registerHelper('jsonescape', (str) => {
  * Compile and render a Handlebars template with the given context.
  * Returns the rendered string, or a fallback JSON on compilation error.
  */
-export function renderTemplate(template: string, context: Record<string, unknown>): string {
+export function renderTemplate(template: string, context: object): string {
   try {
     const compiled = hbs.compile(template, { noEscape: true });
     return compiled(context);
@@ -125,35 +134,165 @@ export function renderTemplate(template: string, context: Record<string, unknown
 
 // ── Template Context Builder ──────────────────────────────────────────
 
+type SeverityTemplateValue = string & { emoji: string; color: number };
+
+export interface NotificationTemplateResource {
+  type: string;
+  id: string | null;
+  key: string;
+  name: string;
+}
+
+export interface NotificationTemplateContext {
+  notification: {
+    type: string;
+    title: string;
+    message: string;
+    timestamp: string;
+  };
+  alert: {
+    id: string;
+    name: string;
+    status: 'firing' | 'resolved';
+    severity: SeverityTemplateValue;
+  };
+  resource: NotificationTemplateResource;
+  metric: {
+    name: string | null;
+    value: number | null;
+    threshold: number | null;
+    operator: string | null;
+    duration: number | null;
+  };
+  node: {
+    id: string | null;
+    name: string | null;
+  };
+  health: {
+    status: string | null;
+  };
+  certificate: {
+    days_until_expiry: number | null;
+    expiry_date: string | null;
+  };
+  state: {
+    current: string | null;
+  };
+  event: {
+    name: string | null;
+  };
+  fired: {
+    at: string | null;
+    duration: number | null;
+  };
+  resolution: {
+    reason: string | null;
+  };
+  gateway: {
+    url: string;
+  };
+}
+
+export type NotificationTemplateContextInput = {
+  notification?: Partial<NotificationTemplateContext['notification']>;
+  alert: {
+    id: string;
+    name: string;
+    status: 'firing' | 'resolved';
+    severity: Severity;
+  };
+  resource: NotificationTemplateResource;
+  metric?: Partial<NotificationTemplateContext['metric']>;
+  node?: Partial<NotificationTemplateContext['node']>;
+  health?: Partial<NotificationTemplateContext['health']>;
+  certificate?: Partial<NotificationTemplateContext['certificate']>;
+  state?: Partial<NotificationTemplateContext['state']>;
+  event?: Partial<NotificationTemplateContext['event']>;
+  fired?: Partial<NotificationTemplateContext['fired']>;
+  resolution?: Partial<NotificationTemplateContext['resolution']>;
+  gateway?: Partial<NotificationTemplateContext['gateway']>;
+};
+
 export interface NotificationEvent {
   type: string;
   title: string;
   message: string;
   severity: Severity;
-  resource: { type: string; id: string; name?: string };
-  data: Record<string, unknown>;
+  resource: NotificationTemplateResource;
+  context: NotificationTemplateContext;
   timestamp: string;
 }
 
-/** Build the full template context from a notification event + gateway URL */
-export function buildTemplateContext(event: NotificationEvent, gatewayUrl?: string): Record<string, unknown> {
+function buildSeverityTemplateValue(severity: Severity): SeverityTemplateValue {
+  const value = Object.assign(new String(severity), {
+    emoji: SEVERITY_EMOJI[severity],
+    color: SEVERITY_COLOR[severity],
+    toJSON() {
+      return { value: String(this), emoji: this.emoji, color: this.color };
+    },
+  });
+  return value as unknown as SeverityTemplateValue;
+}
+
+export function buildNotificationTemplateContext(input: NotificationTemplateContextInput): NotificationTemplateContext {
+  const timestamp = input.notification?.timestamp ?? new Date().toISOString();
+  const severity = buildSeverityTemplateValue(input.alert.severity);
   return {
-    event: event.type,
-    event_title: event.title,
-    title: event.title,
-    message: event.message,
-    severity: event.severity,
-    severity_emoji: SEVERITY_EMOJI[event.severity],
-    severity_color: SEVERITY_COLOR[event.severity],
-    resource: event.resource,
-    resourceType: event.resource.type,
-    resourceId: event.resource.id,
-    resourceName: event.resource.name ?? event.resource.id,
-    data: event.data,
-    timestamp: event.timestamp,
-    gateway_url: gatewayUrl ?? '',
-    // Flatten data for simpler template access
-    ...Object.fromEntries(Object.entries(event.data).map(([k, v]) => [`data_${k}`, v])),
+    notification: {
+      type: input.notification?.type ?? '',
+      title: input.notification?.title ?? input.alert.name,
+      message: input.notification?.message ?? '',
+      timestamp,
+    },
+    alert: {
+      id: input.alert.id,
+      name: input.alert.name,
+      status: input.alert.status,
+      severity,
+    },
+    resource: input.resource,
+    metric: {
+      name: input.metric?.name ?? null,
+      value: input.metric?.value ?? null,
+      threshold: input.metric?.threshold ?? null,
+      operator: input.metric?.operator ?? null,
+      duration: input.metric?.duration ?? null,
+    },
+    node: {
+      id: input.node?.id ?? null,
+      name: input.node?.name ?? null,
+    },
+    health: {
+      status: input.health?.status ?? null,
+    },
+    certificate: {
+      days_until_expiry: input.certificate?.days_until_expiry ?? null,
+      expiry_date: input.certificate?.expiry_date ?? null,
+    },
+    state: {
+      current: input.state?.current ?? null,
+    },
+    event: {
+      name: input.event?.name ?? null,
+    },
+    fired: {
+      at: input.fired?.at ?? null,
+      duration: input.fired?.duration ?? null,
+    },
+    resolution: {
+      reason: input.resolution?.reason ?? null,
+    },
+    gateway: {
+      url: input.gateway?.url ?? '',
+    },
+  };
+}
+
+/** Build the full template context from a notification event + gateway URL */
+export function buildTemplateContext(event: NotificationEvent, gatewayUrl?: string): NotificationTemplateContext {
+  return {
+    ...event.context,
+    gateway: { url: gatewayUrl ?? event.context.gateway.url },
   };
 }
 
@@ -177,14 +316,14 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
     defaultHeaders: { 'Content-Type': 'application/json' },
     bodyTemplate: `{
   "embeds": [{
-    "title": "{{severity_emoji}} {{title}}",
-    "description": "{{message}}",
-    "color": {{severity_color}},
+    "title": "{{alert.severity.emoji}} {{notification.title}}",
+    "description": "{{notification.message}}",
+    "color": {{alert.severity.color}},
     "fields": [
-      {"name": "Resource", "value": "{{resourceType}}/{{resourceName}}", "inline": true},
-      {"name": "Severity", "value": "{{uppercase severity}}", "inline": true}
+      {"name": "Resource", "value": "{{resource.type}}/{{resource.name}}", "inline": true},
+      {"name": "Severity", "value": "{{uppercase alert.severity}}", "inline": true}
     ],
-    "timestamp": "{{timestamp}}"
+    "timestamp": "{{notification.timestamp}}"
   }]
 }`,
   },
@@ -200,14 +339,14 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "{{severity_emoji}} *[{{uppercase severity}}] {{title}}*\\n{{message}}"
+        "text": "{{alert.severity.emoji}} *[{{uppercase alert.severity}}] {{notification.title}}*\\n{{notification.message}}"
       }
     },
     {
       "type": "context",
       "elements": [
-        {"type": "mrkdwn", "text": "*Resource:* {{resourceType}}/{{resourceName}}"},
-        {"type": "mrkdwn", "text": "*Time:* {{timestamp}}"}
+        {"type": "mrkdwn", "text": "*Resource:* {{resource.type}}/{{resource.name}}"},
+        {"type": "mrkdwn", "text": "*Time:* {{notification.timestamp}}"}
       ]
     }
   ]
@@ -221,7 +360,7 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
     defaultHeaders: { 'Content-Type': 'application/json' },
     bodyTemplate: `{
   "chat_id": "YOUR_CHAT_ID",
-  "text": "{{severity_emoji}} *[{{uppercase severity}}] {{title}}*\\n\\n{{message}}\\n\\n_Resource:_ {{resourceType}}/{{resourceName}}\\n_Time:_ {{timestamp}}",
+  "text": "{{alert.severity.emoji}} *[{{uppercase alert.severity}}] {{notification.title}}*\\n\\n{{notification.message}}\\n\\n_Resource:_ {{resource.type}}/{{resource.name}}\\n_Time:_ {{notification.timestamp}}",
   "parse_mode": "Markdown",
   "disable_web_page_preview": true
 }`,
@@ -233,18 +372,18 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
     urlHint: 'https://your-endpoint.example.com/webhook',
     defaultHeaders: { 'Content-Type': 'application/json' },
     bodyTemplate: `{
-  "event": "{{event}}",
-  "title": "{{title}}",
-  "message": "{{message}}",
-  "severity": "{{severity}}",
-  "resource": {
-    "type": "{{resourceType}}",
-    "id": "{{resourceId}}",
-    "name": "{{resourceName}}"
-  },
-  "data": {{{json data}}},
-  "timestamp": "{{timestamp}}",
-  "gateway_url": "{{gateway_url}}"
+  "notification": {{{json notification}}},
+  "alert": {{{json alert}}},
+  "resource": {{{json resource}}},
+  "metric": {{{json metric}}},
+  "node": {{{json node}}},
+  "health": {{{json health}}},
+  "certificate": {{{json certificate}}},
+  "state": {{{json state}}},
+  "event": {{{json event}}},
+  "fired": {{{json fired}}},
+  "resolution": {{{json resolution}}},
+  "gateway": {{{json gateway}}}
 }`,
   },
   {
@@ -253,10 +392,10 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
     description: 'Simple text message, suitable for generic HTTP receivers',
     urlHint: 'https://your-endpoint.example.com/webhook',
     defaultHeaders: { 'Content-Type': 'text/plain' },
-    bodyTemplate: `[{{uppercase severity}}] {{title}}
-{{message}}
-Resource: {{resourceType}}/{{resourceName}}
-Time: {{timestamp}}`,
+    bodyTemplate: `[{{uppercase alert.severity}}] {{notification.title}}
+{{notification.message}}
+Resource: {{resource.type}}/{{resource.name}}
+Time: {{notification.timestamp}}`,
   },
 ];
 
@@ -265,23 +404,49 @@ export const PRESET_MAP = new Map(TEMPLATE_PRESETS.map((p) => [p.id, p]));
 // ── Sample Event for Testing ──────────────────────────────────────────
 
 export function buildSampleEvent(): NotificationEvent {
-  return {
-    type: 'alert.fired',
-    title: 'CPU High on docker-01',
-    message: 'CPU usage has exceeded 90% for more than 5 minutes on node docker-01.',
-    severity: 'warning',
+  const timestamp = new Date().toISOString();
+  const context = buildNotificationTemplateContext({
+    notification: {
+      type: 'alert.fired',
+      title: 'CPU High on docker-01',
+      message: 'CPU usage has exceeded 90% for more than 5 minutes on node docker-01.',
+      timestamp,
+    },
+    alert: {
+      id: 'rule-cpu-high',
+      name: 'CPU High',
+      status: 'firing',
+      severity: 'warning',
+    },
     resource: {
       type: 'node',
       id: '00000000-0000-0000-0000-000000000001',
+      key: '00000000-0000-0000-0000-000000000001',
       name: 'docker-01',
     },
-    data: {
-      metric: 'node.cpu',
+    metric: {
+      name: 'cpu',
       value: 92.5,
       threshold: 90,
-      duration: '5m',
-      rule_name: 'CPU High',
+      operator: '>',
+      duration: 300,
     },
-    timestamp: new Date().toISOString(),
+    node: {
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'docker-01',
+    },
+    fired: {
+      at: timestamp,
+      duration: null,
+    },
+  });
+  return {
+    type: 'alert.fired',
+    title: context.notification.title,
+    message: context.notification.message,
+    severity: 'warning',
+    resource: context.resource,
+    context,
+    timestamp,
   };
 }

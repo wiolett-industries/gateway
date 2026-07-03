@@ -17,7 +17,13 @@ import {
 } from './notification.constants.js';
 import type { NotificationAlertRuleService } from './notification-alert-rule.service.js';
 import type { NotificationDispatcherService } from './notification-dispatcher.service.js';
-import { type NotificationEvent, renderTemplate } from './notification-templates.js';
+import {
+  buildNotificationTemplateContext,
+  type NotificationEvent,
+  type NotificationTemplateContextInput,
+  type NotificationTemplateResource,
+  renderTemplate,
+} from './notification-templates.js';
 import type { NotificationWebhookService } from './notification-webhook.service.js';
 
 const logger = createChildLogger('NotificationEvaluator');
@@ -25,6 +31,13 @@ const logger = createChildLogger('NotificationEvaluator');
 const METRIC_BUFFER_TTL = 1800;
 const WINDOW_TRIM_PADDING_MS = 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+type TemplateDetails = Partial<
+  Pick<
+    NotificationTemplateContextInput,
+    'metric' | 'node' | 'health' | 'certificate' | 'state' | 'event' | 'fired' | 'resolution'
+  >
+> & { resourceId?: string | null };
 
 export class NotificationEvaluatorService {
   private eventBus?: EventBusService;
@@ -138,7 +151,7 @@ export class NotificationEvaluatorService {
         if (breached) {
           await this.handleThresholdBreach(rule, compositeResourceId, value, nodeId, resourceId);
         } else {
-          await this.handleThresholdClear(rule, compositeResourceId, value);
+          await this.handleThresholdClear(rule, compositeResourceId, value, nodeId, resourceId);
         }
       }
     }
@@ -175,7 +188,7 @@ export class NotificationEvaluatorService {
         if (breached) {
           await this.handleThresholdBreach(rule, resourceId, value, snapshot.databaseId, snapshot.name);
         } else {
-          await this.handleThresholdClear(rule, resourceId, value);
+          await this.handleThresholdClear(rule, resourceId, value, snapshot.databaseId, snapshot.name);
         }
       }
     }
@@ -258,13 +271,18 @@ export class NotificationEvaluatorService {
     if (existingState) return;
 
     await this.fireAlert(rule, 'certificate', cert.id, cert.name || cert.domainNames.join(', ') || cert.id, {
-      value: daysUntilExpiry,
-      days_until_expiry: daysUntilExpiry,
-      expiry_date: cert.notAfter?.toISOString(),
-      threshold: rule.thresholdValue,
-      operator: rule.operator,
-      metric: rule.metric,
-      duration: rule.durationSeconds ?? 0,
+      resourceId: cert.id,
+      metric: {
+        name: rule.metric,
+        value: daysUntilExpiry,
+        threshold: rule.thresholdValue,
+        operator: rule.operator,
+        duration: rule.durationSeconds ?? 0,
+      },
+      certificate: {
+        days_until_expiry: daysUntilExpiry,
+        expiry_date: cert.notAfter?.toISOString() ?? null,
+      },
     });
   }
 
@@ -307,15 +325,22 @@ export class NotificationEvaluatorService {
       cert.id,
       cert.name || cert.domainNames.join(', ') || cert.id,
       {
-        value: daysUntilExpiry,
-        days_until_expiry: daysUntilExpiry,
-        expiry_date: cert.notAfter?.toISOString(),
-        threshold: rule.thresholdValue,
-        operator: rule.operator,
-        metric: rule.metric,
-        duration: rule.durationSeconds ?? 0,
-        fired_at: firedAt?.toISOString(),
-        fired_duration: firedDurationSec,
+        resourceId: cert.id,
+        metric: {
+          name: rule.metric,
+          value: daysUntilExpiry,
+          threshold: rule.thresholdValue,
+          operator: rule.operator,
+          duration: rule.durationSeconds ?? 0,
+        },
+        certificate: {
+          days_until_expiry: daysUntilExpiry,
+          expiry_date: cert.notAfter?.toISOString() ?? null,
+        },
+        fired: {
+          at: firedAt?.toISOString() ?? null,
+          duration: firedDurationSec,
+        },
       }
     );
   }
@@ -342,16 +367,25 @@ export class NotificationEvaluatorService {
       const firedDurationSec = firedAt ? Math.round((Date.now() - firedAt.getTime()) / 1000) : 0;
 
       await this.resolveAlert(state.id, rule, 'certificate', state.resourceId, state.resourceId, {
-        value: null,
-        days_until_expiry: null,
-        expiry_date: null,
-        threshold: rule.thresholdValue,
-        operator: rule.operator,
-        metric: rule.metric,
-        duration: rule.durationSeconds ?? 0,
-        fired_at: firedAt?.toISOString(),
-        fired_duration: firedDurationSec,
-        resolution_reason: stillActive ? 'out_of_scope' : 'certificate_inactive_or_deleted',
+        resourceId: state.resourceId,
+        metric: {
+          name: rule.metric,
+          value: null,
+          threshold: rule.thresholdValue,
+          operator: rule.operator,
+          duration: rule.durationSeconds ?? 0,
+        },
+        certificate: {
+          days_until_expiry: null,
+          expiry_date: null,
+        },
+        fired: {
+          at: firedAt?.toISOString() ?? null,
+          duration: firedDurationSec,
+        },
+        resolution: {
+          reason: stillActive ? 'out_of_scope' : 'certificate_inactive_or_deleted',
+        },
       });
     }
   }
@@ -400,20 +434,31 @@ export class NotificationEvaluatorService {
     }
 
     const nodeName = rule.category === 'node' || rule.category === 'container' ? this.getNodeName(nodeId) : undefined;
-    const resourceName = rawResourceId === 'system' ? nodeName || nodeId : rawResourceId;
+    const resourceName = this.getThresholdResourceName(rule, nodeId, rawResourceId);
 
     await this.fireAlert(rule, rule.category, compositeResourceId, resourceName, {
-      value: currentValue,
-      threshold: rule.thresholdValue,
-      operator: rule.operator,
-      metric: rule.metric,
-      duration: rule.durationSeconds ?? 0,
-      node_name: nodeName,
-      hostname: nodeName,
+      resourceId: this.getThresholdResourceId(rule, nodeId),
+      metric: {
+        name: rule.metric,
+        value: currentValue,
+        threshold: rule.thresholdValue,
+        operator: rule.operator,
+        duration: rule.durationSeconds ?? 0,
+      },
+      node: {
+        id: rule.category === 'node' || rule.category === 'container' ? nodeId : null,
+        name: nodeName ?? null,
+      },
     });
   }
 
-  private async handleThresholdClear(rule: any, compositeResourceId: string, currentValue: number): Promise<void> {
+  private async handleThresholdClear(
+    rule: any,
+    compositeResourceId: string,
+    currentValue: number,
+    sourceId?: string,
+    rawResourceId?: string
+  ): Promise<void> {
     const existingState = await this.getActiveAlertState(rule.id, rule.category, compositeResourceId);
     if (!existingState) return;
 
@@ -454,17 +499,26 @@ export class NotificationEvaluatorService {
       rule.category === 'node' || rule.category === 'container'
         ? this.getNodeName(compositeResourceId.split(':')[0] || compositeResourceId)
         : undefined;
+    const resourceName = this.getThresholdResourceName(rule, sourceId ?? compositeResourceId, rawResourceId);
 
-    await this.resolveAlert(existingState.id, rule, rule.category, compositeResourceId, nodeName, {
-      value: currentValue,
-      threshold: rule.thresholdValue,
-      operator: rule.operator,
-      metric: rule.metric,
-      duration: rule.durationSeconds ?? 0,
-      node_name: nodeName,
-      hostname: nodeName,
-      fired_at: firedAt?.toISOString(),
-      fired_duration: firedDurationSec,
+    await this.resolveAlert(existingState.id, rule, rule.category, compositeResourceId, resourceName, {
+      resourceId: this.getThresholdResourceId(rule, sourceId),
+      metric: {
+        name: rule.metric,
+        value: currentValue,
+        threshold: rule.thresholdValue,
+        operator: rule.operator,
+        duration: rule.durationSeconds ?? 0,
+      },
+      node: {
+        id:
+          rule.category === 'node' || rule.category === 'container' ? compositeResourceId.split(':')[0] || null : null,
+        name: nodeName ?? null,
+      },
+      fired: {
+        at: firedAt?.toISOString() ?? null,
+        duration: firedDurationSec,
+      },
     });
   }
 
@@ -556,10 +610,13 @@ export class NotificationEvaluatorService {
         // For events, check cooldown based on last notification time (not persistent firing state)
         if (await this.isEventInCooldown(rule.id, resource.type, resource.id, rule.cooldownSeconds)) continue;
 
-        await this.fireEventAlert(rule, resource.type, resource.id, resource.name ?? resource.id, {
-          ...extraData,
-          event: mapping.eventId,
-        });
+        await this.fireEventAlert(
+          rule,
+          resource.type,
+          resource.id,
+          resource.name ?? resource.id,
+          this.getEventTemplateDetails(extraData, mapping.eventId)
+        );
       }
     }
 
@@ -611,11 +668,13 @@ export class NotificationEvaluatorService {
 
         if (existingState) continue;
 
-        await this.fireAlert(rule, resource.type, resource.id, resource.name ?? resource.id, {
-          ...context,
-          event: rule.eventPattern,
-          current_state: currentState,
-        });
+        await this.fireAlert(
+          rule,
+          resource.type,
+          resource.id,
+          resource.name ?? resource.id,
+          this.getEventTemplateDetails(context, rule.eventPattern, currentState, resource.id)
+        );
         continue;
       }
 
@@ -635,11 +694,14 @@ export class NotificationEvaluatorService {
         continue;
       }
 
-      await this.resolveAlert(existingState.id, rule, resource.type, resource.id, resource.name, {
-        ...context,
-        event: rule.eventPattern,
-        current_state: currentState,
-      });
+      await this.resolveAlert(
+        existingState.id,
+        rule,
+        resource.type,
+        resource.id,
+        resource.name,
+        this.getEventTemplateDetails(context, rule.eventPattern, currentState, resource.id)
+      );
     }
   }
 
@@ -648,18 +710,18 @@ export class NotificationEvaluatorService {
   private async fireAlert(
     rule: any,
     resourceType: string,
-    resourceId: string,
+    resourceKey: string,
     resourceName: string,
-    context: Record<string, unknown>
+    details: TemplateDetails
   ): Promise<void> {
     try {
       await this.db.insert(notificationAlertStates).values({
         ruleId: rule.id,
         resourceType,
-        resourceId,
+        resourceId: resourceKey,
         status: 'firing',
         severity: rule.severity,
-        context,
+        context: details,
       });
     } catch (err: any) {
       if (err.code === '23505') return; // already firing
@@ -668,16 +730,18 @@ export class NotificationEvaluatorService {
 
     // Render the alert's message template
     const now = new Date().toISOString();
-    const messageContext = {
-      ...context,
-      resource: { type: resourceType, id: resourceId, name: resourceName },
-      severity: rule.severity,
-      alert_name: rule.name,
-      fired_at: now,
-    };
+    const resource = this.buildTemplateResource(resourceType, resourceKey, resourceName, details.resourceId);
+    const messageContext = this.buildAlertTemplateContext(rule, 'alert.fired', 'firing', resource, now, {
+      ...details,
+      fired: { ...details.fired, at: details.fired?.at ?? now },
+    });
     const message = rule.messageTemplate
       ? renderTemplate(rule.messageTemplate, messageContext)
       : `${rule.name}: ${resourceName}`;
+    const eventContext = {
+      ...messageContext,
+      notification: { ...messageContext.notification, message },
+    };
 
     // Build notification event
     const event: NotificationEvent = {
@@ -685,8 +749,8 @@ export class NotificationEvaluatorService {
       title: rule.name,
       message,
       severity: rule.severity as Severity,
-      resource: { type: resourceType, id: resourceId, name: resourceName },
-      data: { ...context, rule_name: rule.name, rule_id: rule.id, fired_at: now },
+      resource,
+      context: eventContext,
       timestamp: now,
     };
 
@@ -707,37 +771,49 @@ export class NotificationEvaluatorService {
       ruleName: rule.name,
       severity: rule.severity,
       resourceType,
-      resourceId,
+      resourceId: resourceKey,
     });
 
-    logger.info('Alert fired', { ruleId: rule.id, ruleName: rule.name, resourceType, resourceId });
+    logger.info('Alert fired', { ruleId: rule.id, ruleName: rule.name, resourceType, resourceId: resourceKey });
   }
 
   private async resolveAlert(
     stateId: string,
     rule: any,
     resourceType: string,
-    resourceId: string,
+    resourceKey: string,
     resourceName: string | undefined,
-    context: Record<string, unknown>
+    details: TemplateDetails
   ): Promise<void> {
     await this.db
       .update(notificationAlertStates)
       .set({ status: 'resolved', resolvedAt: new Date() })
       .where(eq(notificationAlertStates.id, stateId));
 
-    const resolvedResource = { type: resourceType, id: resourceId, name: resourceName ?? resourceId };
+    const now = new Date().toISOString();
+    const resolvedResource = this.buildTemplateResource(
+      resourceType,
+      resourceKey,
+      resourceName ?? resourceKey,
+      details.resourceId
+    );
 
     // Render resolve message if template exists
-    const resolveContext = {
-      ...context,
-      resource: resolvedResource,
-      severity: 'info' as const,
-      alert_name: rule.name,
-    };
+    const resolveContext = this.buildAlertTemplateContext(
+      rule,
+      'alert.resolved',
+      'resolved',
+      resolvedResource,
+      now,
+      details
+    );
     const resolveMessage = rule.messageTemplate
       ? renderTemplate(rule.messageTemplate, resolveContext)
       : `${rule.name} has been resolved.`;
+    const eventContext = {
+      ...resolveContext,
+      notification: { ...resolveContext.notification, message: resolveMessage },
+    };
 
     const event: NotificationEvent = {
       type: 'alert.resolved',
@@ -745,8 +821,8 @@ export class NotificationEvaluatorService {
       message: resolveMessage,
       severity: 'info',
       resource: resolvedResource,
-      data: { ...context, rule_name: rule.name, rule_id: rule.id },
-      timestamp: new Date().toISOString(),
+      context: eventContext,
+      timestamp: now,
     };
 
     const webhookIds = (rule.webhookIds ?? []) as string[];
@@ -764,23 +840,23 @@ export class NotificationEvaluatorService {
       ruleId: rule.id,
       ruleName: rule.name,
       resourceType,
-      resourceId,
+      resourceId: resourceKey,
     });
 
-    logger.info('Alert resolved', { ruleId: rule.id, ruleName: rule.name, resourceType, resourceId });
+    logger.info('Alert resolved', { ruleId: rule.id, ruleName: rule.name, resourceType, resourceId: resourceKey });
   }
 
   /** Fire an event-type alert — no persistent state, just cooldown tracking */
   private async fireEventAlert(
     rule: any,
     resourceType: string,
-    resourceId: string,
+    resourceKey: string,
     resourceName: string,
-    context: Record<string, unknown>
+    details: TemplateDetails
   ): Promise<void> {
     // Dedup guard: use Redis SET NX to prevent concurrent duplicate dispatches
     if (this.redis) {
-      const lockKey = `notif:event:lock:${rule.id}:${resourceType}:${resourceId}`;
+      const lockKey = `notif:event:lock:${rule.id}:${resourceType}:${resourceKey}`;
       const acquired = await this.redis.set(lockKey, '1', 'EX', 10, 'NX');
       if (!acquired) return; // another handler is already processing this event
     }
@@ -789,31 +865,37 @@ export class NotificationEvaluatorService {
     await this.db.insert(notificationAlertStates).values({
       ruleId: rule.id,
       resourceType,
-      resourceId,
+      resourceId: resourceKey,
       status: 'resolved',
       severity: rule.severity,
-      context,
+      context: details,
       resolvedAt: new Date(),
     });
 
-    const messageContext = {
-      ...context,
-      resource: { type: resourceType, id: resourceId, name: resourceName },
-      severity: rule.severity,
-      alert_name: rule.name,
-    };
+    const now = new Date().toISOString();
+    const resource = this.buildTemplateResource(
+      resourceType,
+      resourceKey,
+      resourceName,
+      details.resourceId ?? resourceKey
+    );
+    const messageContext = this.buildAlertTemplateContext(rule, 'alert.fired', 'firing', resource, now, details);
     const message = rule.messageTemplate
       ? renderTemplate(rule.messageTemplate, messageContext)
       : `${rule.name}: ${resourceName}`;
+    const eventContext = {
+      ...messageContext,
+      notification: { ...messageContext.notification, message },
+    };
 
     const event: NotificationEvent = {
       type: 'alert.fired',
       title: rule.name,
       message,
       severity: rule.severity as Severity,
-      resource: { type: resourceType, id: resourceId, name: resourceName },
-      data: { ...context, rule_name: rule.name, rule_id: rule.id },
-      timestamp: new Date().toISOString(),
+      resource,
+      context: eventContext,
+      timestamp: now,
     };
 
     const webhookIds = (rule.webhookIds ?? []) as string[];
@@ -832,10 +914,10 @@ export class NotificationEvaluatorService {
       ruleName: rule.name,
       severity: rule.severity,
       resourceType,
-      resourceId,
+      resourceId: resourceKey,
     });
 
-    logger.info('Event alert fired', { ruleId: rule.id, ruleName: rule.name, resourceType, resourceId });
+    logger.info('Event alert fired', { ruleId: rule.id, ruleName: rule.name, resourceType, resourceId: resourceKey });
   }
 
   /** Check if an event-type alert is still in cooldown */
@@ -908,8 +990,105 @@ export class NotificationEvaluatorService {
     this.lastRuleCacheRefresh = 0;
   }
 
+  private buildTemplateResource(
+    type: string,
+    key: string,
+    name: string,
+    id: string | null | undefined
+  ): NotificationTemplateResource {
+    return { type, id: id ?? null, key, name };
+  }
+
+  private buildAlertTemplateContext(
+    rule: any,
+    notificationType: 'alert.fired' | 'alert.resolved',
+    status: 'firing' | 'resolved',
+    resource: NotificationTemplateResource,
+    timestamp: string,
+    details: TemplateDetails
+  ) {
+    const { resourceId: _resourceId, ...templateDetails } = details;
+    const severity = status === 'resolved' ? ('info' as Severity) : (rule.severity as Severity);
+    return buildNotificationTemplateContext({
+      ...templateDetails,
+      notification: {
+        type: notificationType,
+        title: status === 'resolved' ? `Resolved: ${rule.name}` : rule.name,
+        message: '',
+        timestamp,
+      },
+      alert: {
+        id: rule.id,
+        name: rule.name,
+        status,
+        severity,
+      },
+      resource,
+    });
+  }
+
+  private getEventTemplateDetails(
+    context: Record<string, unknown>,
+    eventName: string,
+    currentState?: string,
+    fallbackResourceId?: string
+  ): TemplateDetails {
+    const nodeId = typeof context.nodeId === 'string' ? context.nodeId : null;
+    const explicitNodeName =
+      typeof context.node_name === 'string'
+        ? context.node_name
+        : typeof context.hostname === 'string'
+          ? context.hostname
+          : null;
+    const nodeName = explicitNodeName ?? (nodeId ? this.getNodeName(nodeId) : null);
+    const healthStatus =
+      typeof context.health_status === 'string'
+        ? context.health_status
+        : typeof context.healthStatus === 'string'
+          ? context.healthStatus
+          : null;
+    const resourceId =
+      typeof context.containerId === 'string'
+        ? context.containerId
+        : typeof fallbackResourceId === 'string'
+          ? fallbackResourceId
+          : null;
+
+    return {
+      resourceId,
+      node: {
+        id: nodeId,
+        name: nodeName,
+      },
+      health: {
+        status: healthStatus,
+      },
+      event: {
+        name: eventName,
+      },
+      state: {
+        current: currentState ?? null,
+      },
+    };
+  }
+
   private getNodeName(nodeId: string): string {
     const node = this.nodeRegistry.getNode(nodeId);
     return node?.hostname ?? nodeId;
+  }
+
+  private getThresholdResourceName(rule: any, sourceId: string, rawResourceId?: string): string {
+    const nodeName = rule.category === 'node' || rule.category === 'container' ? this.getNodeName(sourceId) : undefined;
+    if (rule.category === 'node') return nodeName || sourceId;
+    if (rawResourceId && rawResourceId !== 'system') return rawResourceId;
+    return nodeName || rawResourceId || sourceId;
+  }
+
+  private getThresholdResourceId(rule: any, sourceId?: string): string | null {
+    if (!sourceId) return null;
+    if (rule.category === 'node' || rule.category === 'database_postgres' || rule.category === 'database_redis') {
+      return sourceId;
+    }
+    return null;
   }
 }

@@ -90,8 +90,9 @@ webhookRoutes.openapi(
     if (typeof bodyTemplate !== 'string') {
       throw new AppError(400, 'BODY_TEMPLATE_REQUIRED', 'bodyTemplate is required');
     }
+    const dispatcher = container.resolve(NotificationDispatcherService);
     const sampleEvent = buildSampleEvent();
-    const context = buildTemplateContext(sampleEvent);
+    const context = buildTemplateContext(sampleEvent, dispatcher.getGatewayUrl());
     const rendered = renderTemplate(bodyTemplate, context);
     return c.json({ data: { rendered, context } });
   }

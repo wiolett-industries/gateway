@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { fetchWithPinnedAddress } from './notification-dispatcher.service.js';
+import { fetchWithPinnedAddress, NotificationDispatcherService } from './notification-dispatcher.service.js';
 
 let server: Server | undefined;
 
@@ -69,5 +69,29 @@ describe('fetchWithPinnedAddress', () => {
     });
 
     expect(receivedContentLength).toBe('7');
+  });
+});
+
+describe('NotificationDispatcherService gateway URL', () => {
+  it('prefers PUBLIC_URL over MANAGEMENT_DOMAIN for template context', () => {
+    const dispatcher = new NotificationDispatcherService(
+      {} as any,
+      {} as any,
+      { PUBLIC_URL: 'https://public.example.com', MANAGEMENT_DOMAIN: 'https://admin.example.com' } as any,
+      {} as any
+    );
+
+    expect(dispatcher.getGatewayUrl()).toBe('https://public.example.com');
+  });
+
+  it('falls back to MANAGEMENT_DOMAIN when PUBLIC_URL is not configured', () => {
+    const dispatcher = new NotificationDispatcherService(
+      {} as any,
+      {} as any,
+      { MANAGEMENT_DOMAIN: 'https://admin.example.com' } as any,
+      {} as any
+    );
+
+    expect(dispatcher.getGatewayUrl()).toBe('https://admin.example.com');
   });
 });

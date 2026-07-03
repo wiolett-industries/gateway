@@ -39,7 +39,12 @@ const BASE_EVENT_RULE = {
   webhookIds: [],
 };
 
-function createEvaluator(certs: any[], thresholdRules = [BASE_RULE], eventRules: any[] = []) {
+function createEvaluator(
+  certs: any[],
+  thresholdRules = [BASE_RULE],
+  eventRules: any[] = [],
+  nodesById: Record<string, any> = {}
+) {
   const states: any[] = [];
   const db = {
     query: {
@@ -66,7 +71,7 @@ function createEvaluator(certs: any[], thresholdRules = [BASE_RULE], eventRules:
     { getRawByIds: async () => [] } as any,
     { dispatch: async () => undefined } as any,
     null,
-    { getNode: () => null } as any
+    { getNode: (nodeId: string) => nodesById[nodeId] ?? null } as any
   );
 
   (evaluator as any).recordProbeOutcome = async () => undefined;
@@ -101,12 +106,13 @@ function createEvaluator(certs: any[], thresholdRules = [BASE_RULE], eventRules:
     _rule: any,
     _resourceType: string,
     _resourceId: string,
-    _resourceName: string,
+    resourceName: string,
     context: Record<string, unknown>
   ) => {
     const state = states.find((candidate) => candidate.id === stateId);
     if (state) {
       state.status = 'resolved';
+      state.resourceName = resourceName;
       state.context = context;
     }
   };
@@ -134,10 +140,16 @@ describe('NotificationEvaluatorService certificate expiry evaluation', () => {
       resourceId: 'cert-1',
       status: 'firing',
       context: {
-        days_until_expiry: 9,
-        expiry_date: '2026-04-10T00:00:00.000Z',
-        threshold: 14,
-        operator: '<=',
+        certificate: {
+          days_until_expiry: 9,
+          expiry_date: '2026-04-10T00:00:00.000Z',
+        },
+        metric: {
+          name: 'days_until_expiry',
+          value: 9,
+          threshold: 14,
+          operator: '<=',
+        },
       },
     });
   });
@@ -159,9 +171,14 @@ describe('NotificationEvaluatorService certificate expiry evaluation', () => {
     expect(states).toHaveLength(1);
     expect(states[0].status).toBe('resolved');
     expect(states[0].context).toMatchObject({
-      days_until_expiry: 44,
-      threshold: 14,
-      operator: '<=',
+      certificate: {
+        days_until_expiry: 44,
+      },
+      metric: {
+        value: 44,
+        threshold: 14,
+        operator: '<=',
+      },
     });
   });
 
@@ -183,7 +200,9 @@ describe('NotificationEvaluatorService certificate expiry evaluation', () => {
     expect(states[0]).toMatchObject({
       status: 'resolved',
       context: {
-        resolution_reason: 'certificate_inactive_or_deleted',
+        resolution: {
+          reason: 'certificate_inactive_or_deleted',
+        },
       },
     });
   });
@@ -207,9 +226,15 @@ describe('NotificationEvaluatorService stateful event evaluation', () => {
       resourceId: 'node-1',
       status: 'firing',
       context: {
-        event: 'offline',
-        current_state: 'offline',
-        hostname: 'worker-1',
+        event: {
+          name: 'offline',
+        },
+        state: {
+          current: 'offline',
+        },
+        node: {
+          name: 'worker-1',
+        },
       },
     });
   });
@@ -224,8 +249,12 @@ describe('NotificationEvaluatorService stateful event evaluation', () => {
     expect(states[0]).toMatchObject({
       status: 'resolved',
       context: {
-        event: 'offline',
-        current_state: 'online',
+        event: {
+          name: 'offline',
+        },
+        state: {
+          current: 'online',
+        },
       },
     });
   });
@@ -247,34 +276,147 @@ describe('NotificationEvaluatorService stateful event evaluation', () => {
     };
     const { evaluator, states } = createEvaluator([], [], [stoppedRule, exitedRule]);
     const resource = { type: 'container', id: 'nginx', name: 'nginx' };
+    const context = { nodeId: 'node-1', containerId: 'container-abc123' };
 
-    await evaluator.observeStatefulEvent('container', 'stopped', resource, { nodeId: 'node-1' }, ['stopped']);
-    await evaluator.observeStatefulEvent('container', 'exited', resource, { nodeId: 'node-1' }, ['exited']);
+    await evaluator.observeStatefulEvent('container', 'stopped', resource, context, ['stopped']);
+    await evaluator.observeStatefulEvent('container', 'exited', resource, context, ['exited']);
 
     expect(states).toHaveLength(2);
     expect(states).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ ruleId: 'event-rule-stopped', status: 'firing' }),
-        expect.objectContaining({ ruleId: 'event-rule-exited', status: 'firing' }),
+        expect.objectContaining({
+          ruleId: 'event-rule-exited',
+          status: 'firing',
+          context: expect.objectContaining({ resourceId: 'container-abc123' }),
+        }),
       ])
     );
 
-    await evaluator.observeStatefulEvent('container', 'started', resource, { nodeId: 'node-1' }, ['stopped', 'exited']);
+    await evaluator.observeStatefulEvent('container', 'started', resource, context, ['stopped', 'exited']);
 
     expect(states).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           ruleId: 'event-rule-stopped',
           status: 'resolved',
-          context: expect.objectContaining({ current_state: 'started' }),
+          context: expect.objectContaining({ state: { current: 'started' } }),
         }),
         expect.objectContaining({
           ruleId: 'event-rule-exited',
           status: 'resolved',
-          context: expect.objectContaining({ current_state: 'started' }),
+          context: expect.objectContaining({ state: { current: 'started' } }),
         }),
       ])
     );
+  });
+});
+
+describe('NotificationEvaluatorService node health evaluation', () => {
+  it('uses the node name for fired disk alert resource labels', async () => {
+    const diskRule = {
+      ...BASE_RULE,
+      id: 'disk-rule-1',
+      name: 'High disk usage',
+      category: 'node',
+      metric: 'disk',
+      operator: '>',
+      thresholdValue: 85,
+      severity: 'critical',
+    };
+    const { evaluator, states } = createEvaluator([], [diskRule], [], {
+      'node-1': { hostname: 'sharkbot-shared' },
+    });
+
+    await evaluator.evaluateHealthReport('node-1', {
+      diskMounts: [{ mountPoint: '/', usagePercent: 100 }],
+    });
+
+    expect(states).toHaveLength(1);
+    expect(states[0]).toMatchObject({
+      resourceType: 'node',
+      resourceId: 'node-1:/',
+      resourceName: 'sharkbot-shared',
+      status: 'firing',
+      context: {
+        node: {
+          id: 'node-1',
+          name: 'sharkbot-shared',
+        },
+        metric: {
+          name: 'disk',
+          value: 100,
+        },
+      },
+    });
+  });
+
+  it('keeps the container name for resolved container metric alerts', async () => {
+    const containerRule = {
+      ...BASE_RULE,
+      id: 'container-rule-1',
+      name: 'High container CPU',
+      category: 'container',
+      metric: 'cpu',
+      operator: '>',
+      thresholdValue: 85,
+      severity: 'warning',
+    };
+    const { evaluator, states } = createEvaluator([], [containerRule], [], {
+      'node-1': { hostname: 'docker-node' },
+    });
+
+    await evaluator.evaluateHealthReport('node-1', {
+      containerStats: [{ name: 'backend', cpuPercent: 95 }],
+    });
+    await evaluator.evaluateHealthReport('node-1', {
+      containerStats: [{ name: 'backend', cpuPercent: 10 }],
+    });
+
+    expect(states).toHaveLength(1);
+    expect(states[0]).toMatchObject({
+      resourceType: 'container',
+      resourceId: 'node-1:backend',
+      resourceName: 'backend',
+      status: 'resolved',
+    });
+  });
+});
+
+describe('NotificationEvaluatorService database threshold evaluation', () => {
+  it('keeps the database name for resolved database metric alerts', async () => {
+    const databaseRule = {
+      ...BASE_RULE,
+      id: 'database-rule-1',
+      name: 'High database latency',
+      category: 'database_postgres',
+      metric: 'latency_ms',
+      operator: '>',
+      thresholdValue: 1000,
+      severity: 'warning',
+    };
+    const { evaluator, states } = createEvaluator([], [databaseRule]);
+
+    await evaluator.evaluateDatabaseSnapshot({
+      databaseId: 'database-1',
+      type: 'postgres',
+      name: 'Primary Postgres',
+      metrics: { latency_ms: 1500 },
+    });
+    await evaluator.evaluateDatabaseSnapshot({
+      databaseId: 'database-1',
+      type: 'postgres',
+      name: 'Primary Postgres',
+      metrics: { latency_ms: 25 },
+    });
+
+    expect(states).toHaveLength(1);
+    expect(states[0]).toMatchObject({
+      resourceType: 'database_postgres',
+      resourceId: 'database-1',
+      resourceName: 'Primary Postgres',
+      status: 'resolved',
+    });
   });
 });
 
