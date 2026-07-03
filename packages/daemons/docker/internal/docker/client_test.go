@@ -1,8 +1,11 @@
 package docker
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +19,19 @@ import (
 	"github.com/moby/moby/client"
 )
 
+func writeDockerLogFrame(t *testing.T, buf *bytes.Buffer, payload string) {
+	t.Helper()
+	header := make([]byte, 8)
+	header[0] = 1
+	binary.BigEndian.PutUint32(header[4:8], uint32(len(payload)))
+	if _, err := buf.Write(header); err != nil {
+		t.Fatalf("write header: %v", err)
+	}
+	if _, err := buf.WriteString(payload); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+}
+
 func TestContainerCreateConfigParsesRestartPolicyFromCamelCase(t *testing.T) {
 	var cfg ContainerCreateConfig
 	if err := json.Unmarshal([]byte(`{"image":"nginx:latest","restartPolicy":"always"}`), &cfg); err != nil {
@@ -27,6 +43,32 @@ func TestContainerCreateConfigParsesRestartPolicyFromCamelCase(t *testing.T) {
 	}
 	if cfg.effectiveRestartPolicy() != "always" {
 		t.Fatalf("effective restart policy = %q", cfg.effectiveRestartPolicy())
+	}
+}
+
+func TestParseDockerLogsBoundedKeepsLastLines(t *testing.T) {
+	var buf bytes.Buffer
+	writeDockerLogFrame(t, &buf, "one\ntwo\n")
+	writeDockerLogFrame(t, &buf, "three\nfour\n")
+
+	lines, err := parseDockerLogsBounded(&buf, 2, maxDockerLogReadBytes)
+	if err != nil {
+		t.Fatalf("parse logs: %v", err)
+	}
+
+	if got, want := strings.Join(lines, ","), "three,four"; got != want {
+		t.Fatalf("lines = %q, want %q", got, want)
+	}
+}
+
+func TestParseDockerLogsBoundedRejectsOversizedResponses(t *testing.T) {
+	var buf bytes.Buffer
+	writeDockerLogFrame(t, &buf, "first\n")
+	writeDockerLogFrame(t, &buf, "second\n")
+
+	_, err := parseDockerLogsBounded(&buf, 10, 8)
+	if !errors.Is(err, errDockerLogsTooLarge) {
+		t.Fatalf("error = %v, want errDockerLogsTooLarge", err)
 	}
 }
 

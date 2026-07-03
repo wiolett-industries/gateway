@@ -39,9 +39,12 @@ type DockerPlugin struct {
 
 	// Log stream follow support
 	writer          *stream.Writer
+	sessionCtx      context.Context
 	logStreamMu     sync.Mutex
 	logStreamCancel map[string]context.CancelFunc // containerId -> cancel
 }
+
+const dockerLogsCommandTimeout = 15 * time.Second
 
 func dockerTimeoutProvided(configJSON string) bool {
 	if configJSON == "" {
@@ -868,6 +871,9 @@ func (p *DockerPlugin) handleNetworkCommand(cmd *pb.DockerNetworkCommand, result
 // When follow is true, starts a background goroutine that streams log chunks.
 func (p *DockerPlugin) handleLogsCommand(cmd *pb.DockerLogsCommand, result *pb.CommandResult) {
 	ctx := context.Background()
+	if p.sessionCtx != nil {
+		ctx = p.sessionCtx
+	}
 
 	tail := int(cmd.TailLines)
 	if tail <= 0 && !cmd.Follow {
@@ -909,7 +915,9 @@ func (p *DockerPlugin) handleLogsCommand(cmd *pb.DockerLogsCommand, result *pb.C
 	}
 
 	// Non-follow mode: fetch logs once
-	lines, err := p.client.ContainerLogs(ctx, cmd.ContainerId, tail, cmd.Timestamps, cmd.Since, cmd.Until)
+	readCtx, cancel := context.WithTimeout(ctx, dockerLogsCommandTimeout)
+	defer cancel()
+	lines, err := p.client.ContainerLogs(readCtx, cmd.ContainerId, tail, cmd.Timestamps, cmd.Since, cmd.Until)
 	if err != nil {
 		result.Success = false
 		result.Error = err.Error()
@@ -976,6 +984,10 @@ func (p *DockerPlugin) streamLogs(ctx context.Context, cancel context.CancelFunc
 		if size == 0 {
 			continue
 		}
+		if size > maxDockerLogLineBytes {
+			p.logger.Warn("log stream frame exceeds safety limit", "container", containerID, "bytes", size)
+			return
+		}
 
 		// Read the payload
 		if cap(buf) < int(size) {
@@ -991,11 +1003,16 @@ func (p *DockerPlugin) streamLogs(ctx context.Context, cancel context.CancelFunc
 		// Parse payload into lines
 		var lines []string
 		scanner := bufio.NewScanner(strings.NewReader(string(buf)))
+		scanner.Buffer(make([]byte, 0, 64*1024), maxDockerLogLineBytes)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line != "" {
 				lines = append(lines, line)
 			}
+		}
+		if err := scanner.Err(); err != nil {
+			p.logger.Warn("log stream scanner failed", "container", containerID, "error", err)
+			return
 		}
 
 		if len(lines) == 0 {
@@ -1367,6 +1384,7 @@ func (p *DockerPlugin) OnSessionStart(ctx context.Context, writer *stream.Writer
 
 	// Store writer and initialize log stream tracking
 	p.writer = writer
+	p.sessionCtx = ctx
 	p.logStreamCancel = make(map[string]context.CancelFunc)
 
 	return nil
@@ -1387,4 +1405,5 @@ func (p *DockerPlugin) OnSessionEnd() {
 	}
 	p.logStreamMu.Unlock()
 	p.writer = nil
+	p.sessionCtx = nil
 }

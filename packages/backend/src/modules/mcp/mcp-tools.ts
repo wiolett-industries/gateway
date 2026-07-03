@@ -417,7 +417,7 @@ function getMcpDiscoveryState(auth: McpAuthContext): McpDiscoveryState {
 
 function visibleToolNamesForState(state: McpDiscoveryState): Set<string> {
   const names = new Set<string>(MCP_ALWAYS_VISIBLE_AI_TOOLS);
-  for (const id of state.activeToolsets) {
+  for (const id of [...state.activeToolsets].reverse()) {
     const toolset = MCP_TOOLSET_BY_ID.get(id);
     for (const toolName of toolset?.toolNames ?? []) {
       names.add(toolName);
@@ -526,9 +526,16 @@ async function auditDeniedMutatingTool(
 }
 
 export function listAvailableMcpTools(scopes: string[], visibleToolNames?: Set<string>): AIToolDefinition[] {
-  return AI_TOOLS.filter(
+  const tools = AI_TOOLS.filter(
     (tool) =>
       isEligibleMcpTool(tool) && hasToolScope(scopes, tool) && (!visibleToolNames || visibleToolNames.has(tool.name))
+  );
+  if (!visibleToolNames) return tools;
+
+  const order = new Map([...visibleToolNames].map((name, index) => [name, index]));
+  return tools.sort(
+    (left, right) =>
+      (order.get(left.name) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.name) ?? Number.MAX_SAFE_INTEGER)
   );
 }
 
@@ -556,7 +563,7 @@ function toolResult(value: unknown): CallToolResult {
 
 export function registerMcpToolHandlers(server: McpAuthContext['server'], auth: McpAuthContext, user: User): void {
   const state = getMcpDiscoveryState(auth);
-  server.server.registerCapabilities({ tools: { listChanged: false } });
+  server.server.registerCapabilities({ tools: { listChanged: true } });
 
   server.server.setRequestHandler(ListToolsRequestSchema, (request): ListToolsResult => {
     state.lastAccessAt = Date.now();
@@ -596,6 +603,7 @@ export function registerMcpToolHandlers(server: McpAuthContext['server'], auth: 
         if (!toolset) {
           return toolError(`Unknown MCP toolset category "${category}"`);
         }
+        state.activeToolsets.delete(category);
         state.activeToolsets.add(category);
         state.lastAccessAt = Date.now();
         const issuedSessionKey = mcpIssuedSessionStateKey(auth);

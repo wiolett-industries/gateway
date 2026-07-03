@@ -324,8 +324,13 @@ async function handleLoadMore(
       until: exclusiveUntil,
     });
 
+    if (!result.success) {
+      send(ws, { type: 'error', message: result.error || 'Failed to load more logs' });
+      return;
+    }
+
     let lines: string[] = [];
-    if (result.success && result.detail) {
+    if (result.detail) {
       try {
         lines = JSON.parse(result.detail);
         if (!Array.isArray(lines)) lines = [];

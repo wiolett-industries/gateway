@@ -61,7 +61,7 @@ function registerMcpSettings(enabled = true) {
   } as unknown as McpSettingsService);
 }
 
-function registerOAuth(scopes: string[] | null = null, user: User = USER) {
+function registerOAuth(scopes: string[] | null = null, user: User = USER, clientId = 'goc_client') {
   container.registerInstance(OAuthService, {
     getMcpResourceUrl: vi.fn().mockReturnValue('https://gateway.example.com/api/mcp'),
     getApiResourceUrl: vi.fn().mockReturnValue('https://gateway.example.com/api'),
@@ -75,7 +75,7 @@ function registerOAuth(scopes: string[] | null = null, user: User = USER) {
             scopes,
             tokenId: 'oauth-token-1',
             tokenPrefix: 'gwo_abc123',
-            clientId: 'goc_client',
+            clientId,
           }
         : null
     ),
@@ -435,6 +435,55 @@ describe('MCP tools', () => {
     expect(names).toContain('list_docker_deployments');
   });
 
+  it('keeps newly discovered notification tools visible on the first tools/list page', async () => {
+    registerToken([
+      'acl:view',
+      'admin:users',
+      'admin:groups',
+      'databases:view',
+      'docker:containers:view',
+      'docker:containers:manage',
+      'domains:view',
+      'logs:environments:view',
+      'nodes:details',
+      'notifications:view',
+      'pki:ca:view:root',
+      'pki:cert:view',
+      'pki:templates:view',
+      'proxy:view',
+      'ssl:cert:view',
+      'status-page:view',
+    ]);
+
+    for (const category of [
+      'folders',
+      'nodes',
+      'proxy',
+      'certificates',
+      'docker',
+      'databases',
+      'logging',
+      'status_page',
+      'administration',
+    ]) {
+      await mcpRequest('tools/call', { name: 'discover_tools', arguments: { category } });
+    }
+    const discovered = await mcpRequest('tools/call', {
+      name: 'discover_tools',
+      arguments: { category: 'notifications' },
+    });
+    const payload = JSON.parse(discovered.body.result.content[0].text);
+    expect(payload.activeToolsets).toEqual(expect.arrayContaining(['administration', 'notifications']));
+    expect(
+      payload.toolsets.find((toolset: { id: string; tools: string[] }) => toolset.id === 'notifications')?.tools
+    ).toContain('list_alert_rules');
+
+    const refreshed = await mcpRequest('tools/list');
+    const names = refreshed.body.result.tools.map((tool: { name: string }) => tool.name);
+    expect(names).toContain('list_alert_rules');
+    expect(names).toContain('list_webhook_deliveries');
+  });
+
   it('isolates discovered toolsets by MCP session id when the client echoes the session header', async () => {
     registerToken(['docker:containers:view', 'docker:containers:manage']);
 
@@ -463,6 +512,21 @@ describe('MCP tools', () => {
 
     expect(firstNames).toContain('list_docker_deployments');
     expect(secondNames).not.toContain('list_docker_deployments');
+  });
+
+  it('does not share discovered toolsets across OAuth clients', async () => {
+    registerOAuth(['docker:containers:view', 'docker:containers:manage'], USER, 'first_client');
+    await mcpRequest('tools/call', { name: 'discover_tools', arguments: { category: 'docker' } });
+
+    registerOAuth(['docker:containers:view', 'docker:containers:manage'], USER, 'second_client');
+    const secondClientList = await mcpRequest('tools/list');
+    const secondClientNames = secondClientList.body.result.tools.map((tool: { name: string }) => tool.name);
+    expect(secondClientNames).not.toContain('list_docker_deployments');
+
+    registerOAuth(['docker:containers:view', 'docker:containers:manage'], USER, 'first_client');
+    const firstClientList = await mcpRequest('tools/list');
+    const firstClientNames = firstClientList.body.result.tools.map((tool: { name: string }) => tool.name);
+    expect(firstClientNames).toContain('list_docker_deployments');
   });
 
   it('carries no-header discovery state into the session id issued on that response', async () => {
