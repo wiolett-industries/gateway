@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -34,7 +35,7 @@ import type {
   SandboxRunnerWriteStdinResult,
 } from '@/modules/ai/ai.sandbox-runner.protocol.js';
 import { type DockerCreateContainerConfig, DockerService } from '@/services/docker.service.js';
-import { resolveHostArtifactPath as resolveSafeHostArtifactPath } from './artifact-path.js';
+import { openHostArtifact, resolveHostArtifactPath as resolveSafeHostArtifactPath } from './artifact-path.js';
 import { readResponseBodyCapped } from './network.js';
 
 const logger = createChildLogger('SandboxRunner');
@@ -258,12 +259,21 @@ async function allowSandboxDirectoryAccess(directoryPath: string): Promise<void>
   }
 }
 
-async function allowSandboxFileAccess(filePath: string): Promise<void> {
+async function allowSandboxDirectoryHandleAccess(directory: fs.FileHandle): Promise<void> {
   try {
-    await fs.chown(filePath, 65534, 65534);
-    await fs.chmod(filePath, 0o600);
+    await directory.chown(65534, 65534);
+    await directory.chmod(0o700);
   } catch {
-    await fs.chmod(filePath, 0o644).catch(() => {});
+    await directory.chmod(0o777).catch(() => {});
+  }
+}
+
+async function allowSandboxFileHandleAccess(file: fs.FileHandle): Promise<void> {
+  try {
+    await file.chown(65534, 65534);
+    await file.chmod(0o600);
+  } catch {
+    await file.chmod(0o644).catch(() => {});
   }
 }
 
@@ -292,7 +302,12 @@ async function workspaceDirForProcess(processId: string): Promise<string> {
 }
 
 const resolveHostArtifactPath = (workspaceDir: string, relativePath: string) =>
-  resolveSafeHostArtifactPath(workspaceDir, relativePath, allowSandboxDirectoryAccess);
+  resolveSafeHostArtifactPath(
+    workspaceDir,
+    relativePath,
+    allowSandboxDirectoryAccess,
+    allowSandboxDirectoryHandleAccess
+  );
 
 async function containerConfig(
   policy: SandboxRunnerExecuteScriptParams['policy'],
@@ -447,9 +462,14 @@ async function downloadArtifact(
   const artifactPath = resolveArtifactPath(params.path, fallbackFilename);
   const { status, contentType, buffer } = await readResponseBodyCapped(url, DOWNLOAD_LIMIT_BYTES);
   const workspaceDir = await workspaceDirForProcess(params.processId);
-  const hostPath = await resolveHostArtifactPath(workspaceDir, artifactPath.relativePath);
-  await fs.writeFile(hostPath, buffer, { mode: 0o600 });
-  await allowSandboxFileAccess(hostPath);
+  const hostArtifact = await resolveHostArtifactPath(workspaceDir, artifactPath.relativePath);
+  const file = await openHostArtifact(hostArtifact, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC, 0o600);
+  try {
+    await file.writeFile(buffer);
+    await allowSandboxFileHandleAccess(file);
+  } finally {
+    await file.close();
+  }
   return {
     processId: params.processId,
     url,
@@ -467,9 +487,14 @@ async function uploadArtifact(params: SandboxRunnerUploadArtifactParams): Promis
     throw new Error(`artifact upload is limited to ${UPLOAD_ARTIFACT_LIMIT_BYTES} bytes`);
   }
   const workspaceDir = await workspaceDirForProcess(params.processId);
-  const hostPath = await resolveHostArtifactPath(workspaceDir, artifactPath.relativePath);
-  await fs.writeFile(hostPath, bytes, { mode: 0o600 });
-  await allowSandboxFileAccess(hostPath);
+  const hostArtifact = await resolveHostArtifactPath(workspaceDir, artifactPath.relativePath);
+  const file = await openHostArtifact(hostArtifact, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC, 0o600);
+  try {
+    await file.writeFile(bytes);
+    await allowSandboxFileHandleAccess(file);
+  } finally {
+    await file.close();
+  }
   return {
     processId: params.processId,
     path: artifactPath.relativePath,
@@ -493,30 +518,31 @@ async function readArtifactBytes(
       : Math.min(64 * 1024, maxBytes);
   const length = Math.min(requestedLength, maxBytes);
   const workspaceDir = await workspaceDirForProcess(processId);
-  const hostPath = await resolveHostArtifactPath(workspaceDir, artifactPath.relativePath);
-  const stat = await fs.stat(hostPath).catch((error: NodeJS.ErrnoException) => {
+  const hostArtifact = await resolveHostArtifactPath(workspaceDir, artifactPath.relativePath);
+  const file = await openHostArtifact(hostArtifact, constants.O_RDONLY).catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') throw new Error(`artifact read failed: ${artifactPath.relativePath} not found`);
     throw error;
   });
-  if (!stat.isFile()) throw new Error(`artifact read failed: ${artifactPath.relativePath} is not a file`);
-  const totalBytes = stat.size;
-  const bytesToRead = Math.max(0, Math.min(length, Math.max(0, totalBytes - offset)));
-  const file = await fs.open(hostPath, 'r');
-  let bytes = Buffer.alloc(0);
   try {
+    const stat = await file.stat();
+    if (!stat.isFile()) {
+      throw new Error(`artifact read failed: ${artifactPath.relativePath} is not a file`);
+    }
+    const totalBytes = stat.size;
+    const bytesToRead = Math.max(0, Math.min(length, Math.max(0, totalBytes - offset)));
     const buffer = Buffer.alloc(bytesToRead);
     const { bytesRead } = await file.read(buffer, 0, bytesToRead, offset);
-    bytes = buffer.subarray(0, bytesRead);
+    const bytes = buffer.subarray(0, bytesRead);
+    return {
+      path: artifactPath.relativePath,
+      totalBytes,
+      offset,
+      bytes,
+      eof: offset + bytes.byteLength >= totalBytes,
+    };
   } finally {
     await file.close();
   }
-  return {
-    path: artifactPath.relativePath,
-    totalBytes,
-    offset,
-    bytes,
-    eof: offset + bytes.byteLength >= totalBytes,
-  };
 }
 
 async function readArtifact(params: SandboxRunnerReadArtifactParams): Promise<SandboxRunnerReadArtifactResult> {
