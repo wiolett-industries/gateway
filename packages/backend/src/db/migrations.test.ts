@@ -28,4 +28,18 @@ describe('drizzle migration metadata', () => {
       }
     }
   });
+
+  it('keeps the AI search payload purge scoped to unsafe derived documents', () => {
+    const migration = readFileSync(
+      join(process.cwd(), 'src/db/migrations/0053_ai_search_tool_payload_reset.sql'),
+      'utf8'
+    );
+
+    expect(migration).toContain('"kind" IN');
+    expect(migration).toContain("'tool_call'");
+    expect(migration).toContain("'tool_result'");
+    expect(migration).toContain("'window'");
+    expect(migration).toContain('"role" = \'tool\'');
+    expect(migration).not.toMatch(/DELETE FROM "ai_conversation_search_documents"\s*;$/m);
+  });
 });

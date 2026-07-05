@@ -825,13 +825,7 @@ function buildConversationSearchDocuments(input: {
     }
   }
   for (const toolCall of input.toolCalls) {
-    const text = [
-      toolCall.toolName,
-      toolCall.toolCallId,
-      compactJson(toolCall.toolArgs),
-      compactJson(toolCall.result),
-      toolCall.error,
-    ]
+    const text = [toolCall.toolName, toolCall.toolCallId, toolCall.result || toolCall.error ? 'tool_result' : null]
       .filter(Boolean)
       .join('\n');
     pushDocument(documents, input, {
@@ -885,6 +879,7 @@ function pushDocument(
 }
 
 function messageText(message: MessageRow): string {
+  if (message.role === 'tool') return '';
   const uiContent = typeof message.uiMessage.content === 'string' ? message.uiMessage.content : '';
   return [message.content, uiContent].filter(Boolean).join('\n');
 }
@@ -894,15 +889,9 @@ function toolMessageText(message: MessageRow): string {
   if (message.toolName) parts.push(message.toolName);
   if (Array.isArray(message.toolCalls)) {
     for (const toolCall of message.toolCalls) {
-      if (isRecord(toolCall)) {
-        if (typeof toolCall.name === 'string') parts.push(toolCall.name);
-        parts.push(compactJson(toolCall.arguments ?? toolCall.args ?? toolCall.result ?? toolCall.error));
-      }
+      if (isRecord(toolCall) && typeof toolCall.name === 'string') parts.push(toolCall.name);
     }
   }
-  parts.push(compactJson(message.toolArgsCompact));
-  parts.push(compactJson(message.toolResultCompact));
-  parts.push(compactJson(message.toolResultRaw));
   return parts.filter(Boolean).join('\n');
 }
 
@@ -963,9 +952,7 @@ function toReadableMessage(message: MessageRow) {
     role: message.role,
     sequence: message.sequence,
     createdAt: message.createdAt.toISOString(),
-    content: truncateText(
-      message.content || (typeof message.uiMessage.content === 'string' ? message.uiMessage.content : '')
-    ),
+    content: truncateText(messageText(message)),
     toolName: message.toolName,
   };
 }
@@ -975,20 +962,9 @@ function toPromptTailMessage(message: MessageRow) {
     messageId: message.id,
     role: message.role,
     createdAt: message.createdAt.toISOString(),
-    content: truncatePromptTailText(
-      message.content || (typeof message.uiMessage.content === 'string' ? message.uiMessage.content : '')
-    ),
+    content: truncatePromptTailText(messageText(message)),
     toolName: message.toolName,
   };
-}
-
-function compactJson(value: unknown): string {
-  if (value == null) return '';
-  try {
-    return truncateText(JSON.stringify(value));
-  } catch {
-    return '';
-  }
 }
 
 function truncateText(value: string): string {
