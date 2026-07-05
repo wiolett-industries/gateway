@@ -185,12 +185,17 @@ export class AIRunExecutor {
 
   private async executeApprovalContinuation(user: User, input: ApprovalContinuationInput): Promise<void> {
     const checkpoint = await this.loadCheckpoint(user.id, input.conversationId);
+    const pendingApproval =
+      checkpoint.pendingApproval?.id === input.toolCall.toolCallId &&
+      checkpoint.pendingApproval.name === input.toolCall.toolName
+        ? checkpoint.pendingApproval
+        : null;
     await this.executeResume(user, {
       conversationId: input.conversationId,
       runId: input.runId,
       toolCallId: input.toolCall.toolCallId,
       toolName: input.toolCall.toolName,
-      toolArgs: input.toolCall.toolArgs,
+      toolArgs: pendingApproval?.arguments ?? input.toolCall.toolArgs,
       approved: input.approved,
       pendingMessages: checkpoint.pendingMessages,
       queuedApprovals: checkpoint.queuedApprovals,

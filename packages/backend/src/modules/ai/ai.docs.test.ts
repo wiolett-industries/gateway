@@ -31,6 +31,7 @@ describe('AI internal docs registry', () => {
       'status-page',
       'api',
       'ai-settings',
+      'gitlab',
       'notifications',
     ]);
     expect(DOC_TOPIC_SCOPES).toMatchObject({
@@ -44,6 +45,7 @@ describe('AI internal docs registry', () => {
       conversations: 'feat:ai:use',
       'ai-settings': 'feat:ai:configure',
       'status-page': 'status-page:view',
+      gitlab: 'integrations:gitlab:view',
       notifications: 'notifications:view',
       proxy: 'proxy:view',
     });
@@ -92,6 +94,10 @@ describe('AI internal docs registry', () => {
     expect(getInternalDocumentation('status-page', ['status-page:view']).content).toContain(
       'status-page:incidents:create'
     );
+    expect(getInternalDocumentation('gitlab', ['integrations:gitlab:view']).content).toContain(
+      'gitlab_update_ci_config'
+    );
+    expect(getInternalDocumentation('gitlab', ['integrations:gitlab:view']).content).toContain('masked metadata only');
   });
 
   it('does not regress to stale model-facing tool names or enum examples', () => {

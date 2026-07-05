@@ -1,0 +1,74 @@
+import { z } from 'zod';
+
+export const IntegrationProviderSchema = z.enum(['gitlab']);
+export const GitLabAllowlistModeSchema = z.enum(['selected', 'all_visible']);
+export const GitLabAllowlistEntryTypeSchema = z.enum(['group', 'project']);
+
+export const GitLabConnectorSettingsSchema = z.object({
+  autoSyncEnabled: z.boolean().default(true),
+  autoSyncIntervalSeconds: z.coerce.number().int().min(300).max(86_400).default(900),
+  cloneShallow: z.boolean().default(true),
+  cloneDepth: z.coerce.number().int().min(1).max(100).default(1),
+  cloneLfs: z.boolean().default(false),
+  cloneSubmodules: z.boolean().default(false),
+  cloneMaxSizeMb: z.coerce.number().int().min(1).max(102_400).default(1024),
+  cloneTimeoutSeconds: z.coerce.number().int().min(10).max(3600).default(300),
+});
+
+export const GitLabAllowlistEntrySchema = z.object({
+  entryType: GitLabAllowlistEntryTypeSchema,
+  remoteId: z.string().trim().min(1).max(128),
+  fullPath: z.string().trim().min(1).max(2048),
+  name: z.string().trim().min(1).max(1024).optional(),
+  webUrl: z.string().url().max(2048).nullable().optional(),
+});
+
+export const GitLabConnectorCreateSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  baseUrl: z.string().trim().url().max(2048),
+  enabled: z.boolean().default(true),
+  token: z.string().min(1).max(4096),
+  allowlistMode: GitLabAllowlistModeSchema.default('selected'),
+  settings: GitLabConnectorSettingsSchema.partial().optional(),
+  allowlistEntries: z.array(GitLabAllowlistEntrySchema).max(1000).optional(),
+});
+
+export const GitLabConnectorUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  baseUrl: z.string().trim().url().max(2048).optional(),
+  enabled: z.boolean().optional(),
+  allowlistMode: GitLabAllowlistModeSchema.optional(),
+  settings: GitLabConnectorSettingsSchema.partial().optional(),
+  allowlistEntries: z.array(GitLabAllowlistEntrySchema).max(1000).optional(),
+});
+
+export const GitLabConnectorRotateTokenSchema = z.object({
+  token: z.string().min(1).max(4096),
+});
+
+export const GitLabConnectorListQuerySchema = z.object({
+  enabled: z.coerce.boolean().optional(),
+});
+
+export const GitLabAllowlistSearchQuerySchema = z.object({
+  q: z.string().trim().min(1).max(200),
+});
+
+export const GitLabAllowlistPreviewSearchSchema = z.object({
+  baseUrl: z.string().trim().url().max(2048),
+  token: z.string().min(1).max(4096),
+  q: z.string().trim().min(1).max(200),
+});
+
+export const GitLabConnectorPreviewTestSchema = z.object({
+  baseUrl: z.string().trim().url().max(2048),
+  token: z.string().min(1).max(4096),
+});
+
+export type GitLabConnectorCreateInput = z.infer<typeof GitLabConnectorCreateSchema>;
+export type GitLabConnectorUpdateInput = z.infer<typeof GitLabConnectorUpdateSchema>;
+export type GitLabConnectorRotateTokenInput = z.infer<typeof GitLabConnectorRotateTokenSchema>;
+export type GitLabConnectorListQuery = z.infer<typeof GitLabConnectorListQuerySchema>;
+export type GitLabAllowlistEntryInput = z.infer<typeof GitLabAllowlistEntrySchema>;
+export type GitLabAllowlistPreviewSearchInput = z.infer<typeof GitLabAllowlistPreviewSearchSchema>;
+export type GitLabConnectorPreviewTestInput = z.infer<typeof GitLabConnectorPreviewTestSchema>;

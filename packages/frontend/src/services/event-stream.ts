@@ -192,6 +192,12 @@ class EventStream {
           api.invalidateCache("admin:users");
         } else if (msg.channel === "docker.registry.changed") {
           api.invalidateCache("req:/api/docker/registries");
+          api.invalidateCache("settings:docker-registries");
+        } else if (msg.channel === "integration.connector.changed") {
+          api.invalidateCache("req:/api/integrations/gitlab/connectors");
+          api.invalidateCache("settings:gitlab-connectors");
+          api.invalidateCache("req:/api/docker/registries");
+          api.invalidateCache("settings:docker-registries");
         } else if (msg.channel === "notification.alert-rule.changed") {
           api.invalidateCache("req:/api/notifications/alert-rules");
         } else if (msg.channel === "notification.webhook.changed") {

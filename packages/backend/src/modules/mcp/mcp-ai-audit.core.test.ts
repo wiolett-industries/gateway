@@ -106,7 +106,9 @@ describe('AIService MCP audit core behavior', () => {
     );
 
     expect(result.error).toBeUndefined();
-    expect(registryService.resolveAuthForImagePull).toHaveBeenCalledWith('node-1', 'team/app:v1', registryId);
+    expect(registryService.resolveAuthForImagePull).toHaveBeenCalledWith('node-1', 'team/app:v1', registryId, {
+      actorScopes: ['docker:images:pull:node-1'],
+    });
     expect(dockerService.pullImage).toHaveBeenCalledWith(
       'node-1',
       'registry.example.com/team/app:v1',

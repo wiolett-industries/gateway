@@ -1,0 +1,220 @@
+import { z } from 'zod';
+import {
+  appRoute,
+  createdJson,
+  dataResponseSchema,
+  jsonBody,
+  listResponseSchema,
+  okJson,
+  pathParamSchema,
+  successJson,
+} from '@/lib/openapi.js';
+import {
+  GitLabAllowlistPreviewSearchSchema,
+  GitLabAllowlistSearchQuerySchema,
+  GitLabConnectorCreateSchema,
+  GitLabConnectorListQuerySchema,
+  GitLabConnectorPreviewTestSchema,
+  GitLabConnectorRotateTokenSchema,
+  GitLabConnectorUpdateSchema,
+} from './integrations.schemas.js';
+
+const connectorParams = pathParamSchema('id');
+
+const GitLabConnectorSettingsResponseSchema = z.object({
+  autoSyncEnabled: z.boolean(),
+  autoSyncIntervalSeconds: z.number(),
+  cloneShallow: z.boolean(),
+  cloneDepth: z.number(),
+  cloneLfs: z.boolean(),
+  cloneSubmodules: z.boolean(),
+  cloneMaxSizeMb: z.number(),
+  cloneTimeoutSeconds: z.number(),
+});
+
+const GitLabConnectorResponseSchema = z.object({
+  id: z.string().uuid(),
+  provider: z.literal('gitlab'),
+  name: z.string(),
+  baseUrl: z.string(),
+  enabled: z.boolean(),
+  allowlistMode: z.enum(['selected', 'all_visible']),
+  settings: GitLabConnectorSettingsResponseSchema,
+  capabilities: z.record(z.boolean()),
+  syncStatus: z.enum(['never', 'idle', 'running', 'success', 'error']),
+  syncLastError: z.string().nullable().optional(),
+  syncFailureCount: z.number(),
+  syncStartedAt: z.string().nullable().optional(),
+  syncFinishedAt: z.string().nullable().optional(),
+  syncLastOverlapAt: z.string().nullable().optional(),
+  syncNextRetryAt: z.string().nullable().optional(),
+  testedAt: z.string().nullable().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  hasToken: z.boolean(),
+  tokenMasked: z.string().nullable(),
+});
+
+const GitLabAllowlistEntryResponseSchema = z.object({
+  entryType: z.enum(['group', 'project']),
+  remoteId: z.string(),
+  fullPath: z.string(),
+  name: z.string().nullable().optional(),
+  webUrl: z.string().nullable().optional(),
+});
+
+const GitLabConnectorWithAllowlistResponseSchema = GitLabConnectorResponseSchema.extend({
+  allowlistEntries: z.array(GitLabAllowlistEntryResponseSchema),
+});
+
+const GitLabSyncResponseSchema = z.object({
+  status: z.string(),
+  projectCount: z.number().optional(),
+  registryCount: z.number().optional(),
+  reason: z.string().optional(),
+});
+
+const GitLabPreviewTestResponseSchema = z.object({
+  capabilities: z.record(z.boolean()),
+  allowlistEntries: z.array(GitLabAllowlistEntryResponseSchema),
+});
+
+export const listGitLabConnectorsRoute = appRoute({
+  method: 'get',
+  path: '/gitlab/connectors',
+  tags: ['Integrations'],
+  summary: 'List GitLab connectors',
+  description: 'Lists configured GitLab connectors. PATs are never returned; token metadata is masked as ****last4.',
+  request: { query: GitLabConnectorListQuerySchema },
+  responses: okJson(listResponseSchema(GitLabConnectorResponseSchema)),
+});
+
+export const createGitLabConnectorRoute = appRoute({
+  method: 'post',
+  path: '/gitlab/connectors',
+  tags: ['Integrations'],
+  summary: 'Create a GitLab connector',
+  description:
+    'Creates a system-level GitLab connector backed by an encrypted PAT. The raw PAT is accepted only on write and is never returned.',
+  request: jsonBody(GitLabConnectorCreateSchema),
+  responses: createdJson(dataResponseSchema(GitLabConnectorWithAllowlistResponseSchema)),
+});
+
+export const previewGitLabAllowlistRoute = appRoute({
+  method: 'post',
+  path: '/gitlab/allowlist/preview-search',
+  tags: ['Integrations'],
+  summary: 'Search GitLab projects and groups before saving a connector',
+  description:
+    'Uses the submitted GitLab URL and PAT for a one-time allowlist search. The PAT is not stored and is never returned.',
+  request: jsonBody(GitLabAllowlistPreviewSearchSchema),
+  responses: okJson(listResponseSchema(GitLabAllowlistEntryResponseSchema)),
+});
+
+export const previewGitLabConnectorTestRoute = appRoute({
+  method: 'post',
+  path: '/gitlab/connectors/preview-test',
+  tags: ['Integrations'],
+  summary: 'Test GitLab connection before saving a connector',
+  description:
+    'Uses the submitted GitLab URL and PAT for a one-time connection test and project preview. The PAT is not stored and is never returned.',
+  request: jsonBody(GitLabConnectorPreviewTestSchema),
+  responses: okJson(dataResponseSchema(GitLabPreviewTestResponseSchema)),
+});
+
+export const getGitLabConnectorRoute = appRoute({
+  method: 'get',
+  path: '/gitlab/connectors/{id}',
+  tags: ['Integrations'],
+  summary: 'Get a GitLab connector',
+  description: 'Returns connector settings, masked token metadata, capabilities, sync status, and allowlist entries.',
+  request: { params: connectorParams },
+  responses: okJson(dataResponseSchema(GitLabConnectorWithAllowlistResponseSchema)),
+});
+
+export const updateGitLabConnectorRoute = appRoute({
+  method: 'patch',
+  path: '/gitlab/connectors/{id}',
+  tags: ['Integrations'],
+  summary: 'Update a GitLab connector',
+  description:
+    'Updates connector metadata, allowlist, and database-backed runtime settings. Use token rotation to replace the PAT.',
+  request: { params: connectorParams, ...jsonBody(GitLabConnectorUpdateSchema) },
+  responses: okJson(dataResponseSchema(GitLabConnectorWithAllowlistResponseSchema)),
+});
+
+export const deleteGitLabConnectorRoute = appRoute({
+  method: 'delete',
+  path: '/gitlab/connectors/{id}',
+  tags: ['Integrations'],
+  summary: 'Delete a GitLab connector',
+  request: { params: connectorParams },
+  responses: successJson,
+});
+
+export const rotateGitLabConnectorTokenRoute = appRoute({
+  method: 'post',
+  path: '/gitlab/connectors/{id}/token',
+  tags: ['Integrations'],
+  summary: 'Rotate a GitLab connector token',
+  description: 'Replaces the encrypted PAT. The raw token is accepted only in this request and is never returned.',
+  request: { params: connectorParams, ...jsonBody(GitLabConnectorRotateTokenSchema) },
+  responses: okJson(dataResponseSchema(GitLabConnectorResponseSchema)),
+});
+
+export const getGitLabConnectorCapabilitiesRoute = appRoute({
+  method: 'get',
+  path: '/gitlab/connectors/{id}/capabilities',
+  tags: ['Integrations'],
+  summary: 'Get detected GitLab connector capabilities',
+  request: { params: connectorParams },
+  responses: okJson(dataResponseSchema(z.record(z.boolean()))),
+});
+
+export const testGitLabConnectorRoute = appRoute({
+  method: 'post',
+  path: '/gitlab/connectors/{id}/test',
+  tags: ['Integrations'],
+  summary: 'Test a GitLab connector',
+  description: 'Tests the stored PAT and updates detected capabilities without returning the token.',
+  request: { params: connectorParams },
+  responses: okJson(dataResponseSchema(GitLabConnectorResponseSchema)),
+});
+
+export const syncGitLabConnectorRoute = appRoute({
+  method: 'post',
+  path: '/gitlab/connectors/{id}/sync',
+  tags: ['Integrations'],
+  summary: 'Sync a GitLab connector',
+  description:
+    'Synchronizes allowed GitLab projects and registries. Registry credentials remain connector-backed and are not returned.',
+  request: { params: connectorParams },
+  responses: okJson(dataResponseSchema(GitLabSyncResponseSchema)),
+});
+
+export const searchGitLabAllowlistRoute = appRoute({
+  method: 'get',
+  path: '/gitlab/connectors/{id}/allowlist/search',
+  tags: ['Integrations'],
+  summary: 'Search GitLab projects and groups for allowlist selection',
+  request: { params: connectorParams, query: GitLabAllowlistSearchQuerySchema },
+  responses: okJson(listResponseSchema(GitLabAllowlistEntryResponseSchema)),
+});
+
+export const listGitLabAllowlistOptionsRoute = appRoute({
+  method: 'get',
+  path: '/gitlab/connectors/{id}/allowlist/options',
+  tags: ['Integrations'],
+  summary: 'List GitLab projects available for allowlist selection',
+  request: { params: connectorParams },
+  responses: okJson(listResponseSchema(GitLabAllowlistEntryResponseSchema)),
+});
+
+export const refreshGitLabAllowlistOptionsRoute = appRoute({
+  method: 'post',
+  path: '/gitlab/connectors/{id}/allowlist/options/refresh',
+  tags: ['Integrations'],
+  summary: 'Refresh cached GitLab projects for allowlist selection',
+  request: { params: connectorParams },
+  responses: okJson(listResponseSchema(GitLabAllowlistEntryResponseSchema)),
+});

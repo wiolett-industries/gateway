@@ -107,6 +107,24 @@ function createRegistryUpdateService(existing: Record<string, unknown>) {
   return { capturedUpdates, db, service };
 }
 
+function queryResult<T>(value: T) {
+  return {
+    limit: vi.fn().mockResolvedValue(value),
+    orderBy: vi.fn().mockResolvedValue(value),
+  };
+}
+
+function createQueuedSelectDb(values: unknown[]) {
+  const queue = [...values];
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => queryResult(queue.shift() ?? [])),
+      })),
+    })),
+  };
+}
+
 describe('DockerRegistryService image registry mappings', () => {
   function createService(mappingRegistryId = 'team-registry') {
     const registries = [
@@ -254,6 +272,217 @@ describe('DockerRegistryService credential retargeting guard', () => {
     await service.update('registry-1', { scope: 'global', password: 'new-password' }, 'user-1');
 
     expect(capturedUpdates[0]).toMatchObject({ scope: 'global', nodeId: null });
+  });
+
+  it('rejects edits for integration-managed registries', async () => {
+    const { db, service } = createRegistryUpdateService(
+      registryRow({ source: 'integration', provider: 'gitlab', readOnly: true })
+    );
+
+    await expect(service.update('registry-1', { name: 'Renamed Registry' }, 'user-1')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'REGISTRY_MANAGED_BY_INTEGRATION',
+    });
+    expect(db.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('DockerRegistryService GitLab-provided registry credentials', () => {
+  const integrationRegistry = registryRow({
+    id: 'registry-1',
+    url: 'registry.gitlab.example.com/org/app',
+    username: null,
+    encryptedPassword: null,
+    source: 'integration',
+    provider: 'gitlab',
+    readOnly: true,
+  });
+  const link = {
+    id: 'link-1',
+    connectorId: 'connector-1',
+    registryId: 'registry-1',
+    remoteRegistryId: '100',
+    projectRemoteId: '10',
+    projectFullPath: 'org/app',
+    status: 'available',
+    lastSeenAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const credential = {
+    id: 'credential-1',
+    connectorId: 'connector-1',
+    credentialType: 'gitlab_deploy_token',
+    name: 'Gateway registry token',
+    encryptedSecret: '{}',
+    secretLast4: 'abcd',
+    username: 'gitlab+deploy-token-1',
+    projectRemoteId: '10',
+    projectFullPath: 'org/app',
+    registryUrl: 'registry.gitlab.example.com/org/app',
+    scopes: ['read_registry'],
+    expiresAt: null,
+    metadata: {},
+    createdBy: 'user-1',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const connector = {
+    id: 'connector-1',
+    provider: 'gitlab',
+    name: 'GitLab',
+    baseUrl: 'https://gitlab.example.com',
+    enabled: true,
+    encryptedToken: '{}',
+    tokenLast4: '1234',
+    allowlistMode: 'selected',
+    settings: {},
+    capabilities: {},
+    syncStatus: 'success',
+    syncLastError: null,
+    syncFailureCount: 0,
+    syncStartedAt: null,
+    syncFinishedAt: null,
+    syncLastOverlapAt: null,
+    syncNextRetryAt: null,
+    testedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  it('requires the GitLab registry-use scope for user-initiated credential use', async () => {
+    const db = createQueuedSelectDb([[integrationRegistry], [link]]);
+    const service = new DockerRegistryService(
+      db as never,
+      {} as never,
+      { decryptString: vi.fn().mockReturnValue('deploy-secret') } as never,
+      {} as never
+    );
+
+    await expect(
+      service.resolveAuthForImagePull('node-1', 'registry.gitlab.example.com/org/app:latest', 'registry-1', {
+        actorScopes: ['docker:images:pull'],
+      })
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'GITLAB_REGISTRY_SCOPE_REQUIRED',
+    });
+  });
+
+  it('resolves GitLab deploy-token credentials without exposing the secret', async () => {
+    const db = createQueuedSelectDb([[integrationRegistry], [link], [link], [credential]]);
+    const decryptString = vi.fn().mockReturnValue('deploy-secret');
+    const service = new DockerRegistryService(db as never, {} as never, { decryptString } as never, {} as never);
+
+    const auth = await service.resolveAuthForImagePull(
+      'node-1',
+      'registry.gitlab.example.com/org/app:latest',
+      'registry-1',
+      { actorScopes: ['integrations:gitlab:registry:use'] }
+    );
+
+    expect(auth?.registryId).toBe('registry-1');
+    expect(auth?.url).toBe('registry.gitlab.example.com/org/app');
+    expect(decryptString).toHaveBeenCalledWith({});
+    const decoded = JSON.parse(Buffer.from(auth?.authJson ?? '', 'base64').toString('utf8'));
+    expect(decoded).toEqual({
+      username: 'gitlab+deploy-token-1',
+      password: 'deploy-secret',
+      serveraddress: 'registry.gitlab.example.com/org/app',
+    });
+  });
+
+  it('returns a clear error when a GitLab-provided registry has no usable credentials', async () => {
+    const db = createQueuedSelectDb([
+      [integrationRegistry],
+      [link],
+      [link],
+      [],
+      [{ ...connector, encryptedToken: null }],
+    ]);
+    const service = new DockerRegistryService(
+      db as never,
+      {} as never,
+      { decryptString: vi.fn().mockReturnValue('deploy-secret') } as never,
+      {} as never
+    );
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await service.testConnection('registry-1', {
+      actorScopes: ['integrations:gitlab:registry:use'],
+    });
+
+    expect(result).toEqual({ success: false, statusText: 'GitLab registry credentials are not configured' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to connector PAT credentials for GitLab-provided registries', async () => {
+    const db = createQueuedSelectDb([[integrationRegistry], [link], [link], [], [connector]]);
+    const decryptString = vi.fn().mockReturnValue('connector-pat');
+    const service = new DockerRegistryService(db as never, {} as never, { decryptString } as never, {} as never);
+
+    const auth = await service.resolveAuthForImagePull(
+      'node-1',
+      'registry.gitlab.example.com/org/app:latest',
+      'registry-1',
+      { actorScopes: ['integrations:gitlab:registry:use'] }
+    );
+
+    expect(auth?.registryId).toBe('registry-1');
+    expect(decryptString).toHaveBeenCalledWith({});
+    const decoded = JSON.parse(Buffer.from(auth?.authJson ?? '', 'base64').toString('utf8'));
+    expect(decoded).toEqual({
+      username: 'oauth2',
+      password: 'connector-pat',
+      serveraddress: 'registry.gitlab.example.com/org/app',
+    });
+  });
+
+  it('tests GitLab-provided registry repository URLs against the registry API root', async () => {
+    const db = createQueuedSelectDb([[integrationRegistry], [link], [link], [], [connector], [link], [connector]]);
+    const service = new DockerRegistryService(
+      db as never,
+      {} as never,
+      { decryptString: vi.fn().mockReturnValue('connector-pat') } as never,
+      {} as never
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('', {
+          status: 401,
+          headers: {
+            'www-authenticate': 'Bearer realm="https://gitlab.example.com/jwt/auth",service="container_registry"',
+          },
+        })
+      )
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await service.testConnection('registry-1', {
+      actorScopes: ['integrations:gitlab:registry:use'],
+    });
+
+    expect(result).toEqual({ success: true, status: 200, statusText: 'Authenticated (token exchange)' });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://registry.gitlab.example.com/v2/',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: expect.stringMatching(/^Basic /),
+        }),
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://gitlab.example.com/jwt/auth?service=container_registry',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: expect.stringMatching(/^Basic /),
+        }),
+      })
+    );
   });
 });
 

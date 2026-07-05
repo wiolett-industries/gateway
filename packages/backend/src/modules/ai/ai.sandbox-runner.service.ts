@@ -25,6 +25,8 @@ import type {
   SandboxRunnerRunProcessParams,
   SandboxRunnerSendArtifactParams,
   SandboxRunnerSendArtifactResult,
+  SandboxRunnerUploadArtifactParams,
+  SandboxRunnerUploadArtifactResult,
   SandboxRunnerWaitProcessParams,
   SandboxRunnerWaitProcessResult,
   SandboxRunnerWriteStdinParams,
@@ -106,6 +108,11 @@ export class AISandboxRunnerService {
   async downloadArtifact(params: SandboxRunnerDownloadArtifactParams) {
     await this.ensureStarted();
     return this.callRunner<SandboxRunnerDownloadArtifactResult>('downloadArtifact', params);
+  }
+
+  async uploadArtifact(params: SandboxRunnerUploadArtifactParams) {
+    await this.ensureStarted();
+    return this.callRunner<SandboxRunnerUploadArtifactResult>('uploadArtifact', params);
   }
 
   async readArtifact(params: SandboxRunnerReadArtifactParams) {

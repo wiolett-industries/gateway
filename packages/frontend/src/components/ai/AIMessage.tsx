@@ -560,7 +560,7 @@ const markdownComponents = {
     );
   },
   table: ({ children, ...props }: React.HTMLAttributes<HTMLTableElement>) => (
-    <div className="overflow-x-auto border border-border bg-background">
+    <div className="my-3 overflow-x-auto border border-border bg-background">
       <table
         className="min-w-full text-sm [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium [&_th]:text-muted-foreground [&_td]:px-2 [&_td]:py-1.5 [&_td]:border-t [&_td]:border-border"
         {...props}

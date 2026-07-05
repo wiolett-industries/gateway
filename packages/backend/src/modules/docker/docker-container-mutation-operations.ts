@@ -120,7 +120,7 @@ export async function createContainer(
   let data: any;
   try {
     if (registryId) {
-      await pullConfigImage(ctx, nodeId, config, registryId);
+      await pullConfigImage(ctx, nodeId, config, registryId, actorScopes);
     }
     const result = await ctx.nodeDispatch.sendDockerContainerCommand(nodeId, 'create', {
       configJson: JSON.stringify(config),
@@ -636,7 +636,7 @@ export async function recreateWithConfig(
 
   try {
     if (!options?.skipImagePull) {
-      await pullConfigImage(ctx, nodeId, config);
+      await pullConfigImage(ctx, nodeId, config, undefined, options?.actorScopes ?? []);
     }
 
     const result = await ctx.nodeDispatch.sendDockerContainerCommand(
@@ -686,13 +686,16 @@ async function pullConfigImage(
   ctx: DockerContainerMutationContext,
   nodeId: string,
   config: Record<string, unknown>,
-  registryId?: string
+  registryId?: string,
+  actorScopes: string[] = []
 ) {
   const imageRef = typeof config.image === 'string' ? config.image.trim() : '';
   if (!imageRef) return;
 
   const authCandidates =
-    (await ctx.registryService?.resolveAuthCandidatesForImagePull(nodeId, imageRef, registryId)) ?? [];
+    (await ctx.registryService?.resolveAuthCandidatesForImagePull(nodeId, imageRef, registryId, {
+      actorScopes,
+    })) ?? [];
   const pullCandidates: Array<DockerRegistryAuthCandidate | null> = authCandidates.length ? authCandidates : [null];
   let lastError: unknown;
 

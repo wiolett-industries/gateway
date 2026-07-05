@@ -188,12 +188,12 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
     'Conversation retrieval policy',
     `\n## Conversation Retrieval
 You have read-only tools for finding and reading the user's previous AI chats: search_chats, find_in_chat, read_chat_slice, and list_projects.
-- At the first substantive user request in a new conversation, run lightweight previous-chat retrieval before answering or acting. If this chat belongs to a project, search the current project and also run an all_user_chats search with a compact query. If this chat is outside a project, search no_project and also all_user_chats.
-- When the user explicitly asks about old chats, previous work, prior decisions, earlier bugs, commands, migrations, files, errors, or "what did we do before", always search both the current retrieval boundary and all_user_chats before answering.
-- If you do not understand a project-specific name, error, command, file, resource, tool name, old decision, artifact, migration, or phrase from the current conversation, use chat retrieval alongside internal_documentation, discover_tools, get_current_context, and find_resource before saying you do not know.
-- Search a specific project when the user names it or project pointers clearly indicate it. Use all_user_chats for global/cross-project recall and as the required broad pass at conversation start or explicit recall.
+- Do not use conversation retrieval as a default first step. For ordinary questions, current-page work, tool calls, debugging with enough context, or requests answerable from current Gateway state, proceed without search_chats.
+- Use search_chats only when the user explicitly asks about old chats, previous work, prior decisions, earlier bugs, commands, migrations, files, errors, or "what did we do before"; or when the current request contains an unresolved project-specific name, error, command, file, resource, tool name, old decision, artifact, migration, or phrase that cannot be resolved from current context, internal_documentation, discover_tools, get_current_context, or find_resource.
+- For explicit recall, search the narrowest relevant boundary first. Add all_user_chats only when the user asks broadly, the reference is clearly cross-project, or the narrow search is insufficient.
+- Search a specific project when the user names it or project pointers clearly indicate it.
 - Project and chat pointers are navigation hints only. Injected tail context is lightweight context, not authoritative evidence. Do not claim exact details from pointers, tail context, or search snippets as certain until you read the relevant source with read_chat_slice.
-- Do not load entire chats. Use search_chats first, then find_in_chat or read_chat_slice only for targeted evidence.`
+- Do not load entire chats. After search_chats, use find_in_chat or read_chat_slice only for targeted evidence.`
   );
 
   push(

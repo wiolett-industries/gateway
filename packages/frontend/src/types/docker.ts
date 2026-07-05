@@ -261,6 +261,20 @@ export interface DockerRegistry {
   url: string;
   username?: string;
   trustedAuthRealm?: string | null;
+  source?: "manual" | "integration";
+  provider?: "gitlab" | null;
+  readOnly?: boolean;
+  integration?: {
+    provider: "gitlab";
+    connectorId: string;
+    connectorName: string | null;
+    connectorBaseUrl: string | null;
+    projectRemoteId: string | null;
+    projectFullPath: string | null;
+    remoteRegistryId: string | null;
+    status: "available" | "inaccessible";
+    lastSeenAt: string;
+  };
   scope: "global" | "node";
   nodeId?: string;
   createdAt: string;

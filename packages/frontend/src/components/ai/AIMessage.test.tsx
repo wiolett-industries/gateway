@@ -121,4 +121,28 @@ describe("AIMessage tool call groups", () => {
     expect(screen.getByText("Готовлю файл.")).toBeInTheDocument();
     expect(screen.getByText("generated.txt")).toBeInTheDocument();
   });
+
+  it("separates consecutive markdown tables", () => {
+    const { container } = render(
+      <AIMessage
+        message={{
+          id: "assistant-tables",
+          role: "assistant",
+          content: `| Field | Value |
+| --- | --- |
+| Name | Main |
+
+| Capability | Enabled |
+| --- | --- |
+| Projects | yes |`,
+        }}
+      />
+    );
+
+    const tableWrappers = [...container.querySelectorAll("table")].map(
+      (table) => table.parentElement
+    );
+    expect(tableWrappers).toHaveLength(2);
+    expect(tableWrappers.every((wrapper) => wrapper?.classList.contains("my-3"))).toBe(true);
+  });
 });

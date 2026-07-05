@@ -1,0 +1,273 @@
+import type {
+  IntegrationAllowlistEntryType,
+  IntegrationConnectorCapabilities,
+  IntegrationProvider,
+} from '@/db/schema/index.js';
+
+export interface VcsConnectorAuth {
+  token: string;
+  baseUrl: string;
+}
+
+export interface VcsConnectorIdentity {
+  id: string;
+  provider: IntegrationProvider;
+  name: string;
+  baseUrl: string;
+}
+
+export interface VcsProjectRef {
+  remoteId: string;
+  fullPath: string;
+  name: string;
+  webUrl?: string | null;
+  visibility?: string | null;
+  defaultBranch?: string | null;
+  archived?: boolean;
+}
+
+export interface VcsAllowlistSearchResult {
+  entryType: IntegrationAllowlistEntryType;
+  remoteId: string;
+  fullPath: string;
+  name: string;
+  webUrl?: string | null;
+}
+
+export interface VcsTreeEntry {
+  path: string;
+  name: string;
+  type: 'tree' | 'blob' | 'commit';
+  size?: number | null;
+  mode?: string | null;
+  id?: string | null;
+}
+
+export interface VcsFileReadRequest {
+  project: VcsProjectRef;
+  path: string;
+  ref?: string;
+  offset?: number;
+  length?: number;
+}
+
+export interface VcsFileReadResult {
+  path: string;
+  ref: string;
+  content: string;
+  encoding: 'utf8' | 'base64';
+  size: number;
+  offset: number;
+  bytesRead: number;
+  truncated: boolean;
+  nextOffset?: number | null;
+  blobId?: string | null;
+  commitId?: string | null;
+}
+
+export interface VcsCommitFileChange {
+  action: 'create' | 'update' | 'delete' | 'move';
+  path: string;
+  previousPath?: string;
+  content?: string;
+  encoding?: 'text' | 'base64';
+}
+
+export interface VcsCommitRequest {
+  project: VcsProjectRef;
+  branch: string;
+  commitMessage: string;
+  changes: VcsCommitFileChange[];
+  startBranch?: string;
+}
+
+export interface VcsCommitResult {
+  commitSha: string;
+  webUrl?: string | null;
+}
+
+export interface VcsCiLintResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  mergedYaml?: string | null;
+}
+
+export interface VcsPipelineRef {
+  id: number;
+  iid?: number | null;
+  ref?: string | null;
+  sha?: string | null;
+  status?: string | null;
+  source?: string | null;
+  webUrl?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface VcsPipelineJobRef {
+  id: number;
+  name: string;
+  stage?: string | null;
+  status?: string | null;
+  ref?: string | null;
+  webUrl?: string | null;
+  createdAt?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+}
+
+export interface VcsJobLogResult {
+  jobId: number;
+  output: string;
+  bytesRead: number;
+  totalBytes: number;
+  truncated: boolean;
+}
+
+export interface VcsProjectVariableRef {
+  key: string;
+  variableType?: string | null;
+  protected?: boolean;
+  masked?: boolean;
+  raw?: boolean;
+  environmentScope?: string | null;
+  description?: string | null;
+}
+
+export interface VcsProjectVariableInput {
+  key: string;
+  value: string;
+  variableType?: 'env_var' | 'file';
+  protected?: boolean;
+  masked?: boolean;
+  raw?: boolean;
+  environmentScope?: string;
+  description?: string;
+}
+
+export interface VcsProjectWebhookRef {
+  id: number;
+  url: string;
+  pushEvents?: boolean;
+  mergeRequestsEvents?: boolean;
+  tagPushEvents?: boolean;
+  jobEvents?: boolean;
+  pipelineEvents?: boolean;
+  enableSslVerification?: boolean;
+  createdAt?: string | null;
+}
+
+export interface VcsProjectWebhookInput {
+  id?: number;
+  url: string;
+  token?: string;
+  pushEvents?: boolean;
+  mergeRequestsEvents?: boolean;
+  tagPushEvents?: boolean;
+  jobEvents?: boolean;
+  pipelineEvents?: boolean;
+  enableSslVerification?: boolean;
+}
+
+export interface VcsRegistryRepositoryRef {
+  id: string;
+  name: string;
+  path?: string | null;
+  location?: string | null;
+  tagsCount?: number | null;
+}
+
+export interface VcsDeployTokenInput {
+  name: string;
+  scopes: string[];
+  expiresAt?: string;
+}
+
+export interface VcsDeployTokenResult {
+  id: number | string;
+  name: string;
+  username: string;
+  token: string;
+  scopes: string[];
+  expiresAt?: string | null;
+}
+
+export interface VcsArchiveResult {
+  filename: string;
+  contentType: string | null;
+  bytes: Buffer;
+}
+
+export interface VcsRegistryRef {
+  remoteRegistryId?: string | null;
+  projectRemoteId?: string | null;
+  projectFullPath?: string | null;
+  registryUrl: string;
+  name: string;
+}
+
+export interface ConnectorProvider {
+  provider: IntegrationProvider;
+  testConnection(auth: VcsConnectorAuth): Promise<IntegrationConnectorCapabilities>;
+  searchAllowlist(auth: VcsConnectorAuth, query: string): Promise<VcsAllowlistSearchResult[]>;
+  listProjects(auth: VcsConnectorAuth): Promise<VcsProjectRef[]>;
+  listRegistries(auth: VcsConnectorAuth, projects?: VcsProjectRef[]): Promise<VcsRegistryRef[]>;
+}
+
+export interface VcsConnectorProvider extends ConnectorProvider {
+  listTree(auth: VcsConnectorAuth, project: VcsProjectRef, path: string, ref?: string): Promise<VcsTreeEntry[]>;
+  readFile(auth: VcsConnectorAuth, request: VcsFileReadRequest): Promise<VcsFileReadResult>;
+  commitFiles(auth: VcsConnectorAuth, request: VcsCommitRequest): Promise<VcsCommitResult>;
+  lintCiConfig(auth: VcsConnectorAuth, project: VcsProjectRef, content: string): Promise<VcsCiLintResult>;
+  listPipelines(
+    auth: VcsConnectorAuth,
+    project: VcsProjectRef,
+    ref?: string,
+    limit?: number
+  ): Promise<VcsPipelineRef[]>;
+  getPipeline(auth: VcsConnectorAuth, project: VcsProjectRef, pipelineId: number): Promise<VcsPipelineRef>;
+  listPipelineJobs(
+    auth: VcsConnectorAuth,
+    project: VcsProjectRef,
+    pipelineId: number,
+    limit?: number
+  ): Promise<VcsPipelineJobRef[]>;
+  getJobLog(
+    auth: VcsConnectorAuth,
+    project: VcsProjectRef,
+    jobId: number,
+    limitBytes: number
+  ): Promise<VcsJobLogResult>;
+  listProjectVariables(auth: VcsConnectorAuth, project: VcsProjectRef): Promise<VcsProjectVariableRef[]>;
+  setProjectVariable(
+    auth: VcsConnectorAuth,
+    project: VcsProjectRef,
+    input: VcsProjectVariableInput
+  ): Promise<VcsProjectVariableRef>;
+  deleteProjectVariable(
+    auth: VcsConnectorAuth,
+    project: VcsProjectRef,
+    key: string,
+    environmentScope?: string
+  ): Promise<void>;
+  listProjectWebhooks(auth: VcsConnectorAuth, project: VcsProjectRef): Promise<VcsProjectWebhookRef[]>;
+  createOrUpdateProjectWebhook(
+    auth: VcsConnectorAuth,
+    project: VcsProjectRef,
+    input: VcsProjectWebhookInput
+  ): Promise<VcsProjectWebhookRef>;
+  deleteProjectWebhook(auth: VcsConnectorAuth, project: VcsProjectRef, hookId: number): Promise<void>;
+  listRegistryRepositories(auth: VcsConnectorAuth, project: VcsProjectRef): Promise<VcsRegistryRepositoryRef[]>;
+  createDeployToken(
+    auth: VcsConnectorAuth,
+    project: VcsProjectRef,
+    input: VcsDeployTokenInput
+  ): Promise<VcsDeployTokenResult>;
+  downloadRepositoryArchive(
+    auth: VcsConnectorAuth,
+    project: VcsProjectRef,
+    ref?: string,
+    options?: { maxBytes?: number; timeoutMs?: number }
+  ): Promise<VcsArchiveResult>;
+}

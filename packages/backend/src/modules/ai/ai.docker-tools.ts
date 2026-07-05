@@ -242,7 +242,9 @@ export async function executeDockerTool(
       const input = ImagePullSchema.parse({ imageRef: a.imageRef, registryId: a.registryId });
       const { DockerRegistryService } = await import('@/modules/docker/docker-registry.service.js');
       const registryService = container.resolve(DockerRegistryService);
-      const auth = await registryService.resolveAuthForImagePull(a.nodeId, input.imageRef, input.registryId);
+      const auth = await registryService.resolveAuthForImagePull(a.nodeId, input.imageRef, input.registryId, {
+        actorScopes: user.scopes,
+      });
       let finalImageRef = input.imageRef;
       if (auth && !hasRegistryHost(input.imageRef)) {
         finalImageRef = `${auth.url}/${input.imageRef}`;
@@ -359,7 +361,7 @@ async function manageDockerRegistry(context: DockerToolContext, user: User, args
       return { success: true };
     case 'test':
       context.ensureToolScope(user, 'docker:registries:edit');
-      return registryService.testConnection(String(a.registryId));
+      return registryService.testConnection(String(a.registryId), { actorScopes: user.scopes });
     case 'test_direct':
       context.ensureToolScope(user, 'docker:registries:edit');
       return registryService.testConnectionDirect(

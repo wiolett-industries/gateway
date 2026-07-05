@@ -220,6 +220,12 @@ const MCP_TOOLSET_DEFINITIONS: McpToolsetDefinition[] = [
     toolNames: toolNamesForCategories(['Docker']),
   },
   {
+    id: 'gitlab',
+    title: 'GitLab',
+    description: 'GitLab connectors, projects, repositories, CI, variables, webhooks, registries, and sandbox clone.',
+    toolNames: toolNamesForCategories(['GitLab']),
+  },
+  {
     id: 'databases',
     title: 'Databases',
     description: 'Database connections, PostgreSQL data tools, and Redis data tools.',

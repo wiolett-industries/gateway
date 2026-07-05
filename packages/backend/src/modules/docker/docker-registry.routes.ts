@@ -72,7 +72,7 @@ export function registerRegistryRoutes(router: OpenAPIHono<AppEnv>) {
   router.openapi({ ...testRegistryRoute, middleware: requireScope('docker:registries:edit') }, async (c) => {
     const service = container.resolve(DockerRegistryService);
     const id = c.req.param('id')!;
-    const data = await service.testConnection(id);
+    const data = await service.testConnection(id, { actorScopes: c.get('effectiveScopes') || [] });
     return c.json({ data });
   });
 }

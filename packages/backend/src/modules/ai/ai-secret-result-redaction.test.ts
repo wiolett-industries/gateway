@@ -27,4 +27,47 @@ describe('redactOneTimeSecretToolResult', () => {
       name: 'Deploy',
     });
   });
+
+  it('redacts GitLab one-time secret tool results recursively', () => {
+    expect(
+      redactOneTimeSecretToolResult('gitlab_create_deploy_token', {
+        id: 'deploy-token-1',
+        name: 'CI',
+        token: 'raw-deploy-token',
+        variable: { key: 'SECRET_TOKEN', value: 'raw-variable-value' },
+      })
+    ).toEqual({
+      id: 'deploy-token-1',
+      name: 'CI',
+      token: '[REDACTED_ONE_TIME_SECRET]',
+      tokenRedacted: true,
+      variable: {
+        key: 'SECRET_TOKEN',
+        value: '[REDACTED_ONE_TIME_SECRET]',
+        valueRedacted: true,
+        secretResultRedacted: true,
+      },
+      secretResultRedacted: true,
+    });
+  });
+
+  it('preserves safe GitLab secret metadata while redacting raw values', () => {
+    expect(
+      redactOneTimeSecretToolResult('gitlab_create_deploy_token', {
+        credentialId: 'credential-1',
+        tokenMasked: '****abcd',
+        tokenLast4: 'abcd',
+        valueHash: 'sha256-hash',
+        token: 'raw-token',
+      })
+    ).toEqual({
+      credentialId: 'credential-1',
+      tokenMasked: '****abcd',
+      tokenLast4: 'abcd',
+      valueHash: 'sha256-hash',
+      token: '[REDACTED_ONE_TIME_SECRET]',
+      tokenRedacted: true,
+      secretResultRedacted: true,
+    });
+  });
 });

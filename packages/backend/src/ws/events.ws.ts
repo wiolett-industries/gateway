@@ -91,6 +91,7 @@ function requiredScopeFor(channel: string): string | null {
   if (channel === 'group.changed') return 'admin:groups';
   if (channel === 'notification.alert-rule.changed') return 'notifications:view';
   if (channel === 'notification.webhook.changed') return 'notifications:view';
+  if (channel === 'integration.connector.changed') return 'integrations:gitlab:view';
   if (channel.startsWith('alert.')) return 'notifications:view';
   // permissions.changed.<userId> is filtered separately (own user only)
   return null;
@@ -351,6 +352,9 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
       hasScope(scopes, 'proxy:templates:view') ||
       !!(templateId && hasScope(scopes, `proxy:templates:view:${templateId}`))
     );
+  }
+  if (channel === 'integration.connector.changed') {
+    return hasScope(scopes, 'integrations:gitlab:view') || hasScope(scopes, 'integrations:gitlab:manage');
   }
   return true;
 }

@@ -20,11 +20,45 @@ describe('AI run runtime checkpoint helpers', () => {
       { role: 'system', content: 'server-only system prompt' },
       { role: 'user', content: 'pull redis' },
     ]);
+    expect(normalizeCheckpoint(raw).pendingApproval).toBeNull();
     expect(toClientCheckpoint(raw)).toEqual({
       type: 'tool_approval_required',
       requestId: 'request-1',
       allQuestions: [],
       queuedApprovals: [{ id: 'call-2', name: 'restart_docker_container', arguments: { containerId: 'abc' } }],
     });
+  });
+
+  it('uses raw queued approval arguments on the server and redacted arguments for client checkpoints', () => {
+    const raw = toCheckpoint({
+      type: 'tool_approval_required',
+      requestId: 'request-1',
+      id: 'call-1',
+      name: 'gitlab_set_project_variable',
+      arguments: { key: 'TOKEN', value: '[REDACTED]' },
+      _rawArguments: { key: 'TOKEN', value: 'secret-value' },
+      _pendingMessages: [],
+      _queuedApprovals: [
+        {
+          id: 'call-2',
+          name: 'gitlab_set_project_variable',
+          arguments: { key: 'TOKEN', value: '[REDACTED]' },
+          rawArguments: { key: 'TOKEN', value: 'secret-value' },
+        },
+      ],
+    } as never);
+
+    const checkpoint = normalizeCheckpoint(raw);
+    expect(checkpoint.pendingApproval).toEqual({
+      id: 'call-1',
+      name: 'gitlab_set_project_variable',
+      arguments: { key: 'TOKEN', value: 'secret-value' },
+    });
+    expect(checkpoint.queuedApprovals).toEqual([
+      { id: 'call-2', name: 'gitlab_set_project_variable', arguments: { key: 'TOKEN', value: 'secret-value' } },
+    ]);
+    expect(toClientCheckpoint(raw)?.queuedApprovals).toEqual([
+      { id: 'call-2', name: 'gitlab_set_project_variable', arguments: { key: 'TOKEN', value: '[REDACTED]' } },
+    ]);
   });
 });

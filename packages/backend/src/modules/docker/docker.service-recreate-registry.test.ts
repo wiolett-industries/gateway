@@ -96,7 +96,8 @@ describe('DockerManagementService recreate registry auth', () => {
     expect(registry.resolveAuthCandidatesForImagePull).toHaveBeenCalledWith(
       'node-1',
       'registry.example.com/team/app:new',
-      undefined
+      undefined,
+      { actorScopes: [] }
     );
     expect(dispatch.sendDockerImageCommand).toHaveBeenNthCalledWith(
       1,

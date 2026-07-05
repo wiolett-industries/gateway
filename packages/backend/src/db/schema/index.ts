@@ -26,6 +26,7 @@ export * from './docker-tasks.js';
 export * from './docker-webhooks.js';
 export * from './domain-folders.js';
 export * from './domains.js';
+export * from './integration-connectors.js';
 export * from './logging.js';
 export * from './logging-environment-folders.js';
 export * from './logging-schema-folders.js';

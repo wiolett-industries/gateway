@@ -68,6 +68,10 @@ describe('canonical scope definitions', () => {
     expect(API_TOKEN_SCOPES).not.toContain('mcp:use');
     expect(API_TOKEN_SCOPES).not.toContain('admin:users');
     expect(API_TOKEN_SCOPES).not.toContain('settings:gateway:edit');
+    expect(API_TOKEN_SCOPES).not.toContain('integrations:gitlab:manage');
+    expect(API_TOKEN_SCOPES).toContain('integrations:gitlab:repo:read');
+    expect(API_TOKEN_SCOPES).toContain('integrations:gitlab:repo:write');
+    expect(API_TOKEN_SCOPES).toContain('integrations:gitlab:variables:delete');
     expect(API_TOKEN_SCOPES).not.toContain('proxy:raw:write');
     expect(API_TOKEN_SCOPES).not.toContain('proxy:raw:bypass');
     expect(API_TOKEN_SCOPES).not.toContain('proxy:advanced:bypass');
@@ -80,6 +84,9 @@ describe('canonical scope definitions', () => {
     expect(isApiTokenScope('proxy:raw:bypass:host-1')).toBe(false);
     expect(isApiTokenScope('nodes:files:read:node-1')).toBe(true);
     expect(isApiTokenScope('nodes:files:write:node-1')).toBe(true);
+    expect(isApiTokenScope('integrations:gitlab:manage')).toBe(false);
+    expect(isApiTokenScope('integrations:gitlab:repo:read')).toBe(true);
+    expect(isApiTokenScope('integrations:gitlab:repo:write')).toBe(true);
   });
 
   it('keeps OAuth manual approval scopes focused on high-risk delegated access', () => {
@@ -107,6 +114,13 @@ describe('canonical scope definitions', () => {
       'databases:query:write',
       'databases:query:admin',
       'databases:credentials:reveal',
+      'integrations:gitlab:repo:write',
+      'integrations:gitlab:ci:edit',
+      'integrations:gitlab:variables:edit',
+      'integrations:gitlab:variables:delete',
+      'integrations:gitlab:webhooks:manage',
+      'integrations:gitlab:registry:manage',
+      'integrations:gitlab:sandbox:clone',
       'logs:tokens:create',
       'admin:audit',
       'admin:details:certificates',

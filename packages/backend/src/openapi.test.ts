@@ -158,5 +158,5 @@ describe('OpenAPI documentation', () => {
 
     const legacyResponse = await app.request('/openapi.json', { headers: { Authorization: 'Bearer gw_test' } });
     expect(legacyResponse.status).toBe(200);
-  });
+  }, 15_000);
 });

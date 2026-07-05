@@ -3,6 +3,7 @@ import {
   Check,
   ChevronDown,
   Moon,
+  Plug,
   ServerCog,
   SlidersHorizontal,
   Sparkles,
@@ -45,12 +46,13 @@ import { ApiTokensSection } from "./settings/ApiTokensSection";
 import { AuthProvisioningSection } from "./settings/AuthProvisioningSection";
 import { DockerRegistriesSection } from "./settings/DockerRegistriesSection";
 import { HousekeepingSection } from "./settings/HousekeepingSection";
+import { IntegrationsSection } from "./settings/IntegrationsSection";
 import { LicenseSection } from "./settings/LicenseSection";
 import { OAuthApplicationsSection } from "./settings/OAuthApplicationsSection";
 import { StatusPageSection } from "./settings/StatusPageSection";
 import { UpdateSection } from "./settings/UpdateSection";
 
-const SETTINGS_TABS = ["preferences", "gateway", "features", "ai"] as const;
+const SETTINGS_TABS = ["preferences", "gateway", "features", "integrations", "ai"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 function isSettingsTab(value: string | null | undefined): value is SettingsTab {
@@ -91,6 +93,8 @@ export function Settings() {
   const canViewLicense = hasScope("license:view");
   const canManageLicense = hasScope("license:manage");
   const canViewStatusPage = hasScope("status-page:view");
+  const canViewIntegrations =
+    hasScope("integrations:gitlab:view") || hasScope("integrations:gitlab:manage");
   const userScopes = user?.scopes;
   const canAccessGatewayTab =
     canViewGatewaySettings || canManageRegistries || canUpdate || canViewLicense;
@@ -99,9 +103,10 @@ export function Settings() {
     const tabs: SettingsTab[] = ["preferences"];
     if (canAccessGatewayTab) tabs.push("gateway");
     if (canAccessFeaturesTab) tabs.push("features");
+    if (canViewIntegrations) tabs.push("integrations");
     if (canConfigAI) tabs.push("ai");
     return tabs;
-  }, [canAccessFeaturesTab, canAccessGatewayTab, canConfigAI]);
+  }, [canAccessFeaturesTab, canAccessGatewayTab, canConfigAI, canViewIntegrations]);
   const currentTab = availableTabs.includes(activeTab) ? activeTab : availableTabs[0];
 
   useEffect(() => {
@@ -187,11 +192,18 @@ export function Settings() {
         .then((data) => api.setCache("housekeeping:stats", data))
         .catch(() => {});
     }
+    if (canViewIntegrations) {
+      api
+        .listGitLabConnectors()
+        .then((data) => api.setCache("settings:gitlab-connectors", data ?? []))
+        .catch(() => {});
+    }
   }, [
     canConfigAI,
     canManageRegistries,
     canViewGatewaySettings,
     canViewHousekeeping,
+    canViewIntegrations,
     canViewLicense,
     canViewStatusPage,
   ]);
@@ -270,6 +282,12 @@ export function Settings() {
               <TabsTrigger value="features" className="gap-1.5">
                 <Sparkles className="h-3.5 w-3.5" />
                 Features
+              </TabsTrigger>
+            )}
+            {canViewIntegrations && (
+              <TabsTrigger value="integrations" className="gap-1.5">
+                <Plug className="h-3.5 w-3.5" />
+                Integrations
               </TabsTrigger>
             )}
             {canConfigAI && (
@@ -421,6 +439,14 @@ export function Settings() {
                     canConfigure={canConfigureHousekeeping}
                   />
                 )}
+              </div>
+            </TabsContent>
+          )}
+
+          {canViewIntegrations && (
+            <TabsContent value="integrations" className="pb-0">
+              <div className="space-y-4">
+                <IntegrationsSection />
               </div>
             </TabsContent>
           )}

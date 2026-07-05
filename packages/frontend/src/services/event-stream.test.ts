@@ -110,6 +110,30 @@ describe("eventStream", () => {
     unsubscribe();
   });
 
+  it("invalidates GitLab integration and Docker registry caches on integration changes", async () => {
+    const { eventStream } = await import("@/services/event-stream");
+    const handler = vi.fn();
+
+    const unsubscribe = eventStream.subscribe("integration.connector.changed", handler);
+    eventStream.start();
+    vi.runAllTimers();
+
+    const socket = MockWebSocket.instances[0];
+    expect(socket).toBeDefined();
+    socket.open();
+
+    const payload = { id: "connector-1", provider: "gitlab", action: "synced" };
+    socket.emit({ type: "event", channel: "integration.connector.changed", payload });
+
+    expect(invalidateCache).toHaveBeenCalledWith("req:/api/integrations/gitlab/connectors");
+    expect(invalidateCache).toHaveBeenCalledWith("settings:gitlab-connectors");
+    expect(invalidateCache).toHaveBeenCalledWith("req:/api/docker/registries");
+    expect(invalidateCache).toHaveBeenCalledWith("settings:docker-registries");
+    expect(handler).toHaveBeenCalledWith(payload);
+
+    unsubscribe();
+  });
+
   it("coalesces noisy node.changed events before refetching", async () => {
     const { eventStream } = await import("@/services/event-stream");
     const handler = vi.fn();

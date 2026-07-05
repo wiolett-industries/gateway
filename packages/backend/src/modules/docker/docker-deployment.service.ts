@@ -399,7 +399,8 @@ export class DockerDeploymentService {
     const registryAuthCandidates = await this.registry.resolveAuthCandidatesForImagePull(
       nodeId,
       input.image,
-      input.registryId
+      input.registryId,
+      { actorScopes }
     );
     const registryAttempts = registryAuthCandidates.length ? registryAuthCandidates : [null];
 
@@ -708,7 +709,8 @@ export class DockerDeploymentService {
     const registryAuthCandidates = await this.registry.resolveAuthCandidatesForImagePull(
       nodeId,
       daemonDesiredConfig.image,
-      releaseContext?.registryId
+      releaseContext?.registryId,
+      { actorScopes }
     );
     const registryAttempts = registryAuthCandidates.length ? registryAuthCandidates : [null];
     let data: any;

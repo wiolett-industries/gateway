@@ -1,7 +1,15 @@
-import { and, desc, eq, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import { dockerImageRegistryMappings, dockerRegistries } from '@/db/schema/index.js';
+import {
+  dockerImageRegistryMappings,
+  dockerRegistries,
+  integrationConnectorCredentials,
+  integrationConnectorRegistries,
+  integrationConnectorRegistryLinks,
+  integrationConnectors,
+} from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { hasScope } from '@/lib/permissions.js';
 import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -25,6 +33,26 @@ interface RegistryConnectionTestResult {
 }
 
 type DockerRegistryRow = typeof dockerRegistries.$inferSelect;
+type IntegrationRegistryLinkRow = typeof integrationConnectorRegistryLinks.$inferSelect;
+type IntegrationConnectorRow = typeof integrationConnectors.$inferSelect;
+
+type SafeDockerRegistry = Omit<DockerRegistryRow, 'encryptedPassword'> & {
+  integration?: {
+    provider: 'gitlab';
+    connectorId: string;
+    connectorName: string | null;
+    connectorBaseUrl: string | null;
+    projectRemoteId: string | null;
+    projectFullPath: string | null;
+    remoteRegistryId: string | null;
+    status: 'available' | 'inaccessible';
+    lastSeenAt: Date;
+  };
+};
+
+interface RegistryUseContext {
+  actorScopes?: string[];
+}
 
 export class DockerRegistryService {
   private eventBus?: EventBusService;
@@ -56,15 +84,12 @@ export class DockerRegistryService {
       .where(buildWhere(conditions))
       .orderBy(desc(dockerRegistries.createdAt));
 
-    // Strip encrypted passwords from list responses
-    return rows.map(({ encryptedPassword: _ep, ...rest }) => rest);
+    return this.toSafeRegistries(rows);
   }
 
   async get(id: string) {
     const row = await this.getRegistryRow(id);
-    // Strip encrypted password from response
-    const { encryptedPassword: _ep, ...safe } = row;
-    return safe;
+    return this.toSafeRegistry(row);
   }
 
   private async getRegistryRow(id: string): Promise<DockerRegistryRow> {
@@ -113,7 +138,7 @@ export class DockerRegistryService {
       details: { name: input.name, url: input.url, scope: input.scope },
     });
 
-    const { encryptedPassword: _ep, ...safe } = row;
+    const safe = await this.toSafeRegistry(row);
     this.emitRegistry(row.id, 'created');
     return safe;
   }
@@ -132,6 +157,7 @@ export class DockerRegistryService {
     userId: string
   ) {
     const existing = await this.getRegistryRow(id);
+    await this.assertManualRegistry(existing);
     this.assertOriginChangeHasReplacementPassword(existing, input);
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -165,13 +191,14 @@ export class DockerRegistryService {
       details: { name: input.name, url: input.url },
     });
 
-    const { encryptedPassword: _ep, ...safe } = row;
+    const safe = await this.toSafeRegistry(row);
     this.emitRegistry(id, 'updated');
     return safe;
   }
 
   async delete(id: string, userId: string) {
-    const registry = await this.get(id);
+    const registry = await this.getRegistryRow(id);
+    await this.assertManualRegistry(registry);
 
     await this.db.delete(dockerRegistries).where(eq(dockerRegistries.id, id));
 
@@ -186,16 +213,21 @@ export class DockerRegistryService {
     this.emitRegistry(id, 'deleted');
   }
 
-  async testConnection(id: string) {
+  async testConnection(id: string, context: RegistryUseContext = {}) {
     const [row] = await this.db.select().from(dockerRegistries).where(eq(dockerRegistries.id, id)).limit(1);
     if (!row) throw new AppError(404, 'NOT_FOUND', 'Docker registry not found');
+    await this.assertRegistryUseAllowed(row, context);
 
-    const basicAuth =
-      row.username && row.encryptedPassword
-        ? `Basic ${Buffer.from(`${row.username}:${this.decryptPassword(row.encryptedPassword)}`).toString('base64')}`
-        : '';
+    const credentials = await this.resolveRegistryCredentials(row);
+    if (this.isGitLabIntegrationRegistry(row) && !credentials) {
+      return { success: false, statusText: 'GitLab registry credentials are not configured' };
+    }
+    const basicAuth = credentials
+      ? `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`
+      : '';
 
-    return this.testRegistryConnection(row.url, basicAuth, row.trustedAuthRealm);
+    const trustedAuthRealm = await this.resolveRegistryTrustedAuthRealm(row);
+    return this.testRegistryConnection(this.registryConnectionTestUrl(row), basicAuth, trustedAuthRealm);
   }
 
   async testConnectionDirect(url: string, username?: string, password?: string, trustedAuthRealm?: string) {
@@ -207,6 +239,19 @@ export class DockerRegistryService {
     const trimmed = rawUrl.trim().replace(/\/+$/, '');
     const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
     return new URL(withScheme);
+  }
+
+  private isGitLabIntegrationRegistry(row: DockerRegistryRow): boolean {
+    return row.source === 'integration' && row.provider === 'gitlab';
+  }
+
+  private registryConnectionTestUrl(row: DockerRegistryRow): string {
+    if (!this.isGitLabIntegrationRegistry(row)) return row.url;
+    const url = this.normalizeRegistryBaseUrl(row.url);
+    url.pathname = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/+$/, '');
   }
 
   private parseBearerChallenge(wwwAuthenticate: string): { realm: string | null; service: string | null } {
@@ -329,13 +374,19 @@ export class DockerRegistryService {
         .from(dockerRegistries)
         .where(or(eq(dockerRegistries.scope, 'global'), eq(dockerRegistries.nodeId, nodeId)));
 
-      const registries = rows
-        .filter((r) => r.username && r.encryptedPassword)
-        .map((r) => ({
-          url: r.url,
-          username: r.username!,
-          password: this.decryptPassword(r.encryptedPassword!),
-        }));
+      const registries = (
+        await Promise.all(
+          rows.map(async (row) => {
+            const credentials = await this.resolveRegistryCredentials(row);
+            if (!credentials) return null;
+            return {
+              url: row.url,
+              username: credentials.username,
+              password: credentials.password,
+            };
+          })
+        )
+      ).filter((registry): registry is { url: string; username: string; password: string } => Boolean(registry));
 
       if (registries.length === 0) return;
 
@@ -347,6 +398,152 @@ export class DockerRegistryService {
     } catch (error) {
       logger.error('Failed to sync registries to node', { nodeId, error });
     }
+  }
+
+  async reconcileGitLabConnectorRegistries(connectorId: string) {
+    const now = new Date();
+    const [connector] = await this.db
+      .select()
+      .from(integrationConnectors)
+      .where(eq(integrationConnectors.id, connectorId))
+      .limit(1);
+    const trustedAuthRealm = connector?.baseUrl ?? null;
+    const connectorRegistries = await this.db
+      .select()
+      .from(integrationConnectorRegistries)
+      .where(eq(integrationConnectorRegistries.connectorId, connectorId));
+
+    const links = await this.db
+      .select()
+      .from(integrationConnectorRegistryLinks)
+      .where(eq(integrationConnectorRegistryLinks.connectorId, connectorId));
+    const linkedRegistryIds = links.map((link) => link.registryId);
+    const linkedRegistries = linkedRegistryIds.length
+      ? await this.db.select().from(dockerRegistries).where(inArray(dockerRegistries.id, linkedRegistryIds))
+      : [];
+    const linkedByUrl = new Map(linkedRegistries.map((registry) => [this.normalizeOriginUrl(registry.url), registry]));
+    const linkByRegistryId = new Map(links.map((link) => [link.registryId, link]));
+    const seenRegistryIds = new Set<string>();
+
+    for (const connectorRegistry of connectorRegistries) {
+      const normalizedUrl = this.normalizeOriginUrl(connectorRegistry.registryUrl);
+      const existing = linkedByUrl.get(normalizedUrl);
+      const isAvailable = connectorRegistry.status === 'available' && !connectorRegistry.inaccessibleAt;
+      const linkStatus = isAvailable ? 'available' : 'inaccessible';
+
+      if (!existing) {
+        if (!isAvailable) continue;
+        const [registry] = await this.db
+          .insert(dockerRegistries)
+          .values({
+            name: connectorRegistry.name,
+            url: connectorRegistry.registryUrl,
+            username: null,
+            encryptedPassword: null,
+            trustedAuthRealm,
+            source: 'integration',
+            provider: 'gitlab',
+            readOnly: true,
+            scope: 'global',
+            nodeId: null,
+            updatedAt: now,
+          })
+          .returning();
+
+        await this.db.insert(integrationConnectorRegistryLinks).values({
+          connectorId,
+          registryId: registry.id,
+          remoteRegistryId: connectorRegistry.remoteRegistryId,
+          projectRemoteId: connectorRegistry.projectRemoteId,
+          projectFullPath: connectorRegistry.projectFullPath,
+          status: linkStatus,
+          lastSeenAt: connectorRegistry.lastSeenAt,
+          updatedAt: now,
+        });
+        seenRegistryIds.add(registry.id);
+        this.emitRegistry(registry.id, 'created');
+        continue;
+      }
+
+      seenRegistryIds.add(existing.id);
+      const existingLink = linkByRegistryId.get(existing.id);
+      await this.db
+        .update(dockerRegistries)
+        .set({
+          name: connectorRegistry.name,
+          url: connectorRegistry.registryUrl,
+          source: 'integration',
+          provider: 'gitlab',
+          readOnly: true,
+          trustedAuthRealm,
+          updatedAt: now,
+        })
+        .where(eq(dockerRegistries.id, existing.id));
+
+      if (existingLink) {
+        await this.db
+          .update(integrationConnectorRegistryLinks)
+          .set({
+            remoteRegistryId: connectorRegistry.remoteRegistryId,
+            projectRemoteId: connectorRegistry.projectRemoteId,
+            projectFullPath: connectorRegistry.projectFullPath,
+            status: linkStatus,
+            lastSeenAt: connectorRegistry.lastSeenAt,
+            updatedAt: now,
+          })
+          .where(eq(integrationConnectorRegistryLinks.id, existingLink.id));
+      }
+
+      if (!isAvailable && !(await this.isRegistryReferenced(existing.id))) {
+        await this.db
+          .delete(integrationConnectorRegistryLinks)
+          .where(eq(integrationConnectorRegistryLinks.registryId, existing.id));
+        await this.db.delete(dockerRegistries).where(eq(dockerRegistries.id, existing.id));
+        this.emitRegistry(existing.id, 'deleted');
+      } else {
+        this.emitRegistry(existing.id, 'updated');
+      }
+    }
+
+    for (const link of links) {
+      if (seenRegistryIds.has(link.registryId)) continue;
+      if (!(await this.isRegistryReferenced(link.registryId))) {
+        await this.db
+          .delete(integrationConnectorRegistryLinks)
+          .where(eq(integrationConnectorRegistryLinks.id, link.id));
+        await this.db.delete(dockerRegistries).where(eq(dockerRegistries.id, link.registryId));
+        this.emitRegistry(link.registryId, 'deleted');
+        continue;
+      }
+      await this.db
+        .update(integrationConnectorRegistryLinks)
+        .set({ status: 'inaccessible', updatedAt: now })
+        .where(eq(integrationConnectorRegistryLinks.id, link.id));
+      this.emitRegistry(link.registryId, 'updated');
+    }
+  }
+
+  async deleteGitLabConnectorRegistries(connectorId: string) {
+    const links = await this.db
+      .select()
+      .from(integrationConnectorRegistryLinks)
+      .where(eq(integrationConnectorRegistryLinks.connectorId, connectorId));
+    const registryIds = [...new Set(links.map((link) => link.registryId))];
+    if (registryIds.length === 0) return;
+
+    await this.db.delete(dockerRegistries).where(inArray(dockerRegistries.id, registryIds));
+    for (const registryId of registryIds) {
+      this.emitRegistry(registryId, 'deleted');
+    }
+  }
+
+  private async isRegistryReferenced(registryId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: dockerImageRegistryMappings.id })
+      .from(dockerImageRegistryMappings)
+      .where(eq(dockerImageRegistryMappings.registryId, registryId))
+      .limit(1);
+    return rows.length > 0;
   }
 
   private normalizeRegistryHost(value: string): string {
@@ -456,9 +653,14 @@ export class DockerRegistryService {
    * Get base64-encoded Docker auth JSON for a registry (for image pull).
    * Returns the registry URL and auth string, or null if not found.
    */
-  async getAuthForPull(registryId: string, targetNodeId: string): Promise<DockerRegistryAuthCandidate | null> {
+  async getAuthForPull(
+    registryId: string,
+    targetNodeId: string,
+    context: RegistryUseContext = {}
+  ): Promise<DockerRegistryAuthCandidate | null> {
     const row = await this.getRegistryRow(registryId);
     this.assertRegistryVisibleFromNode(row, targetNodeId);
+    await this.assertRegistryUseAllowed(row, context);
     return this.authCandidateFromRegistry(row);
   }
 
@@ -495,17 +697,180 @@ export class DockerRegistryService {
     return withoutDigest;
   }
 
-  private authCandidateFromRegistry(row: typeof dockerRegistries.$inferSelect): DockerRegistryAuthCandidate | null {
-    if (!row.username || !row.encryptedPassword) return null;
-    const password = this.decryptPassword(row.encryptedPassword);
+  private async authCandidateFromRegistry(
+    row: typeof dockerRegistries.$inferSelect
+  ): Promise<DockerRegistryAuthCandidate | null> {
+    const credentials = await this.resolveRegistryCredentials(row);
+    if (!credentials) return null;
     const authJson = Buffer.from(
       JSON.stringify({
-        username: row.username,
-        password,
+        username: credentials.username,
+        password: credentials.password,
         serveraddress: row.url,
       })
     ).toString('base64');
     return { registryId: row.id, url: row.url.replace(/^https?:\/\//, '').replace(/\/+$/, ''), authJson };
+  }
+
+  private async toSafeRegistries(rows: DockerRegistryRow[]): Promise<SafeDockerRegistry[]> {
+    const metadata = await this.loadIntegrationMetadata(rows);
+    return rows.map((row) => this.toSafeRegistrySync(row, metadata.get(row.id)));
+  }
+
+  private async toSafeRegistry(row: DockerRegistryRow): Promise<SafeDockerRegistry> {
+    const metadata = await this.loadIntegrationMetadata([row]);
+    return this.toSafeRegistrySync(row, metadata.get(row.id));
+  }
+
+  private toSafeRegistrySync(
+    row: DockerRegistryRow,
+    integration: SafeDockerRegistry['integration'] | undefined
+  ): SafeDockerRegistry {
+    const { encryptedPassword: _encryptedPassword, ...safe } = row;
+    return integration ? { ...safe, integration } : safe;
+  }
+
+  private async loadIntegrationMetadata(
+    rows: DockerRegistryRow[]
+  ): Promise<Map<string, SafeDockerRegistry['integration']>> {
+    const ids = rows.map((row) => row.id);
+    if (ids.length === 0) return new Map();
+
+    const rawLinks = await this.db
+      .select()
+      .from(integrationConnectorRegistryLinks)
+      .where(inArray(integrationConnectorRegistryLinks.registryId, ids))
+      .limit(ids.length);
+    const links = Array.isArray(rawLinks) ? rawLinks.filter((link) => link.connectorId && link.registryId) : [];
+    if (links.length === 0) return new Map();
+
+    const connectorIds = [...new Set(links.map((link) => link.connectorId))];
+    const connectors = connectorIds.length
+      ? await this.db.select().from(integrationConnectors).where(inArray(integrationConnectors.id, connectorIds))
+      : [];
+    const connectorsById = new Map(connectors.map((connector) => [connector.id, connector]));
+
+    return new Map(
+      links.map((link) => {
+        const connector = connectorsById.get(link.connectorId);
+        return [link.registryId, this.toIntegrationMetadata(link, connector)];
+      })
+    );
+  }
+
+  private toIntegrationMetadata(
+    link: IntegrationRegistryLinkRow,
+    connector: IntegrationConnectorRow | undefined
+  ): SafeDockerRegistry['integration'] {
+    return {
+      provider: 'gitlab',
+      connectorId: link.connectorId,
+      connectorName: connector?.name ?? null,
+      connectorBaseUrl: connector?.baseUrl ?? null,
+      projectRemoteId: link.projectRemoteId,
+      projectFullPath: link.projectFullPath,
+      remoteRegistryId: link.remoteRegistryId,
+      status: link.status,
+      lastSeenAt: link.lastSeenAt,
+    };
+  }
+
+  private async assertManualRegistry(row: DockerRegistryRow) {
+    if (row.source !== 'integration' && !row.readOnly) {
+      const link = await this.getIntegrationLink(row.id);
+      if (!link) return;
+    }
+    throw new AppError(
+      409,
+      'REGISTRY_MANAGED_BY_INTEGRATION',
+      'This Docker registry is managed by an integration and cannot be edited here.'
+    );
+  }
+
+  private async assertRegistryUseAllowed(row: DockerRegistryRow, context: RegistryUseContext) {
+    if (row.source !== 'integration' && !row.readOnly && !row.provider) return;
+    const link = await this.getIntegrationLink(row.id);
+    if (!link) return;
+    if (context.actorScopes === undefined) return;
+    if (hasScope(context.actorScopes, 'integrations:gitlab:registry:use')) return;
+    throw new AppError(
+      403,
+      'GITLAB_REGISTRY_SCOPE_REQUIRED',
+      'Using GitLab-provided registry credentials requires integrations:gitlab:registry:use.'
+    );
+  }
+
+  private async getIntegrationLink(registryId: string): Promise<IntegrationRegistryLinkRow | null> {
+    const [link] = await this.db
+      .select()
+      .from(integrationConnectorRegistryLinks)
+      .where(eq(integrationConnectorRegistryLinks.registryId, registryId))
+      .limit(1);
+    return link?.connectorId ? link : null;
+  }
+
+  private async resolveRegistryTrustedAuthRealm(row: DockerRegistryRow): Promise<string | null> {
+    if (row.trustedAuthRealm) return row.trustedAuthRealm;
+    if (!this.isGitLabIntegrationRegistry(row)) return null;
+
+    const link = await this.getIntegrationLink(row.id);
+    if (!link) return null;
+    const [connector] = await this.db
+      .select()
+      .from(integrationConnectors)
+      .where(eq(integrationConnectors.id, link.connectorId))
+      .limit(1);
+    return connector?.baseUrl ?? null;
+  }
+
+  private async resolveRegistryCredentials(
+    row: DockerRegistryRow
+  ): Promise<{ username: string; password: string } | null> {
+    if (row.username && row.encryptedPassword) {
+      return { username: row.username, password: this.decryptPassword(row.encryptedPassword) };
+    }
+
+    if (row.source !== 'integration' && !row.readOnly && !row.provider) return null;
+    const link = await this.getIntegrationLink(row.id);
+    if (!link || link.status !== 'available') return null;
+
+    const credentials = await this.db
+      .select()
+      .from(integrationConnectorCredentials)
+      .where(
+        and(
+          eq(integrationConnectorCredentials.connectorId, link.connectorId),
+          eq(integrationConnectorCredentials.credentialType, 'gitlab_deploy_token')
+        )
+      )
+      .limit(50);
+    const now = Date.now();
+    const normalizedRegistryUrl = this.normalizeOriginUrl(row.url);
+    const credential = credentials
+      .filter((item) => !item.expiresAt || item.expiresAt.getTime() > now)
+      .find((item) => {
+        if (item.registryUrl && this.normalizeOriginUrl(item.registryUrl) === normalizedRegistryUrl) return true;
+        if (item.projectRemoteId && item.projectRemoteId === link.projectRemoteId) return true;
+        if (item.projectFullPath && item.projectFullPath === link.projectFullPath) return true;
+        return false;
+      });
+
+    if (!credential?.username) return this.resolveGitLabConnectorPatCredentials(row, link);
+    return { username: credential.username, password: this.decryptPassword(credential.encryptedSecret) };
+  }
+
+  private async resolveGitLabConnectorPatCredentials(
+    row: DockerRegistryRow,
+    link: IntegrationRegistryLinkRow
+  ): Promise<{ username: string; password: string } | null> {
+    if (!this.isGitLabIntegrationRegistry(row)) return null;
+    const [connector] = await this.db
+      .select()
+      .from(integrationConnectors)
+      .where(eq(integrationConnectors.id, link.connectorId))
+      .limit(1);
+    if (!connector?.encryptedToken) return null;
+    return { username: 'oauth2', password: this.decryptPassword(connector.encryptedToken) };
   }
 
   /**
@@ -516,19 +881,21 @@ export class DockerRegistryService {
   async resolveAuthForImagePull(
     nodeId: string,
     imageRef: string,
-    registryId?: string
+    registryId?: string,
+    context: RegistryUseContext = {}
   ): Promise<DockerRegistryAuthCandidate | null> {
-    const [auth] = await this.resolveAuthCandidatesForImagePull(nodeId, imageRef, registryId);
+    const [auth] = await this.resolveAuthCandidatesForImagePull(nodeId, imageRef, registryId, context);
     return auth ?? null;
   }
 
   async resolveAuthCandidatesForImagePull(
     nodeId: string,
     imageRef: string,
-    registryId?: string
+    registryId?: string,
+    context: RegistryUseContext = {}
   ): Promise<DockerRegistryAuthCandidate[]> {
     if (registryId) {
-      const auth = await this.getAuthForPull(registryId, nodeId);
+      const auth = await this.getAuthForPull(registryId, nodeId, context);
       return auth ? [auth] : [];
     }
 
@@ -544,7 +911,8 @@ export class DockerRegistryService {
     const mappedRegistryId = await this.resolveMappedRegistryId(nodeId, imageRepository);
     if (mappedRegistryId) {
       const mapped = rows.find((row) => row.id === mappedRegistryId);
-      const auth = mapped ? this.authCandidateFromRegistry(mapped) : null;
+      if (mapped) await this.assertRegistryUseAllowed(mapped, context);
+      const auth = mapped ? await this.authCandidateFromRegistry(mapped) : null;
       if (auth) candidates.push(auth);
     }
 
@@ -554,7 +922,8 @@ export class DockerRegistryService {
     for (const row of rows
       .filter((row) => this.normalizeRegistryHost(row.url) === imageRegistryHost)
       .filter((row) => !seen.has(row.id))) {
-      const auth = this.authCandidateFromRegistry(row);
+      await this.assertRegistryUseAllowed(row, context);
+      const auth = await this.authCandidateFromRegistry(row);
       if (!auth) continue;
       candidates.push({ ...auth, url: this.normalizeRegistryHost(row.url) });
       seen.add(row.id);

@@ -67,4 +67,32 @@ describe('AISandboxService', () => {
       outputBytes: 56,
     });
   });
+
+  it('uploads backend-managed artifacts into an owned sandbox workspace', async () => {
+    const user = { id: 'user-1', scopes: ['ai:sandbox:use'] };
+    const jobs = {
+      get: vi.fn().mockRejectedValue(new Error('not found')),
+      findByContainerId: vi.fn().mockResolvedValue({ id: 'job-1', userId: 'user-1', containerId: 'container-1' }),
+    };
+    const runner = {
+      uploadArtifact: vi
+        .fn()
+        .mockResolvedValue({ processId: 'container-1', path: 'repo/archive.tar.gz', sizeBytes: 12 }),
+    };
+    const service = new AISandboxService(jobs as never, runner as never, {} as never);
+
+    await expect(
+      service.uploadArtifact(user as never, {
+        processId: 'container-1',
+        path: 'repo/archive.tar.gz',
+        contentBase64: Buffer.from('archive-body').toString('base64'),
+      })
+    ).resolves.toEqual({ processId: 'container-1', path: 'repo/archive.tar.gz', sizeBytes: 12 });
+
+    expect(runner.uploadArtifact).toHaveBeenCalledWith({
+      processId: 'container-1',
+      path: 'repo/archive.tar.gz',
+      contentBase64: Buffer.from('archive-body').toString('base64'),
+    });
+  });
 });

@@ -42,6 +42,12 @@ export interface SandboxDownloadArtifactInput {
   path?: string;
 }
 
+export interface SandboxUploadArtifactInput {
+  processId: string;
+  path: string;
+  contentBase64: string;
+}
+
 export interface SandboxReadArtifactInput {
   processId: string;
   path: string;
@@ -197,6 +203,16 @@ export class AISandboxService {
     const job = await this.resolveOwnedJob(user, input.processId);
     const containerId = job.containerId ?? input.processId;
     return this.runner.downloadArtifact({ processId: containerId, url: input.url, path: input.path });
+  }
+
+  async uploadArtifact(user: User, input: SandboxUploadArtifactInput) {
+    const job = await this.resolveOwnedJob(user, input.processId);
+    const containerId = job.containerId ?? input.processId;
+    return this.runner.uploadArtifact({
+      processId: containerId,
+      path: input.path,
+      contentBase64: input.contentBase64,
+    });
   }
 
   async readArtifact(user: User, input: SandboxReadArtifactInput) {

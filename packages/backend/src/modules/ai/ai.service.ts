@@ -47,6 +47,7 @@ import { DOCKER_TOOL_NAMES, executeDockerTool } from './ai.docker-tools.js';
 import { getInternalDocumentation } from './ai.docs.js';
 import { DOMAIN_TOOL_NAMES, executeDomainTool } from './ai.domain-tools.js';
 import { executeFolderTool, FOLDER_TOOL_NAMES } from './ai.folder-tools.js';
+import { executeGitLabTool, GITLAB_TOOL_NAMES } from './ai.gitlab-tools.js';
 import { executeGroupTool, GROUP_TOOL_NAMES } from './ai.group-tools.js';
 import { manageLoggingTool } from './ai.logging-tools.js';
 import { executeNodeTool, NODE_TOOL_NAMES } from './ai.node-tools.js';
@@ -298,6 +299,40 @@ function normalizeReadChatSliceMode(value: unknown): 'latest' | 'first' | 'aroun
   return value === 'first' || value === 'around_message' || value === 'after' || value === 'before' ? value : 'latest';
 }
 
+const GITLAB_TOOL_ARG_SECRET_KEY_RE =
+  /^(?:token|secret|password|value|privateKey|private_key|webhookSecret|webhook_secret)$/i;
+
+function redactArgsForTool(toolName: string, args: Record<string, unknown>): unknown {
+  const redacted = redactToolArgs(args);
+  if (!toolName.startsWith('gitlab_')) return redacted;
+  return redactGitLabToolArgs(redacted);
+}
+
+function approvalDisplayArgs(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
+  const redacted = redactArgsForTool(toolName, args);
+  return isRecord(redacted) ? redacted : {};
+}
+
+function queuedApprovalDisplayArgs(approvals: QueuedApproval[]): QueuedApproval[] {
+  return approvals.map((approval) => ({
+    ...approval,
+    arguments: approvalDisplayArgs(approval.name, approval.arguments),
+    rawArguments: approval.arguments,
+  }));
+}
+
+function redactGitLabToolArgs(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (depth > 8) return '[REDACTED_DEPTH_LIMIT]';
+  if (Array.isArray(value)) return value.map((item) => redactGitLabToolArgs(item, depth + 1));
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    redacted[key] = GITLAB_TOOL_ARG_SECRET_KEY_RE.test(key) ? '[REDACTED]' : redactGitLabToolArgs(nested, depth + 1);
+  }
+  return redacted;
+}
+
 export class AIService {
   constructor(
     private readonly settingsService: AISettingsService,
@@ -380,7 +415,7 @@ export class AIService {
 
     const source = options.source ?? 'ai';
     const shouldAudit = isMutatingTool(toolDef);
-    const redactedArgs = redactToolArgs(args);
+    const redactedArgs = redactArgsForTool(toolName, args);
     const auditBase = {
       userId: user.id,
       resourceType: toolDef.category.toLowerCase().replace(/\s+/g, '_'),
@@ -420,7 +455,7 @@ export class AIService {
       return { result, invalidateStores };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Tool execution failed';
-      logger.error(`Tool execution failed: ${toolName}`, { error: err, args: redactToolArgs(args) });
+      logger.error(`Tool execution failed: ${toolName}`, { error: err, args: redactArgsForTool(toolName, args) });
       if (source === 'mcp' && shouldAudit) {
         await this.auditService.log({
           ...auditBase,
@@ -566,6 +601,17 @@ export class AIService {
     }
     if (SANDBOX_TOOL_NAMES.has(toolName)) {
       return this.executeSandboxTool(user, toolName, args, runtimeContext);
+    }
+    if (GITLAB_TOOL_NAMES.has(toolName)) {
+      return executeGitLabTool(
+        {
+          sandboxService: this.sandboxService,
+          conversationId: runtimeContext.conversationId,
+        },
+        user,
+        toolName,
+        args
+      );
     }
     if (FOLDER_TOOL_NAMES.has(toolName)) {
       return executeFolderTool(user, toolName, args);
@@ -1615,16 +1661,22 @@ export class AIService {
           requestId,
           id: approvalTool.id,
           name: approvalTool.name,
-          arguments: approvalTool.parsedArgs,
+          arguments: approvalDisplayArgs(approvalTool.name, approvalTool.parsedArgs),
         };
         yield {
           type: 'tool_approval_required',
           requestId,
           id: approvalTool.id,
           name: approvalTool.name,
-          arguments: approvalTool.parsedArgs,
+          arguments: approvalDisplayArgs(approvalTool.name, approvalTool.parsedArgs),
+          _rawArguments: approvalTool.parsedArgs,
           _pendingMessages: messages,
-          _queuedApprovals: queued.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.parsedArgs })),
+          _queuedApprovals: queued.map((tc) => ({
+            id: tc.id,
+            name: tc.name,
+            arguments: approvalDisplayArgs(tc.name, tc.parsedArgs),
+            rawArguments: tc.parsedArgs,
+          })),
         } as any;
         return;
       }
@@ -1717,16 +1769,17 @@ export class AIService {
         requestId,
         id: nextApproval.id,
         name: nextApproval.name,
-        arguments: nextApproval.arguments,
+        arguments: approvalDisplayArgs(nextApproval.name, nextApproval.arguments),
       };
       yield {
         type: 'tool_approval_required',
         requestId,
         id: nextApproval.id,
         name: nextApproval.name,
-        arguments: nextApproval.arguments,
+        arguments: approvalDisplayArgs(nextApproval.name, nextApproval.arguments),
+        _rawArguments: nextApproval.arguments,
         _pendingMessages: pendingMessages,
-        _queuedApprovals: remainingApprovals,
+        _queuedApprovals: queuedApprovalDisplayArgs(remainingApprovals),
       } as any;
       return;
     }
@@ -1880,16 +1933,22 @@ export class AIService {
           requestId,
           id: approvalTool2.id,
           name: approvalTool2.name,
-          arguments: approvalTool2.parsedArgs,
+          arguments: approvalDisplayArgs(approvalTool2.name, approvalTool2.parsedArgs),
         };
         yield {
           type: 'tool_approval_required',
           requestId,
           id: approvalTool2.id,
           name: approvalTool2.name,
-          arguments: approvalTool2.parsedArgs,
+          arguments: approvalDisplayArgs(approvalTool2.name, approvalTool2.parsedArgs),
+          _rawArguments: approvalTool2.parsedArgs,
           _pendingMessages: messages,
-          _queuedApprovals: queued.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.parsedArgs })),
+          _queuedApprovals: queued.map((tc) => ({
+            id: tc.id,
+            name: tc.name,
+            arguments: approvalDisplayArgs(tc.name, tc.parsedArgs),
+            rawArguments: tc.parsedArgs,
+          })),
         } as any;
         return;
       }

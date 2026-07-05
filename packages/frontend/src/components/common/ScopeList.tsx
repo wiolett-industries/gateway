@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { CA, DatabaseConnection, LoggingSchema, Node, ProxyHost } from "@/types";
 
-interface ScopeItem {
+export interface ScopeItem {
   value: string;
   label: string;
   desc: string;

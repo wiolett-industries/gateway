@@ -5,6 +5,7 @@ export type SandboxRunnerMethod =
   | 'executeScript'
   | 'runProcess'
   | 'fetch'
+  | 'uploadArtifact'
   | 'downloadArtifact'
   | 'readArtifact'
   | 'sendArtifact'
@@ -63,6 +64,17 @@ export interface SandboxRunnerFetchParams {
 export interface SandboxRunnerDownloadArtifactParams extends SandboxRunnerProcessParams {
   url: string;
   path?: string;
+}
+
+export interface SandboxRunnerUploadArtifactParams extends SandboxRunnerProcessParams {
+  path: string;
+  contentBase64: string;
+}
+
+export interface SandboxRunnerUploadArtifactResult {
+  processId: string;
+  path: string;
+  sizeBytes: number;
 }
 
 export interface SandboxRunnerReadArtifactParams extends SandboxRunnerProcessParams {

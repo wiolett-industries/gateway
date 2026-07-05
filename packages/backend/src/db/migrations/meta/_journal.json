@@ -344,6 +344,34 @@
       "when": 1783008000000,
       "tag": "0048_lively_wildside",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1783118374544,
+      "tag": "0049_large_inertia",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1783118727509,
+      "tag": "0050_luxuriant_unus",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1783120550270,
+      "tag": "0051_gorgeous_luminals",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1783122323902,
+      "tag": "0052_talented_korath",
+      "breakpoints": true
     }
   ]
 }

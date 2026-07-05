@@ -134,7 +134,8 @@ describe('AIService Docker tool routing', () => {
     expect(registryService.resolveAuthForImagePull).toHaveBeenCalledWith(
       'node-1',
       'team/api:next',
-      '11111111-1111-4111-8111-111111111111'
+      '11111111-1111-4111-8111-111111111111',
+      { actorScopes: ['docker:images:pull:node-1'] }
     );
     expect(dockerService.pullImage).toHaveBeenCalledWith(
       'node-1',

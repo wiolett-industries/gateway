@@ -46,6 +46,8 @@ import { DomainsService } from '@/modules/domains/domain.service.js';
 import { DomainFolderService } from '@/modules/domains/domain-folders.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { PermissionGroupFolderService } from '@/modules/groups/permission-group-folders.service.js';
+import { GitLabProvider } from '@/modules/integrations/gitlab-provider.js';
+import { IntegrationsService } from '@/modules/integrations/integrations.service.js';
 import { LicenseService } from '@/modules/license/license.service.js';
 import { LICENSE_HEARTBEAT_INTERVAL_MS } from '@/modules/license/license.types.js';
 import { LoggingClickHouseService } from '@/modules/logging/logging-clickhouse.service.js';
@@ -188,6 +190,11 @@ export async function initializeContainer(): Promise<void> {
   const tokensService = new TokensService(db, auditService);
   container.registerInstance(TokensService, tokensService);
 
+  const gitLabProvider = new GitLabProvider();
+  const integrationsService = new IntegrationsService(db, auditService, cryptoService, [gitLabProvider]);
+  integrationsService.setEventBus(eventBus);
+  container.registerInstance(IntegrationsService, integrationsService);
+
   const alertService = new AlertService(db);
   container.registerInstance(AlertService, alertService);
 
@@ -298,6 +305,7 @@ export async function initializeContainer(): Promise<void> {
   const dockerRegistryService = new DockerRegistryService(db, auditService, cryptoService, nodeDispatch);
   container.registerInstance(DockerRegistryService, dockerRegistryService);
   dockerManagementService.setRegistryService(dockerRegistryService);
+  integrationsService.setDockerRegistryService(dockerRegistryService);
 
   const dockerSecretService = new DockerSecretService(db, auditService, cryptoService);
   container.registerInstance(DockerSecretService, dockerSecretService);
@@ -707,6 +715,7 @@ export async function initializeContainer(): Promise<void> {
   // Notification webhook retry job (every 30 seconds)
   const notifRetryJob = new NotificationRetryJob(notifDeliveryService, notifDispatcherService);
   scheduler.registerInterval('notification-retry', 30000, () => notifRetryJob.run());
+  scheduler.registerInterval('gitlab-integration-sync', 60000, () => integrationsService.runDueGitLabSyncs());
 
   setTimeout(() => {
     licenseService.heartbeat().catch((error) => {

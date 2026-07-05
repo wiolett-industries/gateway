@@ -957,6 +957,42 @@ AI assistant settings control the provider, request limits, tool exposure, web s
 - sandboxDefaultTier: default resource tier. The agent may request a tier only if the user has the required scope.
 - Sandbox tools are intentionally excluded from MCP exposure and are available only to the assistant when enabled and permitted.`,
 
+  gitlab: `# GitLab Integrations
+
+Gateway GitLab connectors are system-level integrations configured by admins in Settings -> Integrations. They support gitlab.com and self-hosted GitLab through encrypted PATs. The PAT is never returned raw to the assistant, API clients, MCP clients, or UI after entry.
+
+## Discovery
+- Use gitlab_list_connectors to find enabled connectors.
+- Use gitlab_list_projects or gitlab_search_projects to find projects already synced through Gateway allowlist rules.
+- Project arguments accept the synced project remote ID or full path.
+- Do not guess connector IDs or scan GitLab directly outside these tools.
+
+## Repository Access
+- Prefer direct API tools for ordinary read/write work:
+  - gitlab_list_repository_tree for folders.
+  - gitlab_read_file for bounded file reads. Use offset and length for large files.
+  - gitlab_commit_files for create/update/delete/move commits.
+- Use gitlab_clone_repository_to_sandbox only when local analysis, tests, or multi-file tooling actually requires a checkout.
+- Clone runs with connector-configured limits: shallow clone, depth, LFS/submodule settings, max size, and timeout.
+
+## CI
+- Use gitlab_lint_ci_config before committing CI changes.
+- Use gitlab_update_ci_config for the first-class .gitlab-ci.yml edit workflow. Invalid CI config is not committed.
+- Use pipeline/job tools to inspect CI status and bounded job logs.
+
+## Variables, Webhooks, and Deploy Tokens
+- gitlab_list_project_variables returns metadata only; variable values are never returned.
+- gitlab_set_project_variable accepts a secret value but the value must not be repeated in responses or explanations.
+- gitlab_delete_project_variable always requires explicit tool approval.
+- Webhook management uses GitLab project webhook tools and must respect connector allowlist and Gateway scopes.
+- gitlab_create_deploy_token captures the raw deploy token only inside Gateway, encrypts it as connector-managed credentials, and returns masked metadata only.
+
+## Safety Rules
+- Gateway scopes, connector allowlist, provider capabilities, and tool approval rules are authoritative. GitLab PAT permissions are only an upper bound.
+- Direct commits to protected/default branches are allowed only when Gateway approval rules and the GitLab PAT both allow it.
+- Never ask the user to paste connector PATs, deploy token values, or project variable secrets into chat unless the current tool call explicitly needs one-time secret input.
+- Audit logs store metadata and optional diff hashes, not raw secrets or full diffs.`,
+
   notifications: `# Webhook Notifications
 
 ## Overview
@@ -1105,6 +1141,7 @@ export const DOC_TOPIC_SCOPES: Record<string, string | string[]> = {
   housekeeping: 'housekeeping:view',
   permissions: 'feat:ai:use',
   api: 'feat:ai:use',
+  gitlab: 'integrations:gitlab:view',
   notifications: 'notifications:view',
 };
 

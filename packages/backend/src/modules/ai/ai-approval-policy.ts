@@ -1,4 +1,8 @@
 import type { AIToolApprovalClass, AIToolApprovalPolicy } from '@/db/schema/index.js';
+import {
+  classifyGitLabAIToolForApproval,
+  isGitLabAIToolForcedApproval,
+} from '@/modules/integrations/gitlab-approval-policy.js';
 import type { User } from '@/types.js';
 import { AI_TOOLS } from './ai.tools.js';
 
@@ -30,6 +34,8 @@ export interface AIToolApprovalDecision {
 
 export function classifyAIToolForApproval(toolName: string): AIToolApprovalClass {
   if (SYSTEM_NEVER_ASK_TOOLS.has(toolName)) return 'system-never-ask';
+  const gitLabClassification = classifyGitLabAIToolForApproval(toolName);
+  if (gitLabClassification) return gitLabClassification;
   if (EXECUTE_PREFIXES.test(toolName)) return 'execute';
   if (DELETE_PREFIXES.test(toolName)) return 'delete';
   if (CREATE_PREFIXES.test(toolName)) return 'create';
@@ -44,6 +50,10 @@ export function getAIToolApprovalDecision(toolName: string, mode: AIApprovalMode
   const classification = classifyAIToolForApproval(toolName);
   if (classification === 'system-never-ask') {
     return { classification, approvalPolicy: 'system_skipped', requiresApproval: false };
+  }
+
+  if (isGitLabAIToolForcedApproval(toolName)) {
+    return { classification, approvalPolicy: 'requires_approval', requiresApproval: true };
   }
 
   const approvalMode = mode ?? 'normal';

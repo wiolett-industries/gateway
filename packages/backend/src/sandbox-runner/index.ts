@@ -26,6 +26,8 @@ import type {
   SandboxRunnerRunProcessParams,
   SandboxRunnerSendArtifactParams,
   SandboxRunnerSendArtifactResult,
+  SandboxRunnerUploadArtifactParams,
+  SandboxRunnerUploadArtifactResult,
   SandboxRunnerWaitProcessParams,
   SandboxRunnerWaitProcessResult,
   SandboxRunnerWriteStdinParams,
@@ -42,6 +44,7 @@ const OUTPUT_LIMIT_BYTES = 256 * 1024;
 const STDIN_LIMIT_BYTES = 64 * 1024;
 const FETCH_LIMIT_BYTES = 10 * 1024 * 1024;
 const DOWNLOAD_LIMIT_BYTES = 200 * 1024 * 1024;
+const UPLOAD_ARTIFACT_LIMIT_BYTES = 200 * 1024 * 1024;
 const READ_ARTIFACT_LIMIT_BYTES = 1024 * 1024;
 const SEND_ARTIFACT_LIMIT_BYTES = 10 * 1024 * 1024;
 const CPU_PERIOD = 100_000;
@@ -457,6 +460,23 @@ async function downloadArtifact(
   };
 }
 
+async function uploadArtifact(params: SandboxRunnerUploadArtifactParams): Promise<SandboxRunnerUploadArtifactResult> {
+  const artifactPath = resolveArtifactPath(params.path);
+  const bytes = Buffer.from(String(params.contentBase64 ?? ''), 'base64');
+  if (bytes.byteLength > UPLOAD_ARTIFACT_LIMIT_BYTES) {
+    throw new Error(`artifact upload is limited to ${UPLOAD_ARTIFACT_LIMIT_BYTES} bytes`);
+  }
+  const workspaceDir = await workspaceDirForProcess(params.processId);
+  const hostPath = await resolveHostArtifactPath(workspaceDir, artifactPath.relativePath);
+  await fs.writeFile(hostPath, bytes, { mode: 0o600 });
+  await allowSandboxFileAccess(hostPath);
+  return {
+    processId: params.processId,
+    path: artifactPath.relativePath,
+    sizeBytes: bytes.byteLength,
+  };
+}
+
 async function readArtifactBytes(
   processId: string,
   rawPath: unknown,
@@ -640,6 +660,8 @@ async function handle(request: SandboxRunnerRequest): Promise<unknown> {
       return fetchUrl(request.params as SandboxRunnerFetchParams);
     case 'downloadArtifact':
       return downloadArtifact(request.params as SandboxRunnerDownloadArtifactParams);
+    case 'uploadArtifact':
+      return uploadArtifact(request.params as SandboxRunnerUploadArtifactParams);
     case 'readArtifact':
       return readArtifact(request.params as SandboxRunnerReadArtifactParams);
     case 'sendArtifact':

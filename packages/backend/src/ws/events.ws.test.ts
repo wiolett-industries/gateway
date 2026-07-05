@@ -182,6 +182,46 @@ describe('events websocket authentication', () => {
     handlers.onClose(new Event('close'), ws as any);
   });
 
+  it('allows integration connector events for GitLab integration viewers', async () => {
+    const eventBus = new EventBusService();
+    container.registerInstance(EventBusService, eventBus);
+    mocks.resolveLiveSessionUser.mockResolvedValue({
+      user: { ...USER, scopes: ['integrations:gitlab:view'] },
+      effectiveScopes: ['integrations:gitlab:view'],
+    });
+    const ws = createWs();
+    const handlers = createEventsWSHandlers();
+
+    handlers.onOpen(new Event('open'), ws as any);
+    await authenticateEventsConnection(ws as any, 'session-1');
+    handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'subscribe', channels: ['integration.connector.changed'] }),
+      }),
+      ws as any
+    );
+
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'subscribed', channels: ['integration.connector.changed'], rejected: [] })
+    );
+
+    eventBus.publish('integration.connector.changed', {
+      id: 'connector-1',
+      provider: 'gitlab',
+      action: 'synced',
+    });
+
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'event',
+        channel: 'integration.connector.changed',
+        payload: { id: 'connector-1', provider: 'gitlab', action: 'synced' },
+      })
+    );
+
+    handlers.onClose(new Event('close'), ws as any);
+  });
+
   it('filters docker file events by node-scoped file access', async () => {
     const eventBus = new EventBusService();
     container.registerInstance(EventBusService, eventBus);

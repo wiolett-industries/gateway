@@ -16,6 +16,7 @@ export type * from "./databases";
 export type * from "./docker";
 export type * from "./domains";
 export type * from "./housekeeping";
+export type * from "./integrations";
 export type * from "./logging";
 export type {
   CreateNodeResponse,

@@ -99,7 +99,9 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
       // Resolve registry credentials and prefix image ref if using private registry
       let finalImageRef = imageRef;
       let registryAuth: string | undefined;
-      const auth = await registryService.resolveAuthForImagePull(nodeId, imageRef, registryId);
+      const auth = await registryService.resolveAuthForImagePull(nodeId, imageRef, registryId, {
+        actorScopes: c.get('effectiveScopes') || [],
+      });
       if (auth) {
         registryAuth = auth.authJson;
         // Prefix image ref with registry URL if not already prefixed
@@ -125,7 +127,9 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
 
       let finalImageRef = imageRef;
       let registryAuth: string | undefined;
-      const auth = await registryService.resolveAuthForImagePull(nodeId, imageRef, registryId);
+      const auth = await registryService.resolveAuthForImagePull(nodeId, imageRef, registryId, {
+        actorScopes: c.get('effectiveScopes') || [],
+      });
       if (auth) {
         registryAuth = auth.authJson;
         if (!hasRegistryHost(imageRef)) {
