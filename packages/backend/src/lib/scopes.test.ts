@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { hasScopeForResource } from './permissions.js';
 import {
   ADMIN_SCOPES,
   ALL_SCOPES,
@@ -51,7 +52,9 @@ describe('canonical scope definitions', () => {
     expect(ADMIN_SCOPES).not.toContain('docker:registries:delete');
     expect(ADMIN_SCOPES).toContain('docker:containers:mounts');
     expect(ADMIN_SCOPES).toContain('proxy:raw:bypass');
+    expect(ADMIN_SCOPES).not.toContain('nodes:console');
     expect(OPERATOR_SCOPES).not.toContain('proxy:raw:bypass');
+    expect(OPERATOR_SCOPES).not.toContain('nodes:console');
     expect(ADMIN_SCOPES).not.toContain('admin:system');
   });
 
@@ -60,6 +63,20 @@ describe('canonical scope definitions', () => {
     expect(ADMIN_SCOPES).toContain('docker:containers:mounts');
     expect(OPERATOR_SCOPES).not.toContain('docker:containers:mounts');
     expect(ALL_SCOPES).toContain('docker:containers:mounts');
+  });
+
+  it('requires explicit grants for high-risk host node consoles', () => {
+    expect(ALL_SCOPES).toContain('nodes:console');
+    expect(SYSTEM_ADMIN_SCOPES).toContain('nodes:console');
+    expect(RESOURCE_SCOPABLE).toContain('nodes:console');
+    expect(MANUAL_APPROVAL_SCOPES).toContain('nodes:console');
+    expect(ADMIN_SCOPES).not.toContain('nodes:console');
+    expect(OPERATOR_SCOPES).not.toContain('nodes:console');
+    expect(hasScopeForResource([...ADMIN_SCOPES], 'nodes:console', 'node-1')).toBe(false);
+    expect(hasScopeForResource([...OPERATOR_SCOPES], 'nodes:console', 'node-1')).toBe(false);
+    expect(hasScopeForResource(['nodes:console:node-1'], 'nodes:console', 'node-1')).toBe(true);
+    expect(hasScopeForResource(['nodes:console:node-1'], 'nodes:console', 'node-2')).toBe(false);
+    expect(hasScopeForResource(['nodes:console'], 'nodes:console', 'node-2')).toBe(true);
   });
 
   it('removes deprecated housekeeping scope and rejects admin:system for API tokens', () => {
