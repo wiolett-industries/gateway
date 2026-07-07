@@ -333,7 +333,7 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       gatewayPublicIps: draftGatewayPublicIps,
       gatewayGrpcPublicTarget: draftGatewayGrpcPublicTarget,
       gatewayGrpcLocalIp: draftGatewayGrpcLocalIp,
-      features: { pkiEnabled },
+      features: { ...settings.generalSettings.features, pkiEnabled },
     });
   };
 
