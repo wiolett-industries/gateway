@@ -9,6 +9,7 @@ import type {
   CreateAccessListRequest,
   CreateDomainRequest,
   DashboardStats,
+  DeleteDomainRequest,
   DnsStatus,
   Domain,
   DomainSearchResult,
@@ -1588,6 +1589,17 @@ class ApiClient extends withIntegrationsApi(
     return this.unwrapData(this.request<{ data: DomainWithUsage }>(`/domains/${id}`));
   }
 
+  async previewDomain(
+    data: Pick<CreateDomainRequest, "domain" | "ttl" | "proxied">
+  ): Promise<import("@/types").DomainPreview> {
+    return this.unwrapData(
+      this.request<{ data: import("@/types").DomainPreview }>("/domains/preview", {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
   async createDomain(data: CreateDomainRequest): Promise<Domain> {
     return this.unwrapData(
       this.request<{ data: Domain }>("/domains", {
@@ -1606,8 +1618,11 @@ class ApiClient extends withIntegrationsApi(
     );
   }
 
-  async deleteDomain(id: string): Promise<void> {
-    await this.request<void>(`/domains/${id}`, { method: "DELETE" });
+  async deleteDomain(id: string, data?: DeleteDomainRequest): Promise<void> {
+    await this.request<void>(`/domains/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify(data ?? {}),
+    });
   }
 
   async checkDomainDns(id: string): Promise<Domain> {

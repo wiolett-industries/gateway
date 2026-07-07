@@ -75,7 +75,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { cas } = useCAStore();
   const { setTheme, theme, toggleSidebar } = useUIStore();
   const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
-  const domainsEnabled = useSystemConfigStore((s) => s.config.features.domainsEnabled);
   const loggingEnabled = useSystemConfigStore((s) => s.config.features.loggingEnabled);
   const recentPages = useUIStore((s) => s.recentPages);
   const containers = useDockerStore((s) => s.containers);
@@ -368,7 +367,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       return pkiEnabled && hasScopedAccess("pki:cert:view");
     }
     if (i.label === "Domains") {
-      return domainsEnabled && hasScopedAccess("domains:view");
+      return hasScopedAccess("domains:view");
     }
     if (i.label === "Logging") {
       const hasResourceScopedSchemaView = user

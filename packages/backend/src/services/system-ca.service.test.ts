@@ -157,6 +157,46 @@ describe('SystemCAService.ensureGrpcServerCert', () => {
     );
   });
 
+  it('combines gRPC endpoint settings with existing environment SANs', async () => {
+    process.env.APP_URL = 'https://gateway.example.com';
+    process.env.PUBLIC_IPV4 = '203.0.113.10';
+    process.env.PUBLIC_IPV6 = '2001:db8::10';
+    process.env.GRPC_TLS_EXTRA_SANS = 'gateway.internal,10.0.0.5';
+    const dir = mkdtempSync(join(tmpdir(), 'gateway-system-ca-test-'));
+    tempDirs.push(dir);
+    const certPath = join(dir, 'grpc-server.crt');
+    const keyPath = join(dir, 'grpc-server.key');
+    const { service, certService } = createService([[{ id: 'system-ca-id' }]]);
+
+    service.setGeneralSettingsService({
+      getGatewayEndpointSettings: vi.fn(async () => ({
+        gatewayPublicIps: [],
+        gatewayGrpcPublicTarget: 'new.gateway.example.com:9443',
+        gatewayGrpcLocalIp: '10.1.2.3:9443',
+      })),
+    } as any);
+
+    await expect(service.ensureGrpcServerCert(certPath, keyPath)).resolves.toEqual({ certPath, keyPath });
+
+    expect(certService.issueCertificate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sans: expect.arrayContaining([
+          'localhost',
+          '127.0.0.1',
+          'gateway.example.com',
+          '203.0.113.10',
+          '2001:db8::10',
+          'gateway.internal',
+          '10.0.0.5',
+          'new.gateway.example.com',
+          '10.1.2.3',
+        ]),
+      }),
+      expect.any(String),
+      { allowSystem: true }
+    );
+  });
+
   it('strips URL brackets from IPv6 APP_URL hosts before issuing gRPC TLS SANs', async () => {
     process.env.APP_URL = 'https://[2001:db8::1]:8443';
     const dir = mkdtempSync(join(tmpdir(), 'gateway-system-ca-test-'));

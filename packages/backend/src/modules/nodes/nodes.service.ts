@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import bcrypt from 'bcryptjs';
 import { asc, count, eq, ilike, inArray, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
@@ -6,6 +7,7 @@ import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import type { DaemonUpdateService } from '@/services/daemon-update.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { GrpcIdentityService } from '@/services/grpc-identity.service.js';
@@ -41,6 +43,8 @@ function stripNodeHealthHistory<T extends { healthHistory?: unknown }>(node: T):
 
 export class NodesService {
   private daemonUpdateService?: DaemonUpdateService;
+  private generalSettingsService?: GeneralSettingsService;
+  private grpcPort = 9443;
 
   constructor(
     private db: DrizzleClient,
@@ -56,6 +60,10 @@ export class NodesService {
   }
   setDaemonUpdateService(service: DaemonUpdateService) {
     this.daemonUpdateService = service;
+  }
+  setGeneralSettingsService(service: GeneralSettingsService, grpcPort: number) {
+    this.generalSettingsService = service;
+    this.grpcPort = grpcPort;
   }
   private emitNode(id: string, action: 'created' | 'updated' | 'deleted') {
     this.eventBus?.publish('node.changed', { id, action });
@@ -236,6 +244,7 @@ export class NodesService {
       node,
       enrollmentToken: enrollmentToken.token, // Shown once only
       gatewayCertSha256: await this.grpcIdentityService.getGatewayCertSha256(),
+      gatewayEnrollmentTargets: await this.getGatewayEnrollmentTargets(),
     };
   }
 
@@ -425,5 +434,23 @@ export class NodesService {
   async moveFile(nodeId: string, fromPath: string, toPath: string, userId: string) {
     await this.validateConnectedNode(nodeId);
     await moveNodeFile(this.nodeFileOperationContext(), nodeId, fromPath, toPath, userId);
+  }
+
+  private async getGatewayEnrollmentTargets() {
+    const settings = await this.generalSettingsService?.getGatewayEndpointSettings();
+    const publicTarget = this.formatGrpcTarget(settings?.gatewayGrpcPublicTarget ?? null);
+    const localTarget = this.formatGrpcTarget(settings?.gatewayGrpcLocalIp ?? null);
+    return {
+      public: { label: 'Public node', gateway: publicTarget },
+      ...(localTarget ? { local: { label: 'Local node', gateway: localTarget } } : {}),
+    };
+  }
+
+  private formatGrpcTarget(value: string | null): string | null {
+    if (!value) return null;
+    if (/^\[[^\]]+]:\d+$/.test(value) || /^[^:]+:\d+$/.test(value)) return value;
+    if (/^\[[^\]]+]$/.test(value)) return `${value}:${this.grpcPort}`;
+    if (isIP(value) === 6) return `[${value}]:${this.grpcPort}`;
+    return `${value}:${this.grpcPort}`;
   }
 }

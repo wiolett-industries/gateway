@@ -84,6 +84,26 @@ function createGetUpdateDb(row: unknown) {
   };
 }
 
+function createCloudflareDeleteInUseDb(connector: unknown) {
+  const select = vi.fn();
+  select
+    .mockReturnValueOnce({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn().mockResolvedValue([connector]),
+        })),
+      })),
+    })
+    .mockReturnValueOnce({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn().mockResolvedValue([{ id: 'domain-1', domain: 'example.com' }]),
+        })),
+      })),
+    });
+  return { select, delete: vi.fn() };
+}
+
 function createToolProjectsDb(input: { connector: unknown; projects: unknown[]; allowlistEntries: unknown[] }) {
   const select = vi.fn();
   select
@@ -114,6 +134,77 @@ function createToolProjectsDb(input: { connector: unknown; projects: unknown[]; 
 }
 
 describe('IntegrationsService', () => {
+  it('proves Cloudflare DNS edit capability with a temporary TXT record during preview test', async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/user/tokens/verify')) {
+        return Response.json({ success: true, result: { id: 'token-1', status: 'active' } });
+      }
+      if (url.includes('/zones?')) {
+        return Response.json({
+          success: true,
+          result: [{ id: 'zone-1', name: 'example.com', status: 'active' }],
+          result_info: { page: 1, total_pages: 1 },
+        });
+      }
+      if (url.includes('/zones/zone-1/dns_records') && method === 'GET') {
+        return Response.json({ success: true, result: [], result_info: { page: 1, total_pages: 1 } });
+      }
+      if (url.includes('/zones/zone-1/dns_records') && method === 'POST') {
+        return Response.json({
+          success: true,
+          result: { id: 'probe-1', type: 'TXT', name: '_gateway-permission-check.example.com', content: 'ok', ttl: 60 },
+        });
+      }
+      if (url.endsWith('/zones/zone-1/dns_records/probe-1') && method === 'DELETE') {
+        return Response.json({ success: true, result: { id: 'probe-1' } });
+      }
+      throw new Error(`Unexpected Cloudflare mock request: ${method} ${url}`);
+    });
+    globalThis.fetch = fetchMock as never;
+    try {
+      const service = new IntegrationsService({} as never, { log: vi.fn() } as never, {} as never);
+
+      await expect(service.testCloudflareConnectorPreview({ token: 'cf-token' })).resolves.toMatchObject({
+        capabilities: { apiReachable: true, tokenActive: true, zonesRead: true, dnsRead: true, dnsEdit: true },
+        zones: [{ remoteId: 'zone-1', name: 'example.com' }],
+      });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/zones/zone-1/dns_records'),
+        expect.objectContaining({ method: 'POST' })
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/zones/zone-1/dns_records/probe-1'),
+        expect.objectContaining({ method: 'DELETE' })
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('blocks deleting Cloudflare connectors still referenced by domains', async () => {
+    const db = createCloudflareDeleteInUseDb(
+      connectorRow({
+        id: '11111111-1111-4111-8111-111111111111',
+        provider: 'cloudflare',
+        name: 'Cloudflare',
+        baseUrl: 'https://api.cloudflare.com',
+      })
+    );
+    const service = new IntegrationsService(db as never, { log: vi.fn() } as never, {} as never);
+
+    await expect(
+      service.deleteCloudflareConnector('11111111-1111-4111-8111-111111111111', 'user-1')
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'CLOUDFLARE_CONNECTOR_IN_USE',
+    });
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+
   it('strips encrypted tokens and returns masked token metadata in list responses', async () => {
     const db = createListDb([connectorRow()]);
     const service = new IntegrationsService(db as never, { log: vi.fn() } as never, {} as never);

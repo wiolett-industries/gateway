@@ -127,6 +127,8 @@ describe("eventStream", () => {
 
     expect(invalidateCache).toHaveBeenCalledWith("req:/api/integrations/gitlab/connectors");
     expect(invalidateCache).toHaveBeenCalledWith("settings:gitlab-connectors");
+    expect(invalidateCache).toHaveBeenCalledWith("req:/api/integrations/cloudflare/connectors");
+    expect(invalidateCache).toHaveBeenCalledWith("settings:cloudflare-connectors");
     expect(invalidateCache).toHaveBeenCalledWith("req:/api/docker/registries");
     expect(invalidateCache).toHaveBeenCalledWith("settings:docker-registries");
     expect(handler).toHaveBeenCalledWith(payload);

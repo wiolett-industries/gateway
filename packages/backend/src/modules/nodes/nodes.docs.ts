@@ -69,6 +69,15 @@ const CreateNodeResponseSchema = dataResponseSchema(
         description: 'SHA-256 fingerprint of the active Gateway gRPC TLS leaf certificate.',
         example: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       }),
+    gatewayEnrollmentTargets: z
+      .object({
+        public: z.object({ label: z.string(), gateway: z.string().nullable() }),
+        local: z.object({ label: z.string(), gateway: z.string() }).optional(),
+      })
+      .openapi({
+        description:
+          'Backend-derived gRPC enrollment targets. Null public gateway means the UI should use the existing browser-host fallback.',
+      }),
   })
 );
 

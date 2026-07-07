@@ -10,6 +10,11 @@ import {
   successJson,
 } from '@/lib/openapi.js';
 import {
+  CloudflareConnectorCreateSchema,
+  CloudflareConnectorListQuerySchema,
+  CloudflareConnectorPreviewTestSchema,
+  CloudflareConnectorRotateTokenSchema,
+  CloudflareConnectorUpdateSchema,
   GitLabAllowlistPreviewSearchSchema,
   GitLabAllowlistSearchQuerySchema,
   GitLabConnectorCreateSchema,
@@ -77,6 +82,65 @@ const GitLabSyncResponseSchema = z.object({
 const GitLabPreviewTestResponseSchema = z.object({
   capabilities: z.record(z.boolean()),
   allowlistEntries: z.array(GitLabAllowlistEntryResponseSchema),
+});
+
+const CloudflareConnectorSettingsResponseSchema = z.object({
+  autoSyncEnabled: z.boolean(),
+  autoSyncIntervalSeconds: z.number(),
+  defaultTtl: z.number(),
+  defaultProxied: z.boolean(),
+});
+
+const CloudflareZoneResponseSchema = z.object({
+  id: z.string().uuid().optional(),
+  connectorId: z.string().uuid().optional(),
+  remoteId: z.string(),
+  name: z.string(),
+  status: z.string().nullable().optional(),
+  accountId: z.string().nullable().optional(),
+  accountName: z.string().nullable().optional(),
+  lastSeenAt: z.string().optional(),
+  metadata: z.record(z.unknown()).optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+const CloudflareConnectorResponseSchema = z.object({
+  id: z.string().uuid(),
+  provider: z.literal('cloudflare'),
+  name: z.string(),
+  baseUrl: z.string(),
+  enabled: z.boolean(),
+  allowlistMode: z.enum(['selected', 'all_visible']),
+  settings: CloudflareConnectorSettingsResponseSchema,
+  capabilities: z.record(z.boolean()),
+  syncStatus: z.enum(['never', 'idle', 'running', 'success', 'error']),
+  syncLastError: z.string().nullable().optional(),
+  syncFailureCount: z.number(),
+  syncStartedAt: z.string().nullable().optional(),
+  syncFinishedAt: z.string().nullable().optional(),
+  syncLastOverlapAt: z.string().nullable().optional(),
+  syncNextRetryAt: z.string().nullable().optional(),
+  testedAt: z.string().nullable().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  hasToken: z.boolean(),
+  tokenMasked: z.string().nullable(),
+});
+
+const CloudflareConnectorWithZonesResponseSchema = CloudflareConnectorResponseSchema.extend({
+  zones: z.array(CloudflareZoneResponseSchema),
+});
+
+const CloudflarePreviewTestResponseSchema = z.object({
+  capabilities: z.record(z.boolean()),
+  zones: z.array(CloudflareZoneResponseSchema),
+});
+
+const CloudflareSyncResponseSchema = z.object({
+  status: z.string(),
+  zoneCount: z.number().optional(),
+  reason: z.string().optional(),
 });
 
 export const listGitLabConnectorsRoute = appRoute({
@@ -217,4 +281,99 @@ export const refreshGitLabAllowlistOptionsRoute = appRoute({
   summary: 'Refresh cached GitLab projects for allowlist selection',
   request: { params: connectorParams },
   responses: okJson(listResponseSchema(GitLabAllowlistEntryResponseSchema)),
+});
+
+export const listCloudflareConnectorsRoute = appRoute({
+  method: 'get',
+  path: '/cloudflare/connectors',
+  tags: ['Integrations'],
+  summary: 'List Cloudflare connectors',
+  description: 'Lists configured Cloudflare DNS connectors. API tokens are never returned.',
+  request: { query: CloudflareConnectorListQuerySchema },
+  responses: okJson(listResponseSchema(CloudflareConnectorResponseSchema)),
+});
+
+export const createCloudflareConnectorRoute = appRoute({
+  method: 'post',
+  path: '/cloudflare/connectors',
+  tags: ['Integrations'],
+  summary: 'Create a Cloudflare connector',
+  description:
+    'Creates a system-level Cloudflare connector backed by an encrypted API token and syncs available DNS zones.',
+  request: jsonBody(CloudflareConnectorCreateSchema),
+  responses: createdJson(dataResponseSchema(CloudflareConnectorWithZonesResponseSchema)),
+});
+
+export const previewCloudflareConnectorTestRoute = appRoute({
+  method: 'post',
+  path: '/cloudflare/connectors/preview-test',
+  tags: ['Integrations'],
+  summary: 'Test Cloudflare connection before saving a connector',
+  description: 'Uses the submitted Cloudflare token for a one-time connection test. The token is not stored.',
+  request: jsonBody(CloudflareConnectorPreviewTestSchema),
+  responses: okJson(dataResponseSchema(CloudflarePreviewTestResponseSchema)),
+});
+
+export const getCloudflareConnectorRoute = appRoute({
+  method: 'get',
+  path: '/cloudflare/connectors/{id}',
+  tags: ['Integrations'],
+  summary: 'Get a Cloudflare connector',
+  request: { params: connectorParams },
+  responses: okJson(dataResponseSchema(CloudflareConnectorWithZonesResponseSchema)),
+});
+
+export const updateCloudflareConnectorRoute = appRoute({
+  method: 'patch',
+  path: '/cloudflare/connectors/{id}',
+  tags: ['Integrations'],
+  summary: 'Update a Cloudflare connector',
+  request: { params: connectorParams, ...jsonBody(CloudflareConnectorUpdateSchema) },
+  responses: okJson(dataResponseSchema(CloudflareConnectorWithZonesResponseSchema)),
+});
+
+export const deleteCloudflareConnectorRoute = appRoute({
+  method: 'delete',
+  path: '/cloudflare/connectors/{id}',
+  tags: ['Integrations'],
+  summary: 'Delete a Cloudflare connector',
+  request: { params: connectorParams },
+  responses: successJson,
+});
+
+export const rotateCloudflareConnectorTokenRoute = appRoute({
+  method: 'post',
+  path: '/cloudflare/connectors/{id}/token',
+  tags: ['Integrations'],
+  summary: 'Rotate a Cloudflare connector token',
+  request: { params: connectorParams, ...jsonBody(CloudflareConnectorRotateTokenSchema) },
+  responses: okJson(dataResponseSchema(CloudflareConnectorWithZonesResponseSchema)),
+});
+
+export const testCloudflareConnectorRoute = appRoute({
+  method: 'post',
+  path: '/cloudflare/connectors/{id}/test',
+  tags: ['Integrations'],
+  summary: 'Test a Cloudflare connector',
+  request: { params: connectorParams },
+  responses: okJson(dataResponseSchema(CloudflareConnectorResponseSchema)),
+});
+
+export const syncCloudflareConnectorRoute = appRoute({
+  method: 'post',
+  path: '/cloudflare/connectors/{id}/sync',
+  tags: ['Integrations'],
+  summary: 'Sync a Cloudflare connector',
+  description: 'Synchronizes Cloudflare zones used for DNS autodetection.',
+  request: { params: connectorParams },
+  responses: okJson(dataResponseSchema(CloudflareSyncResponseSchema)),
+});
+
+export const listCloudflareZonesRoute = appRoute({
+  method: 'get',
+  path: '/cloudflare/connectors/{id}/zones',
+  tags: ['Integrations'],
+  summary: 'List cached Cloudflare zones',
+  request: { params: connectorParams },
+  responses: okJson(listResponseSchema(CloudflareZoneResponseSchema)),
 });

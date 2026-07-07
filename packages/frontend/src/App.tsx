@@ -225,9 +225,8 @@ function CertificatesPageGuard() {
 
 function DomainsPageGuard() {
   const hasScope = useAuthStore((s) => s.hasScope);
-  const domainsEnabled = useSystemConfigStore((s) => s.config.features.domainsEnabled);
 
-  if (!domainsEnabled || !hasScope("domains:view")) {
+  if (!hasScope("domains:view")) {
     return <Navigate to="/" replace />;
   }
 

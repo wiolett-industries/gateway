@@ -12,9 +12,17 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import { domainFolders } from './domain-folders.js';
+import { integrationConnectors } from './integration-connectors.js';
 import { users } from './users.js';
 
 export const dnsStatusEnum = pgEnum('dns_status', ['valid', 'invalid', 'pending', 'unknown']);
+export const domainDnsProviderEnum = pgEnum('domain_dns_provider', ['legacy', 'cloudflare']);
+export const domainDnsOwnershipEnum = pgEnum('domain_dns_ownership', [
+  'legacy',
+  'created',
+  'matched_existing',
+  'overwritten',
+]);
 
 export interface DnsRecords {
   a: string[];
@@ -34,6 +42,18 @@ export const domains = pgTable(
     dnsStatus: dnsStatusEnum('dns_status').notNull().default('pending'),
     lastDnsCheckAt: timestamp('last_dns_check_at', { withTimezone: true }),
     dnsRecords: jsonb('dns_records').$type<DnsRecords>(),
+    dnsProvider: domainDnsProviderEnum('dns_provider').notNull().default('legacy'),
+    dnsOwnership: domainDnsOwnershipEnum('dns_ownership').notNull().default('legacy'),
+    integrationConnectorId: uuid('integration_connector_id').references(() => integrationConnectors.id, {
+      onDelete: 'set null',
+    }),
+    providerZoneId: varchar('provider_zone_id', { length: 128 }),
+    providerZoneName: text('provider_zone_name'),
+    providerRecordIds: jsonb('provider_record_ids').$type<string[]>().notNull().default([]),
+    dnsRecordType: varchar('dns_record_type', { length: 16 }),
+    dnsTargetIps: jsonb('dns_target_ips').$type<string[]>().notNull().default([]),
+    dnsTtl: integer('dns_ttl'),
+    dnsProxied: boolean('dns_proxied'),
     // System flag — locked domains cannot be deleted (e.g. management domain)
     isSystem: boolean('is_system').notNull().default(false),
     folderId: uuid('folder_id').references((): AnyPgColumn => domainFolders.id, { onDelete: 'set null' }),
@@ -48,6 +68,8 @@ export const domains = pgTable(
   (table) => [
     index('domain_domain_idx').on(table.domain),
     index('domain_dns_status_idx').on(table.dnsStatus),
+    index('domain_dns_provider_idx').on(table.dnsProvider),
+    index('domain_integration_connector_idx').on(table.integrationConnectorId),
     index('domain_created_by_idx').on(table.createdById),
     index('domain_folder_idx').on(table.folderId),
   ]

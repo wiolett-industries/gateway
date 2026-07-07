@@ -1,3 +1,4 @@
+import { hasScope } from '@/lib/permissions.js';
 import { UpdateDomainSchema } from '@/modules/domains/domain.schemas.js';
 import type { DomainsService } from '@/modules/domains/domain.service.js';
 import type { User } from '@/types.js';
@@ -26,9 +27,23 @@ export async function executeDomainTool(
         limit: agentPageLimit(a.limit),
       });
     case 'create_domain':
-      return context.domainsService.createDomain({ domain: a.domain }, user.id);
+      return context.domainsService.createDomain(
+        {
+          domain: a.domain,
+          description: a.description,
+          ttl: typeof a.ttl === 'number' ? a.ttl : undefined,
+          proxied: typeof a.proxied === 'boolean' ? a.proxied : undefined,
+          overwriteDns: a.overwriteDns === true,
+        },
+        user.id
+      );
     case 'delete_domain':
-      await context.domainsService.deleteDomain(a.domainId, user.id);
+      await context.domainsService.deleteDomain(
+        a.domainId,
+        user.id,
+        { deleteDns: typeof a.deleteDns === 'boolean' ? a.deleteDns : undefined },
+        { canDeleteDns: hasScope(user.scopes, 'integrations:cloudflare:dns:delete') }
+      );
       return { success: true };
     case 'manage_domain':
       if (a.operation === 'get') {

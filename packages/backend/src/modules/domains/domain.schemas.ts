@@ -5,10 +5,24 @@ const domainNameRegex = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-z
 export const CreateDomainSchema = z.object({
   domain: z.string().min(1).max(253).regex(domainNameRegex, 'Invalid domain name format'),
   description: z.string().max(1000).optional(),
+  folderId: z.string().uuid().optional().nullable(),
+  ttl: z.coerce.number().int().min(1).max(86_400).optional(),
+  proxied: z.boolean().optional(),
+  overwriteDns: z.boolean().optional(),
+});
+
+export const PreviewDomainSchema = CreateDomainSchema.pick({
+  domain: true,
+  ttl: true,
+  proxied: true,
 });
 
 export const UpdateDomainSchema = z.object({
   description: z.string().max(1000).optional().nullable(),
+});
+
+export const DeleteDomainSchema = z.object({
+  deleteDns: z.boolean().optional(),
 });
 
 export const DomainListQuerySchema = z.object({
@@ -19,5 +33,7 @@ export const DomainListQuerySchema = z.object({
 });
 
 export type CreateDomainInput = z.infer<typeof CreateDomainSchema>;
+export type PreviewDomainInput = z.infer<typeof PreviewDomainSchema>;
 export type UpdateDomainInput = z.infer<typeof UpdateDomainSchema>;
+export type DeleteDomainInput = z.infer<typeof DeleteDomainSchema>;
 export type DomainListQuery = z.infer<typeof DomainListQuerySchema>;

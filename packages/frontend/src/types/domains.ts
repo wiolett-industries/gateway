@@ -1,6 +1,8 @@
 // ── Domains ───────────────────────────────────────────────────────
 
 export type DnsStatus = "valid" | "invalid" | "pending" | "unknown";
+export type DomainDnsProvider = "legacy" | "cloudflare";
+export type DomainDnsOwnership = "legacy" | "created" | "matched_existing" | "overwritten";
 
 export interface DnsRecords {
   a: string[];
@@ -18,6 +20,16 @@ export interface Domain {
   dnsStatus: DnsStatus;
   lastDnsCheckAt: string | null;
   dnsRecords: DnsRecords | null;
+  dnsProvider: DomainDnsProvider;
+  dnsOwnership: DomainDnsOwnership;
+  integrationConnectorId: string | null;
+  providerZoneId: string | null;
+  providerZoneName: string | null;
+  providerRecordIds: string[];
+  dnsRecordType: string | null;
+  dnsTargetIps: string[];
+  dnsTtl: number | null;
+  dnsProxied: boolean | null;
   isSystem?: boolean;
   folderId?: string | null;
   sortOrder?: number;
@@ -51,6 +63,45 @@ export interface DomainSearchResult {
 export interface CreateDomainRequest {
   domain: string;
   description?: string;
+  folderId?: string | null;
+  ttl?: number;
+  proxied?: boolean;
+  overwriteDns?: boolean;
+}
+
+export interface DeleteDomainRequest {
+  deleteDns?: boolean;
+}
+
+export interface DomainDnsRecordPreview {
+  id?: string;
+  type: string;
+  name: string;
+  content: string;
+  ttl?: number;
+  proxied?: boolean | null;
+}
+
+export interface DomainDnsConflictDetails {
+  domain?: string;
+  zoneName?: string;
+  currentRecords?: DomainDnsRecordPreview[];
+  desiredRecords?: DomainDnsRecordPreview[];
+  canOverwrite?: boolean;
+  recordIds?: string[];
+}
+
+export interface DomainPreview {
+  domain: string;
+  zoneName: string;
+  connectorId: string;
+  targetIps: string[];
+  ttl: number;
+  proxied: boolean;
+  desiredRecords: DomainDnsRecordPreview[];
+  currentRecords: DomainDnsRecordPreview[];
+  status: "ready" | "matched" | "mismatch" | "blocked";
+  canOverwrite: boolean;
 }
 
 export interface UpdateDomainRequest {

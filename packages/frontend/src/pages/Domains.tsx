@@ -39,20 +39,24 @@ import {
 import { useRealtime } from "@/hooks/use-realtime";
 import { formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
+import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
-import type { DnsStatus, Domain } from "@/types";
+import type { DnsStatus, Domain, DomainDnsConflictDetails } from "@/types";
 
 const DOMAIN_FOLDER_LIST_CACHE_KEY = "domains:list:folder-view";
 
 export function Domains() {
   const { hasScope } = useAuthStore();
-  const canEdit = hasScope("domains:edit");
-  const isAdmin = hasScope("domains:delete");
-  const canIssueCert = canEdit && hasScope("ssl:cert:issue");
+  const canCreateDomain = hasScope("integrations:cloudflare:dns:edit");
+  const canDeleteDns = hasScope("integrations:cloudflare:dns:delete");
+  const canDeleteDomain = hasScope("domains:delete") || canDeleteDns;
+  const canCheckDns = hasScope("domains:edit");
+  const canIssueCert = canCheckDns && hasScope("ssl:cert:issue");
 
   const cachedDomains = api.getCached<{ data: Domain[] }>(DOMAIN_FOLDER_LIST_CACHE_KEY);
   const [domains, setDomains] = useState<Domain[]>(cachedDomains?.data ?? []);
   const [isLoading, setIsLoading] = useState(!cachedDomains);
+  const [cloudflareReady, setCloudflareReady] = useState<boolean | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DnsStatus | "all">("all");
   const [createFolderAction, setCreateFolderAction] = useState<(() => void) | null>(null);
@@ -63,10 +67,21 @@ export function Domains() {
 
   const loadDomains = useCallback(async () => {
     try {
-      const result = await api.listDomains({
-        page: 1,
-        limit: 1000,
-      });
+      const [result, connectors] = await Promise.all([
+        api.listDomains({
+          page: 1,
+          limit: 1000,
+        }),
+        api.listCloudflareConnectors({ enabled: true }).catch(() => []),
+      ]);
+      setCloudflareReady(
+        connectors.some(
+          (connector) =>
+            connector.enabled &&
+            connector.syncStatus !== "error" &&
+            (connector.zones?.length ?? 0) > 0
+        )
+      );
       setDomains(result.data);
       api.setCache(DOMAIN_FOLDER_LIST_CACHE_KEY, result);
     } catch {
@@ -92,6 +107,10 @@ export function Domains() {
     loadDomains();
   });
 
+  useRealtime("integration.connector.changed", () => {
+    loadDomains();
+  });
+
   const handleCheckDns = async (d: Domain) => {
     try {
       await api.checkDomainDns(d.id);
@@ -112,17 +131,48 @@ export function Domains() {
   };
 
   const handleDelete = async (d: Domain) => {
-    const ok = await confirm({
-      title: "Delete Domain",
-      description: `Are you sure you want to delete "${d.domain}"? This won't affect proxy hosts or certificates using this domain.`,
-      confirmLabel: "Delete",
-    });
-    if (!ok) return;
+    let deleteDns: boolean | undefined;
+    if (d.dnsProvider === "cloudflare" && d.dnsOwnership === "matched_existing") {
+      const ok = await confirm({
+        title: "Delete Domain Mapping",
+        description: `Remove "${d.domain}" from Gateway? The matched existing Cloudflare DNS record will be kept.`,
+        confirmLabel: "Remove Mapping",
+        cancelLabel: "Cancel",
+        variant: "default",
+      });
+      if (!ok) return;
+      deleteDns = false;
+    } else {
+      const ok = await confirm({
+        title: "Delete Domain",
+        description:
+          d.dnsProvider === "cloudflare"
+            ? `Delete "${d.domain}" and its Gateway-managed Cloudflare DNS records?`
+            : `Are you sure you want to delete "${d.domain}"? This won't affect proxy hosts or certificates using this domain.`,
+        confirmLabel: "Delete",
+      });
+      if (!ok) return;
+    }
     try {
-      await api.deleteDomain(d.id);
+      await api.deleteDomain(d.id, deleteDns === undefined ? undefined : { deleteDns });
       toast.success("Domain deleted");
       loadDomains();
     } catch (err) {
+      if (err instanceof ApiRequestError && err.code === "DOMAIN_DNS_DELETE_CHOICE_REQUIRED") {
+        const details = err.details as DomainDnsConflictDetails | undefined;
+        const ok = await confirm({
+          title: "Delete Cloudflare DNS too?",
+          description: `This domain was adopted from existing Cloudflare records. Delete those DNS records as well?${details?.recordIds?.length ? ` Records: ${details.recordIds.join(", ")}` : ""}`,
+          confirmLabel: "Delete DNS",
+          cancelLabel: "Keep DNS",
+          variant: "destructive",
+          bodyDescription: true,
+        });
+        await api.deleteDomain(d.id, { deleteDns: ok });
+        toast.success("Domain deleted");
+        loadDomains();
+        return;
+      }
       const msg = err instanceof Error ? err.message : "Failed to delete domain";
       if (msg.includes("in use")) {
         toast.error(
@@ -142,6 +192,7 @@ export function Domains() {
   };
 
   const hasActiveFilters = search.trim() !== "" || statusFilter !== "all";
+  const domainsAvailable = cloudflareReady !== false;
   const filteredDomains = useMemo(() => {
     const query = search.trim().toLowerCase();
     return domains.filter((domain) => {
@@ -212,13 +263,19 @@ export function Domains() {
       label: "Actions",
       align: "right",
       width: "5rem",
-      renderCell: (d) => (
-        <div
-          className="flex justify-end"
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          {canEdit && (
+      renderCell: (d) => {
+        const canDeleteRow =
+          !d.isSystem &&
+          (d.dnsProvider !== "cloudflare" || d.dnsOwnership === "matched_existing"
+            ? canDeleteDomain
+            : canDeleteDns);
+        if (!canCheckDns && !canIssueCert && !canDeleteRow) return null;
+        return (
+          <div
+            className="flex justify-end"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -226,10 +283,12 @@ export function Domains() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleCheckDns(d)}>
-                  <RefreshCw className="h-4 w-4" />
-                  Check DNS
-                </DropdownMenuItem>
+                {canCheckDns && (
+                  <DropdownMenuItem onClick={() => handleCheckDns(d)}>
+                    <RefreshCw className="h-4 w-4" />
+                    Check DNS
+                  </DropdownMenuItem>
+                )}
                 {canIssueCert && d.dnsStatus === "valid" && !d.sslCertCount && (
                   <DropdownMenuItem onClick={() => handleIssueCert(d)}>
                     <Shield className="h-4 w-4" />
@@ -240,7 +299,7 @@ export function Domains() {
                   <Pencil className="h-4 w-4" />
                   Details
                 </DropdownMenuItem>
-                {isAdmin && !d.isSystem && (
+                {canDeleteRow && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => handleDelete(d)} className="text-destructive">
@@ -251,9 +310,9 @@ export function Domains() {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-        </div>
-      ),
+          </div>
+        );
+      },
     },
   ];
 
@@ -282,7 +341,7 @@ export function Domains() {
                     },
                   ]
                 : []),
-              ...(canEdit
+              ...(canCreateDomain && domainsAvailable
                 ? [
                     {
                       label: "Add Domain",
@@ -299,7 +358,7 @@ export function Domains() {
                 Add Folder
               </Button>
             )}
-            {canEdit && (
+            {canCreateDomain && domainsAvailable && (
               <Button onClick={() => setAddDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Add Domain
@@ -344,9 +403,13 @@ export function Domains() {
           loadingLabel="Loading domains..."
           emptyState={
             <EmptyState
-              message="No domains."
-              actionLabel={canEdit ? "Add one" : undefined}
-              onAction={canEdit ? () => setAddDialogOpen(true) : undefined}
+              message={
+                domainsAvailable ? "No domains." : "Cloudflare DNS integration is not configured."
+              }
+              actionLabel={canCreateDomain && domainsAvailable ? "Add one" : undefined}
+              onAction={
+                canCreateDomain && domainsAvailable ? () => setAddDialogOpen(true) : undefined
+              }
               hasActiveFilters={hasActiveFilters}
               onReset={() => {
                 setSearch("");

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import * as grpc from '@grpc/grpc-js';
 import forge from 'node-forge';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createGrpcServerCredentials } from './server.js';
+import { createGrpcServerCredentials, refreshGrpcServerCredentials } from './server.js';
 
 function createCertificatePair() {
   const now = Date.now();
@@ -99,5 +99,35 @@ describe('createGrpcServerCredentials', () => {
 
     expect(createProviderCredentials).toHaveBeenCalledTimes(1);
     expect(createProviderCredentials.mock.calls[0]?.[2]).toBe(false);
+  });
+
+  it('notifies active certificate provider listeners when TLS material is refreshed', async () => {
+    const { caPem, certPem, keyPem } = createCertificatePair();
+    const { certPath, keyPath } = writeTlsFiles(certPem, keyPem);
+    let provider: any;
+    vi.spyOn(grpc.experimental as any, 'createCertificateProviderServerCredentials').mockImplementation(
+      (caProvider) => {
+        provider = caProvider;
+        return {} as grpc.ServerCredentials;
+      }
+    );
+    const systemCA = { getSystemCACertPem: vi.fn().mockResolvedValue(caPem) };
+
+    await createGrpcServerCredentials(certPath, keyPath, systemCA as any);
+    const caListener = vi.fn();
+    const identityListener = vi.fn();
+    provider.addCaCertificateListener(caListener);
+    provider.addIdentityCertificateListener(identityListener);
+    await new Promise((resolve) => setImmediate(resolve));
+    caListener.mockClear();
+    identityListener.mockClear();
+
+    await refreshGrpcServerCredentials(certPath, keyPath, systemCA as any);
+
+    expect(caListener).toHaveBeenCalledWith({ caCertificate: Buffer.from(caPem) });
+    expect(identityListener).toHaveBeenCalledWith({
+      certificate: Buffer.from(certPem),
+      privateKey: Buffer.from(keyPem),
+    });
   });
 });

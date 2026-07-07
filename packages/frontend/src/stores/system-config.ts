@@ -13,6 +13,9 @@ export const DEFAULT_GATEWAY_FEATURES: GatewayFeatureConfig = {
 export const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
   fileUploadMaxBytes: 100 * BYTES_PER_MEGABYTE,
   fileOpenMaxBytes: 10 * BYTES_PER_MEGABYTE,
+  gatewayPublicIps: [],
+  gatewayGrpcPublicTarget: null,
+  gatewayGrpcLocalIp: null,
   features: DEFAULT_GATEWAY_FEATURES,
 };
 

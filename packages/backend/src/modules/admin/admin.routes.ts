@@ -1,5 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { container } from '@/container.js';
+import { refreshGrpcServerCredentials } from '@/grpc/server.js';
+import { createChildLogger } from '@/lib/logger.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { canManageUser, isScopeSubset } from '@/lib/permissions.js';
 import { getRemoteAddress, resolveClientIp } from '@/lib/request-ip.js';
@@ -27,6 +29,8 @@ import {
 import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
+import { GrpcIdentityService } from '@/services/grpc-identity.service.js';
+import { SystemCAService } from '@/services/system-ca.service.js';
 import type { AppEnv } from '@/types.js';
 import {
   createAdminUserFolderRoute,
@@ -47,6 +51,7 @@ import {
 } from './admin.docs.js';
 
 export const adminRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
+const logger = createChildLogger('AdminRoutes');
 
 adminRoutes.use('*', authMiddleware);
 adminRoutes.use('*', sessionOnly);
@@ -63,6 +68,12 @@ function requireAnyAdminScope(...requiredScopes: string[]) {
 
 function getEffectiveGroupScopes(group: { scopes: string[]; inheritedScopes?: string[] }) {
   return [...new Set([...(group.scopes ?? []), ...(group.inheritedScopes ?? [])])];
+}
+
+function touchesGrpcEndpointSettings(input: unknown): boolean {
+  if (!input || typeof input !== 'object') return false;
+  const record = input as Record<string, unknown>;
+  return 'gatewayGrpcPublicTarget' in record || 'gatewayGrpcLocalIp' in record;
 }
 
 // List all users
@@ -214,6 +225,8 @@ adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('sett
   }
 
   try {
+    const shouldRefreshGrpcIdentity = touchesGrpcEndpointSettings(input.generalSettings);
+    const previousGeneralSettings = shouldRefreshGrpcIdentity ? await generalSettingsService.getConfig() : null;
     const [updated, mcpSettings, generalSettings, networkSecurity, outboundWebhookPolicy] = await Promise.all([
       authSettingsService.updateConfig(input),
       mcpSettingsService.updateConfig({ serverEnabled: input.mcpServerEnabled }),
@@ -227,6 +240,29 @@ adminRoutes.openapi({ ...updateAuthSettingsRoute, middleware: requireScope('sett
         ? outboundWebhookPolicyService.updateConfig(input.outboundWebhookPolicy)
         : outboundWebhookPolicyService.getConfig(),
     ]);
+
+    if (shouldRefreshGrpcIdentity) {
+      const grpcIdentityService = container.resolve(GrpcIdentityService);
+      const systemCA = container.resolve(SystemCAService);
+      try {
+        const grpcIdentity = await grpcIdentityService.refresh();
+        await refreshGrpcServerCredentials(grpcIdentity.certPath, grpcIdentity.keyPath, systemCA);
+      } catch (error) {
+        if (previousGeneralSettings) {
+          try {
+            await generalSettingsService.updateConfig(previousGeneralSettings);
+            const rollbackIdentity = await grpcIdentityService.refresh();
+            await refreshGrpcServerCredentials(rollbackIdentity.certPath, rollbackIdentity.keyPath, systemCA);
+          } catch (rollbackError) {
+            logger.error('Failed to rollback gRPC endpoint settings after identity refresh failure', {
+              error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+            });
+          }
+        }
+        throw error;
+      }
+    }
+
     const groups = await groupService.listGroups();
     const assignableGroups = groups.filter((group) => isScopeSubset(getEffectiveGroupScopes(group), actorScopes));
 

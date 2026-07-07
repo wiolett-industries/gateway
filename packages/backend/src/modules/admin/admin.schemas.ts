@@ -5,6 +5,9 @@ import {
   FILE_OPEN_MIN_BYTES,
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_MIN_BYTES,
+  isValidGatewayHostPortTarget,
+  isValidGatewayIp,
+  isValidGatewayIpPortTarget,
 } from '@/modules/settings/general-settings.service.js';
 import { CLIENT_IP_SOURCE_VALUES } from '@/modules/settings/network-settings.service.js';
 
@@ -32,6 +35,24 @@ export const UpdateAuthProvisioningSettingsSchema = z.object({
     .object({
       fileUploadMaxBytes: z.number().int().min(FILE_UPLOAD_MIN_BYTES).max(FILE_UPLOAD_MAX_BYTES).optional(),
       fileOpenMaxBytes: z.number().int().min(FILE_OPEN_MIN_BYTES).max(FILE_OPEN_MAX_BYTES).optional(),
+      gatewayPublicIps: z
+        .array(z.string().trim().min(1).max(64).refine(isValidGatewayIp, 'Must be an IPv4 or IPv6 address'))
+        .max(16)
+        .optional(),
+      gatewayGrpcPublicTarget: z
+        .string()
+        .trim()
+        .max(255)
+        .refine(isValidGatewayHostPortTarget, 'Must be a hostname or IP address, optionally with a port')
+        .nullable()
+        .optional(),
+      gatewayGrpcLocalIp: z
+        .string()
+        .trim()
+        .max(255)
+        .refine(isValidGatewayIpPortTarget, 'Must be an IPv4 or IPv6 address, optionally with a port')
+        .nullable()
+        .optional(),
       features: z
         .object({
           pkiEnabled: z.boolean().optional(),

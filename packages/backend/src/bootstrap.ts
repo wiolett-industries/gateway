@@ -260,6 +260,7 @@ export async function initializeContainer(): Promise<void> {
 
   // System CA for node mTLS
   const systemCA = new SystemCAService(db, caService, certService, cryptoService);
+  systemCA.setGeneralSettingsService(generalSettingsService);
   container.registerInstance(SystemCAService, systemCA);
   await systemCA.ensureSystemCA();
 
@@ -288,6 +289,7 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(NodeDispatchService, nodeDispatch);
 
   const nodesService = new NodesService(db, auditService, nodeRegistry, grpcIdentityService, nodeDispatch);
+  nodesService.setGeneralSettingsService(generalSettingsService, env.GRPC_PORT);
   container.registerInstance(NodesService, nodesService);
 
   const nodeFolderService = new NodeFolderService(db, auditService);
@@ -489,6 +491,8 @@ export async function initializeContainer(): Promise<void> {
   // Domain management
   const domainsService = new DomainsService(db, auditService);
   domainsService.setEventBus(eventBus);
+  domainsService.setIntegrationsService(integrationsService);
+  domainsService.setGeneralSettingsService(generalSettingsService);
   container.registerInstance(DomainsService, domainsService);
   const domainFolderService = new DomainFolderService(db, auditService);
   domainFolderService.setEventBus(eventBus);
@@ -716,6 +720,7 @@ export async function initializeContainer(): Promise<void> {
   const notifRetryJob = new NotificationRetryJob(notifDeliveryService, notifDispatcherService);
   scheduler.registerInterval('notification-retry', 30000, () => notifRetryJob.run());
   scheduler.registerInterval('gitlab-integration-sync', 60000, () => integrationsService.runDueGitLabSyncs());
+  scheduler.registerInterval('cloudflare-integration-sync', 60000, () => integrationsService.runDueCloudflareSyncs());
 
   setTimeout(() => {
     licenseService.heartbeat().catch((error) => {

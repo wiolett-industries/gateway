@@ -678,27 +678,39 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'create_domain',
-    description: 'Register a new domain for DNS verification and use with proxy hosts.',
+    description:
+      'Create a Cloudflare-backed Gateway domain and its A/AAAA DNS records. If Cloudflare already has different A/AAAA records, the tool returns conflict metadata; retry with overwriteDns only after explicit user approval.',
     parameters: {
       type: 'object',
       properties: {
         domain: { type: 'string', description: 'Domain name (e.g., "example.com")' },
         description: { type: 'string', description: 'Optional description' },
+        ttl: { type: 'number', description: 'Optional Cloudflare DNS TTL override' },
+        proxied: { type: 'boolean', description: 'Optional Cloudflare proxy override' },
+        overwriteDns: {
+          type: 'boolean',
+          description: 'Replace existing Cloudflare A/AAAA records after explicit user approval',
+        },
       },
       required: ['domain'],
     },
     destructive: true,
     category: 'Domains',
-    requiredScope: 'domains:create',
+    requiredScope: 'integrations:cloudflare:dns:edit',
     invalidateStores: ['domains'],
   },
   {
     name: 'delete_domain',
-    description: 'Remove a registered domain.',
+    description:
+      'Remove a Gateway domain. Cloudflare-created/overwritten rows delete their DNS records. For matched-existing rows, pass deleteDns to choose whether to remove Cloudflare DNS or only the Gateway mapping.',
     parameters: {
       type: 'object',
       properties: {
         domainId: { type: 'string', description: 'Domain UUID to delete' },
+        deleteDns: {
+          type: 'boolean',
+          description: 'For matched-existing Cloudflare records, true deletes DNS and false keeps DNS',
+        },
       },
       required: ['domainId'],
     },

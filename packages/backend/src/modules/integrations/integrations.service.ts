@@ -1,10 +1,14 @@
 import { and, desc, eq, isNull, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import {
+  type CloudflareConnectorSettings,
+  domains,
   type IntegrationConnectorCapabilities,
   type IntegrationConnectorSettings,
+  type IntegrationConnectorSettingsValue,
   type IntegrationProvider,
   integrationConnectorAllowlistEntries,
+  integrationConnectorCloudflareZones,
   integrationConnectorCredentials,
   integrationConnectorProjects,
   integrationConnectorRegistries,
@@ -18,8 +22,10 @@ import type { DockerRegistryService } from '@/modules/docker/docker-registry.ser
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { User } from '@/types.js';
+import { CloudflareClient, type CloudflareZoneRef } from './cloudflare-client.js';
 import {
   buildGitLabFileCommitAuditDetails,
+  CLOUDFLARE_AUDIT_ACTIONS,
   GITLAB_AUDIT_ACTIONS,
   hashGitLabDiff,
   redactGitLabAuditDetails,
@@ -33,6 +39,9 @@ import type {
   VcsProjectRef,
 } from './integration-provider.types.js';
 import type {
+  CloudflareConnectorCreateInput,
+  CloudflareConnectorListQuery,
+  CloudflareConnectorUpdateInput,
   GitLabAllowlistEntryInput,
   GitLabConnectorCreateInput,
   GitLabConnectorListQuery,
@@ -42,6 +51,7 @@ import type {
 type ConnectorRow = typeof integrationConnectors.$inferSelect;
 type AllowlistRow = typeof integrationConnectorAllowlistEntries.$inferSelect;
 type ProjectRow = typeof integrationConnectorProjects.$inferSelect;
+type CloudflareZoneRow = typeof integrationConnectorCloudflareZones.$inferSelect;
 
 export const DEFAULT_GITLAB_CONNECTOR_SETTINGS: IntegrationConnectorSettings = {
   autoSyncEnabled: true,
@@ -52,6 +62,13 @@ export const DEFAULT_GITLAB_CONNECTOR_SETTINGS: IntegrationConnectorSettings = {
   cloneSubmodules: false,
   cloneMaxSizeMb: 1024,
   cloneTimeoutSeconds: 300,
+};
+
+export const DEFAULT_CLOUDFLARE_CONNECTOR_SETTINGS: CloudflareConnectorSettings = {
+  autoSyncEnabled: true,
+  autoSyncIntervalSeconds: 900,
+  defaultTtl: 1,
+  defaultProxied: true,
 };
 
 const MAX_BACKOFF_SECONDS = 3600;
@@ -161,7 +178,8 @@ export class IntegrationsService {
     if (input.baseUrl !== undefined) updates.baseUrl = this.normalizeBaseUrl(input.baseUrl);
     if (input.enabled !== undefined) updates.enabled = input.enabled;
     if (input.allowlistMode !== undefined) updates.allowlistMode = input.allowlistMode;
-    if (input.settings !== undefined) updates.settings = this.mergeSettings(input.settings, existing.settings);
+    if (input.settings !== undefined)
+      updates.settings = this.mergeSettings(input.settings, this.gitLabSettings(existing));
 
     let [row] = await this.db
       .update(integrationConnectors)
@@ -366,6 +384,345 @@ export class IntegrationsService {
         // syncGitLabConnector already persists failure state; scheduler must not block boot or other jobs.
       }
     }
+  }
+
+  async listCloudflareConnectors(query: CloudflareConnectorListQuery = {}) {
+    const conditions: SQL[] = [eq(integrationConnectors.provider, 'cloudflare')];
+    if (query.enabled !== undefined) conditions.push(eq(integrationConnectors.enabled, query.enabled));
+
+    const rows = await this.db
+      .select()
+      .from(integrationConnectors)
+      .where(buildWhere(conditions))
+      .orderBy(desc(integrationConnectors.createdAt));
+
+    return Promise.all(
+      rows.map(async (row) => ({
+        ...this.toSafeConnector(row),
+        zones: await this.listCloudflareZoneRows(row.id),
+      }))
+    );
+  }
+
+  async getCloudflareConnector(id: string) {
+    const row = await this.getConnectorRow(id, 'cloudflare');
+    const zones = await this.listCloudflareZoneRows(id);
+    return { ...this.toSafeConnector(row), zones };
+  }
+
+  async createCloudflareConnector(input: CloudflareConnectorCreateInput, userId: string) {
+    const settings = this.mergeCloudflareSettings(input.settings);
+    const { capabilities, zones } = await this.testCloudflareToken(input.token);
+    const encryptedToken = this.encryptToken(input.token);
+
+    const [row] = await this.db
+      .insert(integrationConnectors)
+      .values({
+        provider: 'cloudflare',
+        name: input.name,
+        baseUrl: 'https://api.cloudflare.com',
+        enabled: input.enabled,
+        encryptedToken,
+        tokenLast4: this.tokenLast4(input.token),
+        allowlistMode: 'all_visible',
+        settings,
+        capabilities,
+        testedAt: new Date(),
+      })
+      .returning();
+
+    await this.persistCloudflareZones(row.id, zones);
+
+    await this.auditService.log({
+      action: CLOUDFLARE_AUDIT_ACTIONS.connectorCreate,
+      userId,
+      resourceType: 'integration-connector',
+      resourceId: row.id,
+      details: { name: row.name, zoneCount: zones.length },
+    });
+
+    this.emitConnector(row.id, 'created', 'cloudflare');
+    return this.getCloudflareConnector(row.id);
+  }
+
+  async updateCloudflareConnector(id: string, input: CloudflareConnectorUpdateInput, userId: string) {
+    const existing = await this.getConnectorRow(id, 'cloudflare');
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+
+    if (input.name !== undefined) updates.name = input.name;
+    if (input.enabled !== undefined) updates.enabled = input.enabled;
+    if (input.settings !== undefined)
+      updates.settings = this.mergeCloudflareSettings(input.settings, existing.settings);
+
+    let [row] = await this.db
+      .update(integrationConnectors)
+      .set(updates)
+      .where(and(eq(integrationConnectors.id, id), eq(integrationConnectors.provider, 'cloudflare')))
+      .returning();
+
+    if (!row) throw new AppError(404, 'NOT_FOUND', 'Cloudflare connector not found');
+
+    const { capabilities, zones } = await this.testCloudflareToken(this.cloudflareTokenFor(row));
+    [row] = await this.db
+      .update(integrationConnectors)
+      .set({ capabilities, testedAt: new Date(), updatedAt: new Date() })
+      .where(eq(integrationConnectors.id, id))
+      .returning();
+    await this.persistCloudflareZones(id, zones);
+
+    await this.auditService.log({
+      action: CLOUDFLARE_AUDIT_ACTIONS.connectorUpdate,
+      userId,
+      resourceType: 'integration-connector',
+      resourceId: id,
+      details: {
+        name: existing.name,
+        changes: Object.keys(updates).filter((key) => key !== 'updatedAt'),
+        zoneCount: zones.length,
+      },
+    });
+
+    this.emitConnector(id, 'updated', 'cloudflare');
+    return this.getCloudflareConnector(id);
+  }
+
+  async rotateCloudflareConnectorToken(id: string, token: string, userId: string) {
+    await this.getConnectorRow(id, 'cloudflare');
+    const { capabilities, zones } = await this.testCloudflareToken(token);
+    const [row] = await this.db
+      .update(integrationConnectors)
+      .set({
+        encryptedToken: this.encryptToken(token),
+        tokenLast4: this.tokenLast4(token),
+        testedAt: new Date(),
+        capabilities,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(integrationConnectors.id, id), eq(integrationConnectors.provider, 'cloudflare')))
+      .returning();
+
+    if (!row) throw new AppError(404, 'NOT_FOUND', 'Cloudflare connector not found');
+    await this.persistCloudflareZones(id, zones);
+
+    await this.auditService.log({
+      action: CLOUDFLARE_AUDIT_ACTIONS.connectorTokenRotate,
+      userId,
+      resourceType: 'integration-connector',
+      resourceId: id,
+      details: { name: row.name, zoneCount: zones.length },
+    });
+
+    this.emitConnector(id, 'token-rotated', 'cloudflare');
+    return this.getCloudflareConnector(id);
+  }
+
+  async deleteCloudflareConnector(id: string, userId: string) {
+    const existing = await this.getConnectorRow(id, 'cloudflare');
+    const linkedDomains = await this.db
+      .select({ id: domains.id, domain: domains.domain })
+      .from(domains)
+      .where(eq(domains.integrationConnectorId, id))
+      .limit(5);
+    if (linkedDomains.length > 0) {
+      throw new AppError(409, 'CLOUDFLARE_CONNECTOR_IN_USE', 'Cloudflare connector is used by Gateway domains', {
+        domainCount: linkedDomains.length,
+        domains: linkedDomains,
+      });
+    }
+    await this.db
+      .delete(integrationConnectors)
+      .where(and(eq(integrationConnectors.id, id), eq(integrationConnectors.provider, 'cloudflare')));
+
+    await this.auditService.log({
+      action: CLOUDFLARE_AUDIT_ACTIONS.connectorDelete,
+      userId,
+      resourceType: 'integration-connector',
+      resourceId: id,
+      details: { name: existing.name },
+    });
+
+    this.emitConnector(id, 'deleted', 'cloudflare');
+  }
+
+  async testCloudflareConnector(id: string, userId: string) {
+    const row = await this.getConnectorRow(id, 'cloudflare');
+    const { capabilities, zones } = await this.testCloudflareToken(this.cloudflareTokenFor(row));
+    const [updated] = await this.db
+      .update(integrationConnectors)
+      .set({ capabilities, testedAt: new Date(), updatedAt: new Date() })
+      .where(eq(integrationConnectors.id, id))
+      .returning();
+    await this.persistCloudflareZones(id, zones);
+
+    await this.auditService.log({
+      action: CLOUDFLARE_AUDIT_ACTIONS.connectorTest,
+      userId,
+      resourceType: 'integration-connector',
+      resourceId: id,
+      details: { name: row.name, success: true, zoneCount: zones.length },
+    });
+
+    this.emitConnector(id, 'tested', 'cloudflare');
+    return this.toSafeConnector(updated);
+  }
+
+  async testCloudflareConnectorPreview(input: { token: string }) {
+    const { capabilities, zones } = await this.testCloudflareToken(input.token);
+    return {
+      capabilities,
+      zones: zones.map((zone) => this.cloudflareZonePreview(zone)),
+    };
+  }
+
+  async syncCloudflareConnector(id: string, userId: string | null, options: { scheduled?: boolean } = {}) {
+    const row = await this.getConnectorRow(id, 'cloudflare');
+    if (this.isSyncRunning(row) || this.syncLocks.has(id)) {
+      await this.recordSyncOverlap(id);
+      if (options.scheduled) return { status: 'skipped', reason: 'already_running' };
+      throw new AppError(409, 'CONNECTOR_SYNC_RUNNING', 'Cloudflare connector sync is already running', {
+        syncStartedAt: row.syncStartedAt,
+      });
+    }
+
+    this.syncLocks.add(id);
+    await this.db
+      .update(integrationConnectors)
+      .set({ syncStatus: 'running', syncStartedAt: new Date(), syncLastError: null, updatedAt: new Date() })
+      .where(eq(integrationConnectors.id, id));
+    this.emitConnector(id, 'sync-started', 'cloudflare');
+
+    try {
+      const { capabilities, zones } = await this.testCloudflareToken(this.cloudflareTokenFor(row));
+      await this.persistCloudflareZones(id, zones);
+      await this.db
+        .update(integrationConnectors)
+        .set({
+          capabilities,
+          testedAt: new Date(),
+          syncStatus: 'success',
+          syncFinishedAt: new Date(),
+          syncFailureCount: 0,
+          syncNextRetryAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(integrationConnectors.id, id));
+
+      await this.auditService.log({
+        action: CLOUDFLARE_AUDIT_ACTIONS.connectorSync,
+        userId,
+        resourceType: 'integration-connector',
+        resourceId: id,
+        details: { name: row.name, zoneCount: zones.length },
+      });
+
+      this.emitConnector(id, 'synced', 'cloudflare');
+      return { status: 'success', zoneCount: zones.length };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown sync failure';
+      const failureCount = row.syncFailureCount + 1;
+      await this.db
+        .update(integrationConnectors)
+        .set({
+          syncStatus: 'error',
+          syncFinishedAt: new Date(),
+          syncLastError: message,
+          syncFailureCount: failureCount,
+          syncNextRetryAt: new Date(Date.now() + this.backoffSeconds(failureCount) * 1000),
+          updatedAt: new Date(),
+        })
+        .where(eq(integrationConnectors.id, id));
+      this.emitConnector(id, 'sync-failed', 'cloudflare');
+      throw error;
+    } finally {
+      this.syncLocks.delete(id);
+    }
+  }
+
+  async runDueCloudflareSyncs() {
+    const rows = await this.db
+      .select()
+      .from(integrationConnectors)
+      .where(and(eq(integrationConnectors.provider, 'cloudflare'), eq(integrationConnectors.enabled, true)));
+    const now = new Date();
+    for (const row of rows) {
+      if (!row.settings.autoSyncEnabled || !this.isDueForSync(row, now)) continue;
+      try {
+        await this.syncCloudflareConnector(row.id, null, { scheduled: true });
+      } catch {
+        // syncCloudflareConnector already persists failure state; scheduler must not block boot or other jobs.
+      }
+    }
+  }
+
+  async listCloudflareZones(id: string) {
+    await this.getConnectorRow(id, 'cloudflare');
+    return this.listCloudflareZoneRows(id);
+  }
+
+  async resolveCloudflareDnsContext(domain: string) {
+    const connectors = await this.db
+      .select()
+      .from(integrationConnectors)
+      .where(and(eq(integrationConnectors.provider, 'cloudflare'), eq(integrationConnectors.enabled, true)));
+    const candidates: Array<{ connector: ConnectorRow; zone: CloudflareZoneRow; matchLength: number }> = [];
+
+    for (const connector of connectors) {
+      const zones = await this.listCloudflareZoneRows(connector.id);
+      for (const zone of zones) {
+        if (domain === zone.name || domain.endsWith(`.${zone.name}`)) {
+          candidates.push({ connector, zone, matchLength: zone.name.length });
+        }
+      }
+    }
+
+    if (candidates.length === 0) {
+      throw new AppError(
+        409,
+        'CLOUDFLARE_ZONE_NOT_FOUND',
+        'No enabled Cloudflare connector has a synced zone for this domain',
+        { domain }
+      );
+    }
+
+    const bestLength = Math.max(...candidates.map((candidate) => candidate.matchLength));
+    const best = candidates.filter((candidate) => candidate.matchLength === bestLength);
+    if (best.length > 1) {
+      throw new AppError(409, 'CLOUDFLARE_ZONE_AMBIGUOUS', 'Multiple Cloudflare connectors match this domain zone', {
+        domain,
+        zones: best.map((candidate) => ({
+          connectorId: candidate.connector.id,
+          connectorName: candidate.connector.name,
+          zoneId: candidate.zone.remoteId,
+          zoneName: candidate.zone.name,
+        })),
+      });
+    }
+
+    const [{ connector, zone }] = best;
+    return {
+      connector,
+      zone,
+      settings: this.mergeCloudflareSettings(undefined, connector.settings),
+      client: new CloudflareClient(this.cloudflareTokenFor(connector)),
+    };
+  }
+
+  async getCloudflareDnsContextForRecord(connectorId: string, zoneRemoteId: string) {
+    const connector = await this.getConnectorRow(connectorId, 'cloudflare');
+    const zones = await this.listCloudflareZoneRows(connector.id);
+    const zone = zones.find((candidate) => candidate.remoteId === zoneRemoteId);
+    if (!zone) {
+      throw new AppError(409, 'CLOUDFLARE_ZONE_NOT_FOUND', 'Cloudflare zone is no longer synced for this domain', {
+        connectorId,
+        zoneId: zoneRemoteId,
+      });
+    }
+    return {
+      connector,
+      zone,
+      settings: this.mergeCloudflareSettings(undefined, connector.settings),
+      client: new CloudflareClient(this.cloudflareTokenFor(connector)),
+    };
   }
 
   async searchGitLabAllowlist(id: string, query: string) {
@@ -991,18 +1348,19 @@ export class IntegrationsService {
     });
     const targetPath = this.safeRelativePath(input.targetPath || this.slugPath(context.project.name || 'repository'));
     const archivePath = `.gateway/gitlab-${Date.now()}.tar.gz`;
-    const cloneTimeoutSeconds = Math.max(10, context.connector.settings.cloneTimeoutSeconds);
+    const connectorSettings = this.gitLabSettings(context.connector);
+    const cloneTimeoutSeconds = Math.max(10, connectorSettings.cloneTimeoutSeconds);
     const effectiveTtlSeconds = Math.min(input.ttlSeconds ?? cloneTimeoutSeconds, cloneTimeoutSeconds);
     const archive = await context.provider.downloadRepositoryArchive(
       context.auth,
       this.toProviderProject(context.project),
       input.ref,
       {
-        maxBytes: context.connector.settings.cloneMaxSizeMb * 1024 * 1024,
+        maxBytes: connectorSettings.cloneMaxSizeMb * 1024 * 1024,
         timeoutMs: cloneTimeoutSeconds * 1000,
       }
     );
-    if (archive.bytes.byteLength > context.connector.settings.cloneMaxSizeMb * 1024 * 1024) {
+    if (archive.bytes.byteLength > connectorSettings.cloneMaxSizeMb * 1024 * 1024) {
       throw new AppError(413, 'GITLAB_ARCHIVE_TOO_LARGE', 'Repository archive exceeds connector clone size limit');
     }
     const command = [
@@ -1205,16 +1563,12 @@ export class IntegrationsService {
 
   private async getConnectorRow(id: string, provider?: IntegrationProvider): Promise<ConnectorRow> {
     if (!UUID_RE.test(id)) {
-      throw new AppError(
-        400,
-        'INVALID_CONNECTOR_ID',
-        'GitLab connectorId must be a valid connector UUID from gitlab_list_connectors'
-      );
+      throw new AppError(400, 'INVALID_CONNECTOR_ID', 'connectorId must be a valid integration connector UUID');
     }
     const conditions: SQL[] = [eq(integrationConnectors.id, id)];
     if (provider) conditions.push(eq(integrationConnectors.provider, provider));
     const [row] = await this.db.select().from(integrationConnectors).where(buildWhere(conditions)).limit(1);
-    if (!row) throw new AppError(404, 'NOT_FOUND', 'GitLab connector not found');
+    if (!row) throw new AppError(404, 'NOT_FOUND', 'Integration connector not found');
     return row;
   }
 
@@ -1339,6 +1693,98 @@ export class IntegrationsService {
     }
   }
 
+  private async listCloudflareZoneRows(connectorId: string): Promise<CloudflareZoneRow[]> {
+    return this.db
+      .select()
+      .from(integrationConnectorCloudflareZones)
+      .where(eq(integrationConnectorCloudflareZones.connectorId, connectorId))
+      .orderBy(integrationConnectorCloudflareZones.name);
+  }
+
+  private async persistCloudflareZones(connectorId: string, zones: CloudflareZoneInput[]) {
+    const now = new Date();
+    await this.db
+      .delete(integrationConnectorCloudflareZones)
+      .where(eq(integrationConnectorCloudflareZones.connectorId, connectorId));
+    if (zones.length === 0) return;
+
+    await this.db.insert(integrationConnectorCloudflareZones).values(
+      zones.map((zone) => ({
+        connectorId,
+        remoteId: zone.id,
+        name: zone.name,
+        status: zone.status ?? null,
+        accountId: zone.account?.id ?? null,
+        accountName: zone.account?.name ?? null,
+        lastSeenAt: now,
+        metadata: {},
+        updatedAt: now,
+      }))
+    );
+  }
+
+  private async testCloudflareToken(token: string) {
+    const client = new CloudflareClient(token);
+    const tokenStatus = await client.verifyToken();
+    if (tokenStatus.status && tokenStatus.status !== 'active') {
+      throw new AppError(400, 'CLOUDFLARE_TOKEN_INACTIVE', 'Cloudflare token is not active', {
+        status: tokenStatus.status,
+      });
+    }
+    const zones = await client.listZones();
+    const probeZone = zones[0];
+    if (!probeZone) {
+      throw new AppError(400, 'CLOUDFLARE_ZONE_NOT_FOUND', 'Cloudflare token has no active zones');
+    }
+    await client.listDnsRecords(probeZone.id);
+    let probeRecordId: string | null = null;
+    let cleanupError: unknown = null;
+    try {
+      const probeRecord = await client.createDnsRecord(probeZone.id, {
+        type: 'TXT',
+        name: `_gateway-permission-check.${probeZone.name}`,
+        content: `gateway-${Date.now()}`,
+        ttl: 60,
+        comment: 'Gateway permission check',
+      });
+      probeRecordId = probeRecord.id;
+    } finally {
+      if (probeRecordId) {
+        try {
+          await client.deleteDnsRecord(probeZone.id, probeRecordId);
+        } catch (error) {
+          cleanupError = error;
+        }
+      }
+    }
+    if (cleanupError) {
+      throw new AppError(400, 'CLOUDFLARE_DNS_PROBE_CLEANUP_FAILED', 'Cloudflare DNS probe cleanup failed', {
+        zone: probeZone.name,
+        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    }
+    return {
+      capabilities: {
+        apiReachable: true,
+        tokenActive: true,
+        zonesRead: true,
+        dnsRead: true,
+        dnsEdit: true,
+      },
+      zones,
+    };
+  }
+
+  private cloudflareZonePreview(zone: CloudflareZoneRef) {
+    return {
+      remoteId: zone.id,
+      name: zone.name,
+      status: zone.status ?? null,
+      accountId: zone.account?.id ?? null,
+      accountName: zone.account?.name ?? null,
+    };
+  }
+
   private toSafeConnector(row: ConnectorRow): SafeIntegrationConnector {
     const { encryptedToken: _encryptedToken, ...safe } = row;
     return {
@@ -1353,6 +1799,17 @@ export class IntegrationsService {
     base: IntegrationConnectorSettings = DEFAULT_GITLAB_CONNECTOR_SETTINGS
   ): IntegrationConnectorSettings {
     return { ...DEFAULT_GITLAB_CONNECTOR_SETTINGS, ...base, ...patch };
+  }
+
+  private gitLabSettings(row: ConnectorRow): IntegrationConnectorSettings {
+    return this.mergeSettings(undefined, row.settings as IntegrationConnectorSettings);
+  }
+
+  private mergeCloudflareSettings(
+    patch: Partial<CloudflareConnectorSettings> | undefined,
+    base: IntegrationConnectorSettingsValue = DEFAULT_CLOUDFLARE_CONNECTOR_SETTINGS
+  ): CloudflareConnectorSettings {
+    return { ...DEFAULT_CLOUDFLARE_CONNECTOR_SETTINGS, ...base, ...patch };
   }
 
   private filterAllowedProjects<T extends Pick<ProjectRow, 'remoteId' | 'fullPath' | 'name'>>(
@@ -1422,6 +1879,13 @@ export class IntegrationsService {
     return { baseUrl: row.baseUrl, token: this.decryptToken(row.encryptedToken) };
   }
 
+  private cloudflareTokenFor(row: ConnectorRow): string {
+    if (!row.encryptedToken) {
+      throw new AppError(400, 'CONNECTOR_TOKEN_MISSING', 'Cloudflare connector token is not configured');
+    }
+    return this.decryptToken(row.encryptedToken);
+  }
+
   private isDueForSync(row: ConnectorRow, now: Date): boolean {
     if (row.syncNextRetryAt && row.syncNextRetryAt > now) return false;
     const lastCompleted = row.syncFinishedAt ?? row.testedAt ?? null;
@@ -1477,8 +1941,8 @@ export class IntegrationsService {
     return [...keyed.values()];
   }
 
-  private emitConnector(id: string, action: string) {
-    this.eventBus?.publish('integration.connector.changed', { id, provider: 'gitlab', action });
+  private emitConnector(id: string, action: string, provider: IntegrationProvider = 'gitlab') {
+    this.eventBus?.publish('integration.connector.changed', { id, provider, action });
   }
 }
 
@@ -1499,3 +1963,5 @@ type RegistryRowInput = {
   registryUrl: string;
   name: string;
 };
+
+type CloudflareZoneInput = CloudflareZoneRef;

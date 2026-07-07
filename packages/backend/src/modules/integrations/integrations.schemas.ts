@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const IntegrationProviderSchema = z.enum(['gitlab']);
+export const IntegrationProviderSchema = z.enum(['gitlab', 'cloudflare']);
 export const GitLabAllowlistModeSchema = z.enum(['selected', 'all_visible']);
 export const GitLabAllowlistEntryTypeSchema = z.enum(['group', 'project']);
 
@@ -65,6 +65,38 @@ export const GitLabConnectorPreviewTestSchema = z.object({
   token: z.string().min(1).max(4096),
 });
 
+export const CloudflareConnectorSettingsSchema = z.object({
+  autoSyncEnabled: z.boolean().default(true),
+  autoSyncIntervalSeconds: z.coerce.number().int().min(300).max(86_400).default(900),
+  defaultTtl: z.coerce.number().int().min(1).max(86_400).default(1),
+  defaultProxied: z.boolean().default(true),
+});
+
+export const CloudflareConnectorCreateSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  enabled: z.boolean().default(true),
+  token: z.string().min(1).max(4096),
+  settings: CloudflareConnectorSettingsSchema.partial().optional(),
+});
+
+export const CloudflareConnectorUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  enabled: z.boolean().optional(),
+  settings: CloudflareConnectorSettingsSchema.partial().optional(),
+});
+
+export const CloudflareConnectorRotateTokenSchema = z.object({
+  token: z.string().min(1).max(4096),
+});
+
+export const CloudflareConnectorListQuerySchema = z.object({
+  enabled: z.coerce.boolean().optional(),
+});
+
+export const CloudflareConnectorPreviewTestSchema = z.object({
+  token: z.string().min(1).max(4096),
+});
+
 export type GitLabConnectorCreateInput = z.infer<typeof GitLabConnectorCreateSchema>;
 export type GitLabConnectorUpdateInput = z.infer<typeof GitLabConnectorUpdateSchema>;
 export type GitLabConnectorRotateTokenInput = z.infer<typeof GitLabConnectorRotateTokenSchema>;
@@ -72,3 +104,9 @@ export type GitLabConnectorListQuery = z.infer<typeof GitLabConnectorListQuerySc
 export type GitLabAllowlistEntryInput = z.infer<typeof GitLabAllowlistEntrySchema>;
 export type GitLabAllowlistPreviewSearchInput = z.infer<typeof GitLabAllowlistPreviewSearchSchema>;
 export type GitLabConnectorPreviewTestInput = z.infer<typeof GitLabConnectorPreviewTestSchema>;
+export type CloudflareConnectorCreateInput = z.infer<typeof CloudflareConnectorCreateSchema>;
+export type CloudflareConnectorUpdateInput = z.infer<typeof CloudflareConnectorUpdateSchema>;
+export type CloudflareConnectorRotateTokenInput = z.infer<typeof CloudflareConnectorRotateTokenSchema>;
+export type CloudflareConnectorListQuery = z.infer<typeof CloudflareConnectorListQuerySchema>;
+export type CloudflareConnectorSettingsInput = z.infer<typeof CloudflareConnectorSettingsSchema>;
+export type CloudflareConnectorPreviewTestInput = z.infer<typeof CloudflareConnectorPreviewTestSchema>;

@@ -16,6 +16,7 @@ export { API_BASE, DEFAULT_CACHE_TTL };
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly code?: string;
+  readonly details?: unknown;
   readonly retryAfterSeconds?: number;
 
   constructor(
@@ -23,13 +24,15 @@ export class ApiRequestError extends Error {
     {
       status,
       code,
+      details,
       retryAfterSeconds,
-    }: { status: number; code?: string; retryAfterSeconds?: number }
+    }: { status: number; code?: string; details?: unknown; retryAfterSeconds?: number }
   ) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
     this.code = code;
+    this.details = details;
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }
@@ -284,6 +287,7 @@ export class ApiClientBase {
         throw new ApiRequestError(extractApiErrorMessage(parsedError, "Service unavailable"), {
           status: response.status,
           code: error.code || "SERVICE_UNAVAILABLE",
+          details: error.details,
         });
       }
 
@@ -335,6 +339,7 @@ export class ApiClientBase {
       throw new ApiRequestError(extractApiErrorMessage(error, "An unknown error occurred"), {
         status: response.status,
         code: error.code,
+        details: error.details,
       });
     }
 

@@ -138,6 +138,8 @@ describe('canonical scope definitions', () => {
       'integrations:gitlab:webhooks:manage',
       'integrations:gitlab:registry:manage',
       'integrations:gitlab:sandbox:clone',
+      'integrations:cloudflare:dns:edit',
+      'integrations:cloudflare:dns:delete',
       'logs:tokens:create',
       'admin:audit',
       'admin:details:certificates',

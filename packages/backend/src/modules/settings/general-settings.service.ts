@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { settings } from '@/db/schema/index.js';
@@ -16,6 +17,9 @@ export const FILE_OPEN_MAX_BYTES = 100 * 1024 * 1024;
 export interface GeneralSettings {
   fileUploadMaxBytes: number;
   fileOpenMaxBytes: number;
+  gatewayPublicIps: string[];
+  gatewayGrpcPublicTarget: string | null;
+  gatewayGrpcLocalIp: string | null;
   features: GeneralFeatureSettings;
 }
 
@@ -27,6 +31,9 @@ export interface GeneralFeatureSettings {
 export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   fileUploadMaxBytes: FILE_UPLOAD_DEFAULT_BYTES,
   fileOpenMaxBytes: FILE_OPEN_DEFAULT_BYTES,
+  gatewayPublicIps: [],
+  gatewayGrpcPublicTarget: null,
+  gatewayGrpcLocalIp: null,
   features: {
     pkiEnabled: true,
     domainsEnabled: true,
@@ -39,6 +46,102 @@ export type GeneralSettingsUpdate = Omit<Partial<GeneralSettings>, 'features'> &
 
 export function fileUploadBodyLimitBytes(fileUploadMaxBytes: number): number {
   return Math.ceil(fileUploadMaxBytes * BODY_LIMIT_OVERHEAD_RATIO) + BODY_LIMIT_OVERHEAD_BYTES;
+}
+
+export function normalizeHostPortTarget(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return null;
+  if (/[/?#@\s]/.test(trimmed) || trimmed.includes('://')) {
+    throw new Error(`Gateway gRPC public target must be a hostname or IP address: ${trimmed}`);
+  }
+
+  const bracketedIpv6 = trimmed.match(/^\[([^\]]+)](?::(\d+))?$/);
+  if (bracketedIpv6) {
+    const [, ip, rawPort] = bracketedIpv6;
+    if (!isValidGatewayIp(ip)) throw new Error(`Gateway gRPC public target IPv6 address is invalid: ${ip}`);
+    const port = normalizePort(rawPort);
+    return port ? `[${ip}]:${port}` : ip;
+  }
+
+  if (isValidGatewayIp(trimmed)) return trimmed;
+
+  const hostWithPort = trimmed.match(/^([^:]+):(\d+)$/);
+  const host = hostWithPort?.[1] ?? trimmed;
+  const port = normalizePort(hostWithPort?.[2]);
+  if (!isValidGatewayHostname(host)) {
+    throw new Error(`Gateway gRPC public target must be a hostname or IP address: ${trimmed}`);
+  }
+  return port ? `${host}:${port}` : host;
+}
+
+export function splitConfiguredIps(value: unknown): string[] {
+  const raw = Array.isArray(value) ? value.join(',') : String(value ?? '');
+  return raw
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+export function isValidGatewayIp(value: string): boolean {
+  return isIP(value) !== 0;
+}
+
+export function isValidGatewayHostname(value: string): boolean {
+  if (value.length > 253 || value.endsWith('.')) return false;
+  const labels = value.split('.');
+  return labels.every((label) => /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label));
+}
+
+function normalizePort(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (!/^\d+$/.test(value)) throw new Error(`Gateway gRPC local IP port must be numeric: ${value}`);
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Gateway gRPC local IP port must be between 1 and 65535: ${value}`);
+  }
+  return String(port);
+}
+
+export function normalizeIpPortTarget(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return null;
+
+  const bracketedIpv6 = trimmed.match(/^\[([^\]]+)](?::(\d+))?$/);
+  if (bracketedIpv6) {
+    const [, ip, rawPort] = bracketedIpv6;
+    if (!isValidGatewayIp(ip)) throw new Error(`Gateway gRPC local IP must be an IPv4 or IPv6 address: ${ip}`);
+    const port = normalizePort(rawPort);
+    return port ? `[${ip}]:${port}` : ip;
+  }
+
+  if (isValidGatewayIp(trimmed)) return trimmed;
+
+  const ipv4WithPort = trimmed.match(/^([^:]+):(\d+)$/);
+  if (ipv4WithPort) {
+    const [, ip, rawPort] = ipv4WithPort;
+    if (!isValidGatewayIp(ip)) throw new Error(`Gateway gRPC local IP must be an IPv4 or IPv6 address: ${ip}`);
+    return `${ip}:${normalizePort(rawPort)}`;
+  }
+
+  throw new Error(`Gateway gRPC local IP must be an IPv4 or IPv6 address: ${trimmed}`);
+}
+
+export function isValidGatewayIpPortTarget(value: string): boolean {
+  try {
+    normalizeIpPortTarget(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isValidGatewayHostPortTarget(value: string): boolean {
+  try {
+    normalizeHostPortTarget(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export class GeneralSettingsService {
@@ -90,6 +193,17 @@ export class GeneralSettingsService {
     return config.fileOpenMaxBytes;
   }
 
+  async getGatewayEndpointSettings(): Promise<
+    Pick<GeneralSettings, 'gatewayPublicIps' | 'gatewayGrpcPublicTarget' | 'gatewayGrpcLocalIp'>
+  > {
+    const config = await this.getConfig();
+    return {
+      gatewayPublicIps: config.gatewayPublicIps,
+      gatewayGrpcPublicTarget: config.gatewayGrpcPublicTarget,
+      gatewayGrpcLocalIp: config.gatewayGrpcLocalIp,
+    };
+  }
+
   async isFeatureEnabled(feature: keyof GeneralFeatureSettings): Promise<boolean> {
     const config = await this.getConfig();
     return config.features[feature];
@@ -105,6 +219,8 @@ export class GeneralSettingsService {
     const fileOpenMaxBytes = Number.isInteger(rawFileOpenMaxBytes)
       ? rawFileOpenMaxBytes
       : DEFAULT_GENERAL_SETTINGS.fileOpenMaxBytes;
+    const gatewayPublicIps = splitConfiguredIps(record.gatewayPublicIps);
+    const invalidGatewayPublicIp = gatewayPublicIps.find((ip) => !isValidGatewayIp(ip));
 
     if (fileUploadMaxBytes < FILE_UPLOAD_MIN_BYTES || fileUploadMaxBytes > FILE_UPLOAD_MAX_BYTES) {
       throw new Error(`File upload limit must be between ${FILE_UPLOAD_MIN_BYTES} and ${FILE_UPLOAD_MAX_BYTES} bytes`);
@@ -112,6 +228,9 @@ export class GeneralSettingsService {
 
     if (fileOpenMaxBytes < FILE_OPEN_MIN_BYTES || fileOpenMaxBytes > FILE_OPEN_MAX_BYTES) {
       throw new Error(`File open limit must be between ${FILE_OPEN_MIN_BYTES} and ${FILE_OPEN_MAX_BYTES} bytes`);
+    }
+    if (invalidGatewayPublicIp) {
+      throw new Error(`Gateway public IP must be an IPv4 or IPv6 address: ${invalidGatewayPublicIp}`);
     }
 
     const features =
@@ -122,6 +241,9 @@ export class GeneralSettingsService {
     return {
       fileUploadMaxBytes,
       fileOpenMaxBytes,
+      gatewayPublicIps,
+      gatewayGrpcPublicTarget: normalizeHostPortTarget(record.gatewayGrpcPublicTarget as string | null | undefined),
+      gatewayGrpcLocalIp: normalizeIpPortTarget(record.gatewayGrpcLocalIp as string | null | undefined),
       features: {
         pkiEnabled:
           typeof features.pkiEnabled === 'boolean' ? features.pkiEnabled : DEFAULT_GENERAL_SETTINGS.features.pkiEnabled,

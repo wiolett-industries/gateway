@@ -100,6 +100,17 @@ function requiredScopeFor(channel: string): string | null {
 function hasChannelAccess(scopes: string[], channel: string): boolean {
   if (channel.startsWith('permissions.changed.')) return true;
   if (channel === 'system.update.changed') return true;
+  if (channel === 'integration.connector.changed') {
+    return (
+      hasScope(scopes, 'integrations:gitlab:view') ||
+      hasScope(scopes, 'integrations:gitlab:manage') ||
+      hasScope(scopes, 'integrations:cloudflare:view') ||
+      hasScope(scopes, 'integrations:cloudflare:manage') ||
+      hasScope(scopes, 'integrations:cloudflare:dns:view') ||
+      hasScope(scopes, 'integrations:cloudflare:dns:edit') ||
+      hasScope(scopes, 'integrations:cloudflare:dns:delete')
+    );
+  }
   const required = requiredScopeFor(channel);
   if (!required) return false;
 
@@ -352,9 +363,6 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
       hasScope(scopes, 'proxy:templates:view') ||
       !!(templateId && hasScope(scopes, `proxy:templates:view:${templateId}`))
     );
-  }
-  if (channel === 'integration.connector.changed') {
-    return hasScope(scopes, 'integrations:gitlab:view') || hasScope(scopes, 'integrations:gitlab:manage');
   }
   return true;
 }

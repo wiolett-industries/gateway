@@ -196,6 +196,8 @@ class EventStream {
         } else if (msg.channel === "integration.connector.changed") {
           api.invalidateCache("req:/api/integrations/gitlab/connectors");
           api.invalidateCache("settings:gitlab-connectors");
+          api.invalidateCache("req:/api/integrations/cloudflare/connectors");
+          api.invalidateCache("settings:cloudflare-connectors");
           api.invalidateCache("req:/api/docker/registries");
           api.invalidateCache("settings:docker-registries");
         } else if (msg.channel === "notification.alert-rule.changed") {

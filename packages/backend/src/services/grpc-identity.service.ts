@@ -60,6 +60,11 @@ export class GrpcIdentityService {
     return (await this.resolve()).gatewayCertSha256;
   }
 
+  async refresh(): Promise<GrpcIdentity> {
+    this.identity = null;
+    return this.resolve();
+  }
+
   static computeCertificateSha256(certificatePem: string | Buffer): string {
     try {
       const cert = new X509Certificate(certificatePem);

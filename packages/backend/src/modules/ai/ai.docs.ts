@@ -145,32 +145,33 @@ When rawConfigEnabled is true, the template rendering is bypassed and rawConfig 
 
   domains: `# Domains
 
-Domains track DNS records and validation status for domains used across Gateway.
+Domains are Cloudflare-backed DNS records used across Gateway.
 
 ## Purpose
-- Track which domains point to your Gateway servers (DNS A/AAAA records)
-- Verify DNS is correctly configured before creating proxy hosts
-- Monitor DNS changes over time
+- Create and track Cloudflare A/AAAA records that point to configured Gateway public IPs
+- Adopt existing matching Cloudflare A/AAAA records without changing their target
+- Detect target mismatches before creating proxy hosts
 - Required for ACME HTTP-01 challenges (domain must resolve to Gateway)
 
 ## Lifecycle
 1. Register a domain: create_domain({ domain: "example.com" })
-2. Gateway checks DNS records automatically every 5 minutes
-3. Status: pending → valid (DNS resolves correctly) or invalid (DNS misconfigured)
-4. Use manage_domain({ operation: "check_dns", domainId }) to manually trigger an immediate re-check
+2. Gateway autodetects the matching Cloudflare zone and desired A/AAAA target IPs
+3. If Cloudflare has no conflicting address records, Gateway creates DNS and stores the domain as valid
+4. If Cloudflare already has matching A/AAAA records, Gateway adopts them as matched_existing
+5. If Cloudflare has different A/AAAA records, create_domain returns conflict metadata; retry with overwriteDns only after explicit user approval
+6. Use manage_domain({ operation: "check_dns", domainId }) to manually re-check resolved DNS
 
 ## DNS Records Tracked
-- **A**: IPv4 address — should point to your Gateway/nginx node IP
-- **AAAA**: IPv6 address
-- **CNAME**: Canonical name (alias to another domain)
-- **CAA**: Certificate Authority Authorization — controls which CAs can issue certs
-- **MX**: Mail exchange records
-- **TXT**: Text records (used for DNS-01 ACME challenges, SPF, DKIM, etc.)
+- **A**: IPv4 address, created from Gateway Public IP(s)
+- **AAAA**: IPv6 address, created from Gateway Public IP(s)
+- Other record types are not created or overwritten by Gateway domain tools in v1
 
 ## Rules
 - Domains used by proxy hosts cannot be deleted (remove from proxy first)
 - isSystem domains (management domains) cannot be deleted
-- Wildcard domains (*.example.com) can be registered but DNS checks apply to the base domain`,
+- Wildcard domains (*.example.com) can be registered
+- delete_domain requires domains:delete. Cloudflare DNS records are deleted only when the caller also has integrations:cloudflare:dns:delete
+- For matched_existing domains, pass deleteDns=false to keep DNS and remove only the Gateway mapping, or deleteDns=true to remove the adopted Cloudflare records`,
 
   'access-lists': `# Access Lists
 

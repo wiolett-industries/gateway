@@ -201,7 +201,6 @@ export function SidebarContent({
   const [pinnedNodes, setPinnedNodes] = useState<Node[]>([]);
   const [statusPageEnabled, setStatusPageEnabled] = useState(false);
   const pkiEnabled = useSystemConfigStore((s) => s.config.features.pkiEnabled);
-  const domainsEnabled = useSystemConfigStore((s) => s.config.features.domainsEnabled);
   const loggingEnabled = useSystemConfigStore((s) => s.config.features.loggingEnabled);
 
   const sidebarPinnedProxyIds = usePinnedProxiesStore((s) => s.sidebarProxyIds);
@@ -471,8 +470,6 @@ export function SidebarContent({
             if (!pkiEnabled || !canAccessAuthorities) return false;
           } else if (item.href === "/certificates") {
             if (!pkiEnabled) return false;
-          } else if (item.href === "/domains") {
-            if (!domainsEnabled) return false;
           } else if (item.href === "/notifications") {
             if (!canAccessNotifications) return false;
           } else if (item.href === "/nodes") {

@@ -47,6 +47,9 @@ export interface AuthProvisioningSettings {
   generalSettings: {
     fileUploadMaxBytes: number;
     fileOpenMaxBytes: number;
+    gatewayPublicIps: string[];
+    gatewayGrpcPublicTarget: string | null;
+    gatewayGrpcLocalIp: string | null;
     features: {
       pkiEnabled: boolean;
       domainsEnabled: boolean;

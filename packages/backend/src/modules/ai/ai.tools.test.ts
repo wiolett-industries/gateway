@@ -192,6 +192,11 @@ describe('AI tool scope filtering', () => {
     expect(toolNames(['proxy:raw:read:proxy-1'])).not.toContain('update_proxy_raw_config');
     expect(toolNames(['nodes:details'])).not.toContain('execute_node_console_command');
     expect(toolNames(['nodes:console'])).toContain('execute_node_console_command');
+    expect(toolNames(['domains:view'])).toContain('list_domains');
+    expect(toolNames(['domains:view'])).not.toContain('create_domain');
+    expect(toolNames(['integrations:cloudflare:dns:edit'])).toContain('create_domain');
+    expect(toolNames(['domains:delete'])).toContain('delete_domain');
+    expect(toolNames(['integrations:cloudflare:dns:delete'])).not.toContain('delete_domain');
   });
 
   it('requires direct database view before advertising database query tools', () => {

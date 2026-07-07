@@ -1,4 +1,12 @@
-import { appRoute, createdJson, IdParamSchema, jsonBody, okJson, UnknownDataResponseSchema } from '@/lib/openapi.js';
+import {
+  appRoute,
+  createdJson,
+  IdParamSchema,
+  jsonBody,
+  okJson,
+  optionalJsonBody,
+  UnknownDataResponseSchema,
+} from '@/lib/openapi.js';
 import {
   CreateResourceFolderSchema,
   MoveResourceFolderSchema,
@@ -7,7 +15,13 @@ import {
   ReorderResourcesSchema,
   UpdateResourceFolderSchema,
 } from '@/modules/resource-folders/resource-folder.schemas.js';
-import { CreateDomainSchema, DomainListQuerySchema, UpdateDomainSchema } from './domain.schemas.js';
+import {
+  CreateDomainSchema,
+  DeleteDomainSchema,
+  DomainListQuerySchema,
+  PreviewDomainSchema,
+  UpdateDomainSchema,
+} from './domain.schemas.js';
 
 export const listDomainFoldersRoute = appRoute({
   method: 'get',
@@ -115,6 +129,15 @@ export const createDomainRoute = appRoute({
   responses: createdJson(UnknownDataResponseSchema),
 });
 
+export const previewDomainRoute = appRoute({
+  method: 'post',
+  path: '/preview',
+  tags: ['Domains'],
+  summary: 'Preview Cloudflare DNS records for a domain',
+  request: jsonBody(PreviewDomainSchema),
+  responses: okJson(UnknownDataResponseSchema),
+});
+
 export const updateDomainRoute = appRoute({
   method: 'put',
   path: '/{id}',
@@ -129,7 +152,7 @@ export const deleteDomainRoute = appRoute({
   path: '/{id}',
   tags: ['Domains'],
   summary: 'Delete a domain',
-  request: { params: IdParamSchema },
+  request: { params: IdParamSchema, ...optionalJsonBody(DeleteDomainSchema) },
   responses: okJson(UnknownDataResponseSchema),
 });
 

@@ -1,14 +1,26 @@
+import { isIP } from 'node:net';
 import { asc, count, desc, eq, ilike, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
+import type { DnsRecords } from '@/db/schema/domains.js';
 import { domains } from '@/db/schema/domains.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { buildWhere } from '@/lib/utils.js';
+import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { CloudflareClient, CloudflareDnsRecordInput } from '@/modules/integrations/cloudflare-client.js';
+import type { IntegrationsService } from '@/modules/integrations/integrations.service.js';
+import type { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
-import { computeDnsStatus, resolveDnsRecords } from './dns.utils.js';
-import type { CreateDomainInput, DomainListQuery, UpdateDomainInput } from './domain.schemas.js';
+import { computeDnsStatus, getPublicIPs, resolveDnsRecords } from './dns.utils.js';
+import type {
+  CreateDomainInput,
+  DeleteDomainInput,
+  DomainListQuery,
+  PreviewDomainInput,
+  UpdateDomainInput,
+} from './domain.schemas.js';
 
 const logger = createChildLogger('DomainsService');
 
@@ -17,8 +29,39 @@ export interface DomainUsage {
   sslCertificates: Array<{ id: string; domainNames: string[]; status: string; notAfter: Date | null }>;
 }
 
+type CloudflareAddressRecord = {
+  id: string;
+  type: string;
+  name: string;
+  content: string;
+  ttl: number;
+  proxied?: boolean | null;
+};
+
+type DomainCloudflarePlan = {
+  domainName: string;
+  targetIps: string[];
+  ttl: number;
+  proxied: boolean;
+  context: {
+    connector: { id: string };
+    zone: { remoteId: string; name: string };
+    settings: { defaultTtl: number; defaultProxied: boolean };
+    client: CloudflareClient;
+  };
+  existingRecords: CloudflareAddressRecord[];
+  addressRecords: CloudflareAddressRecord[];
+  blockingRecords: CloudflareAddressRecord[];
+  currentIps: string[];
+  desiredIps: string[];
+  currentMatches: boolean;
+  desiredRecords: CloudflareDnsRecordInput[];
+};
+
 export class DomainsService {
   private eventBus?: EventBusService;
+  private integrationsService?: IntegrationsService;
+  private generalSettingsService?: GeneralSettingsService;
 
   constructor(
     private readonly db: DrizzleClient,
@@ -27,6 +70,14 @@ export class DomainsService {
 
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
+  }
+
+  setIntegrationsService(service: IntegrationsService) {
+    this.integrationsService = service;
+  }
+
+  setGeneralSettingsService(service: GeneralSettingsService) {
+    this.generalSettingsService = service;
   }
 
   private emitDomain(id: string, action: string, domain?: string) {
@@ -84,12 +135,104 @@ export class DomainsService {
   }
 
   async createDomain(input: CreateDomainInput, userId: string) {
+    const plan = await this.prepareCloudflareDomain(input);
+    const {
+      domainName,
+      targetIps,
+      ttl,
+      proxied,
+      context,
+      existingRecords,
+      addressRecords,
+      blockingRecords,
+      currentMatches,
+      desiredRecords,
+    } = plan;
+    const [existingDomain] = await this.db
+      .select({ id: domains.id })
+      .from(domains)
+      .where(eq(domains.domain, domainName))
+      .limit(1);
+    if (existingDomain) {
+      throw new AppError(409, 'DUPLICATE', 'Domain already exists');
+    }
+
+    if (blockingRecords.length > 0 && !currentMatches) {
+      throw new AppError(409, 'DOMAIN_DNS_TARGET_MISMATCH', 'Existing Cloudflare DNS record target differs', {
+        domain: domainName,
+        zoneName: context.zone.name,
+        currentRecords: existingRecords.map((record) => ({
+          id: record.id,
+          type: record.type,
+          name: record.name,
+          content: record.content,
+          ttl: record.ttl,
+          proxied: record.proxied ?? null,
+        })),
+        desiredRecords,
+        canOverwrite: false,
+      });
+    }
+
+    let ownership: 'created' | 'matched_existing' | 'overwritten' = 'created';
+    let providerRecordIds: string[] = [];
+
+    if (addressRecords.length > 0) {
+      if (currentMatches) {
+        ownership = 'matched_existing';
+        providerRecordIds = addressRecords.map((record) => record.id);
+      } else {
+        if (!input.overwriteDns) {
+          throw new AppError(409, 'DOMAIN_DNS_TARGET_MISMATCH', 'Existing Cloudflare DNS record target differs', {
+            domain: domainName,
+            zoneName: context.zone.name,
+            currentRecords: addressRecords.map((record) => ({
+              id: record.id,
+              type: record.type,
+              name: record.name,
+              content: record.content,
+              ttl: record.ttl,
+              proxied: record.proxied ?? null,
+            })),
+            desiredRecords,
+            canOverwrite: true,
+          });
+        }
+        ownership = 'overwritten';
+        for (const record of addressRecords) {
+          await context.client.deleteDnsRecord(context.zone.remoteId, record.id);
+        }
+      }
+    }
+
+    if (providerRecordIds.length === 0) {
+      const createdRecords = [];
+      for (const record of desiredRecords) {
+        createdRecords.push(await context.client.createDnsRecord(context.zone.remoteId, record));
+      }
+      providerRecordIds = createdRecords.map((record) => record.id);
+    }
+
+    const dnsRecords = this.dnsRecordsFromTargetIps(targetIps);
     const [row] = await this.db
       .insert(domains)
       .values({
-        domain: input.domain.toLowerCase(),
+        domain: domainName,
         description: input.description,
-        dnsStatus: 'pending',
+        folderId: input.folderId ?? null,
+        dnsStatus: 'valid',
+        dnsRecords,
+        lastDnsCheckAt: new Date(),
+        dnsProvider: 'cloudflare',
+        dnsOwnership: ownership,
+        integrationConnectorId: context.connector.id,
+        providerZoneId: context.zone.remoteId,
+        providerZoneName: context.zone.name,
+        providerRecordIds,
+        dnsRecordType: this.recordTypeLabel(targetIps),
+        dnsTargetIps: targetIps,
+        dnsTtl: ttl,
+        dnsProxied: proxied,
         createdById: userId,
       })
       .returning();
@@ -99,15 +242,48 @@ export class DomainsService {
       action: 'domain.create',
       resourceType: 'domain',
       resourceId: row.id,
-      details: { domain: row.domain },
+      details: {
+        domain: row.domain,
+        provider: 'cloudflare',
+        ownership,
+        connectorId: context.connector.id,
+        zoneId: context.zone.remoteId,
+        zoneName: context.zone.name,
+        recordIds: providerRecordIds,
+        targetIps,
+        ttl,
+        proxied,
+      },
     });
 
     this.emitDomain(row.id, 'created', row.domain);
 
-    // Fire-and-forget DNS check
-    this.checkDns(row.id).catch((err) => logger.warn('Initial DNS check failed', { id: row.id, error: err.message }));
-
     return row;
+  }
+
+  async previewDomain(input: PreviewDomainInput) {
+    const plan = await this.prepareCloudflareDomain(input);
+    const hasBlockingRecord = plan.blockingRecords.length > 0 && !plan.currentMatches;
+    const hasMismatch = plan.addressRecords.length > 0 && !plan.currentMatches;
+    return {
+      domain: plan.domainName,
+      zoneName: plan.context.zone.name,
+      connectorId: plan.context.connector.id,
+      targetIps: plan.targetIps,
+      ttl: plan.ttl,
+      proxied: plan.proxied,
+      desiredRecords: plan.desiredRecords,
+      currentRecords: plan.existingRecords.map((record) => ({
+        id: record.id,
+        type: record.type,
+        name: record.name,
+        content: record.content,
+        ttl: record.ttl,
+        proxied: record.proxied ?? null,
+      })),
+      status: hasBlockingRecord ? 'blocked' : hasMismatch ? 'mismatch' : plan.currentMatches ? 'matched' : 'ready',
+      canOverwrite: hasMismatch && !hasBlockingRecord,
+    };
   }
 
   async updateDomain(id: string, input: UpdateDomainInput, userId: string) {
@@ -132,21 +308,52 @@ export class DomainsService {
     return row;
   }
 
-  async deleteDomain(id: string, userId: string) {
+  async deleteDomain(
+    id: string,
+    userId: string,
+    input: DeleteDomainInput = {},
+    options: { canDeleteDns?: boolean } = {}
+  ) {
     const [row] = await this.db.select().from(domains).where(eq(domains.id, id)).limit(1);
-    if (!row) throw new Error('Domain not found');
-    if (row.isSystem) throw new Error('System domains cannot be deleted');
+    if (!row) throw new AppError(404, 'NOT_FOUND', 'Domain not found');
+    if (row.isSystem) throw new AppError(409, 'SYSTEM_DOMAIN', 'System domains cannot be deleted');
 
     const usage = await this.getUsage(row.domain);
 
     if (usage.proxyHosts.length > 0) {
-      throw Object.assign(new Error('Domain is in use by proxy hosts'), {
-        code: 'DOMAIN_IN_USE',
-        details: {
-          proxyHostCount: usage.proxyHosts.length,
-          proxyHostIds: usage.proxyHosts.map((h) => h.id),
-        },
+      throw new AppError(409, 'DOMAIN_IN_USE', 'Domain is in use by proxy hosts', {
+        proxyHostCount: usage.proxyHosts.length,
+        proxyHostIds: usage.proxyHosts.map((h) => h.id),
       });
+    }
+
+    const shouldDeleteDns =
+      row.dnsProvider === 'cloudflare' &&
+      (row.dnsOwnership === 'created' || row.dnsOwnership === 'overwritten' || input.deleteDns === true);
+
+    if (row.dnsProvider === 'cloudflare' && row.dnsOwnership === 'matched_existing' && input.deleteDns === undefined) {
+      throw new AppError(
+        409,
+        'DOMAIN_DNS_DELETE_CHOICE_REQUIRED',
+        'Choose whether to delete the matched existing Cloudflare DNS records or only remove the Gateway mapping',
+        { domain: row.domain, recordIds: row.providerRecordIds }
+      );
+    }
+
+    if (shouldDeleteDns) {
+      if (!options.canDeleteDns) {
+        throw new AppError(403, 'FORBIDDEN', 'Missing required scope: integrations:cloudflare:dns:delete');
+      }
+      if (!this.integrationsService || !row.integrationConnectorId || !row.providerZoneId) {
+        throw new AppError(409, 'CLOUDFLARE_DNS_NOT_CONFIGURED', 'Cloudflare DNS integration is not configured');
+      }
+      const context = await this.integrationsService.getCloudflareDnsContextForRecord(
+        row.integrationConnectorId,
+        row.providerZoneId
+      );
+      for (const recordId of row.providerRecordIds) {
+        await context.client.deleteDnsRecord(context.zone.remoteId, recordId);
+      }
     }
 
     await this.db.delete(domains).where(eq(domains.id, id));
@@ -160,6 +367,10 @@ export class DomainsService {
         domain: row.domain,
         usedByProxyHosts: usage.proxyHosts.length,
         usedBySslCerts: usage.sslCertificates.length,
+        provider: row.dnsProvider,
+        ownership: row.dnsOwnership,
+        dnsDeleted: shouldDeleteDns,
+        recordIds: row.providerRecordIds,
       },
     });
 
@@ -171,7 +382,7 @@ export class DomainsService {
     if (!row) throw new Error('Domain not found');
 
     const dnsRecords = await resolveDnsRecords(row.domain);
-    const dnsStatus = computeDnsStatus(dnsRecords);
+    const dnsStatus = await this.computeDomainDnsStatus(row, dnsRecords);
 
     const [updated] = await this.db
       .update(domains)
@@ -185,7 +396,7 @@ export class DomainsService {
   }
 
   async checkAllDns() {
-    const allDomains = await this.db.select({ id: domains.id, domain: domains.domain }).from(domains);
+    const allDomains = await this.db.select().from(domains);
     if (allDomains.length === 0) return;
 
     logger.debug(`Running DNS checks for ${allDomains.length} domains`);
@@ -193,7 +404,7 @@ export class DomainsService {
     const results = await Promise.allSettled(
       allDomains.map(async (d) => {
         const dnsRecords = await resolveDnsRecords(d.domain);
-        const dnsStatus = computeDnsStatus(dnsRecords);
+        const dnsStatus = await this.computeDomainDnsStatus(d, dnsRecords);
         await this.db
           .update(domains)
           .set({ dnsStatus, dnsRecords, lastDnsCheckAt: new Date(), updatedAt: new Date() })
@@ -242,5 +453,110 @@ export class DomainsService {
       .where(ilike(domains.domain, `%${query}%`))
       .orderBy(domains.domain)
       .limit(10);
+  }
+
+  private async getGatewayDnsTargetIps(): Promise<string[]> {
+    const configured = (await this.generalSettingsService?.getGatewayEndpointSettings())?.gatewayPublicIps ?? [];
+    const targetIps = configured.length > 0 ? configured : [...getPublicIPs().ipv4, ...getPublicIPs().ipv6];
+    const unique = [...new Set(targetIps)];
+    if (unique.length === 0) {
+      throw new AppError(
+        409,
+        'GATEWAY_PUBLIC_IP_UNAVAILABLE',
+        'Gateway public IP(s) are not configured and automatic public IP detection has no value'
+      );
+    }
+    return unique;
+  }
+
+  private async prepareCloudflareDomain(input: PreviewDomainInput): Promise<DomainCloudflarePlan> {
+    if (!this.integrationsService) {
+      throw new AppError(409, 'CLOUDFLARE_DNS_NOT_CONFIGURED', 'Cloudflare DNS integration is not configured');
+    }
+    const domainName = input.domain.toLowerCase();
+    const targetIps = await this.getGatewayDnsTargetIps();
+    const context = await this.integrationsService.resolveCloudflareDnsContext(domainName);
+    const ttl = input.ttl ?? context.settings.defaultTtl;
+    const proxied = input.proxied ?? context.settings.defaultProxied;
+    const existingRecords = (await context.client.listDnsRecords(context.zone.remoteId, domainName)).filter(
+      (record) => record.name === domainName
+    ) as CloudflareAddressRecord[];
+    const addressRecords = existingRecords.filter((record) => record.type === 'A' || record.type === 'AAAA');
+    const blockingRecords = existingRecords.filter((record) => record.type === 'CNAME');
+    const currentIps = addressRecords.map((record) => record.content).sort();
+    const desiredIps = [...targetIps].sort();
+    const currentMatches = currentIps.length > 0 && this.sameStringSet(currentIps, desiredIps);
+    const desiredRecords = this.desiredCloudflareRecords(domainName, desiredIps, ttl, proxied);
+    return {
+      domainName,
+      targetIps,
+      ttl,
+      proxied,
+      context,
+      existingRecords,
+      addressRecords,
+      blockingRecords,
+      currentIps,
+      desiredIps,
+      currentMatches,
+      desiredRecords,
+    };
+  }
+
+  private async computeDomainDnsStatus(
+    row: typeof domains.$inferSelect,
+    resolvedRecords: DnsRecords
+  ): Promise<'valid' | 'invalid' | 'pending' | 'unknown'> {
+    if (row.dnsProvider !== 'cloudflare') return computeDnsStatus(resolvedRecords);
+    const expectedIps = row.dnsTargetIps.length > 0 ? row.dnsTargetIps : await this.getGatewayDnsTargetIps();
+    if (expectedIps.length === 0) return 'unknown';
+
+    if (this.integrationsService && row.integrationConnectorId && row.providerZoneId) {
+      const context = await this.integrationsService.getCloudflareDnsContextForRecord(
+        row.integrationConnectorId,
+        row.providerZoneId
+      );
+      const providerRecords = await context.client.listDnsRecords(context.zone.remoteId, row.domain);
+      const addressRecords = providerRecords.filter((record) => record.type === 'A' || record.type === 'AAAA');
+      const providerIps = addressRecords.map((record) => record.content).sort();
+      if (!this.sameStringSet(providerIps, [...expectedIps].sort())) return 'invalid';
+      if (addressRecords.some((record) => record.proxied === true)) return 'valid';
+    }
+
+    const resolvedIps = [...resolvedRecords.a, ...resolvedRecords.aaaa].sort();
+    if (resolvedIps.length === 0) return 'pending';
+    return this.sameStringSet(resolvedIps, [...expectedIps].sort()) ? 'valid' : 'pending';
+  }
+
+  private desiredCloudflareRecords(domain: string, ips: string[], ttl: number, proxied: boolean) {
+    return ips.map((ip) => ({
+      type: isIP(ip) === 6 ? ('AAAA' as const) : ('A' as const),
+      name: domain,
+      content: ip,
+      ttl,
+      proxied,
+    }));
+  }
+
+  private dnsRecordsFromTargetIps(ips: string[]): DnsRecords {
+    return {
+      a: ips.filter((ip) => isIP(ip) === 4),
+      aaaa: ips.filter((ip) => isIP(ip) === 6),
+      cname: [],
+      caa: [],
+      mx: [],
+      txt: [],
+    };
+  }
+
+  private sameStringSet(left: string[], right: string[]): boolean {
+    if (left.length !== right.length) return false;
+    const rightSet = new Set(right);
+    return left.every((value) => rightSet.has(value));
+  }
+
+  private recordTypeLabel(ips: string[]): string {
+    const types = new Set(ips.map((ip) => (isIP(ip) === 6 ? 'AAAA' : 'A')));
+    return [...types].sort().join('/');
   }
 }

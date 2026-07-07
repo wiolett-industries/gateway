@@ -31,6 +31,9 @@ const DEFAULT_FILE_OPEN_MAX_BYTES = 10 * BYTES_PER_MEGABYTE;
 const DEFAULT_GENERAL_SETTINGS = {
   fileUploadMaxBytes: DEFAULT_FILE_UPLOAD_MAX_BYTES,
   fileOpenMaxBytes: DEFAULT_FILE_OPEN_MAX_BYTES,
+  gatewayPublicIps: [] as string[],
+  gatewayGrpcPublicTarget: null as string | null,
+  gatewayGrpcLocalIp: null as string | null,
   features: DEFAULT_GATEWAY_FEATURES,
 };
 
@@ -95,15 +98,26 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       )
     )
   );
+  const [gatewayPublicIps, setGatewayPublicIps] = useState(
+    () =>
+      api
+        .getCached<AuthProvisioningSettings>("settings:auth-provisioning")
+        ?.generalSettings?.gatewayPublicIps.join(", ") ?? ""
+  );
+  const [gatewayGrpcPublicTarget, setGatewayGrpcPublicTarget] = useState(
+    () =>
+      api.getCached<AuthProvisioningSettings>("settings:auth-provisioning")?.generalSettings
+        ?.gatewayGrpcPublicTarget ?? ""
+  );
+  const [gatewayGrpcLocalIp, setGatewayGrpcLocalIp] = useState(
+    () =>
+      api.getCached<AuthProvisioningSettings>("settings:auth-provisioning")?.generalSettings
+        ?.gatewayGrpcLocalIp ?? ""
+  );
   const [pkiEnabled, setPkiEnabled] = useState(
     () =>
       api.getCached<AuthProvisioningSettings>("settings:auth-provisioning")?.generalSettings
         ?.features?.pkiEnabled ?? DEFAULT_GATEWAY_FEATURES.pkiEnabled
-  );
-  const [domainsEnabled, setDomainsEnabled] = useState(
-    () =>
-      api.getCached<AuthProvisioningSettings>("settings:auth-provisioning")?.generalSettings
-        ?.features?.domainsEnabled ?? DEFAULT_GATEWAY_FEATURES.domainsEnabled
   );
   const skipNextCidrsBlur = useRef(false);
   const skipNextWebhookCidrsBlur = useRef(false);
@@ -119,8 +133,10 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
         String(bytesToMegabytes(settingsData.generalSettings.fileUploadMaxBytes))
       );
       setFileOpenLimitMb(String(bytesToMegabytes(settingsData.generalSettings.fileOpenMaxBytes)));
+      setGatewayPublicIps(settingsData.generalSettings.gatewayPublicIps.join(", "));
+      setGatewayGrpcPublicTarget(settingsData.generalSettings.gatewayGrpcPublicTarget ?? "");
+      setGatewayGrpcLocalIp(settingsData.generalSettings.gatewayGrpcLocalIp ?? "");
       setPkiEnabled(settingsData.generalSettings.features?.pkiEnabled ?? true);
-      setDomainsEnabled(settingsData.generalSettings.features?.domainsEnabled ?? true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load Gateway settings");
     }
@@ -219,8 +235,10 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       applySettings(nextSettings);
       setFileUploadLimitMb(String(bytesToMegabytes(updated.generalSettings.fileUploadMaxBytes)));
       setFileOpenLimitMb(String(bytesToMegabytes(updated.generalSettings.fileOpenMaxBytes)));
+      setGatewayPublicIps(updated.generalSettings.gatewayPublicIps.join(", "));
+      setGatewayGrpcPublicTarget(updated.generalSettings.gatewayGrpcPublicTarget ?? "");
+      setGatewayGrpcLocalIp(updated.generalSettings.gatewayGrpcLocalIp ?? "");
       setPkiEnabled(nextSettings.generalSettings.features.pkiEnabled);
-      setDomainsEnabled(nextSettings.generalSettings.features.domainsEnabled);
       const currentFeatures = useSystemConfigStore.getState().config.features;
       useSystemConfigStore.getState().setConfig(
         withDefaultSystemConfig({
@@ -237,8 +255,10 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
       setSettings(previous);
       setFileUploadLimitMb(String(bytesToMegabytes(previous.generalSettings.fileUploadMaxBytes)));
       setFileOpenLimitMb(String(bytesToMegabytes(previous.generalSettings.fileOpenMaxBytes)));
+      setGatewayPublicIps(previous.generalSettings.gatewayPublicIps.join(", "));
+      setGatewayGrpcPublicTarget(previous.generalSettings.gatewayGrpcPublicTarget ?? "");
+      setGatewayGrpcLocalIp(previous.generalSettings.gatewayGrpcLocalIp ?? "");
       setPkiEnabled(previous.generalSettings.features.pkiEnabled);
-      setDomainsEnabled(previous.generalSettings.features.domainsEnabled);
       toast.error(err instanceof Error ? err.message : "Failed to update Gateway settings");
     } finally {
       setIsSavingGeneral(false);
@@ -261,13 +281,21 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
 
   const draftFileUploadLimitBytes = getDraftFileUploadLimitBytes();
   const draftFileOpenLimitBytes = getDraftFileOpenLimitBytes();
+  const draftGatewayPublicIps = gatewayPublicIps
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const draftGatewayGrpcPublicTarget = gatewayGrpcPublicTarget.trim() || null;
+  const draftGatewayGrpcLocalIp = gatewayGrpcLocalIp.trim() || null;
   const generalHasChanges =
     (draftFileUploadLimitBytes != null &&
       draftFileUploadLimitBytes !== settings?.generalSettings.fileUploadMaxBytes) ||
     (draftFileOpenLimitBytes != null &&
       draftFileOpenLimitBytes !== settings?.generalSettings.fileOpenMaxBytes) ||
-    pkiEnabled !== settings?.generalSettings.features.pkiEnabled ||
-    domainsEnabled !== settings?.generalSettings.features.domainsEnabled;
+    draftGatewayPublicIps.join(",") !== settings?.generalSettings.gatewayPublicIps.join(",") ||
+    draftGatewayGrpcPublicTarget !== settings?.generalSettings.gatewayGrpcPublicTarget ||
+    draftGatewayGrpcLocalIp !== settings?.generalSettings.gatewayGrpcLocalIp ||
+    pkiEnabled !== settings?.generalSettings.features.pkiEnabled;
 
   const saveGeneralSettings = () => {
     if (!settings) return;
@@ -292,15 +320,20 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
     if (
       nextBytes === settings.generalSettings.fileUploadMaxBytes &&
       nextOpenBytes === settings.generalSettings.fileOpenMaxBytes &&
-      pkiEnabled === settings.generalSettings.features.pkiEnabled &&
-      domainsEnabled === settings.generalSettings.features.domainsEnabled
+      draftGatewayPublicIps.join(",") === settings.generalSettings.gatewayPublicIps.join(",") &&
+      draftGatewayGrpcPublicTarget === settings.generalSettings.gatewayGrpcPublicTarget &&
+      draftGatewayGrpcLocalIp === settings.generalSettings.gatewayGrpcLocalIp &&
+      pkiEnabled === settings.generalSettings.features.pkiEnabled
     ) {
       return;
     }
     updateGeneralSettings({
       fileUploadMaxBytes: nextBytes,
       fileOpenMaxBytes: nextOpenBytes,
-      features: { pkiEnabled, domainsEnabled },
+      gatewayPublicIps: draftGatewayPublicIps,
+      gatewayGrpcPublicTarget: draftGatewayGrpcPublicTarget,
+      gatewayGrpcLocalIp: draftGatewayGrpcLocalIp,
+      features: { pkiEnabled },
     });
   };
 
@@ -487,6 +520,66 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
               }}
             />
           </div>
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div>
+              <p className="text-sm font-medium">Gateway public IP(s)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Public IPv4/IPv6 addresses used for Cloudflare A/AAAA records
+              </p>
+            </div>
+            <Input
+              className="w-full shrink-0 sm:max-w-80"
+              value={gatewayPublicIps}
+              placeholder="203.0.113.10, 2001:db8::10"
+              disabled={!canEdit || isSavingGeneral}
+              onChange={(event) => setGatewayPublicIps(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  saveGeneralSettings();
+                }
+              }}
+            />
+          </div>
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div>
+              <p className="text-sm font-medium">gRPC public target</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Public host or IP used in public node enrollment commands
+              </p>
+            </div>
+            <Input
+              className="w-full shrink-0 sm:max-w-80"
+              value={gatewayGrpcPublicTarget}
+              placeholder="gateway.example.com:9443"
+              disabled={!canEdit || isSavingGeneral}
+              onChange={(event) => setGatewayGrpcPublicTarget(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  saveGeneralSettings();
+                }
+              }}
+            />
+          </div>
+          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div>
+              <p className="text-sm font-medium">gRPC local IP</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Optional private IP override for local node enrollment commands
+              </p>
+            </div>
+            <Input
+              className="w-full shrink-0 sm:max-w-80"
+              value={gatewayGrpcLocalIp}
+              placeholder="Uses public target when empty"
+              disabled={!canEdit || isSavingGeneral}
+              onChange={(event) => setGatewayGrpcLocalIp(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  saveGeneralSettings();
+                }
+              }}
+            />
+          </div>
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
               <p className="text-sm font-medium">PKI</p>
@@ -499,19 +592,6 @@ export function AuthProvisioningSection({ canEdit }: AuthProvisioningSectionProp
               checked={pkiEnabled}
               disabled={!canEdit || isSavingGeneral}
               onChange={setPkiEnabled}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4 px-4 py-3">
-            <div>
-              <p className="text-sm font-medium">Domains</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Show domain management navigation and allow user access to managed domains
-              </p>
-            </div>
-            <Switch
-              checked={domainsEnabled}
-              disabled={!canEdit || isSavingGeneral}
-              onChange={setDomainsEnabled}
             />
           </div>
         </div>

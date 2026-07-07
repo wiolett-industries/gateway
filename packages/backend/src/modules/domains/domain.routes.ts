@@ -3,8 +3,7 @@ import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
 import { hasScope } from '@/lib/permissions.js';
 import { AppError } from '@/middleware/error-handler.js';
-import { requireGatewayFeature } from '@/middleware/feature-flags.js';
-import { authMiddleware, requireScope } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireAnyScope, requireScope } from '@/modules/auth/auth.middleware.js';
 import { DomainFolderService } from '@/modules/domains/domain-folders.service.js';
 import {
   CreateResourceFolderSchema,
@@ -28,19 +27,25 @@ import {
   listDomainsRoute,
   moveDomainFolderRoute,
   moveDomainsToFolderRoute,
+  previewDomainRoute,
   reorderDomainFoldersRoute,
   reorderDomainsRoute,
   searchDomainsRoute,
   updateDomainFolderRoute,
   updateDomainRoute,
 } from './domain.docs.js';
-import { CreateDomainSchema, DomainListQuerySchema, UpdateDomainSchema } from './domain.schemas.js';
+import {
+  CreateDomainSchema,
+  DeleteDomainSchema,
+  DomainListQuerySchema,
+  PreviewDomainSchema,
+  UpdateDomainSchema,
+} from './domain.schemas.js';
 import { DomainsService } from './domain.service.js';
 
 export const domainRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 domainRoutes.use('*', authMiddleware);
-domainRoutes.use('*', requireGatewayFeature('domainsEnabled', 'Domains'));
 
 domainRoutes.openapi({ ...listDomainFoldersRoute, middleware: requireScope('domains:view') }, async (c) => {
   const service = container.resolve(DomainFolderService);
@@ -127,6 +132,25 @@ domainRoutes.openapi({ ...searchDomainsRoute, middleware: requireScope('domains:
   return c.json({ data: results });
 });
 
+// Preview domain DNS (must be before /:id)
+domainRoutes.openapi(
+  { ...previewDomainRoute, middleware: requireScope('integrations:cloudflare:dns:edit') },
+  async (c) => {
+    const body = await c.req.json();
+    const input = PreviewDomainSchema.parse(body);
+    const domainsService = container.resolve(DomainsService);
+    try {
+      const preview = await domainsService.previewDomain(input);
+      return c.json({ data: preview });
+    } catch (err) {
+      if (err instanceof AppError) {
+        return c.json({ code: err.code, message: err.message, details: err.details }, err.statusCode as never);
+      }
+      return c.json({ code: 'ERROR', message: err instanceof Error ? err.message : 'Failed to preview domain' }, 400);
+    }
+  }
+);
+
 // Get domain detail with usage
 domainRoutes.openapi({ ...getDomainRoute, middleware: requireScope('domains:view') }, async (c) => {
   const domainsService = container.resolve(DomainsService);
@@ -139,22 +163,28 @@ domainRoutes.openapi({ ...getDomainRoute, middleware: requireScope('domains:view
 });
 
 // Create domain
-domainRoutes.openapi({ ...createDomainRoute, middleware: requireScope('domains:create') }, async (c) => {
-  const user = c.get('user')!;
-  const body = await c.req.json();
-  const input = CreateDomainSchema.parse(body);
-  const domainsService = container.resolve(DomainsService);
-  try {
-    const domain = await domainsService.createDomain(input, user.id);
-    return c.json({ data: domain }, 201);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Failed to create domain';
-    if (msg.includes('unique') || msg.includes('duplicate')) {
-      return c.json({ code: 'DUPLICATE', message: 'Domain already exists' }, 409);
+domainRoutes.openapi(
+  { ...createDomainRoute, middleware: requireScope('integrations:cloudflare:dns:edit') },
+  async (c) => {
+    const user = c.get('user')!;
+    const body = await c.req.json();
+    const input = CreateDomainSchema.parse(body);
+    const domainsService = container.resolve(DomainsService);
+    try {
+      const domain = await domainsService.createDomain(input, user.id);
+      return c.json({ data: domain }, 201);
+    } catch (err) {
+      if (err instanceof AppError) {
+        return c.json({ code: err.code, message: err.message, details: err.details }, err.statusCode as never);
+      }
+      const msg = err instanceof Error ? err.message : 'Failed to create domain';
+      if (msg.includes('unique') || msg.includes('duplicate')) {
+        return c.json({ code: 'DUPLICATE', message: 'Domain already exists' }, 409);
+      }
+      return c.json({ code: 'ERROR', message: msg }, 400);
     }
-    return c.json({ code: 'ERROR', message: msg }, 400);
   }
-});
+);
 
 // Update domain
 domainRoutes.openapi({ ...updateDomainRoute, middleware: requireScope('domains:edit') }, async (c) => {
@@ -171,16 +201,28 @@ domainRoutes.openapi({ ...updateDomainRoute, middleware: requireScope('domains:e
 });
 
 // Delete domain
-domainRoutes.openapi({ ...deleteDomainRoute, middleware: requireScope('domains:delete') }, async (c) => {
-  const user = c.get('user')!;
-  const domainsService = container.resolve(DomainsService);
-  try {
-    await domainsService.deleteDomain(c.req.param('id')!, user.id);
-    return c.json({ data: { success: true } });
-  } catch {
-    return c.json({ code: 'NOT_FOUND', message: 'Domain not found' }, 404);
+domainRoutes.openapi(
+  { ...deleteDomainRoute, middleware: requireAnyScope('domains:delete', 'integrations:cloudflare:dns:delete') },
+  async (c) => {
+    const user = c.get('user')!;
+    const domainsService = container.resolve(DomainsService);
+    const canDeleteDns = hasScope(c.get('effectiveScopes') || [], 'integrations:cloudflare:dns:delete');
+    try {
+      const rawBody = await c.req.text();
+      const input = rawBody ? DeleteDomainSchema.parse(JSON.parse(rawBody)) : {};
+      await domainsService.deleteDomain(c.req.param('id')!, user.id, input, { canDeleteDns });
+      return c.json({ data: { success: true } });
+    } catch (err) {
+      if (err instanceof AppError) {
+        return c.json({ code: err.code, message: err.message, details: err.details }, err.statusCode as never);
+      }
+      if (err instanceof SyntaxError) {
+        return c.json({ code: 'BAD_REQUEST', message: 'Malformed JSON in request body' }, 400);
+      }
+      return c.json({ code: 'ERROR', message: err instanceof Error ? err.message : 'Failed to delete domain' }, 400);
+    }
   }
-});
+);
 
 // Manual DNS check
 domainRoutes.openapi({ ...checkDomainDnsRoute, middleware: requireScope('domains:edit') }, async (c) => {

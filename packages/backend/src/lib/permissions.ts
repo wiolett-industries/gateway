@@ -38,6 +38,12 @@ const IMPLIED_SCOPES_BY_REQUIRED_SCOPE: Record<string, readonly string[]> = {
   'logs:schemas:view': ['logs:schemas:edit'],
   'logs:read': ['logs:manage'],
   'status-page:view': ['status-page:manage'],
+  'integrations:cloudflare:view': ['integrations:cloudflare:manage'],
+  'integrations:cloudflare:dns:view': [
+    'integrations:cloudflare:manage',
+    'integrations:cloudflare:dns:edit',
+    'integrations:cloudflare:dns:delete',
+  ],
 };
 
 function hasImpliedScope(scopes: readonly string[], requiredScope: string): boolean {

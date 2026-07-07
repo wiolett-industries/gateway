@@ -114,6 +114,20 @@ describe('GrpcIdentityService', () => {
     );
   });
 
+  it('refreshes auto-generated gRPC TLS identity instead of reusing the cached fingerprint', async () => {
+    const { certPath, keyPath } = writeTlsFiles();
+    const systemCA = {
+      ensureGrpcServerCert: vi.fn().mockResolvedValue({ certPath, keyPath }),
+      getSystemCACertPem: vi.fn(),
+    };
+    const service = new GrpcIdentityService({ GRPC_TLS_AUTO_DIR: '/tmp/gateway-tls' } as any, systemCA as any);
+
+    await service.resolve();
+    await service.refresh();
+
+    expect(systemCA.ensureGrpcServerCert).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects partial custom gRPC TLS configuration', async () => {
     const service = new GrpcIdentityService(
       { GRPC_TLS_CERT: '/tmp/server.crt', GRPC_TLS_AUTO_DIR: '/tmp/gateway-tls' } as any,

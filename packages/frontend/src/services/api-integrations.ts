@@ -1,4 +1,11 @@
 import type {
+  CloudflareConnector,
+  CloudflareConnectorCreateRequest,
+  CloudflareConnectorPreviewTestRequest,
+  CloudflareConnectorPreviewTestResult,
+  CloudflareConnectorSyncResult,
+  CloudflareConnectorUpdateRequest,
+  CloudflareZone,
   GitLabAllowlistEntry,
   GitLabAllowlistPreviewSearchRequest,
   GitLabConnector,
@@ -20,6 +27,106 @@ export function withIntegrationsApi<TBase extends ApiClientBaseConstructor>(Base
         this.request<{ data: GitLabConnector[] }>(
           `/integrations/gitlab/connectors${query ? `?${query}` : ""}`
         )
+      );
+    }
+
+    async listCloudflareConnectors(params?: { enabled?: boolean }): Promise<CloudflareConnector[]> {
+      const searchParams = new URLSearchParams();
+      if (params?.enabled !== undefined) searchParams.set("enabled", String(params.enabled));
+      const query = searchParams.toString();
+      return this.unwrapData(
+        this.request<{ data: CloudflareConnector[] }>(
+          `/integrations/cloudflare/connectors${query ? `?${query}` : ""}`
+        )
+      );
+    }
+
+    async getCloudflareConnector(id: string): Promise<CloudflareConnector> {
+      return this.unwrapData(
+        this.request<{ data: CloudflareConnector }>(`/integrations/cloudflare/connectors/${id}`)
+      );
+    }
+
+    async createCloudflareConnector(
+      data: CloudflareConnectorCreateRequest
+    ): Promise<CloudflareConnector> {
+      return this.unwrapData(
+        this.request<{ data: CloudflareConnector }>("/integrations/cloudflare/connectors", {
+          method: "POST",
+          body: JSON.stringify(data),
+        })
+      );
+    }
+
+    async previewCloudflareConnectorTest(
+      data: CloudflareConnectorPreviewTestRequest
+    ): Promise<CloudflareConnectorPreviewTestResult> {
+      return this.unwrapData(
+        this.request<{ data: CloudflareConnectorPreviewTestResult }>(
+          "/integrations/cloudflare/connectors/preview-test",
+          {
+            method: "POST",
+            body: JSON.stringify(data),
+          }
+        )
+      );
+    }
+
+    async updateCloudflareConnector(
+      id: string,
+      data: CloudflareConnectorUpdateRequest
+    ): Promise<CloudflareConnector> {
+      return this.unwrapData(
+        this.request<{ data: CloudflareConnector }>(`/integrations/cloudflare/connectors/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(data),
+        })
+      );
+    }
+
+    async deleteCloudflareConnector(id: string): Promise<void> {
+      await this.request<{ success: true }>(`/integrations/cloudflare/connectors/${id}`, {
+        method: "DELETE",
+      });
+    }
+
+    async rotateCloudflareConnectorToken(id: string, token: string): Promise<CloudflareConnector> {
+      return this.unwrapData(
+        this.request<{ data: CloudflareConnector }>(
+          `/integrations/cloudflare/connectors/${id}/token`,
+          {
+            method: "POST",
+            body: JSON.stringify({ token }),
+          }
+        )
+      );
+    }
+
+    async testCloudflareConnector(id: string): Promise<CloudflareConnector> {
+      return this.unwrapData(
+        this.request<{ data: CloudflareConnector }>(
+          `/integrations/cloudflare/connectors/${id}/test`,
+          {
+            method: "POST",
+          }
+        )
+      );
+    }
+
+    async syncCloudflareConnector(id: string): Promise<CloudflareConnectorSyncResult> {
+      return this.unwrapData(
+        this.request<{ data: CloudflareConnectorSyncResult }>(
+          `/integrations/cloudflare/connectors/${id}/sync`,
+          {
+            method: "POST",
+          }
+        )
+      );
+    }
+
+    async listCloudflareZones(id: string): Promise<CloudflareZone[]> {
+      return this.unwrapData(
+        this.request<{ data: CloudflareZone[] }>(`/integrations/cloudflare/connectors/${id}/zones`)
       );
     }
 

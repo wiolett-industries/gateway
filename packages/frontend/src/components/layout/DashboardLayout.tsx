@@ -391,7 +391,7 @@ export function DashboardLayout() {
         const routes: Record<string, string> = {
           "1": "/",
           "2": "/proxy-hosts",
-          ...(features.domainsEnabled ? { "3": "/domains" } : {}),
+          "3": "/domains",
           "4": "/nginx-templates",
           "5": "/ssl-certificates",
           ...(features.pkiEnabled ? { "6": "/cas", "7": "/certificates" } : {}),

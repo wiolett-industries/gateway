@@ -53,21 +53,50 @@ describe('AIService domain tool routing', () => {
     expect(domainsService.listDomains).toHaveBeenCalledWith({ search: 'example', page: 2, limit: 25 });
 
     await expect(
-      service.executeTool({ ...BASE_USER, scopes: ['domains:create'] }, 'create_domain', {
+      service.executeTool({ ...BASE_USER, scopes: ['integrations:cloudflare:dns:edit'] }, 'create_domain', {
         domain: 'example.com',
+        ttl: 60,
+        proxied: false,
+        overwriteDns: true,
       })
     ).resolves.toEqual({
       result: { id: 'domain-2', domain: 'example.com' },
       invalidateStores: ['domains'],
     });
-    expect(domainsService.createDomain).toHaveBeenCalledWith({ domain: 'example.com' }, 'user-1');
+    expect(domainsService.createDomain).toHaveBeenCalledWith(
+      { domain: 'example.com', description: undefined, ttl: 60, proxied: false, overwriteDns: true },
+      'user-1'
+    );
 
     await expect(
-      service.executeTool({ ...BASE_USER, scopes: ['domains:delete:domain-1'] }, 'delete_domain', {
+      service.executeTool({ ...BASE_USER, scopes: ['domains:delete'] }, 'delete_domain', {
         domainId: 'domain-1',
+        deleteDns: false,
       })
     ).resolves.toEqual({ result: { success: true }, invalidateStores: ['domains'] });
-    expect(domainsService.deleteDomain).toHaveBeenCalledWith('domain-1', 'user-1');
+    expect(domainsService.deleteDomain).toHaveBeenCalledWith(
+      'domain-1',
+      'user-1',
+      { deleteDns: false },
+      { canDeleteDns: false }
+    );
+
+    await expect(
+      service.executeTool(
+        { ...BASE_USER, scopes: ['domains:delete', 'integrations:cloudflare:dns:delete'] },
+        'delete_domain',
+        {
+          domainId: 'domain-1',
+          deleteDns: true,
+        }
+      )
+    ).resolves.toEqual({ result: { success: true }, invalidateStores: ['domains'] });
+    expect(domainsService.deleteDomain).toHaveBeenLastCalledWith(
+      'domain-1',
+      'user-1',
+      { deleteDns: true },
+      { canDeleteDns: true }
+    );
   });
 
   it('routes managed domain get/update/check operations with resource scopes', async () => {

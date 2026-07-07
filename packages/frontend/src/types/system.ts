@@ -11,6 +11,9 @@ export interface UpdateStatus {
 export interface SystemConfig {
   fileUploadMaxBytes: number;
   fileOpenMaxBytes: number;
+  gatewayPublicIps: string[];
+  gatewayGrpcPublicTarget: string | null;
+  gatewayGrpcLocalIp: string | null;
   features: GatewayFeatureConfig;
 }
 

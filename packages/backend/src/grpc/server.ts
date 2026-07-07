@@ -38,27 +38,49 @@ function resolveProtoPath() {
 
 const PROTO_PATH = resolveProtoPath();
 
-class StaticCertificateProvider {
+type CaCertificateUpdate = { caCertificate: Buffer } | null;
+type IdentityCertificateUpdate = { certificate: Buffer; privateKey: Buffer } | null;
+type CaCertificateUpdateListener = (update: CaCertificateUpdate) => void;
+type IdentityCertificateUpdateListener = (update: IdentityCertificateUpdate) => void;
+
+class ReloadableCertificateProvider {
+  private caListeners = new Set<CaCertificateUpdateListener>();
+  private identityListeners = new Set<IdentityCertificateUpdateListener>();
+
   constructor(
-    private readonly caCertificate: Buffer,
-    private readonly certificate: Buffer,
-    private readonly privateKey: Buffer
+    private caCertificate: Buffer,
+    private certificate: Buffer,
+    private privateKey: Buffer
   ) {}
 
-  addCaCertificateListener(listener: (update: { caCertificate: Buffer } | null) => void) {
+  addCaCertificateListener(listener: CaCertificateUpdateListener) {
+    this.caListeners.add(listener);
     setImmediate(() => listener({ caCertificate: this.caCertificate }));
   }
 
-  removeCaCertificateListener() {
-    // Static certificates do not retain listeners.
+  removeCaCertificateListener(listener: CaCertificateUpdateListener) {
+    this.caListeners.delete(listener);
   }
 
-  addIdentityCertificateListener(listener: (update: { certificate: Buffer; privateKey: Buffer } | null) => void) {
+  addIdentityCertificateListener(listener: IdentityCertificateUpdateListener) {
+    this.identityListeners.add(listener);
     setImmediate(() => listener({ certificate: this.certificate, privateKey: this.privateKey }));
   }
 
-  removeIdentityCertificateListener() {
-    // Static certificates do not retain listeners.
+  removeIdentityCertificateListener(listener: IdentityCertificateUpdateListener) {
+    this.identityListeners.delete(listener);
+  }
+
+  update(caCertificate: Buffer, certificate: Buffer, privateKey: Buffer) {
+    this.caCertificate = caCertificate;
+    this.certificate = certificate;
+    this.privateKey = privateKey;
+    for (const listener of this.caListeners) {
+      listener({ caCertificate });
+    }
+    for (const listener of this.identityListeners) {
+      listener({ certificate, privateKey });
+    }
   }
 }
 
@@ -73,12 +95,13 @@ export interface GrpcServerDeps {
 }
 
 let server: grpc.Server | null = null;
+let certificateProvider: ReloadableCertificateProvider | null = null;
 
-export async function createGrpcServerCredentials(
+async function readGrpcServerTlsMaterial(
   tlsCertPath: string | undefined,
   tlsKeyPath: string | undefined,
   systemCA: SystemCAService
-): Promise<grpc.ServerCredentials> {
+) {
   if (!tlsCertPath || !tlsKeyPath) {
     throw new Error('gRPC server requires TLS certificate and key paths');
   }
@@ -92,10 +115,39 @@ export async function createGrpcServerCredentials(
   }
   validateGrpcServerCertificate(cert, key, caPem);
 
+  return { cert, key, ca: Buffer.from(caPem) };
+}
+
+export async function createGrpcServerCredentials(
+  tlsCertPath: string | undefined,
+  tlsKeyPath: string | undefined,
+  systemCA: SystemCAService
+): Promise<grpc.ServerCredentials> {
+  const { cert, key, ca } = await readGrpcServerTlsMaterial(tlsCertPath, tlsKeyPath, systemCA);
+
   // checkClientCertificate=false keeps enrollment open for new nodes, while
   // still requesting and validating client certs when enrolled daemons present them.
-  const provider = new StaticCertificateProvider(Buffer.from(caPem), cert, key);
-  return (grpc.experimental as any).createCertificateProviderServerCredentials(provider, provider, false);
+  certificateProvider = new ReloadableCertificateProvider(ca, cert, key);
+  return (grpc.experimental as any).createCertificateProviderServerCredentials(
+    certificateProvider,
+    certificateProvider,
+    false
+  );
+}
+
+export async function refreshGrpcServerCredentials(
+  tlsCertPath: string | undefined,
+  tlsKeyPath: string | undefined,
+  systemCA: SystemCAService
+): Promise<void> {
+  if (!certificateProvider) {
+    logger.debug('Skipping gRPC server TLS refresh because the server is not running');
+    return;
+  }
+
+  const { cert, key, ca } = await readGrpcServerTlsMaterial(tlsCertPath, tlsKeyPath, systemCA);
+  certificateProvider.update(ca, cert, key);
+  logger.info('Refreshed gRPC server TLS material');
 }
 
 export async function startGrpcServer(
@@ -153,6 +205,7 @@ export function stopGrpcServer(): Promise<void> {
     server.tryShutdown(() => {
       logger.info('gRPC server stopped');
       server = null;
+      certificateProvider = null;
       resolve();
     });
   });

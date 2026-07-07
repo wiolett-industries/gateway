@@ -9,6 +9,7 @@ import { certificateAuthorities } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { CAService } from '@/modules/pki/ca.service.js';
 import type { CertService } from '@/modules/pki/cert.service.js';
+import type { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import type { CryptoService } from './crypto.service.js';
 import { validateGrpcServerCertificate } from './grpc-server-certificate.js';
 
@@ -48,6 +49,16 @@ function normalizeGrpcServerSan(value: string): string {
   return trimmed;
 }
 
+function extractGrpcTargetHost(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return null;
+  const bracketed = trimmed.match(/^\[([^\]]+)](?::\d+)?$/);
+  if (bracketed) return bracketed[1];
+  const hostPort = trimmed.match(/^([^:]+):\d+$/);
+  if (hostPort) return hostPort[1];
+  return trimmed;
+}
+
 function certificateHasExpectedSans(certPem: string, expectedSans: readonly string[]): boolean {
   const subjectAltName = new NodeX509Certificate(certPem).subjectAltName ?? '';
   const dnsSans = new Set<string>();
@@ -70,12 +81,18 @@ function certificateHasExpectedSans(certPem: string, expectedSans: readonly stri
 }
 
 export class SystemCAService {
+  private generalSettingsService?: GeneralSettingsService;
+
   constructor(
     private readonly db: DrizzleClient,
     private readonly caService: CAService,
     private readonly certService: CertService,
     readonly _cryptoService: CryptoService
   ) {}
+
+  setGeneralSettingsService(service: GeneralSettingsService) {
+    this.generalSettingsService = service;
+  }
 
   /** Ensure the system CA exists. Creates it on first startup. Returns its ID. */
   async ensureSystemCA(): Promise<string> {
@@ -133,7 +150,7 @@ export class SystemCAService {
    * Returns the cert/key file paths. Reuses existing files if still valid.
    */
   async ensureGrpcServerCert(certPath: string, keyPath: string): Promise<{ certPath: string; keyPath: string }> {
-    const expectedSans = collectGrpcServerSans();
+    const expectedSans = await this.collectGrpcServerSans();
     // Reuse if files exist and cert is still valid (> 7 days remaining)
     if (existsSync(certPath) && existsSync(keyPath)) {
       try {
@@ -187,6 +204,16 @@ export class SystemCAService {
 
     logger.info('gRPC server cert issued', { serial: result.certificate.serialNumber, certPath });
     return { certPath, keyPath };
+  }
+
+  private async collectGrpcServerSans(): Promise<string[]> {
+    const values = collectGrpcServerSans();
+    const settings = await this.generalSettingsService?.getGatewayEndpointSettings();
+    const publicHost = extractGrpcTargetHost(settings?.gatewayGrpcPublicTarget);
+    const localHost = extractGrpcTargetHost(settings?.gatewayGrpcLocalIp);
+    if (publicHost) values.push(publicHost);
+    if (localHost) values.push(localHost);
+    return [...new Set(values.map(normalizeGrpcServerSan).filter(Boolean))];
   }
 
   /** Issue a TLS client cert for a daemon node using the system CA. */

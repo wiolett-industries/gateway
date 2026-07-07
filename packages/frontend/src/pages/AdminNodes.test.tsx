@@ -20,6 +20,7 @@ describe("AdminNodes", () => {
       limit: 50,
       totalPages: 0,
     });
+    vi.spyOn(api, "listNodeFolders").mockResolvedValue([]);
     vi.spyOn(api, "getDaemonUpdates").mockResolvedValue([]);
     const createNodeSpy = vi.spyOn(api, "createNode").mockResolvedValue({
       node: makeNode({ id: "node-2", status: "pending", type: "nginx" }),
@@ -60,6 +61,5 @@ describe("AdminNodes", () => {
     expect(screen.getByText(/setup-daemon\.sh/)).toHaveTextContent(
       "--gateway-cert-sha256 sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
-    expect(screen.getByText(/Cloudflare/i)).toBeInTheDocument();
   });
 });

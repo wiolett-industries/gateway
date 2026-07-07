@@ -275,4 +275,100 @@ describe('integrations routes', () => {
       },
     });
   });
+
+  it('creates previews tests syncs rotates and deletes Cloudflare connectors through manage scope', async () => {
+    const createCloudflareConnector = vi.fn().mockResolvedValue({ id: 'cf-1', tokenMasked: '****cret' });
+    const testCloudflareConnectorPreview = vi.fn().mockResolvedValue({
+      capabilities: { apiReachable: true, tokenActive: true, zonesRead: true, dnsRead: true, dnsEdit: true },
+      zones: [{ remoteId: 'zone-1', name: 'example.com' }],
+    });
+    const testCloudflareConnector = vi.fn().mockResolvedValue({ id: 'cf-1', syncStatus: 'idle' });
+    const syncCloudflareConnector = vi.fn().mockResolvedValue({ status: 'success', zoneCount: 1 });
+    const rotateCloudflareConnectorToken = vi.fn().mockResolvedValue({ id: 'cf-1', tokenMasked: '****cret' });
+    const deleteCloudflareConnector = vi.fn().mockResolvedValue(undefined);
+    registerServices(['integrations:cloudflare:manage'], {
+      createCloudflareConnector,
+      testCloudflareConnectorPreview,
+      testCloudflareConnector,
+      syncCloudflareConnector,
+      rotateCloudflareConnectorToken,
+      deleteCloudflareConnector,
+    });
+
+    const app = createApp();
+    const createResponse = await app.request('/api/integrations/cloudflare/connectors', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ name: 'Cloudflare', token: 'cf-secret' }),
+    });
+    const previewResponse = await app.request('/api/integrations/cloudflare/connectors/preview-test', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ token: 'cf-secret' }),
+    });
+    const testResponse = await app.request('/api/integrations/cloudflare/connectors/cf-1/test', {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    const syncResponse = await app.request('/api/integrations/cloudflare/connectors/cf-1/sync', {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    const rotateResponse = await app.request('/api/integrations/cloudflare/connectors/cf-1/token', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ token: 'cf-secret-2' }),
+    });
+    const deleteResponse = await app.request('/api/integrations/cloudflare/connectors/cf-1', {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+
+    expect(createResponse.status).toBe(201);
+    expect(previewResponse.status).toBe(200);
+    expect(testResponse.status).toBe(200);
+    expect(syncResponse.status).toBe(200);
+    expect(rotateResponse.status).toBe(200);
+    expect(deleteResponse.status).toBe(200);
+    expect(createCloudflareConnector).toHaveBeenCalledWith(expect.objectContaining({ name: 'Cloudflare' }), USER.id);
+    expect(testCloudflareConnectorPreview).toHaveBeenCalledWith({ token: 'cf-secret' });
+    expect(testCloudflareConnector).toHaveBeenCalledWith('cf-1', USER.id);
+    expect(syncCloudflareConnector).toHaveBeenCalledWith('cf-1', USER.id);
+    expect(rotateCloudflareConnectorToken).toHaveBeenCalledWith('cf-1', 'cf-secret-2', USER.id);
+    expect(deleteCloudflareConnector).toHaveBeenCalledWith('cf-1', USER.id);
+  });
+
+  it('allows Cloudflare DNS viewers to list connectors and zones without manage scope', async () => {
+    const listCloudflareConnectors = vi.fn().mockResolvedValue([{ id: 'cf-1', tokenMasked: '****cret' }]);
+    const getCloudflareConnector = vi.fn().mockResolvedValue({ id: 'cf-1', tokenMasked: '****cret' });
+    const listCloudflareZones = vi.fn().mockResolvedValue([{ remoteId: 'zone-1', name: 'example.com' }]);
+    const createCloudflareConnector = vi.fn();
+    registerServices(['integrations:cloudflare:dns:view'], {
+      listCloudflareConnectors,
+      getCloudflareConnector,
+      listCloudflareZones,
+      createCloudflareConnector,
+    });
+
+    const app = createApp();
+    const listResponse = await app.request('/api/integrations/cloudflare/connectors', { headers: authHeaders() });
+    const getResponse = await app.request('/api/integrations/cloudflare/connectors/cf-1', { headers: authHeaders() });
+    const zonesResponse = await app.request('/api/integrations/cloudflare/connectors/cf-1/zones', {
+      headers: authHeaders(),
+    });
+    const createResponse = await app.request('/api/integrations/cloudflare/connectors', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ name: 'Cloudflare', token: 'cf-secret' }),
+    });
+
+    expect(listResponse.status).toBe(200);
+    expect(getResponse.status).toBe(200);
+    expect(zonesResponse.status).toBe(200);
+    expect(createResponse.status).toBe(403);
+    expect(listCloudflareConnectors).toHaveBeenCalled();
+    expect(getCloudflareConnector).toHaveBeenCalledWith('cf-1');
+    expect(listCloudflareZones).toHaveBeenCalledWith('cf-1');
+    expect(createCloudflareConnector).not.toHaveBeenCalled();
+  });
 });

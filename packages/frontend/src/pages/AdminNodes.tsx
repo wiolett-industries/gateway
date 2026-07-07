@@ -41,6 +41,17 @@ import { usePinnedNodesStore } from "@/stores/pinned-nodes";
 import type { Node, NodeStatus } from "@/types";
 import { effectiveNodeStatus, isNodeIncompatible, isNodeUpdating } from "@/types";
 
+type EnrollmentTargets = {
+  public?: {
+    label: string;
+    gateway: string | null;
+  };
+  local?: {
+    label: string;
+    gateway: string;
+  };
+};
+
 const NODE_TYPES = [
   {
     value: "nginx",
@@ -109,6 +120,7 @@ export function AdminNodes() {
     type: string;
     token: string;
     gatewayCertSha256: string;
+    targets?: EnrollmentTargets;
   } | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [createFolderAction, setCreateFolderAction] = useState<(() => void) | null>(null);
@@ -189,6 +201,7 @@ export function AdminNodes() {
         type: enrollType,
         token: result.enrollmentToken,
         gatewayCertSha256: result.gatewayCertSha256,
+        targets: result.gatewayEnrollmentTargets,
       });
       setEnrollDialogOpen(false);
       setEnrollResultDialogOpen(true);
@@ -226,16 +239,33 @@ export function AdminNodes() {
     }, 220);
   };
 
-  const gatewayAddr = `${window.location.hostname}:9443`;
   const scriptUrl = "https://gitlab.wiolett.net/wiolett/gateway/-/raw/main/scripts/setup-daemon.sh";
 
-  const curlCommand = enrollResult
-    ? `curl -sSL ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollResult.type} \\\n  --gateway ${gatewayAddr} \\\n  --token ${enrollResult.token} \\\n  --gateway-cert-sha256 ${enrollResult.gatewayCertSha256}`
-    : "";
+  const fallbackGatewayAddr = `${window.location.hostname}:9443`;
+  const enrollmentTargets = enrollResult
+    ? [
+        {
+          id: "public",
+          label: enrollResult.targets?.public?.label ?? "Public node",
+          gateway: enrollResult.targets?.public?.gateway ?? fallbackGatewayAddr,
+        },
+        ...(enrollResult.targets?.local
+          ? [
+              {
+                id: "local",
+                label: enrollResult.targets.local.label,
+                gateway: enrollResult.targets.local.gateway,
+              },
+            ]
+          : []),
+      ]
+    : [];
 
-  const wgetCommand = enrollResult
-    ? `wget -qO- ${scriptUrl} | sudo bash -s -- \\\n  --type ${enrollResult.type} \\\n  --gateway ${gatewayAddr} \\\n  --token ${enrollResult.token} \\\n  --gateway-cert-sha256 ${enrollResult.gatewayCertSha256}`
-    : "";
+  const commandForTarget = (gateway: string, transport: "curl" | "wget") => {
+    if (!enrollResult) return "";
+    const fetcher = transport === "curl" ? `curl -sSL ${scriptUrl}` : `wget -qO- ${scriptUrl}`;
+    return `${fetcher} | sudo bash -s -- \\\n  --type ${enrollResult.type} \\\n  --gateway ${gateway} \\\n  --token ${enrollResult.token} \\\n  --gateway-cert-sha256 ${enrollResult.gatewayCertSha256}`;
+  };
 
   const copyCommandValue = (command: string) => command.replace(/\\\n\s*/g, "");
   const canCreateNode = enrollDisplayName.trim().length > 0;
@@ -528,34 +558,52 @@ export function AdminNodes() {
                       ? "Installs the monitoring agent and enrolls with this Gateway."
                       : "Installs nginx, the daemon, and enrolls with this Gateway."}
                 </p>
-                <p className="mb-2 text-xs text-muted-foreground">
-                  If Gateway is behind Cloudflare, replace the generated{" "}
-                  <span className="font-mono">--gateway</span> host with the actual Gateway server
-                  IP or a hostname that exposes <span className="font-mono">9443/tcp</span>{" "}
-                  directly, but keep the generated{" "}
-                  <span className="font-mono">--gateway-cert-sha256</span> fingerprint.
-                </p>
-                <Tabs defaultValue="curl">
-                  <TabsList>
-                    <TabsTrigger value="curl">curl</TabsTrigger>
-                    <TabsTrigger value="wget">wget</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="curl" className="mt-2">
-                    <CopyCodeBlock
-                      label="curl command"
-                      value={curlCommand}
-                      copyValue={copyCommandValue(curlCommand)}
-                      className="[&>p]:hidden"
-                    />
-                  </TabsContent>
-                  <TabsContent value="wget" className="mt-2">
-                    <CopyCodeBlock
-                      label="wget command"
-                      value={wgetCommand}
-                      copyValue={copyCommandValue(wgetCommand)}
-                      className="[&>p]:hidden"
-                    />
-                  </TabsContent>
+                {enrollmentTargets.length > 1 && (
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Use the public command for remote hosts and the local command for nodes on the
+                    private network.
+                  </p>
+                )}
+                <Tabs defaultValue={enrollmentTargets[0]?.id ?? "public"}>
+                  {enrollmentTargets.length > 1 && (
+                    <TabsList className="mb-2">
+                      {enrollmentTargets.map((target) => (
+                        <TabsTrigger key={target.id} value={target.id}>
+                          {target.label}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  )}
+                  {enrollmentTargets.map((target) => {
+                    const curlCommand = commandForTarget(target.gateway, "curl");
+                    const wgetCommand = commandForTarget(target.gateway, "wget");
+                    return (
+                      <TabsContent key={target.id} value={target.id} className="mt-0">
+                        <Tabs defaultValue="curl">
+                          <TabsList>
+                            <TabsTrigger value="curl">curl</TabsTrigger>
+                            <TabsTrigger value="wget">wget</TabsTrigger>
+                          </TabsList>
+                          <TabsContent value="curl" className="mt-2">
+                            <CopyCodeBlock
+                              label="curl command"
+                              value={curlCommand}
+                              copyValue={copyCommandValue(curlCommand)}
+                              className="[&>p]:hidden"
+                            />
+                          </TabsContent>
+                          <TabsContent value="wget" className="mt-2">
+                            <CopyCodeBlock
+                              label="wget command"
+                              value={wgetCommand}
+                              copyValue={copyCommandValue(wgetCommand)}
+                              className="[&>p]:hidden"
+                            />
+                          </TabsContent>
+                        </Tabs>
+                      </TabsContent>
+                    );
+                  })}
                 </Tabs>
               </div>
 

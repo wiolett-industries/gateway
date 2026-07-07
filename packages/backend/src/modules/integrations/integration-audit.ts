@@ -27,6 +27,18 @@ export const GITLAB_AUDIT_ACTIONS = {
 
 export type GitLabAuditAction = (typeof GITLAB_AUDIT_ACTIONS)[keyof typeof GITLAB_AUDIT_ACTIONS];
 
+export const CLOUDFLARE_AUDIT_ACTIONS = {
+  connectorCreate: 'connector.cloudflare.create',
+  connectorUpdate: 'connector.cloudflare.update',
+  connectorDelete: 'connector.cloudflare.delete',
+  connectorTokenRotate: 'connector.cloudflare.token.rotate',
+  connectorTest: 'connector.cloudflare.test',
+  connectorSync: 'connector.cloudflare.sync',
+  zoneList: 'connector.cloudflare.zone.list',
+} as const;
+
+export type CloudflareAuditAction = (typeof CLOUDFLARE_AUDIT_ACTIONS)[keyof typeof CLOUDFLARE_AUDIT_ACTIONS];
+
 const SECRET_KEY_RE = /(?:token|secret|password|value|privateKey|private_key|webhookSecret|webhook_secret)/i;
 const DIFF_LIKE_KEY_RE = /(?:diff|patch|content)/i;
 

@@ -43,6 +43,44 @@ describe('UpdateAuthProvisioningSettingsSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts gateway endpoint settings', () => {
+    const result = UpdateAuthProvisioningSettingsSchema.safeParse({
+      generalSettings: {
+        gatewayPublicIps: ['203.0.113.10', '2001:db8::10'],
+        gatewayGrpcPublicTarget: 'gateway.example.com:9443',
+        gatewayGrpcLocalIp: '10.0.0.5:9443',
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects hostnames for gateway public IPs and local gRPC IP override', () => {
+    const publicIpResult = UpdateAuthProvisioningSettingsSchema.safeParse({
+      generalSettings: {
+        gatewayPublicIps: ['gateway.example.com'],
+      },
+    });
+    const localIpResult = UpdateAuthProvisioningSettingsSchema.safeParse({
+      generalSettings: {
+        gatewayGrpcLocalIp: 'local.gateway.example.com',
+      },
+    });
+
+    expect(publicIpResult.success).toBe(false);
+    expect(localIpResult.success).toBe(false);
+  });
+
+  it('rejects URL-like public gRPC targets', () => {
+    const result = UpdateAuthProvisioningSettingsSchema.safeParse({
+      generalSettings: {
+        gatewayGrpcPublicTarget: 'https://gateway.example.com:9443/path',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('rejects invalid general file upload limit settings', () => {
     const result = UpdateAuthProvisioningSettingsSchema.safeParse({
       generalSettings: {

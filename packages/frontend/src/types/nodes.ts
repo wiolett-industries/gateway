@@ -105,6 +105,16 @@ export interface CreateNodeResponse {
   node: Node;
   enrollmentToken: string;
   gatewayCertSha256: string;
+  gatewayEnrollmentTargets?: {
+    public?: {
+      label: string;
+      gateway: string | null;
+    };
+    local?: {
+      label: string;
+      gateway: string;
+    };
+  };
 }
 
 /** Check if a node is outside the supported gateway/daemon minor-version window. */

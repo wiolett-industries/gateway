@@ -1,7 +1,7 @@
 import { boolean, index, integer, jsonb, pgTable, text, timestamp, unique, uuid, varchar } from 'drizzle-orm/pg-core';
 import { dockerRegistries } from './docker-registries.js';
 
-export type IntegrationProvider = 'gitlab';
+export type IntegrationProvider = 'gitlab' | 'cloudflare';
 export type IntegrationAllowlistMode = 'selected' | 'all_visible';
 export type IntegrationSyncStatus = 'never' | 'idle' | 'running' | 'success' | 'error';
 export type IntegrationAllowlistEntryType = 'group' | 'project';
@@ -19,7 +19,15 @@ export interface IntegrationConnectorSettings {
   cloneTimeoutSeconds: number;
 }
 
+export interface CloudflareConnectorSettings {
+  autoSyncEnabled: boolean;
+  autoSyncIntervalSeconds: number;
+  defaultTtl: number;
+  defaultProxied: boolean;
+}
+
 export type IntegrationConnectorCapabilities = Record<string, boolean>;
+export type IntegrationConnectorSettingsValue = IntegrationConnectorSettings | CloudflareConnectorSettings;
 
 export const integrationConnectors = pgTable(
   'integration_connectors',
@@ -35,7 +43,7 @@ export const integrationConnectors = pgTable(
       .$type<IntegrationAllowlistMode>()
       .notNull()
       .default('selected'),
-    settings: jsonb('settings').$type<IntegrationConnectorSettings>().notNull().default({
+    settings: jsonb('settings').$type<IntegrationConnectorSettingsValue>().notNull().default({
       autoSyncEnabled: true,
       autoSyncIntervalSeconds: 900,
       cloneShallow: true,
@@ -62,6 +70,31 @@ export const integrationConnectors = pgTable(
     index('integration_connector_provider_idx').on(table.provider),
     index('integration_connector_enabled_idx').on(table.enabled),
     index('integration_connector_sync_idx').on(table.provider, table.syncStatus, table.syncNextRetryAt),
+  ]
+);
+
+export const integrationConnectorCloudflareZones = pgTable(
+  'integration_connector_cloudflare_zones',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    connectorId: uuid('connector_id')
+      .notNull()
+      .references(() => integrationConnectors.id, { onDelete: 'cascade' }),
+    remoteId: varchar('remote_id', { length: 128 }).notNull(),
+    name: text('name').notNull(),
+    status: varchar('status', { length: 64 }),
+    accountId: varchar('account_id', { length: 128 }),
+    accountName: text('account_name'),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('integration_cloudflare_zone_connector_remote_unique').on(table.connectorId, table.remoteId),
+    unique('integration_cloudflare_zone_connector_name_unique').on(table.connectorId, table.name),
+    index('integration_cloudflare_zone_connector_idx').on(table.connectorId),
+    index('integration_cloudflare_zone_name_idx').on(table.name),
   ]
 );
 

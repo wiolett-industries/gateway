@@ -45,6 +45,7 @@ import type {
   GitLabConnector,
   GitLabConnectorSettings,
 } from "@/types/integrations";
+import { CloudflareIntegrationsSection } from "./CloudflareIntegrationsSection";
 
 const DEFAULT_SETTINGS: GitLabConnectorSettings = {
   autoSyncEnabled: true,
@@ -149,6 +150,15 @@ function emptyForm() {
 }
 
 export function IntegrationsSection() {
+  return (
+    <div className="space-y-6">
+      <CloudflareIntegrationsSection />
+      <GitLabIntegrationsSection />
+    </div>
+  );
+}
+
+function GitLabIntegrationsSection() {
   const { hasScope } = useAuthStore();
   const canManage = hasScope("integrations:gitlab:manage");
   const [connectors, setConnectors] = useState<GitLabConnector[]>(
