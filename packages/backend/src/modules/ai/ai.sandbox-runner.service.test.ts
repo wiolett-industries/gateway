@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import { AISandboxRunnerService } from './ai.sandbox-runner.service.js';
 
 function dockerAvailable(): boolean {
   try {
+    if (process.platform !== 'linux' || !existsSync('/proc/self/fd')) return false;
     execFileSync('docker', ['info'], { stdio: 'ignore' });
     execFileSync('docker', ['image', 'inspect', 'alpine:3.20'], { stdio: 'ignore' });
     return true;
