@@ -23,6 +23,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:view',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_list_projects',
@@ -40,6 +41,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:projects:view',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_get_project',
@@ -49,6 +51,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:projects:view',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_search_projects',
@@ -66,6 +69,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:projects:view',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_list_repository_tree',
@@ -84,6 +88,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:repo:read',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context', maxBytes: 24000 },
   },
   {
     name: 'gitlab_read_file',
@@ -104,6 +109,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:repo:read',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
   {
     name: 'gitlab_commit_files',
@@ -151,6 +157,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:ci:view',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_update_ci_config',
@@ -184,6 +191,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:ci:view',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_get_pipeline',
@@ -197,6 +205,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:ci:view',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_get_pipeline_jobs',
@@ -210,6 +219,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:ci:view',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_get_job_log',
@@ -223,6 +233,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:ci:view',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
   {
     name: 'gitlab_list_project_variables',
@@ -232,6 +243,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:variables:view',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_set_project_variable',
@@ -256,6 +268,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:variables:edit',
     invalidateStores: [],
+    historyRetention: { mode: 'never_full' },
   },
   {
     name: 'gitlab_delete_project_variable',
@@ -278,6 +291,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:webhooks:manage',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_create_or_update_project_webhook',
@@ -302,6 +316,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:webhooks:manage',
     invalidateStores: [],
+    historyRetention: { mode: 'never_full' },
   },
   {
     name: 'gitlab_delete_project_webhook',
@@ -324,6 +339,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:registry:view',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'gitlab_create_deploy_token',
@@ -344,6 +360,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:registry:manage',
     invalidateStores: [],
+    historyRetention: { mode: 'never_full' },
   },
   {
     name: 'gitlab_clone_repository_to_sandbox',

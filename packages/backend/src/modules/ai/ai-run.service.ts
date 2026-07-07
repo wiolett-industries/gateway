@@ -43,6 +43,15 @@ export interface AIAssistantDeltaEvent {
   version: number;
 }
 
+export interface AIAssistantCommentDeltaEvent {
+  type: 'assistant.comment_delta';
+  userId: string;
+  conversationId: string;
+  runId: string;
+  content: string;
+  version: number;
+}
+
 export interface CreateAIRunInput {
   conversationId: string;
   userId: string;
@@ -55,6 +64,13 @@ export interface StartUserRunInput {
   userId: string;
   title: string;
   userMessage: Record<string, unknown>;
+  clientCommandId: string;
+  lastContext?: Record<string, unknown> | null;
+}
+
+export interface StartContextCompactionInput {
+  conversationId: string;
+  userId: string;
   clientCommandId: string;
   lastContext?: Record<string, unknown> | null;
 }
@@ -122,6 +138,8 @@ export class AIRunService {
         this.publishConversationChanged(userId, conversationId, invalidatedStores),
       (userId, conversationId, runId, content, version) =>
         this.publishAssistantDelta(userId, conversationId, runId, content, version),
+      (userId, conversationId, runId, content, version) =>
+        this.publishAssistantCommentDelta(userId, conversationId, runId, content, version),
       conversationSearchService
     );
   }
@@ -206,6 +224,68 @@ export class AIRunService {
 
     this.publishConversationChanged(input.userId, result.conversationId);
     this.conversationSearchService?.rebuildConversationIndexBestEffort(input.userId, result.conversationId);
+    return result;
+  }
+
+  async startContextCompactionRun(input: StartContextCompactionInput): Promise<StartUserRunResult> {
+    const existingByCommand = await this.findRunByCommand(input.userId, input.conversationId, input.clientCommandId);
+    if (existingByCommand) {
+      return {
+        conversationId: existingByCommand.conversationId,
+        userMessageId: existingByCommand.activeMessageId,
+        run: existingByCommand,
+        duplicate: true,
+      };
+    }
+
+    const result = await this.db.transaction(async (tx) => {
+      const conversation = await getOwnedConversation(tx, input.userId, input.conversationId);
+      if (!conversation) throw new AppError(404, 'AI_CONVERSATION_NOT_FOUND', 'AI conversation not found');
+
+      const existingInTransaction = await findRunByCommand(tx, input.userId, conversation.id, input.clientCommandId);
+      if (existingInTransaction) {
+        return {
+          conversationId: existingInTransaction.conversationId,
+          userMessageId: existingInTransaction.activeMessageId,
+          run: existingInTransaction,
+          duplicate: true,
+        };
+      }
+
+      await assertConversationCanCompact(tx, conversation.id);
+
+      const activeRun = await getActiveRunForUpdate(tx, conversation.id);
+      if (activeRun) {
+        throw new AppError(409, 'AI_RUN_ACTIVE', 'Conversation already has an active AI run');
+      }
+
+      const now = new Date();
+      const [run] = await tx
+        .insert(aiRuns)
+        .values({
+          conversationId: conversation.id,
+          userId: input.userId,
+          clientCommandId: input.clientCommandId,
+          activeMessageId: null,
+          status: 'queued',
+          updatedAt: now,
+        })
+        .returning();
+
+      await tx
+        .update(aiConversations)
+        .set({ lastContext: input.lastContext ?? conversation.lastContext, updatedAt: now })
+        .where(eq(aiConversations.id, conversation.id));
+
+      return {
+        conversationId: conversation.id,
+        userMessageId: null,
+        run,
+        duplicate: false,
+      };
+    });
+
+    this.publishConversationChanged(input.userId, result.conversationId);
     return result;
   }
 
@@ -440,6 +520,22 @@ export class AIRunService {
     await assertOwnedConversation(this.db, input.userId, input.conversationId);
     const now = new Date();
 
+    const [current] = await this.db
+      .select()
+      .from(aiRuns)
+      .where(
+        and(
+          eq(aiRuns.id, input.runId),
+          eq(aiRuns.conversationId, input.conversationId),
+          eq(aiRuns.userId, input.userId)
+        )
+      )
+      .limit(1);
+    if (!current) throw new AppError(404, 'AI_RUN_NOT_FOUND', 'AI run not found');
+    if (current.activeMessageId === null && ACTIVE_RUN_STATUSES.includes(current.status)) {
+      throw new AppError(409, 'AI_COMPACTION_ACTIVE', 'Context compaction cannot be stopped');
+    }
+
     const [stopped] = await this.db
       .update(aiRuns)
       .set({
@@ -493,25 +589,38 @@ export class AIRunService {
       return { run: stopped, duplicate: false };
     }
 
-    const rows = await this.db
-      .select()
-      .from(aiRuns)
-      .where(
-        and(
-          eq(aiRuns.id, input.runId),
-          eq(aiRuns.conversationId, input.conversationId),
-          eq(aiRuns.userId, input.userId)
-        )
-      )
-      .limit(1);
-    const existing = rows[0];
-    if (!existing) throw new AppError(404, 'AI_RUN_NOT_FOUND', 'AI run not found');
-    if (existing.status === 'stopped') return { run: existing, duplicate: true };
+    if (current.status === 'stopped') return { run: current, duplicate: true };
     throw new AppError(409, 'AI_RUN_NOT_ACTIVE', 'AI run is no longer active');
+  }
+
+  async stopActiveRunForRollback(input: {
+    conversationId: string;
+    userId: string;
+  }): Promise<{ run: AIRun; duplicate: boolean } | null> {
+    await assertOwnedConversation(this.db, input.userId, input.conversationId);
+    const activeRun = await this.getActiveRun(input.conversationId);
+    if (!activeRun) return null;
+    if (activeRun.activeMessageId === null) {
+      throw new AppError(409, 'AI_COMPACTION_ACTIVE', 'Context compaction cannot be stopped');
+    }
+    try {
+      return await this.stopRun({
+        conversationId: input.conversationId,
+        runId: activeRun.id,
+        userId: input.userId,
+      });
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'AI_RUN_NOT_ACTIVE') return null;
+      throw error;
+    }
   }
 
   startRunExecution(user: User, runId: string): void {
     this.executor.startRunExecution(user, runId);
+  }
+
+  startContextCompaction(user: User, runId: string, trigger: 'manual' | 'auto'): void {
+    this.executor.startContextCompaction(user, runId, trigger);
   }
 
   async getRuntimeSnapshot(conversationId: string): Promise<RuntimeSnapshot> {
@@ -673,6 +782,24 @@ export class AIRunService {
     } satisfies AIAssistantDeltaEvent;
     this.eventBus?.publish(aiUserConversationsChangedChannel(userId), event);
   }
+
+  private publishAssistantCommentDelta(
+    userId: string,
+    conversationId: string,
+    runId: string,
+    content: string,
+    version: number
+  ): void {
+    const event = {
+      type: 'assistant.comment_delta',
+      userId,
+      conversationId,
+      runId,
+      content,
+      version,
+    } satisfies AIAssistantCommentDeltaEvent;
+    this.eventBus?.publish(aiUserConversationsChangedChannel(userId), event);
+  }
 }
 
 type DbLike = Pick<DrizzleClient, 'select' | 'insert' | 'update'>;
@@ -797,6 +924,19 @@ async function assertConversationCanAcceptUserTurn(db: DbLike, conversationId: s
   }
   if (status.status === 'context_blocked') {
     throw new AppError(409, 'AI_CONVERSATION_CONTEXT_BLOCKED', status.blockReason ?? 'This conversation is blocked');
+  }
+}
+
+async function assertConversationCanCompact(db: DbLike, conversationId: string): Promise<void> {
+  const rows = await db
+    .select({ uiMessage: aiConversationMessages.uiMessage })
+    .from(aiConversationMessages)
+    .where(eq(aiConversationMessages.conversationId, conversationId))
+    .orderBy(desc(aiConversationMessages.sequence))
+    .limit(50);
+  const status = deriveConversationStatus(rows.map((row) => row.uiMessage));
+  if (status.status === 'ended') {
+    throw new AppError(409, 'AI_CONVERSATION_ENDED', status.blockReason ?? 'This conversation has ended');
   }
 }
 

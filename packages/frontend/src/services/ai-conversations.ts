@@ -93,9 +93,10 @@ export async function renameConversation(id: string, title: string): Promise<Sav
 
 export async function rollbackConversationToMessage(
   id: string,
-  messageId: string
+  messageId: string,
+  activeRunId?: string | null
 ): Promise<{ message: AIMessage; conversation: SavedAIConversation }> {
-  const result = await api.rollbackAIConversationToMessage(id, messageId);
+  const result = await api.rollbackAIConversationToMessage(id, messageId, activeRunId);
   return {
     message: result.message,
     conversation: {

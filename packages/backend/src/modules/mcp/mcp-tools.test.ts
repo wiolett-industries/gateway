@@ -90,13 +90,23 @@ describe('MCP tool scope filtering', () => {
 
   it('never exposes browser-session-only current-user tools through MCP', () => {
     expect(toolNames(['feat:ai:use'])).not.toEqual(
-      expect.arrayContaining(['manage_ai_conversation', 'manage_oauth_authorization', 'manage_api_token'])
+      expect.arrayContaining([
+        'get_current_context',
+        'end_conversation',
+        'search_chats',
+        'find_in_chat',
+        'read_chat_slice',
+        'list_projects',
+        'manage_ai_conversation',
+        'manage_oauth_authorization',
+        'manage_api_token',
+      ])
     );
   });
 
-  it('keeps wait available as a safe MCP coordination tool without delegated scopes', () => {
-    expect(toolNames([])).toContain('wait');
-    expect(toolByName([], 'wait')?.destructive).toBe(false);
+  it('never exposes assistant-only coordination tools through MCP', () => {
+    expect(toolNames([])).not.toContain('wait');
+    expect(toolByName(['feat:ai:use'], 'wait')).toBeUndefined();
   });
 
   it('advertises Docker folder tools for every Docker resource view scope', () => {

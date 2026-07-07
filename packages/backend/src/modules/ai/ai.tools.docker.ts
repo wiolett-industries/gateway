@@ -460,6 +460,7 @@ export const DOCKER_AI_TOOLS: AIToolDefinition[] = [
     category: 'Docker',
     requiredScope: 'docker:containers:view',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
 
   // ── Docker: Images ──
@@ -703,5 +704,6 @@ export const DOCKER_AI_TOOLS: AIToolDefinition[] = [
     category: 'Docker',
     requiredScope: 'docker:containers:view',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
 ];

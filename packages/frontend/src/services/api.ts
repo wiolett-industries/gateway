@@ -1026,7 +1026,8 @@ class ApiClient extends withIntegrationsApi(
 
   async rollbackAIConversationToMessage(
     id: string,
-    messageId: string
+    messageId: string,
+    activeRunId?: string | null
   ): Promise<{
     message: AIMessage;
     conversation: {
@@ -1068,7 +1069,10 @@ class ApiClient extends withIntegrationsApi(
       };
     }>(`/ai/conversations/${id}/rollback`, {
       method: "POST",
-      body: JSON.stringify({ messageId }),
+      body: JSON.stringify({
+        messageId,
+        ...(activeRunId ? { activeRunId } : {}),
+      }),
     });
     return res.data;
   }

@@ -7,7 +7,7 @@ import {
   SquarePen,
   TerminalSquare,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AIMessageAttachment, AIMessage as AIMessageType, AIToolCall } from "@/types/ai";
@@ -24,11 +24,12 @@ interface AIMessageProps {
     content: string,
     attachments: AIMessageAttachment[]
   ) => void;
+  editUserMessageDisabled?: boolean;
 }
 
 type ToolCallRenderItem =
   | { type: "single"; toolCall: AIToolCall }
-  | { type: "finished-group"; toolCalls: AIToolCall[] };
+  | { type: "tool-group"; key: string; toolCalls: AIToolCall[] };
 
 interface ArtifactAttachment {
   artifactId?: string;
@@ -41,34 +42,39 @@ interface ArtifactAttachment {
 
 type ArtifactPreviewKind = "image" | "text" | null;
 
-function isGroupableFinishedToolCall(toolCall: AIToolCall): boolean {
-  return toolCall.status === "completed" || toolCall.status === "failed";
+function isGroupableToolCall(toolCall: AIToolCall): boolean {
+  if (toolCall.name === "compact_context") return false;
+  return (
+    toolCall.status === "completed" || toolCall.status === "failed" || toolCall.status === "running"
+  );
 }
 
 function buildToolCallRenderItems(toolCalls: AIToolCall[]): ToolCallRenderItem[] {
   const items: ToolCallRenderItem[] = [];
-  let finishedRun: AIToolCall[] = [];
+  let toolRun: AIToolCall[] = [];
 
-  const flushFinishedRun = () => {
-    if (finishedRun.length === 1) {
-      items.push({ type: "single", toolCall: finishedRun[0] });
-    } else if (finishedRun.length > 1) {
-      items.push({ type: "finished-group", toolCalls: finishedRun });
+  const flushToolRun = () => {
+    if (toolRun.length === 1 && toolRun[0].status !== "running") {
+      items.push({ type: "single", toolCall: toolRun[0] });
+    } else if (toolRun.length > 1) {
+      items.push({ type: "tool-group", key: toolRun[0].id, toolCalls: toolRun });
+    } else if (toolRun.length === 1) {
+      items.push({ type: "tool-group", key: toolRun[0].id, toolCalls: toolRun });
     }
-    finishedRun = [];
+    toolRun = [];
   };
 
   for (const toolCall of toolCalls) {
-    if (isGroupableFinishedToolCall(toolCall)) {
-      finishedRun.push(toolCall);
+    if (isGroupableToolCall(toolCall)) {
+      toolRun.push(toolCall);
       continue;
     }
 
-    flushFinishedRun();
+    flushToolRun();
     items.push({ type: "single", toolCall });
   }
 
-  flushFinishedRun();
+  flushToolRun();
   return items;
 }
 
@@ -79,9 +85,14 @@ export function AIMessage({
   onReject,
   onAnswer,
   onEditUserMessage,
+  editUserMessageDisabled = false,
 }: AIMessageProps) {
   const content = typeof message.content === "string" ? message.content : "";
   const toolCallItems = message.toolCalls ? buildToolCallRenderItems(message.toolCalls) : [];
+  const hasCompactContextTool =
+    message.toolCalls?.some((tc) => tc.name === "compact_context") ?? false;
+  const visibleContent = message.compactMarker && hasCompactContextTool ? "" : content;
+  const compactSummary = message.compactMarker ? content : undefined;
   const artifacts = extractArtifactAttachments(message.toolCalls);
   const showArtifacts = artifacts.length > 0 && !message.isStreaming;
 
@@ -129,7 +140,8 @@ export function AIMessage({
               onClick={() =>
                 onEditUserMessage(message.id, displayContent, message.attachments ?? [])
               }
-              className="flex h-5 w-5 items-center justify-center transition-colors hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
+              disabled={editUserMessageDisabled}
+              className="flex h-5 w-5 items-center justify-center transition-colors hover:text-foreground focus-visible:outline-none focus-visible:text-foreground disabled:pointer-events-none disabled:opacity-35"
               aria-label="Edit message"
             >
               <SquarePen className="h-3.5 w-3.5" />
@@ -153,14 +165,14 @@ export function AIMessage({
     );
   }
 
-  const hasContent = !!content;
+  const hasContent = !!visibleContent;
   const hasToolCalls = !!message.toolCalls?.length;
   const allToolsDone =
     hasToolCalls &&
     message.toolCalls!.every(
       (tc) => tc.status === "completed" || tc.status === "failed" || tc.status === "rejected"
     );
-  const hasError = content.includes("**Error:**");
+  const hasError = visibleContent.includes("**Error:**");
 
   const hasActiveQuestion =
     hasToolCalls &&
@@ -192,12 +204,10 @@ export function AIMessage({
                   onApprove={onApprove}
                   onReject={onReject}
                   onAnswer={onAnswer}
+                  compactSummary={compactSummary}
                 />
               ) : (
-                <FinishedToolCallsGroup
-                  key={item.toolCalls.map((tc) => tc.id).join(":")}
-                  toolCalls={item.toolCalls}
-                />
+                <ToolCallsGroup key={item.key} toolCalls={item.toolCalls} />
               )
             )}
           </div>
@@ -207,7 +217,7 @@ export function AIMessage({
         {hasContent && (
           <div className="prose dark:prose-invert !max-w-none break-words text-sm prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-ol:my-2 prose-pre:my-2 prose-table:my-0 prose-code:text-xs prose-pre:text-xs prose-pre:rounded-none prose-code:rounded-none prose-code:before:content-none prose-code:after:content-none [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0">
             <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {content}
+              {visibleContent}
             </Markdown>
           </div>
         )}
@@ -221,11 +231,6 @@ export function AIMessage({
               />
             ))}
           </div>
-        )}
-
-        {/* Streaming cursor after text */}
-        {message.isStreaming && hasContent && !hasError && (
-          <span className="inline-block h-3.5 w-1 animate-pulse bg-foreground/50 ml-0.5" />
         )}
 
         {/* Status indicators */}
@@ -442,14 +447,26 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function FinishedToolCallsGroup({ toolCalls }: { toolCalls: AIToolCall[] }) {
-  const groupKey = toolCalls.map((toolCall) => toolCall.id).join(":");
+function ToolCallsGroup({ toolCalls }: { toolCalls: AIToolCall[] }) {
+  const groupKey = toolCalls[0]?.id ?? "tool-group";
   const [expanded, setExpanded] = useState(() => wasToolGroupExpanded(groupKey));
+  const [showWaiting, setShowWaiting] = useState(false);
   const failedCount = toolCalls.filter((toolCall) => toolCall.status === "failed").length;
-  const groupLabel =
-    failedCount > 0
-      ? `Called ${toolCalls.length} tools, ${failedCount} failed`
-      : `Called ${toolCalls.length} tools`;
+  const waitingCount = toolCalls.filter((toolCall) => toolCall.status === "running").length;
+  const hasWaiting = waitingCount > 0;
+  const labelParts = [`Called ${toolCalls.length} ${pluralize("tool", toolCalls.length)}`];
+  if (failedCount > 0) labelParts.push(`${failedCount} failed`);
+  if (showWaiting && waitingCount > 0) labelParts.push(`${waitingCount} waiting`);
+  const groupLabel = labelParts.join(", ");
+
+  useEffect(() => {
+    if (!hasWaiting) {
+      setShowWaiting(false);
+      return;
+    }
+    const timeout = window.setTimeout(() => setShowWaiting(true), 50);
+    return () => window.clearTimeout(timeout);
+  }, [hasWaiting]);
 
   return (
     <div className="my-0.5 text-sm">
@@ -465,7 +482,7 @@ function FinishedToolCallsGroup({ toolCalls }: { toolCalls: AIToolCall[] }) {
         className="group flex cursor-pointer items-center gap-2 py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:text-foreground"
       >
         <TerminalSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
-        <span className="truncate">{groupLabel}</span>
+        <span className={`truncate ${showWaiting ? "thinking-shimmer" : ""}`}>{groupLabel}</span>
         {expanded ? (
           <ChevronDown className="-ml-1 h-3 w-3 shrink-0 opacity-70 transition-opacity" />
         ) : (
@@ -490,6 +507,10 @@ function FinishedToolCallsGroup({ toolCalls }: { toolCalls: AIToolCall[] }) {
 
 const expandedToolGroupKeys = new Set<string>();
 
+function pluralize(word: string, count: number): string {
+  return count === 1 ? word : `${word}s`;
+}
+
 function wasToolGroupExpanded(groupKey: string): boolean {
   if (expandedToolGroupKeys.has(groupKey)) return true;
   for (const expandedKey of expandedToolGroupKeys) {
@@ -513,27 +534,6 @@ function ThinkingIndicator({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-1.5 py-1 text-sm text-muted-foreground">
       <span className="thinking-shimmer">{label}</span>
-      <style>{`
-        .thinking-shimmer {
-          background: linear-gradient(
-            90deg,
-            currentColor 0%,
-            currentColor 40%,
-            var(--color-foreground) 50%,
-            currentColor 60%,
-            currentColor 100%
-          );
-          background-size: 200% 100%;
-          -webkit-background-clip: text;
-          background-clip: text;
-          -webkit-text-fill-color: transparent;
-          animation: shimmer 1.5s linear infinite;
-        }
-        @keyframes shimmer {
-          0% { background-position: 100% 0; }
-          100% { background-position: -100% 0; }
-        }
-      `}</style>
     </div>
   );
 }

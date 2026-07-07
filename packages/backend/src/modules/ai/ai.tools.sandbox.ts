@@ -19,6 +19,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
     category: 'Sandbox',
     requiredScope: 'ai:sandbox:use',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
   {
     name: 'run_process',
@@ -38,6 +39,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
     category: 'Sandbox',
     requiredScope: 'ai:sandbox:use',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
   {
     name: 'fetch',
@@ -54,6 +56,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
     category: 'Sandbox',
     requiredScope: 'ai:sandbox:use',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
   {
     name: 'download_artifact',
@@ -75,6 +78,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
     category: 'Sandbox',
     requiredScope: 'ai:sandbox:use',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
   {
     name: 'read_artifact',
@@ -95,6 +99,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
     category: 'Sandbox',
     requiredScope: 'ai:sandbox:use',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
   {
     name: 'send_artifact',
@@ -114,6 +119,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
     category: 'Sandbox',
     requiredScope: 'ai:sandbox:use',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
   {
     name: 'read_process_output',
@@ -130,6 +136,7 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
     category: 'Sandbox',
     requiredScope: 'ai:sandbox:use',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
   {
     name: 'write_process_stdin',

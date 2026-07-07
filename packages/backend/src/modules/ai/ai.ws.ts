@@ -109,7 +109,7 @@ function subscribeToUserRuntime(ws: WSContext, state: WSConnectionState, userId:
       invalidatedStores?: string[];
     };
     if (event.userId !== userId || typeof event.conversationId !== 'string') return;
-    if (event.type === 'assistant.delta') {
+    if (event.type === 'assistant.delta' || event.type === 'assistant.comment_delta') {
       if (
         state.subscribedConversationIds.has(event.conversationId) &&
         typeof event.runId === 'string' &&
@@ -117,7 +117,7 @@ function subscribeToUserRuntime(ws: WSContext, state: WSConnectionState, userId:
         typeof event.version === 'number'
       ) {
         send(ws, {
-          type: 'assistant.delta',
+          type: event.type,
           conversationId: event.conversationId,
           runId: event.runId,
           content: event.content,
@@ -375,6 +375,51 @@ export function createWSHandlers() {
           }
         } catch (error) {
           sendCommandError(ws, msg, error, 'Failed to send AI message');
+        }
+        return;
+      }
+
+      if (msg.type === 'conversation.compact') {
+        try {
+          const rateCheck = await checkRateLimit(user.id);
+          if (!rateCheck.allowed) {
+            const code = rateCheck.unavailable ? 'RATE_LIMIT_UNAVAILABLE' : 'RATE_LIMITED';
+            throw new AppError(
+              rateCheck.unavailable ? 503 : 429,
+              code,
+              rateCheck.unavailable ? 'Gateway is temporarily unavailable' : 'AI rate limit exceeded',
+              rateCheck.unavailable ? undefined : { retryAfter: rateCheck.retryAfter }
+            );
+          }
+
+          const runService = container.resolve(AIRunService);
+          const result = await runService.startContextCompactionRun({
+            conversationId: msg.conversationId,
+            userId: user.id,
+            clientCommandId: msg.clientCommandId,
+            lastContext: msg.context ? { ...msg.context } : null,
+          });
+
+          send(ws, {
+            type: 'command.ack',
+            commandType: msg.type,
+            clientCommandId: msg.clientCommandId,
+            conversationId: result.conversationId,
+            runId: result.run.id,
+            duplicate: result.duplicate,
+          });
+          state.subscribedConversationIds.add(result.conversationId);
+          const snapshot = await sendConversationSnapshot(ws, user.id, result.conversationId);
+          send(ws, {
+            type: 'run.status_changed',
+            conversationId: result.conversationId,
+            run: snapshot.runtime.activeRun,
+          });
+          if (!result.duplicate) {
+            runService.startContextCompaction(user, result.run.id, 'manual');
+          }
+        } catch (error) {
+          sendCommandError(ws, msg, error, 'Failed to compact AI conversation');
         }
         return;
       }

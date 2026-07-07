@@ -39,6 +39,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Discovery',
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'get_current_context',
@@ -52,6 +53,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Discovery',
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'wait',
@@ -73,6 +75,26 @@ export const AI_TOOLS: AIToolDefinition[] = [
     },
     destructive: false,
     category: 'Discovery',
+    requiredScope: 'feat:ai:use',
+    invalidateStores: [],
+  },
+  {
+    name: 'send_comment',
+    description:
+      'Send a short user-visible progress comment during a long multi-tool task, then continue working. Use this proactively before long tool sequences and when instructed that the tool-round limit requires a comment. Call this tool by itself, without other tool calls in the same assistant turn.',
+    parameters: {
+      type: 'object',
+      properties: {
+        message: {
+          type: 'string',
+          description:
+            "Concise progress update in the user's language. Mention what you learned or what you are checking next. Do not include secrets.",
+        },
+      },
+      required: ['message'],
+    },
+    destructive: false,
+    category: 'Interaction',
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
   },
@@ -149,6 +171,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Discovery',
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'search_chats',
@@ -184,6 +207,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Conversation Retrieval',
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'find_in_chat',
@@ -202,6 +226,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Conversation Retrieval',
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'read_chat_slice',
@@ -226,6 +251,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Conversation Retrieval',
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
   {
     name: 'list_projects',
@@ -242,6 +268,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Conversation Retrieval',
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
   },
 
   // ── PKI ──
@@ -1211,6 +1238,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Settings',
     requiredScope: 'feat:ai:use',
     invalidateStores: ['settings'],
+    historyRetention: { mode: 'never_full' },
   },
 
   // ── Maintenance and Control Plane ──
@@ -1516,6 +1544,7 @@ export const AI_TOOLS: AIToolDefinition[] = [
     category: 'Documentation',
     requiredScope: 'feat:ai:use',
     invalidateStores: [],
+    historyRetention: { mode: 'persistent_context', maxBytes: 32000 },
   },
 
   // ── Docker ──
@@ -1544,6 +1573,7 @@ const BASE_AI_TOOL_NAMES = new Set([
   'discover_tools',
   'get_current_context',
   'wait',
+  'send_comment',
   'end_conversation',
   'find_resource',
   'ask_question',

@@ -263,6 +263,7 @@ interface AIState {
   activeConversationId: string | null;
   sidebarActiveConversationId: string | null;
   activeRunId: string | null;
+  isCompactingContext: boolean;
   lastContext: PageContext | null;
   pendingApprovalToolCallId: string | null;
 
@@ -372,6 +373,7 @@ export interface AIConversationBlock {
 export function getConversationBlock(messages: AIMessage[]): AIConversationBlock | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
+    if (message.compactMarker) return null;
     if (message.conversationStatus) {
       return {
         status: message.conversationStatus,
@@ -382,9 +384,20 @@ export function getConversationBlock(messages: AIMessage[]): AIConversationBlock
   return null;
 }
 
+function activeModelMessages(messages: AIMessage[]): AIMessage[] {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].compactMarker) {
+      const tailCount = Math.max(0, Math.trunc(messages[i].compactTailMessageCount ?? 0));
+      const tailStart = Math.max(0, i - tailCount);
+      return [messages[i], ...messages.slice(tailStart, i), ...messages.slice(i + 1)];
+    }
+  }
+  return messages;
+}
+
 function buildChatMessages(messages: AIMessage[]): ChatMessage[] {
   const result: ChatMessage[] = [];
-  for (const msg of messages) {
+  for (const msg of activeModelMessages(messages)) {
     if (msg.localOnly || msg.conversationStatus) continue;
     if (msg.role === "user") {
       result.push({ role: "user", content: msg.content, attachments: msg.attachments });
@@ -449,6 +462,31 @@ function estimateChatMessagesTokens(messages: ChatMessage[]): number {
     total += 4;
   }
   return total;
+}
+
+function trimChatMessagesToBudget(messages: ChatMessage[], maxTokens: number): ChatMessage[] {
+  if (estimateChatMessagesTokens(messages) <= maxTokens) return messages;
+
+  const kept: ChatMessage[] = [];
+  let usedTokens = 0;
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const messageTokens = estimateChatMessagesTokens([messages[i]]);
+    if (usedTokens + messageTokens > maxTokens) break;
+    kept.unshift(messages[i]);
+    usedTokens += messageTokens;
+  }
+
+  while (kept.length > 0 && kept[0].role === "tool") {
+    kept.shift();
+  }
+
+  if (kept.length === 0) {
+    const lastUser = messages.filter((message) => message.role === "user").pop();
+    if (lastUser) kept.push(lastUser);
+  }
+
+  return kept;
 }
 
 function contextEstimateCacheKey(context?: PageContext, conversationId?: string | null): string {
@@ -545,13 +583,15 @@ export async function getAIContextUsage(
   conversationId?: string | null
 ): Promise<AIContextUsage> {
   const chatMessages = buildChatMessages(messages);
-  const chatTokens = estimateChatMessagesTokens(chatMessages);
   const overhead = await resolveContextOverhead(context, conversationId);
   const overheadTokens = overhead.overheadTokens;
+  const messageBudget = overhead.limit - overhead.toolsTokens - overhead.systemTokens;
+  const effectiveChatMessages = trimChatMessagesToBudget(chatMessages, messageBudget);
+  const chatTokens = estimateChatMessagesTokens(effectiveChatMessages);
   const estimatedTokens = chatTokens + overheadTokens;
 
   return {
-    messageCount: chatMessages.length,
+    messageCount: effectiveChatMessages.length,
     estimatedTokens,
     limit: overhead.limit,
     percent: Math.round((estimatedTokens / overhead.limit) * 100),
@@ -583,6 +623,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
   activeConversationId: null,
   sidebarActiveConversationId: null,
   activeRunId: null,
+  isCompactingContext: false,
   lastContext: null,
   pendingApprovalToolCallId: null,
 
@@ -623,7 +664,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       if (connected && activeConversationId) {
         trySendWSMessage({ type: "conversation.subscribe", conversationId: activeConversationId });
       }
-      if (!connected) set({ isStreaming: false });
+      if (!connected) set({ isStreaming: false, isCompactingContext: false });
     });
     wsClient.onConnectionError((message) => {
       set({ connectionError: message, isConnecting: false });
@@ -645,7 +686,13 @@ export const useAIStore = create<AIState>()((set, get) => ({
   disconnect: () => {
     wsClient?.disconnect();
     wsClient = null;
-    set({ isConnected: false, isConnecting: false, connectionError: null, isStreaming: false });
+    set({
+      isConnected: false,
+      isConnecting: false,
+      connectionError: null,
+      isStreaming: false,
+      isCompactingContext: false,
+    });
   },
 
   sendMessage: (
@@ -668,6 +715,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
 
     set({
       isStreaming: true,
+      isCompactingContext: false,
       lastContext: context ?? null,
       pendingApprovalToolCallId: null,
       ...(options.startNewConversation
@@ -677,6 +725,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
             activeConversationId: null,
             sidebarActiveConversationId: null,
             activeRunId: null,
+            isCompactingContext: false,
           }
         : {}),
     });
@@ -696,6 +745,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
     } catch (error) {
       set((state) => ({
         isStreaming: false,
+        isCompactingContext: false,
         messages: appendLocalAssistantError(
           state.messages,
           `**Error:** ${error instanceof Error ? error.message : "Failed to send message"}`
@@ -840,6 +890,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
 
   stopStreaming: () => {
     const state = get();
+    if (state.isCompactingContext) return;
     if (state.activeConversationId && state.activeRunId) {
       trySendWSMessage({
         type: "run.stop",
@@ -868,6 +919,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       activeConversationId: null,
       sidebarActiveConversationId: null,
       activeRunId: null,
+      isCompactingContext: false,
       lastContext: null,
     });
   },
@@ -1005,6 +1057,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         activeConversationId: conversationId,
         sidebarActiveConversationId: conversationId,
         activeRunId: null,
+        isCompactingContext: false,
         lastContext: null,
         pendingApprovalToolCallId: null,
       });
@@ -1021,6 +1074,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         activeConversationId: conversation.id,
         sidebarActiveConversationId: conversation.id,
         activeRunId: null,
+        isCompactingContext: false,
         lastContext: conversation.lastContext,
       });
       trySendWSMessage({ type: "conversation.subscribe", conversationId });
@@ -1039,6 +1093,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         activeConversationId: null,
         sidebarActiveConversationId: null,
         activeRunId: null,
+        isCompactingContext: false,
         lastContext: null,
         pendingApprovalToolCallId: null,
       });
@@ -1062,6 +1117,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
               activeConversationId: null,
               sidebarActiveConversationId: null,
               activeRunId: null,
+              isCompactingContext: false,
               lastContext: null,
             }
           : {}),
@@ -1103,11 +1159,14 @@ export const useAIStore = create<AIState>()((set, get) => ({
 
   rollbackToMessage: async (messageId: string) => {
     const state = get();
-    if (!state.activeConversationId || state.isStreaming || state.activeRunId) return null;
+    if (!state.activeConversationId || state.isCompactingContext) return null;
     const existing = state.messages.find((message) => message.id === messageId);
     if (!existing || existing.role !== "user") return null;
 
-    const result = await rollbackConversationToMessage(state.activeConversationId, messageId);
+    const activeRunId = state.activeRunId;
+    const result = activeRunId
+      ? await rollbackConversationToMessage(state.activeConversationId, messageId, activeRunId)
+      : await rollbackConversationToMessage(state.activeConversationId, messageId);
     const messages = normalizeConversationMessages(
       result.conversation.messages,
       result.conversation.id
@@ -1118,6 +1177,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       activeConversationId: result.conversation.id,
       sidebarActiveConversationId: result.conversation.id,
       activeRunId: null,
+      isCompactingContext: false,
       lastContext: result.conversation.lastContext,
       pendingApprovalToolCallId: null,
       isStreaming: false,
@@ -1170,8 +1230,48 @@ export const useAIStore = create<AIState>()((set, get) => ({
         activeConversationId: null,
         sidebarActiveConversationId: null,
         activeRunId: null,
+        isCompactingContext: false,
         lastContext: null,
       });
+      return true;
+    }
+
+    if (cmd === "/compact") {
+      const { activeConversationId, lastContext } = get();
+      if (!activeConversationId) {
+        set((state) => ({
+          messages: appendLocalAssistantError(
+            state.messages,
+            "Open a saved conversation before compacting context."
+          ),
+        }));
+        return true;
+      }
+
+      const clientCommandId = generateId();
+      set({
+        isStreaming: true,
+        activeRunId: null,
+        isCompactingContext: true,
+        pendingApprovalToolCallId: null,
+      });
+      try {
+        sendWSMessage({
+          type: "conversation.compact",
+          conversationId: activeConversationId,
+          clientCommandId,
+          context: lastContext ?? undefined,
+        });
+      } catch (error) {
+        set((state) => ({
+          isStreaming: false,
+          isCompactingContext: false,
+          messages: appendLocalAssistantError(
+            state.messages,
+            `**Error:** ${error instanceof Error ? error.message : "Failed to compact context"}`
+          ),
+        }));
+      }
       return true;
     }
 
@@ -1240,6 +1340,7 @@ export function resetAIStateForAuthChange() {
     activeConversationId: null,
     sidebarActiveConversationId: null,
     activeRunId: null,
+    isCompactingContext: false,
     lastContext: null,
     pendingApprovalToolCallId: null,
   });
@@ -1280,6 +1381,7 @@ function handleWSMessage(
           if (msg.clientCommandId) pendingToolCommands.delete(msg.clientCommandId);
           set((state) => ({
             isStreaming: false,
+            isCompactingContext: false,
             messages: updateToolCallById(state.messages, pending.toolCallId, (tc) => ({
               ...tc,
               status: pending.previousStatus,
@@ -1293,6 +1395,7 @@ function handleWSMessage(
       }
       set((state) => ({
         isStreaming: false,
+        isCompactingContext: false,
         messages: appendLocalAssistantError(state.messages, `**Error:** ${msg.message}`),
       }));
       break;
@@ -1313,7 +1416,23 @@ function handleWSMessage(
       set((state) => ({
         activeRunId: msg.runId,
         isStreaming: true,
+        isCompactingContext: false,
         messages: applyAssistantDeltaToMessages(state.messages, msg),
+        recentConversations: patchRecentConversationRunStatus(
+          state.recentConversations,
+          msg.conversationId,
+          "running"
+        ),
+      }));
+      break;
+
+    case "assistant.comment_delta":
+      if (get().activeConversationId !== msg.conversationId) return;
+      set((state) => ({
+        activeRunId: msg.runId,
+        isStreaming: true,
+        isCompactingContext: false,
+        messages: applyAssistantCommentDeltaToMessages(state.messages, msg),
         recentConversations: patchRecentConversationRunStatus(
           state.recentConversations,
           msg.conversationId,
@@ -1333,6 +1452,9 @@ function handleWSMessage(
           ? {
               activeRunId: msg.run?.id ?? null,
               isStreaming: isActiveRunStatus(msg.run?.status),
+              isCompactingContext: Boolean(
+                msg.run && msg.run.activeMessageId === null && isActiveRunStatus(msg.run.status)
+              ),
             }
           : {}),
       }));
@@ -1372,17 +1494,18 @@ function projectConversationSnapshot(
         ? [snapshot.runtime.pendingQuestion]
         : [];
   const pendingQuestionToolCalls = pendingQuestions.map(pendingQuestionToToolCall);
-  const messages = applyConversationStatus(
-    preserveFreshRuntimeDraft(
-      attachRuntimeToolCallsToMessages(
-        normalizeSnapshotMessages(snapshot),
-        [...runtimeToolCalls, ...pendingQuestionToolCalls],
-        Boolean(snapshot.runtime.activeRun),
-        snapshot.runtime.activeRun?.id ?? null
-      ),
-      currentMessages,
-      snapshotDraftIsStale ? activeRunId : null
+  const attachedMessages = preserveFreshRuntimeDraft(
+    attachRuntimeToolCallsToMessages(
+      normalizeSnapshotMessages(snapshot),
+      [...runtimeToolCalls, ...pendingQuestionToolCalls],
+      Boolean(snapshot.runtime.activeRun),
+      snapshot.runtime.activeRun?.id ?? null
     ),
+    currentMessages,
+    snapshotDraftIsStale ? activeRunId : null
+  );
+  const messages = applyConversationStatus(
+    clearActiveToolBoundaryStreamingWhenTextStarted(attachedMessages, activeRunId),
     snapshot.conversation.id,
     snapshot.conversation.status,
     snapshot.conversation.blockReason
@@ -1394,6 +1517,11 @@ function projectConversationSnapshot(
     activeConversationId: snapshot.conversation.id,
     sidebarActiveConversationId: snapshot.conversation.id,
     activeRunId: snapshot.runtime.activeRun?.id ?? null,
+    isCompactingContext: Boolean(
+      snapshot.runtime.activeRun &&
+        snapshot.runtime.activeRun.activeMessageId === null &&
+        isActiveRunStatus(snapshot.runtime.activeRun.status)
+    ),
     lastContext: snapshot.conversation.lastContext,
     pendingApprovalToolCallId:
       snapshot.runtime.pendingApprovals[0]?.toolCallId ?? pendingQuestions[0]?.toolCallId ?? null,
@@ -1449,7 +1577,80 @@ function applyAssistantDeltaToMessages(
     content: `${current.content}${delta.content}`,
     isStreaming: true,
   };
+  return sortMessagesBySequence(
+    clearActiveToolBoundaryStreamingWhenTextStarted(nextMessages, delta.runId)
+  );
+}
+
+function applyAssistantCommentDeltaToMessages(
+  messages: AIMessage[],
+  delta: Extract<WSServerMessage, { type: "assistant.comment_delta" }>
+): AIMessage[] {
+  const previousVersion = assistantDraftVersions.get(delta.runId) ?? 0;
+  if (delta.version <= previousVersion) return messages;
+  assistantDraftVersions.set(delta.runId, delta.version);
+
+  const commentId = `${delta.runId}:comment`;
+  const nextMessages = [...messages];
+  let targetIndex = nextMessages.findIndex(
+    (message) => message.role === "assistant" && message.id === commentId
+  );
+  if (targetIndex === -1) {
+    const placeholderIndex = nextMessages.findIndex(
+      (message) =>
+        message.role === "assistant" &&
+        message.id === `${delta.runId}:runtime` &&
+        !message.content.trim() &&
+        !message.toolCalls?.length
+    );
+    if (placeholderIndex === -1) {
+      targetIndex = nextMessages.length;
+      nextMessages.push({
+        id: commentId,
+        role: "assistant",
+        content: "",
+        sequence: nextMessageSequence(nextMessages),
+        createdAt: nowIso(),
+        isStreaming: true,
+      });
+    } else {
+      targetIndex = placeholderIndex;
+      nextMessages[targetIndex] = {
+        ...nextMessages[targetIndex],
+        id: commentId,
+      };
+    }
+  }
+
+  const current = nextMessages[targetIndex];
+  nextMessages[targetIndex] = {
+    ...current,
+    content: `${current.content}${delta.content}`,
+    isStreaming: true,
+  };
   return sortMessagesBySequence(nextMessages);
+}
+
+function clearActiveToolBoundaryStreamingWhenTextStarted(
+  messages: AIMessage[],
+  activeRunId: string | null
+): AIMessage[] {
+  if (!activeRunId) return messages;
+  const activeTextStarted = messages.some(
+    (message) =>
+      message.role === "assistant" &&
+      (message.id === `${activeRunId}:runtime` || message.id === `${activeRunId}:draft`) &&
+      message.content.trim().length > 0
+  );
+  if (!activeTextStarted) return messages;
+
+  return messages.map((message) => {
+    const hasActiveRunToolCall = message.toolCalls?.some(
+      (toolCall) => toolCall.runId === activeRunId
+    );
+    if (!hasActiveRunToolCall) return message;
+    return { ...message, isStreaming: false };
+  });
 }
 
 function normalizeSnapshotMessages(snapshot: AIConversationRuntimeSnapshot): AIMessage[] {
@@ -1492,6 +1693,12 @@ function normalizeConversationMessage(
     toolCalls: Array.isArray(message.toolCalls)
       ? normalizeMessageToolCalls(message.toolCalls, id)
       : undefined,
+    compactMarker: message.compactMarker === true,
+    compactTailMessageCount:
+      typeof message.compactTailMessageCount === "number" &&
+      Number.isFinite(message.compactTailMessageCount)
+        ? Math.max(0, Math.trunc(message.compactTailMessageCount))
+        : undefined,
     conversationStatus: normalizeConversationBlockStatus(message.conversationStatus),
     blockReason: typeof message.blockReason === "string" ? message.blockReason : undefined,
     isStreaming: false,
@@ -1583,6 +1790,7 @@ function normalizeToolCallStatus(value: unknown): AIToolCall["status"] {
 function runtimeToolCallToUI(toolCall: AIRunToolCall): AIToolCall {
   return {
     id: toolCall.toolCallId,
+    runId: toolCall.runId,
     name: toolCall.toolName,
     arguments: toolCall.toolArgs,
     status: runtimeToolStatusToUI(toolCall.status),
@@ -1622,18 +1830,29 @@ function attachRuntimeToolCallsToMessages(
   if (toolCalls.length === 0 && !active) return messages;
   const nextMessages = [...messages];
   const unassignedToolCalls: AIToolCall[] = [];
+  let activeRunLiveToolCallAttached = false;
 
   for (const toolCall of toolCalls) {
     const existingToolCallMessageIndex = nextMessages.findIndex((message) =>
       message.toolCalls?.some((existingToolCall) => existingToolCall.id === toolCall.id)
     );
+    const belongsToActiveRun = Boolean(active && activeRunId && toolCall.runId === activeRunId);
+    const liveActiveToolCall = belongsToActiveRun && isLiveToolCall(toolCall);
     if (existingToolCallMessageIndex !== -1) {
+      const mergedToolCalls = mergeToolCalls(
+        nextMessages[existingToolCallMessageIndex].toolCalls ?? [],
+        [toolCall]
+      );
       nextMessages[existingToolCallMessageIndex] = {
         ...nextMessages[existingToolCallMessageIndex],
-        toolCalls: mergeToolCalls(nextMessages[existingToolCallMessageIndex].toolCalls ?? [], [
-          toolCall,
-        ]),
+        isStreaming: liveActiveToolCall
+          ? true
+          : belongsToActiveRun && !hasLiveActiveRunToolCall(mergedToolCalls, activeRunId)
+            ? false
+            : nextMessages[existingToolCallMessageIndex].isStreaming,
+        toolCalls: mergedToolCalls,
       };
+      if (liveActiveToolCall) activeRunLiveToolCallAttached = true;
       continue;
     }
 
@@ -1648,10 +1867,51 @@ function attachRuntimeToolCallsToMessages(
       unassignedToolCalls.push(toolCall);
       continue;
     }
+    if (liveActiveToolCall) activeRunLiveToolCallAttached = true;
+    const mergedToolCalls = mergeToolCalls(nextMessages[targetIndex].toolCalls ?? [], [toolCall]);
     nextMessages[targetIndex] = {
       ...nextMessages[targetIndex],
-      toolCalls: mergeToolCalls(nextMessages[targetIndex].toolCalls ?? [], [toolCall]),
+      isStreaming: liveActiveToolCall
+        ? true
+        : belongsToActiveRun && !hasLiveActiveRunToolCall(mergedToolCalls, activeRunId)
+          ? false
+          : nextMessages[targetIndex].isStreaming,
+      toolCalls: mergedToolCalls,
     };
+  }
+
+  if (unassignedToolCalls.length === 0) {
+    if (
+      active &&
+      activeRunId &&
+      !activeRunLiveToolCallAttached &&
+      findActiveRuntimeAssistantIndex(nextMessages, activeRunId) === -1
+    ) {
+      const sequence = nextMessageSequence(nextMessages);
+      nextMessages.push({
+        id: `${activeRunId}:runtime`,
+        role: "assistant",
+        content: "",
+        sequence,
+        createdAt: nowIso(),
+        isStreaming: true,
+      });
+    }
+    return sortMessagesBySequence(nextMessages);
+  }
+
+  if (!active) {
+    const sequence = nextMessageSequence(nextMessages);
+    nextMessages.push({
+      id: `toolcalls:${unassignedToolCalls.map((toolCall) => toolCall.id).join(":")}`,
+      role: "assistant",
+      content: "",
+      sequence,
+      createdAt: nowIso(),
+      isStreaming: false,
+      toolCalls: unassignedToolCalls,
+    });
+    return sortMessagesBySequence(nextMessages);
   }
 
   let targetIndex =
@@ -1690,6 +1950,14 @@ function attachRuntimeToolCallsToMessages(
     toolCalls: mergeToolCalls(nextMessages[targetIndex].toolCalls ?? [], unassignedToolCalls),
   };
   return sortMessagesBySequence(nextMessages);
+}
+
+function isLiveToolCall(toolCall: AIToolCall): boolean {
+  return toolCall.status === "running" || toolCall.status === "awaiting_approval";
+}
+
+function hasLiveActiveRunToolCall(toolCalls: AIToolCall[], activeRunId: string | null): boolean {
+  return toolCalls.some((toolCall) => toolCall.runId === activeRunId && isLiveToolCall(toolCall));
 }
 
 function findActiveRuntimeAssistantIndex(messages: AIMessage[], activeRunId: string): number {

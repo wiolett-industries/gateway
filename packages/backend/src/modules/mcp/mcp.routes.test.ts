@@ -275,10 +275,39 @@ describe('MCP tools', () => {
     expect(names).toContain('list_nodes');
     expect(names).not.toContain('create_node');
     expect(names).not.toContain('ask_question');
+    expect(names).not.toContain('get_current_context');
+    expect(names).not.toContain('end_conversation');
+    expect(names).not.toContain('search_chats');
+    expect(names).not.toContain('find_in_chat');
+    expect(names).not.toContain('read_chat_slice');
+    expect(names).not.toContain('list_projects');
     expect(names).not.toContain('internal_documentation');
     expect(names).not.toContain('web_search');
+    expect(names).not.toContain('wait');
+    expect(names).not.toContain('send_comment');
     expect(names).not.toContain('manage_ai_conversation');
     expect(names).not.toContain('manage_oauth_authorization');
+  });
+
+  it('does not execute assistant-only coordination tools through MCP', async () => {
+    registerOAuth(['feat:ai:use']);
+    const executeTool = vi.fn();
+    container.registerInstance(AIService, { executeTool } as unknown as AIService);
+
+    const wait = await mcpRequest('tools/call', {
+      name: 'wait',
+      arguments: { seconds: 1, reason: 'poll' },
+    });
+    const comment = await mcpRequest('tools/call', {
+      name: 'send_comment',
+      arguments: { message: 'Still checking.' },
+    });
+
+    expect(wait.body.result.isError).toBe(true);
+    expect(JSON.stringify(wait.body)).toContain('unavailable');
+    expect(comment.body.result.isError).toBe(true);
+    expect(JSON.stringify(comment.body)).toContain('unavailable');
+    expect(executeTool).not.toHaveBeenCalled();
   });
 
   it('does not call tools hidden by effective token scopes', async () => {

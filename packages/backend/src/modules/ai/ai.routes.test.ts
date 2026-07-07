@@ -10,6 +10,7 @@ import type { AppEnv, SessionData, User } from '@/types.js';
 import { aiRoutes } from './ai.routes.js';
 import { AISettingsService } from './ai.settings.service.js';
 import { AIConversationService } from './ai-conversation.service.js';
+import { AIRunService } from './ai-run.service.js';
 
 const USER: User = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -215,6 +216,8 @@ describe('AI routes session-only authentication', () => {
         checkpoint: null,
       },
     });
+    const stopActiveRunForRollback = vi.fn().mockResolvedValue(null);
+    container.registerInstance(AIRunService, { stopActiveRunForRollback } as unknown as AIRunService);
     container.registerInstance(AIConversationService, {
       rollbackToMessage,
     } as unknown as AIConversationService);
@@ -226,6 +229,10 @@ describe('AI routes session-only authentication', () => {
     });
 
     expect(response.status).toBe(200);
+    expect(stopActiveRunForRollback).toHaveBeenCalledWith({
+      conversationId: 'conversation-1',
+      userId: USER.id,
+    });
     expect(rollbackToMessage).toHaveBeenCalledWith(USER.id, 'conversation-1', 'message-1');
     expect(await response.json()).toMatchObject({
       data: {
@@ -233,6 +240,46 @@ describe('AI routes session-only authentication', () => {
         conversation: { id: 'conversation-1', messages: [] },
       },
     });
+  });
+
+  it('stops the active run before rolling a conversation back to an owned user message', async () => {
+    registerServices();
+    const rollbackToMessage = vi.fn().mockResolvedValue({
+      message: { id: 'message-1', role: 'user', content: 'hello' },
+      conversation: {
+        id: 'conversation-1',
+        title: 'debug session',
+        createdAt: new Date('2026-06-24T09:00:00Z'),
+        updatedAt: new Date('2026-06-24T09:01:00Z'),
+        folderId: null,
+        messageCount: 0,
+        messages: [],
+        lastContext: null,
+        discoveredToolsets: [],
+        checkpoint: null,
+      },
+    });
+    const stopActiveRunForRollback = vi.fn().mockResolvedValue({
+      run: { id: 'run-1' },
+      duplicate: false,
+    });
+    container.registerInstance(AIRunService, { stopActiveRunForRollback } as unknown as AIRunService);
+    container.registerInstance(AIConversationService, {
+      rollbackToMessage,
+    } as unknown as AIConversationService);
+
+    const response = await createApp().request('/api/ai/conversations/conversation-1/rollback', {
+      method: 'POST',
+      headers: { Cookie: 'session_id=session-1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageId: 'message-1', activeRunId: 'run-1' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(stopActiveRunForRollback).toHaveBeenCalledWith({
+      conversationId: 'conversation-1',
+      userId: USER.id,
+    });
+    expect(rollbackToMessage).toHaveBeenCalledWith(USER.id, 'conversation-1', 'message-1');
   });
 
   it('audits custom system prompt changes without storing raw prompt text', async () => {

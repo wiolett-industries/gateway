@@ -41,6 +41,7 @@ interface AIComposerProps {
   conversationId?: string | null;
   isStreaming: boolean;
   isConnected: boolean;
+  stopDisabled?: boolean;
   retryAfter?: number | null;
   approvalMode: AIApprovalMode;
   approvalModeLabel: string;
@@ -147,6 +148,7 @@ export function AIComposer({
   conversationId,
   isStreaming,
   isConnected,
+  stopDisabled = false,
   retryAfter,
   approvalMode,
   approvalModeLabel,
@@ -356,8 +358,9 @@ export function AIComposer({
               className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
               onClick={isStreaming ? onStop : onSend}
               disabled={
-                !isStreaming &&
-                ((!input.trim() && attachments.length === 0) || !isConnected || !!retryAfter)
+                isStreaming
+                  ? stopDisabled
+                  : (!input.trim() && attachments.length === 0) || !isConnected || !!retryAfter
               }
               aria-label={isStreaming ? "Stop response" : "Send message"}
             >

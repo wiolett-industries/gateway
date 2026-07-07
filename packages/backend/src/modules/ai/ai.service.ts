@@ -66,6 +66,7 @@ import {
   allowedResourceIdsForScopes,
   compactProxyHostForAgent,
   dashboardStatsOptionsForScopes,
+  estimateMessagesTokens,
   estimateTokens,
   getToolResourceId,
   hasToolExecutionScope,
@@ -111,10 +112,42 @@ type QueuedApproval = {
   arguments: Record<string, unknown>;
 };
 
+type AutoCompactContextHook = (messages: ChatMessage[]) => Promise<ChatMessage[]>;
+
 type ToolRuntimeContext = {
   pageContext?: PageContext;
   conversationId?: string;
 };
+
+export type AIContextCompactionTrigger = 'manual' | 'auto';
+
+export interface AIContextCompactionResult {
+  compacted: boolean;
+  summary: string;
+  compactedMessageCount: number;
+  tailMessageCount: number;
+  omittedSourceChars: number;
+  trigger: AIContextCompactionTrigger;
+}
+
+const COMPACTION_TAIL_MESSAGES = 8;
+const COMPACTION_AUTO_THRESHOLD = 0.86;
+const COMPACTION_SOURCE_RESERVE_TOKENS = 6000;
+const SEND_COMMENT_TOOL_NAME = 'send_comment';
+const TOOL_COMMENT_REQUIRED_MESSAGE =
+  'You have reached the maximum number of sequential tool-call rounds without a user-visible progress comment. Call only send_comment now with a concise, useful progress update in the user language, then continue the task after that comment. Do not call any other tool in this response.';
+const SEND_COMMENT_EMPTY_ERROR =
+  'send_comment requires a real, non-empty progress comment for the user. Call send_comment again with a concise update in the user language.';
+const SEND_COMMENT_MIXED_ERROR =
+  'send_comment must be called by itself. First send the progress comment, then call other tools in the next assistant turn.';
+const SEND_COMMENT_REPAIR_LIMIT = 3;
+
+type ModelTool = ReturnType<typeof getOpenAITools>[number];
+type PendingToolCall = { id: string; name: string; arguments: string; parsedArgs: Record<string, unknown> };
+
+function messageBudgetForTools(maxContextTokens: number, tools: unknown[]): number {
+  return Math.max(1, maxContextTokens - estimateTokens(safeStringify(tools)));
+}
 
 function isContextWindowError(error: unknown): boolean {
   const message =
@@ -191,12 +224,116 @@ function compactLogText(value: string, label: string): unknown {
   };
 }
 
+function selectCompactionSource(messages: ChatMessage[]): { source: ChatMessage[]; tail: ChatMessage[] } {
+  if (messages.length <= COMPACTION_TAIL_MESSAGES + 1) {
+    return { source: [], tail: messages };
+  }
+  const splitAt = Math.max(1, messages.length - COMPACTION_TAIL_MESSAGES);
+  return {
+    source: messages.slice(0, splitAt),
+    tail: messages.slice(splitAt),
+  };
+}
+
+function providerMessagesToClientMessages(messages: Record<string, unknown>[]): ChatMessage[] {
+  return messages.map(providerMessageToClientMessage).filter((message): message is ChatMessage => message !== null);
+}
+
+function providerMessageToClientMessage(message: Record<string, unknown>): ChatMessage | null {
+  const role = message.role;
+  if (role !== 'user' && role !== 'assistant' && role !== 'tool') return null;
+  const content = message.content;
+  return {
+    role,
+    content: typeof content === 'string' ? content : content == null ? null : safeStringify(content),
+    tool_calls: Array.isArray(message.tool_calls) ? (message.tool_calls as ChatMessage['tool_calls']) : undefined,
+    tool_call_id: typeof message.tool_call_id === 'string' ? message.tool_call_id : undefined,
+    name: typeof message.name === 'string' ? message.name : undefined,
+  };
+}
+
+function serializeMessagesForCompaction(messages: ChatMessage[]): string {
+  return messages
+    .map((message, index) => {
+      const heading = `#${index + 1} ${message.role}`;
+      const content = typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '');
+      const attachments = message.attachments?.length
+        ? `\nAttachments: ${message.attachments.map((attachment) => attachment.filename).join(', ')}`
+        : '';
+      const toolCalls = message.tool_calls?.length
+        ? `\nTool calls: ${message.tool_calls
+            .map((toolCall) => `${toolCall.function.name}(${toolCall.function.arguments || '{}'})`)
+            .join('\n')}`
+        : '';
+      return `${heading}\n${content}${attachments}${toolCalls}`;
+    })
+    .join('\n\n---\n\n');
+}
+
+function limitCompactionSourceText(value: string, maxChars: number): { text: string; omittedChars: number } {
+  if (value.length <= maxChars) return { text: value, omittedChars: 0 };
+  const headChars = Math.floor(maxChars * 0.45);
+  const tailChars = Math.floor(maxChars * 0.45);
+  const omittedChars = value.length - headChars - tailChars;
+  return {
+    text: `${value.slice(0, headChars)}\n\n[... ${omittedChars} chars omitted from the middle of compaction source ...]\n\n${value.slice(
+      -tailChars
+    )}`,
+    omittedChars,
+  };
+}
+
+function buildCompactionSystemPrompt(trigger: AIContextCompactionTrigger): string {
+  return [
+    'You compact Gateway AI chat history for future assistant turns.',
+    'Write the summary in the same language as the conversation, especially the latest user messages.',
+    'Preserve user goals, explicit constraints, decisions, accepted designs, current task state, open questions, important IDs, paths, commands, resources, and tool outcomes.',
+    'Do not invent facts. Do not include raw one-time secrets, API tokens, passwords, private keys, or credential values; say that secret material was omitted when relevant.',
+    trigger === 'auto'
+      ? 'This compaction was triggered automatically because the active context was near the model limit.'
+      : 'This compaction was triggered manually by the user.',
+    'Return only the compacted summary, without prefacing it with meta commentary.',
+  ].join('\n');
+}
+
+function buildCompactionUserPrompt(input: {
+  sourceText: string;
+  tailText: string;
+  sourceMessageCount: number;
+  tailMessageCount: number;
+  omittedSourceChars: number;
+}): string {
+  return [
+    `Summarize the older chat context below. ${input.tailMessageCount} latest messages are intentionally kept verbatim and are not included here.`,
+    input.tailText
+      ? `Use this latest preserved tail only to infer the active language, tone, and immediate continuity. Do not repeat it in the summary:\n\n${input.tailText}`
+      : '',
+    input.omittedSourceChars > 0
+      ? `${input.omittedSourceChars} characters from the middle of the source were omitted before summarization because the source was too large.`
+      : '',
+    `Older message count: ${input.sourceMessageCount}.`,
+    '',
+    input.sourceText,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function stringArg(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function commentMessageFromArgs(args: Record<string, unknown>): string {
+  const value = args.message;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function commentToolFrom(tools: ModelTool[]): ModelTool[] {
+  return tools.filter((tool) => tool.function.name === SEND_COMMENT_TOOL_NAME);
 }
 
 function boolArg(value: unknown): boolean {
@@ -710,6 +847,12 @@ export class AIService {
           reason: stringArg(a.reason) ?? null,
           nextStep: 'Call the relevant read/status tool again to verify whether the pending operation completed.',
         };
+      }
+
+      case SEND_COMMENT_TOOL_NAME: {
+        const message = commentMessageFromArgs(args);
+        if (!message) throw new Error(SEND_COMMENT_EMPTY_ERROR);
+        return { delivered: true, message };
       }
 
       case 'end_conversation': {
@@ -1377,6 +1520,43 @@ export class AIService {
     });
   }
 
+  private processCommentToolCalls(input: {
+    parsedToolCalls: PendingToolCall[];
+    messages: Record<string, unknown>[];
+    runtimeMessages: ChatMessage[];
+    requestId: string;
+  }): { accepted: boolean; events: WSServerMessage[] } {
+    let acceptedComment = '';
+    const events: WSServerMessage[] = [];
+
+    for (const tc of input.parsedToolCalls) {
+      let content: string;
+      if (tc.name === SEND_COMMENT_TOOL_NAME) {
+        const comment = commentMessageFromArgs(tc.parsedArgs);
+        if (comment && !acceptedComment) {
+          acceptedComment = comment;
+          content = JSON.stringify({ ok: true, delivered: true });
+        } else {
+          content = JSON.stringify(
+            comment ? 'Only one send_comment call is allowed at a time.' : SEND_COMMENT_EMPTY_ERROR
+          );
+        }
+      } else {
+        content = JSON.stringify(SEND_COMMENT_MIXED_ERROR);
+      }
+
+      input.messages.push({ role: 'tool', tool_call_id: tc.id, content });
+      input.runtimeMessages.push({ role: 'tool', tool_call_id: tc.id, content });
+    }
+
+    if (acceptedComment) {
+      input.runtimeMessages.push({ role: 'assistant', content: acceptedComment });
+      events.push({ type: 'assistant_comment', requestId: input.requestId, content: acceptedComment });
+    }
+
+    return { accepted: !!acceptedComment, events };
+  }
+
   private async persistToolRuntimeState(
     user: User,
     options: ToolExecutionOptions,
@@ -1472,6 +1652,108 @@ export class AIService {
     }
   }
 
+  async shouldAutoCompactContext(
+    user: User,
+    clientMessages: ChatMessage[],
+    pageContext: PageContext | undefined,
+    conversationId?: string
+  ): Promise<boolean> {
+    if (selectCompactionSource(clientMessages).source.length === 0) return false;
+
+    const config = await this.settingsService.getConfig();
+    if (!(await this.settingsService.getDecryptedApiKey())) return false;
+    const systemPrompt = await this.buildSystemPrompt(user, pageContext, conversationId);
+    const discoveredToolsets = mergeToolsets(
+      (await this.getConversationDiscoveredToolsets(user, conversationId)) ?? [],
+      inferDiscoveredToolsetsFromMessages(clientMessages)
+    );
+    const tools = this.buildModelTools(config, user, discoveredToolsets);
+    const providerMessages = [
+      { role: 'system', content: systemPrompt },
+      ...clientMessages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        ...(message.tool_calls ? { tool_calls: message.tool_calls } : {}),
+        ...(message.tool_call_id ? { tool_call_id: message.tool_call_id } : {}),
+        ...(message.name ? { name: message.name } : {}),
+      })),
+    ];
+    const toolsTokens = estimateTokens(safeStringify(tools));
+    const messageBudget = Math.max(1, config.maxContextTokens - toolsTokens);
+    const totalTokens = estimateMessagesTokens(providerMessages) + toolsTokens;
+    if (totalTokens < config.maxContextTokens * COMPACTION_AUTO_THRESHOLD) return false;
+
+    return trimToTokenBudget(providerMessages, messageBudget).length < providerMessages.length;
+  }
+
+  async compactConversationContext(
+    _user: User,
+    clientMessages: ChatMessage[],
+    _pageContext: PageContext | undefined,
+    signal: AbortSignal,
+    trigger: AIContextCompactionTrigger
+  ): Promise<AIContextCompactionResult> {
+    const { source, tail } = selectCompactionSource(clientMessages);
+    if (source.length === 0) {
+      return {
+        compacted: false,
+        summary: 'There is not enough older context to compact yet.',
+        compactedMessageCount: 0,
+        tailMessageCount: tail.length,
+        omittedSourceChars: 0,
+        trigger,
+      };
+    }
+
+    const config = await this.settingsService.getConfig();
+    const apiKey = await this.settingsService.getDecryptedApiKey();
+    if (!apiKey) throw new Error('AI is not configured. An admin must set up the API key.');
+
+    const rawSourceText = serializeMessagesForCompaction(source);
+    const rawTailText = serializeMessagesForCompaction(tail);
+    const maxSourceChars = Math.max(8000, (config.maxContextTokens - COMPACTION_SOURCE_RESERVE_TOKENS) * 4);
+    const { text: sourceText, omittedChars } = limitCompactionSourceText(rawSourceText, maxSourceChars);
+    const { text: tailText } = limitCompactionSourceText(rawTailText, 4000);
+    const messages = [
+      { role: 'system', content: buildCompactionSystemPrompt(trigger) },
+      {
+        role: 'user',
+        content: buildCompactionUserPrompt({
+          sourceText,
+          tailText,
+          sourceMessageCount: source.length,
+          tailMessageCount: tail.length,
+          omittedSourceChars: omittedChars,
+        }),
+      },
+    ];
+
+    const client = new OpenAI({
+      apiKey,
+      baseURL: config.providerUrl || undefined,
+    });
+
+    let summary = '';
+    for await (const event of streamModelResponse({ client, config, messages, tools: [], signal })) {
+      if (event.type === 'text_delta') {
+        summary += event.content;
+      } else {
+        summary = event.response.content;
+      }
+    }
+
+    const cleanedSummary =
+      summary.trim() || 'Older context was compacted, but the compaction model returned an empty summary.';
+    return {
+      compacted: true,
+      summary: cleanedSummary,
+      compactedMessageCount: source.length,
+      tailMessageCount: tail.length,
+      omittedSourceChars: omittedChars,
+      trigger,
+    };
+  }
+
   /**
    * Stream a chat completion with tool calling.
    * Yields WSServerMessage events for the WebSocket handler to forward.
@@ -1482,7 +1764,8 @@ export class AIService {
     pageContext: PageContext | undefined,
     signal: AbortSignal,
     requestId: string,
-    conversationId?: string
+    conversationId?: string,
+    autoCompactContext?: AutoCompactContextHook
   ): AsyncGenerator<WSServerMessage> {
     const config = await this.settingsService.getConfig();
     const apiKey = await this.settingsService.getDecryptedApiKey();
@@ -1508,28 +1791,53 @@ export class AIService {
     }
     let tools = this.buildModelTools(config, user, discoveredToolsets);
 
-    // Build messages array: system + client messages
-    let messages: Record<string, unknown>[] = [
+    let runtimeMessages = clientMessages.filter((message) => message.role !== 'system');
+    const buildProviderMessages = async () => [
       { role: 'system', content: systemPrompt },
-      ...(await Promise.all(clientMessages.map((message) => this.toProviderMessage(user, message, config)))),
+      ...(await Promise.all(runtimeMessages.map((message) => this.toProviderMessage(user, message, config)))),
     ];
+    let messages: Record<string, unknown>[] = [];
 
     const maxContextTokens = config.maxContextTokens;
     const maxRounds = config.maxToolRounds;
+    let roundsSinceComment = 0;
+    let commentRepairAttempts = 0;
 
-    for (let round = 0; round < maxRounds; round++) {
+    while (true) {
       if (signal.aborted) return;
 
-      messages = trimToTokenBudget(messages, maxContextTokens);
+      if (autoCompactContext) {
+        runtimeMessages = await autoCompactContext(runtimeMessages);
+      }
+      const commentRequired = roundsSinceComment >= maxRounds;
+      const activeTools = commentRequired ? commentToolFrom(tools) : tools;
+      if (commentRequired && activeTools.length === 0) {
+        messages = await buildProviderMessages();
+        messages = trimToTokenBudget(
+          [...messages, { role: 'system', content: TOOL_COMMENT_REQUIRED_MESSAGE }],
+          maxContextTokens
+        );
+        yield* this.streamFinalTextResponse({ client, config, messages, requestId, signal });
+        return;
+      }
+      messages = await buildProviderMessages();
+      messages = trimToTokenBudget(
+        commentRequired ? [...messages, { role: 'system', content: TOOL_COMMENT_REQUIRED_MESSAGE }] : messages,
+        messageBudgetForTools(maxContextTokens, activeTools)
+      );
 
       let contentBuffer = '';
       let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
 
       try {
-        for await (const event of streamModelResponse({ client, config, messages, tools, signal })) {
+        for await (const event of streamModelResponse({ client, config, messages, tools: activeTools, signal })) {
           if (event.type === 'text_delta') {
             contentBuffer += event.content;
-            yield { type: 'text_delta', requestId, content: event.content };
+            yield {
+              type: commentRequired ? 'assistant_comment_delta' : 'text_delta',
+              requestId,
+              content: event.content,
+            };
           } else {
             contentBuffer = event.response.content;
             toolCalls = event.response.toolCalls;
@@ -1557,7 +1865,20 @@ export class AIService {
       // If no tool calls, we're done
       toolCalls = toolCalls.filter((tc) => tc.id && tc.name);
       if (toolCalls.length === 0) {
-        messages.push({ role: 'assistant', content: contentBuffer });
+        if (commentRequired) {
+          const comment = contentBuffer.trim();
+          if (comment) {
+            runtimeMessages.push({ role: 'assistant', content: comment });
+            yield { type: 'assistant_comment', requestId, content: comment };
+            roundsSinceComment = 0;
+            commentRepairAttempts = 0;
+            continue;
+          }
+          yield { type: 'error', requestId, message: SEND_COMMENT_EMPTY_ERROR };
+          yield { type: 'done', requestId };
+          return;
+        }
+        runtimeMessages.push({ role: 'assistant', content: contentBuffer });
         yield { type: 'done', requestId };
         return;
       }
@@ -1574,6 +1895,11 @@ export class AIService {
         content: contentBuffer || null,
         tool_calls: rawToolCalls,
       });
+      runtimeMessages.push({
+        role: 'assistant',
+        content: contentBuffer || null,
+        tool_calls: rawToolCalls,
+      });
 
       // Parse all tool args first
       const parsedToolCalls = toolCalls.map((tc) => {
@@ -1585,6 +1911,25 @@ export class AIService {
         }
         return { ...tc, parsedArgs };
       });
+
+      if (parsedToolCalls.some((tc) => tc.name === SEND_COMMENT_TOOL_NAME)) {
+        const result = this.processCommentToolCalls({ parsedToolCalls, messages, runtimeMessages, requestId });
+        for (const event of result.events) yield event;
+        if (result.accepted) {
+          roundsSinceComment = 0;
+          commentRepairAttempts = 0;
+        } else {
+          commentRepairAttempts += 1;
+          if (commentRepairAttempts >= SEND_COMMENT_REPAIR_LIMIT) {
+            yield { type: 'error', requestId, message: SEND_COMMENT_EMPTY_ERROR };
+            yield { type: 'done', requestId };
+            return;
+          }
+        }
+        continue;
+      }
+
+      roundsSinceComment += 1;
 
       // Separate questions, tools that require approval, and immediate tools.
       const questionTools: typeof parsedToolCalls = [];
@@ -1608,6 +1953,11 @@ export class AIService {
           tools = this.buildModelTools(config, user, discoveredToolsets);
         }
         messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(result.error || compactToolResultForModel(tc.name, result.result)),
+        });
+        runtimeMessages.push({
           role: 'tool',
           tool_call_id: tc.id,
           content: JSON.stringify(result.error || compactToolResultForModel(tc.name, result.result)),
@@ -1683,8 +2033,6 @@ export class AIService {
 
       // Continue to next round (LLM will see tool results)
     }
-
-    yield { type: 'done', requestId };
   }
 
   /**
@@ -1703,7 +2051,8 @@ export class AIService {
     answer?: string,
     answers?: Record<string, string>,
     queuedApprovals: QueuedApproval[] = [],
-    conversationId?: string
+    conversationId?: string,
+    autoCompactContext?: AutoCompactContextHook
   ): AsyncGenerator<WSServerMessage> {
     if (toolName === 'ask_question') {
       // Batch answers: { toolCallId: answer, ... }
@@ -1799,21 +2148,53 @@ export class AIService {
 
     let discoveredToolsets = await this.getConversationDiscoveredToolsets(user, conversationId);
     let tools = this.buildModelTools(config, user, discoveredToolsets);
-    const messages = trimToTokenBudget(pendingMessages, config.maxContextTokens);
+    let runtimeMessages = providerMessagesToClientMessages(pendingMessages);
+    const systemPrompt = await this.buildSystemPrompt(user, pageContext, conversationId);
+    const buildProviderMessages = async () => [
+      { role: 'system', content: systemPrompt },
+      ...(await Promise.all(runtimeMessages.map((message) => this.toProviderMessage(user, message, config)))),
+    ];
+    let messages = pendingMessages;
 
     // Continue with remaining rounds
     const maxRounds = config.maxToolRounds;
-    for (let round = 0; round < maxRounds; round++) {
+    let roundsSinceComment = 0;
+    let commentRepairAttempts = 0;
+    while (true) {
       if (signal.aborted) return;
+
+      if (autoCompactContext) {
+        runtimeMessages = await autoCompactContext(runtimeMessages);
+      }
+      const commentRequired = roundsSinceComment >= maxRounds;
+      const activeTools = commentRequired ? commentToolFrom(tools) : tools;
+      if (commentRequired && activeTools.length === 0) {
+        messages = await buildProviderMessages();
+        messages = trimToTokenBudget(
+          [...messages, { role: 'system', content: TOOL_COMMENT_REQUIRED_MESSAGE }],
+          config.maxContextTokens
+        );
+        yield* this.streamFinalTextResponse({ client, config, messages, requestId, signal });
+        return;
+      }
+      messages = await buildProviderMessages();
+      messages = trimToTokenBudget(
+        commentRequired ? [...messages, { role: 'system', content: TOOL_COMMENT_REQUIRED_MESSAGE }] : messages,
+        messageBudgetForTools(config.maxContextTokens, activeTools)
+      );
 
       let contentBuffer = '';
       let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
 
       try {
-        for await (const event of streamModelResponse({ client, config, messages, tools, signal })) {
+        for await (const event of streamModelResponse({ client, config, messages, tools: activeTools, signal })) {
           if (event.type === 'text_delta') {
             contentBuffer += event.content;
-            yield { type: 'text_delta', requestId, content: event.content };
+            yield {
+              type: commentRequired ? 'assistant_comment_delta' : 'text_delta',
+              requestId,
+              content: event.content,
+            };
           } else {
             contentBuffer = event.response.content;
             toolCalls = event.response.toolCalls;
@@ -1840,6 +2221,19 @@ export class AIService {
 
       toolCalls = toolCalls.filter((tc) => tc.id && tc.name);
       if (toolCalls.length === 0) {
+        if (commentRequired) {
+          const comment = contentBuffer.trim();
+          if (comment) {
+            runtimeMessages.push({ role: 'assistant', content: comment });
+            yield { type: 'assistant_comment', requestId, content: comment };
+            roundsSinceComment = 0;
+            commentRepairAttempts = 0;
+            continue;
+          }
+          yield { type: 'error', requestId, message: SEND_COMMENT_EMPTY_ERROR };
+          yield { type: 'done', requestId };
+          return;
+        }
         yield { type: 'done', requestId };
         return;
       }
@@ -1852,6 +2246,7 @@ export class AIService {
       }));
 
       messages.push({ role: 'assistant', content: contentBuffer || null, tool_calls: rawToolCalls });
+      runtimeMessages.push({ role: 'assistant', content: contentBuffer || null, tool_calls: rawToolCalls });
 
       const parsedToolCalls = toolCalls.map((tc) => {
         let parsedArgs: Record<string, unknown> = {};
@@ -1862,6 +2257,25 @@ export class AIService {
         }
         return { ...tc, parsedArgs };
       });
+
+      if (parsedToolCalls.some((tc) => tc.name === SEND_COMMENT_TOOL_NAME)) {
+        const result = this.processCommentToolCalls({ parsedToolCalls, messages, runtimeMessages, requestId });
+        for (const event of result.events) yield event;
+        if (result.accepted) {
+          roundsSinceComment = 0;
+          commentRepairAttempts = 0;
+        } else {
+          commentRepairAttempts += 1;
+          if (commentRepairAttempts >= SEND_COMMENT_REPAIR_LIMIT) {
+            yield { type: 'error', requestId, message: SEND_COMMENT_EMPTY_ERROR };
+            yield { type: 'done', requestId };
+            return;
+          }
+        }
+        continue;
+      }
+
+      roundsSinceComment += 1;
 
       const questionTools2: typeof parsedToolCalls = [];
       const approvalTools2: typeof parsedToolCalls = [];
@@ -1883,6 +2297,11 @@ export class AIService {
           tools = this.buildModelTools(config, user, discoveredToolsets);
         }
         messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(result.error || compactToolResultForModel(tc.name, result.result)),
+        });
+        runtimeMessages.push({
           role: 'tool',
           tool_call_id: tc.id,
           content: JSON.stringify(result.error || compactToolResultForModel(tc.name, result.result)),
@@ -1952,6 +2371,40 @@ export class AIService {
         } as any;
         return;
       }
+    }
+  }
+
+  private async *streamFinalTextResponse(input: {
+    client: OpenAI;
+    config: Awaited<ReturnType<AISettingsService['getConfig']>>;
+    messages: Record<string, unknown>[];
+    requestId: string;
+    signal: AbortSignal;
+  }): AsyncGenerator<WSServerMessage> {
+    const { client, config, messages, requestId, signal } = input;
+    try {
+      for await (const event of streamModelResponse({ client, config, messages, tools: [], signal })) {
+        if (event.type === 'text_delta') {
+          yield { type: 'text_delta', requestId, content: event.content };
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      const message = err instanceof Error ? err.message : 'Stream error';
+      logger.error('OpenAI API error', { error: err });
+      if (isContextWindowError(err)) {
+        yield {
+          type: 'context_blocked',
+          requestId,
+          reason:
+            'This chat has run out of usable context and could not be compacted automatically. Clear part of the oldest context or start a new chat.',
+        };
+        yield { type: 'done', requestId };
+        return;
+      }
+      yield { type: 'error', requestId, message };
+      yield { type: 'done', requestId };
+      return;
     }
 
     yield { type: 'done', requestId };

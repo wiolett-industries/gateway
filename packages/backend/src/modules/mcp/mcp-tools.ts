@@ -16,8 +16,16 @@ import type { McpAuthContext } from './mcp-types.js';
 
 const MCP_EXCLUDED_TOOLS = new Set([
   'ask_question',
+  'get_current_context',
+  'end_conversation',
+  'search_chats',
+  'find_in_chat',
+  'read_chat_slice',
+  'list_projects',
   'internal_documentation',
   'web_search',
+  'wait',
+  'send_comment',
   'manage_ai_conversation',
   'manage_oauth_authorization',
   'manage_api_token',
@@ -138,7 +146,7 @@ const ANY_SCOPE_TOOL_REQUIREMENTS: Record<string, string[]> = {
 };
 const SENSITIVE_TOOL_ARG_RE =
   /(?:password|passwd|secret|signingsecret|privatekey|private_key|token|authorization|cookie|apikey|api_key|clientsecret|client_secret|refresh)/i;
-const MCP_ALWAYS_VISIBLE_AI_TOOLS = new Set(['find_resource', 'wait']);
+const MCP_ALWAYS_VISIBLE_AI_TOOLS = new Set(['find_resource']);
 const MCP_TOOLS_PAGE_SIZE = 80;
 const MCP_DISCOVERY_STATE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -323,7 +331,6 @@ function hasDirectDatabaseViewForResource(scopes: string[], databaseId: string):
 }
 
 function hasToolScope(scopes: string[], tool: AIToolDefinition): boolean {
-  if (tool.name === 'wait') return true;
   if (!tool.requiredScope) return false;
   if (DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS.has(tool.name)) {
     return hasDirectDatabaseViewForQueryTool(scopes, tool.requiredScope);
@@ -342,7 +349,6 @@ function hasToolScope(scopes: string[], tool: AIToolDefinition): boolean {
 }
 
 function hasToolScopeForArgs(scopes: string[], tool: AIToolDefinition, args: Record<string, unknown>): boolean {
-  if (tool.name === 'wait') return true;
   if (!tool.requiredScope) return false;
   if (DIRECT_DATABASE_VIEW_AND_QUERY_TOOLS.has(tool.name)) {
     const resourceId = getToolAuthorizationResourceId(tool.name, args);

@@ -29,6 +29,7 @@ export const OPERATION_AI_TOOLS: AIToolDefinition[] = [
     category: 'Logging',
     requiredScope: 'logs:environments:view',
     invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
   },
   {
     name: 'manage_status_page',

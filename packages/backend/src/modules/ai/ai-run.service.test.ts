@@ -28,6 +28,32 @@ function createTransitionDb<T>(updateRows: T[], selectRows: unknown[][] = [[{ id
   };
 }
 
+function createStopActiveRunDb<T>(updateRows: T[], selectRows: unknown[][]) {
+  const selectQueue = [...selectRows];
+  const returning = vi.fn().mockResolvedValue(updateRows);
+  const updateWhere = vi.fn(() => ({ returning }));
+  const set = vi.fn(() => ({ where: updateWhere }));
+  const update = vi.fn(() => ({ set }));
+
+  const limit = vi.fn(async () => selectQueue.shift() ?? []);
+  const orderBy = vi.fn(() => ({ limit }));
+  const selectWhere = vi.fn(() => ({ limit, orderBy }));
+  const from = vi.fn(() => ({ where: selectWhere }));
+  const select = vi.fn(() => ({ from }));
+
+  return {
+    db: { update, select },
+    returning,
+    updateWhere,
+    set,
+    update,
+    limit,
+    selectWhere,
+    from,
+    select,
+  };
+}
+
 function createStartRunDb({ selectRows, insertRows = [] }: { selectRows: unknown[][]; insertRows?: unknown[][] }) {
   const selectQueue = [...selectRows];
   const insertQueue = [...insertRows];
@@ -552,7 +578,10 @@ describe('AIRunService stopRun', () => {
       status: 'stopped',
       assistantDraftContent: 'Persisted fallback',
     };
-    const harness = createTransitionDb([stopped], [[{ id: 'conversation-1' }]]);
+    const harness = createTransitionDb(
+      [stopped],
+      [[{ id: 'conversation-1' }], [{ ...stopped, activeMessageId: 'message-1', status: 'running' }]]
+    );
     const service = new AIRunService(harness.db as never);
     const executor = {
       abortRun: vi.fn(),
@@ -578,6 +607,98 @@ describe('AIRunService stopRun', () => {
     expect(executor.abortRun.mock.invocationCallOrder[0]).toBeLessThan(
       executor.flushAssistantDraftToMessage.mock.invocationCallOrder[0]
     );
+  });
+
+  it('rejects stopping a context compaction run', async () => {
+    const harness = createTransitionDb(
+      [],
+      [
+        [{ id: 'conversation-1' }],
+        [
+          {
+            id: 'run-1',
+            conversationId: 'conversation-1',
+            userId: 'user-1',
+            status: 'running',
+            activeMessageId: null,
+          },
+        ],
+      ]
+    );
+    const service = new AIRunService(harness.db as never);
+
+    await expect(
+      service.stopRun({
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+        userId: 'user-1',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'AI_COMPACTION_ACTIVE',
+    });
+    expect(harness.update).not.toHaveBeenCalled();
+  });
+
+  it('stops the current active run before rollback without trusting a client run id', async () => {
+    const activeRun = {
+      id: 'run-1',
+      conversationId: 'conversation-1',
+      userId: 'user-1',
+      status: 'running',
+      activeMessageId: 'message-1',
+      assistantDraftContent: 'Draft answer',
+    };
+    const stopped = { ...activeRun, status: 'stopped' };
+    const harness = createStopActiveRunDb(
+      [stopped],
+      [[{ id: 'conversation-1' }], [activeRun], [{ id: 'conversation-1' }], [activeRun]]
+    );
+    const service = new AIRunService(harness.db as never);
+    const executor = {
+      abortRun: vi.fn(),
+      flushAssistantDraftToMessage: vi.fn().mockResolvedValue('assistant-1'),
+    };
+    (service as unknown as { executor: typeof executor }).executor = executor;
+
+    await expect(
+      service.stopActiveRunForRollback({
+        conversationId: 'conversation-1',
+        userId: 'user-1',
+      })
+    ).resolves.toEqual({ run: stopped, duplicate: false });
+
+    expect(executor.abortRun).toHaveBeenCalledWith('run-1');
+  });
+
+  it('rejects rollback cancellation while the current active run is context compaction', async () => {
+    const harness = createStopActiveRunDb(
+      [],
+      [
+        [{ id: 'conversation-1' }],
+        [
+          {
+            id: 'run-1',
+            conversationId: 'conversation-1',
+            userId: 'user-1',
+            status: 'running',
+            activeMessageId: null,
+          },
+        ],
+      ]
+    );
+    const service = new AIRunService(harness.db as never);
+
+    await expect(
+      service.stopActiveRunForRollback({
+        conversationId: 'conversation-1',
+        userId: 'user-1',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'AI_COMPACTION_ACTIVE',
+    });
+    expect(harness.update).not.toHaveBeenCalled();
   });
 });
 

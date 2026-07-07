@@ -2,6 +2,7 @@
 
 export interface AIToolCall {
   id: string;
+  runId?: string;
   name: string;
   arguments: Record<string, unknown>;
   status: "running" | "completed" | "failed" | "awaiting_approval" | "rejected";
@@ -26,6 +27,7 @@ export interface AIMessage {
   isStreaming?: boolean;
   localOnly?: boolean;
   compactMarker?: boolean;
+  compactTailMessageCount?: number;
   conversationStatus?: Exclude<AIConversationStatus, "active">;
   blockReason?: string;
   rawToolCalls?: Array<{
@@ -286,6 +288,12 @@ export type WSClientMessage =
   | { type: "conversation.unsubscribe"; conversationId: string }
   | { type: "conversation.sync"; conversationId: string; clientCommandId?: string }
   | {
+      type: "conversation.compact";
+      conversationId: string;
+      clientCommandId: string;
+      context?: PageContext;
+    }
+  | {
       type: "conversation.send_message";
       clientCommandId: string;
       conversationId?: string;
@@ -340,6 +348,13 @@ export type WSServerMessage =
     }
   | {
       type: "assistant.delta";
+      conversationId: string;
+      runId: string;
+      content: string;
+      version: number;
+    }
+  | {
+      type: "assistant.comment_delta";
       conversationId: string;
       runId: string;
       content: string;

@@ -145,4 +145,55 @@ describe("AIMessage tool call groups", () => {
     expect(tableWrappers).toHaveLength(2);
     expect(tableWrappers.every((wrapper) => wrapper?.classList.contains("my-3"))).toBe(true);
   });
+
+  it("renders running compact context with the thinking shimmer", () => {
+    const { container } = render(
+      <AIMessage
+        message={message([
+          {
+            id: "compact-tool",
+            name: "compact_context",
+            arguments: { trigger: "manual" },
+            status: "running",
+          },
+        ])}
+      />
+    );
+
+    const compactButton = screen.getByRole("button", { name: /compact context/i });
+    expect(compactButton).toBeInTheDocument();
+    expect(compactButton.querySelector(".thinking-shimmer")).toBeInTheDocument();
+    expect(container).not.toHaveTextContent("trigger");
+  });
+
+  it("opens completed compact context summaries from tool results", () => {
+    render(
+      <AIMessage
+        message={{
+          id: "assistant-compact",
+          role: "assistant",
+          content: "",
+          isStreaming: false,
+          toolCalls: [
+            {
+              id: "compact-tool",
+              name: "compact_context",
+              arguments: { trigger: "manual" },
+              status: "completed",
+              result: {
+                compacted: true,
+                summary: "Старый контекст сжат и сохранён.",
+                trigger: "manual",
+              },
+            },
+          ],
+        }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /compact context/i }));
+
+    expect(screen.getByText("Старый контекст сжат и сохранён.")).toBeInTheDocument();
+    expect(screen.queryByText(/manual/)).not.toBeInTheDocument();
+  });
 });

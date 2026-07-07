@@ -8,7 +8,6 @@ import {
   FileText,
   Globe,
   HelpCircle,
-  Loader2,
   Lock,
   Search,
   Send,
@@ -18,6 +17,8 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import type { AIToolCall } from "@/types/ai";
 
@@ -75,17 +76,19 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
 
 interface AIToolCallBlockProps {
   toolCall: AIToolCall;
+  compactSummary?: string;
   onApprove?: (toolCallId: string) => void;
   onReject?: (toolCallId: string) => void;
   onAnswer?: (toolCallId: string, answer: string) => void;
 }
 
-export function AIToolCallBlock({ toolCall }: AIToolCallBlockProps) {
+export function AIToolCallBlock({ toolCall, compactSummary }: AIToolCallBlockProps) {
   const [expanded, setExpanded] = useState(false);
   const safeToolCall =
     toolCall && typeof toolCall === "object" ? toolCall : ({} as Partial<AIToolCall>);
   const toolName =
     typeof safeToolCall.name === "string" && safeToolCall.name ? safeToolCall.name : "unknown_tool";
+  const isCompactContextTool = toolName === "compact_context";
   const toolArguments =
     safeToolCall.arguments &&
     typeof safeToolCall.arguments === "object" &&
@@ -93,12 +96,7 @@ export function AIToolCallBlock({ toolCall }: AIToolCallBlockProps) {
       ? safeToolCall.arguments
       : {};
   const toolStatus = safeToolCall.status ?? "failed";
-  const Icon =
-    toolStatus === "running"
-      ? Loader2
-      : toolStatus === "failed"
-        ? X
-        : CATEGORY_ICONS[toolName] || ShieldCheck;
+  const Icon = toolStatus === "failed" ? X : CATEGORY_ICONS[toolName] || ShieldCheck;
 
   const statusIcon = () => {
     switch (toolStatus) {
@@ -123,30 +121,43 @@ export function AIToolCallBlock({ toolCall }: AIToolCallBlockProps) {
     toolName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) +
     (isSkipped ? " (skipped)" : "");
 
-  const hasArgs = Object.keys(toolArguments).length > 0;
+  const hasArgs = !isCompactContextTool && Object.keys(toolArguments).length > 0;
   const shouldHideResult = toolName === "send_artifact";
-  const hasResult = safeToolCall.result !== undefined && !isSkipped && !shouldHideResult;
+  const hasResult =
+    !isCompactContextTool && safeToolCall.result !== undefined && !isSkipped && !shouldHideResult;
+  const compactSummaryText = isCompactContextTool
+    ? getCompactSummaryText(compactSummary, safeToolCall.result)
+    : "";
+  const hasCompactSummary = toolStatus === "completed" && compactSummaryText.length > 0;
   const hasError = !!safeToolCall.error;
-  const hasContent = hasArgs || hasResult || hasError || toolStatus === "rejected";
+  const hasContent =
+    hasArgs || hasResult || hasCompactSummary || hasError || toolStatus === "rejected";
+  const canToggle = hasContent && !(isCompactContextTool && toolStatus === "running");
   const isExpandedChevronVisible = expanded || toolStatus === "running" || toolStatus === "failed";
 
   return (
     <div className="my-0.5 text-sm">
       <button
-        onClick={hasContent ? () => setExpanded(!expanded) : undefined}
-        className={`group flex items-center gap-2 py-0.5 text-left text-muted-foreground transition-colors ${hasContent ? "cursor-pointer hover:text-foreground focus-visible:text-foreground focus-visible:outline-none" : "cursor-default"}`}
+        onClick={canToggle ? () => setExpanded(!expanded) : undefined}
+        className={`group flex items-center gap-2 py-0.5 text-left text-muted-foreground transition-colors ${canToggle ? "cursor-pointer hover:text-foreground focus-visible:text-foreground focus-visible:outline-none" : "cursor-default"}`}
       >
         <Icon
           className={`h-3.5 w-3.5 shrink-0 ${
             toolStatus === "running"
-              ? "animate-spin text-primary"
+              ? "opacity-70"
               : toolStatus === "failed"
                 ? "text-destructive"
                 : "opacity-70"
           }`}
         />
-        <span className={`truncate ${isSkipped ? "text-muted-foreground" : ""}`}>{toolLabel}</span>
-        {hasContent &&
+        <span
+          className={`truncate ${isSkipped ? "text-muted-foreground" : ""} ${
+            toolStatus === "running" ? "thinking-shimmer text-muted-foreground" : ""
+          }`}
+        >
+          {toolLabel}
+        </span>
+        {canToggle &&
           (expanded ? (
             <ChevronDown className="-ml-1 h-3 w-3 shrink-0 opacity-70 transition-opacity" />
           ) : (
@@ -167,6 +178,15 @@ export function AIToolCallBlock({ toolCall }: AIToolCallBlockProps) {
         style={{ gridTemplateRows: expanded ? "1fr" : "0fr" }}
       >
         <div className="overflow-hidden">
+          {hasCompactSummary && (
+            <div className="border border-border bg-muted/50 px-2.5 py-1.5">
+              <div className="prose dark:prose-invert !max-w-none break-words text-sm prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-ol:my-2 prose-pre:my-2 prose-table:my-0 prose-code:text-xs prose-pre:text-xs prose-pre:rounded-none prose-code:rounded-none prose-code:before:content-none prose-code:after:content-none [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0">
+                <Markdown remarkPlugins={[remarkGfm]} components={compactMarkdownComponents}>
+                  {compactSummaryText}
+                </Markdown>
+              </div>
+            </div>
+          )}
           {hasArgs && (
             <pre className="overflow-x-auto whitespace-pre-wrap border border-border bg-muted px-2.5 py-1.5 text-[11px]">
               {JSON.stringify(toolArguments, null, 2)}
@@ -197,6 +217,51 @@ export function AIToolCallBlock({ toolCall }: AIToolCallBlockProps) {
       </div>
     </div>
   );
+}
+
+const compactMarkdownComponents = {
+  pre: ({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) => (
+    <pre className="overflow-x-auto border border-border bg-muted p-2 text-foreground" {...props}>
+      {children}
+    </pre>
+  ),
+  code: ({ children, className, ...props }: React.HTMLAttributes<HTMLElement>) => {
+    const isBlock = className?.includes("language-");
+    if (isBlock) {
+      return (
+        <code className={`${className} text-foreground`} {...props}>
+          {children}
+        </code>
+      );
+    }
+    return (
+      <code className="break-words bg-muted px-1 py-0.5 text-xs text-foreground" {...props}>
+        {children}
+      </code>
+    );
+  },
+  table: ({ children, ...props }: React.HTMLAttributes<HTMLTableElement>) => (
+    <div className="my-3 overflow-x-auto border border-border bg-background">
+      <table
+        className="min-w-full text-sm [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium [&_th]:text-muted-foreground [&_td]:px-2 [&_td]:py-1.5 [&_td]:border-t [&_td]:border-border"
+        {...props}
+      >
+        {children}
+      </table>
+    </div>
+  ),
+  a: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a className="text-primary underline" target="_blank" rel="noopener noreferrer" {...props}>
+      {children}
+    </a>
+  ),
+};
+
+function getCompactSummaryText(compactSummary: string | undefined, result: unknown): string {
+  if (typeof compactSummary === "string" && compactSummary.trim()) return compactSummary.trim();
+  if (!result || typeof result !== "object") return "";
+  const summary = (result as { summary?: unknown }).summary;
+  return typeof summary === "string" ? summary.trim() : "";
 }
 
 export function ApprovalBlock({
@@ -294,7 +359,9 @@ export function QuestionBlock({
     return (
       <div className="border border-border bg-muted/30 my-1.5 px-3 py-2">
         <p className="text-sm text-muted-foreground">{question}</p>
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground mt-1" />
+        <p className="mt-1 text-xs text-muted-foreground">
+          <span className="thinking-shimmer">Waiting</span>
+        </p>
       </div>
     );
   }
@@ -309,9 +376,8 @@ export function QuestionBlock({
           </p>
         )}
         {isPending && (
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Sending answer...
+          <p className="mt-1 text-xs text-muted-foreground">
+            <span className="thinking-shimmer">Sending answer...</span>
           </p>
         )}
       </div>

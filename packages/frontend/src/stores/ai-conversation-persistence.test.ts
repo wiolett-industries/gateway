@@ -5,7 +5,7 @@ import {
   rollbackConversationToMessage,
 } from "@/services/ai-conversations";
 import { api } from "@/services/api";
-import { resetAIStateForAuthChange, useAIStore } from "@/stores/ai";
+import { getAIContextUsage, resetAIStateForAuthChange, useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import type { WSServerMessage } from "@/types/ai";
@@ -171,6 +171,34 @@ describe("AI backend runtime store", () => {
     expect(contextMessage?.content).toContain("Tools: ~80 tokens (3 available)");
     expect(contextMessage?.content).toContain("- Base instructions: ~120 tokens");
     expect(contextMessage?.content).toContain("- Discovery: ~80 tokens");
+  });
+
+  it("reports context usage after the backend deterministic message trim", async () => {
+    vi.spyOn(api, "getAIContextEstimate").mockResolvedValueOnce({
+      systemTokens: 100,
+      toolsTokens: 100,
+      totalOverhead: 200,
+      limit: 260,
+      reasoningEffort: "low",
+      toolCount: 3,
+      systemBreakdown: [],
+      toolBreakdown: [],
+    });
+
+    const usage = await getAIContextUsage(
+      [
+        { id: "old-user", role: "user", content: "old ".repeat(400) },
+        { id: "old-assistant", role: "assistant", content: "old answer ".repeat(400) },
+        { id: "latest-user", role: "user", content: "latest question" },
+      ],
+      undefined,
+      "11111111-1111-4111-8111-111111111111"
+    );
+
+    expect(usage.messageCount).toBe(1);
+    expect(usage.chatTokens).toBe(8);
+    expect(usage.estimatedTokens).toBe(208);
+    expect(usage.percent).toBe(80);
   });
 
   it("refreshes all recent conversations without blanking an existing sidebar list", async () => {
@@ -433,6 +461,57 @@ describe("AI backend runtime store", () => {
         }),
       ])
     );
+  });
+
+  it("cancels the active run when rolling back to a user message", async () => {
+    useAIStore.setState({
+      activeConversationId: "conversation-1",
+      activeRunId: "run-1",
+      isStreaming: true,
+      isCompactingContext: false,
+      messages: [{ id: "user-1", role: "user", content: "old prompt" }],
+    });
+    vi.mocked(rollbackConversationToMessage).mockResolvedValueOnce({
+      message: { id: "user-1", role: "user", content: "old prompt" },
+      conversation: {
+        id: "conversation-1",
+        title: "Editable chat",
+        messages: [],
+        lastContext: null,
+        createdAt: "2026-06-26T09:59:00.000Z",
+        updatedAt: "2026-06-26T10:00:00.000Z",
+        lastUserMessageAt: "2026-06-26T10:00:00.000Z",
+        folderId: null,
+        status: "active",
+        blockReason: null,
+        activeRunStatus: null,
+      },
+    });
+
+    const message = await useAIStore.getState().rollbackToMessage("user-1");
+
+    expect(rollbackConversationToMessage).toHaveBeenCalledWith("conversation-1", "user-1", "run-1");
+    expect(message).toEqual({ id: "user-1", role: "user", content: "old prompt" });
+    expect(useAIStore.getState()).toMatchObject({
+      activeRunId: null,
+      isStreaming: false,
+      isCompactingContext: false,
+    });
+  });
+
+  it("does not roll back while context compaction is running", async () => {
+    useAIStore.setState({
+      activeConversationId: "conversation-1",
+      activeRunId: "compact-run-1",
+      isStreaming: true,
+      isCompactingContext: true,
+      messages: [{ id: "user-1", role: "user", content: "old prompt" }],
+    });
+
+    const message = await useAIStore.getState().rollbackToMessage("user-1");
+
+    expect(message).toBeNull();
+    expect(rollbackConversationToMessage).not.toHaveBeenCalled();
   });
 
   it("projects backend runtime snapshots into messages and pending approval state", async () => {
@@ -1036,6 +1115,369 @@ describe("AI backend runtime store", () => {
     });
   });
 
+  it("creates a thinking placeholder for an active run before the first tool or text arrives", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [{ id: "user-1", sequence: 0, role: "user", content: "Check status" }],
+        runtime: {
+          activeRun: runtimeRun("running"),
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [],
+        },
+      },
+    });
+
+    expect(useAIStore.getState().messages.at(-1)).toMatchObject({
+      id: "run-1:runtime",
+      role: "assistant",
+      content: "",
+      isStreaming: true,
+    });
+  });
+
+  it("uses a runtime placeholder after completed active-run tools while waiting for the next response", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [
+          { id: "user-1", sequence: 0, role: "user", content: "List databases" },
+          { id: "tool-boundary-1", sequence: 1, role: "assistant", content: "" },
+        ],
+        runtime: {
+          activeRun: runtimeRun("running"),
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [
+            {
+              id: "tool-row-1",
+              runId: "run-1",
+              conversationId: "conversation-1",
+              assistantMessageId: "tool-boundary-1",
+              toolCallId: "tool-1",
+              toolName: "list_databases",
+              toolArgs: {},
+              classification: "read",
+              approvalPolicy: "auto_approved",
+              requiredScopes: [],
+              status: "completed",
+              decision: null,
+              result: { data: [] },
+              error: null,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(
+      useAIStore.getState().messages.find((message) => message.id === "tool-boundary-1")
+    ).toMatchObject({
+      isStreaming: false,
+      toolCalls: [expect.objectContaining({ id: "tool-1", runId: "run-1", status: "completed" })],
+    });
+    expect(useAIStore.getState().messages.at(-1)).toMatchObject({
+      id: "run-1:runtime",
+      role: "assistant",
+      content: "",
+      isStreaming: true,
+    });
+  });
+
+  it("keeps the active run tool boundary streaming while a tool is still running", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [
+          { id: "user-1", sequence: 0, role: "user", content: "List databases" },
+          { id: "tool-boundary-1", sequence: 1, role: "assistant", content: "" },
+        ],
+        runtime: {
+          activeRun: runtimeRun("running"),
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [
+            {
+              id: "tool-row-1",
+              runId: "run-1",
+              conversationId: "conversation-1",
+              assistantMessageId: "tool-boundary-1",
+              toolCallId: "tool-1",
+              toolName: "list_databases",
+              toolArgs: {},
+              classification: "read",
+              approvalPolicy: "auto_approved",
+              requiredScopes: [],
+              status: "running",
+              decision: null,
+              result: null,
+              error: null,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(
+      useAIStore.getState().messages.find((message) => message.id === "tool-boundary-1")
+    ).toMatchObject({
+      isStreaming: true,
+      toolCalls: [expect.objectContaining({ id: "tool-1", runId: "run-1", status: "running" })],
+    });
+    expect(useAIStore.getState().messages.some((message) => message.id === "run-1:runtime")).toBe(
+      false
+    );
+  });
+
+  it("stops showing thinking on the tool boundary once assistant text starts streaming", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [
+          { id: "user-1", sequence: 0, role: "user", content: "List databases" },
+          { id: "tool-boundary-1", sequence: 1, role: "assistant", content: "" },
+        ],
+        runtime: {
+          activeRun: runtimeRun("running"),
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [
+            {
+              id: "tool-row-1",
+              runId: "run-1",
+              conversationId: "conversation-1",
+              assistantMessageId: "tool-boundary-1",
+              toolCallId: "tool-1",
+              toolName: "list_databases",
+              toolArgs: {},
+              classification: "read",
+              approvalPolicy: "auto_approved",
+              requiredScopes: [],
+              status: "completed",
+              decision: null,
+              result: { data: [] },
+              error: null,
+            },
+          ],
+        },
+      },
+    });
+
+    socket.emit({
+      type: "assistant.delta",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      content: "Done",
+      version: 1,
+    });
+
+    expect(
+      useAIStore.getState().messages.find((message) => message.id === "tool-boundary-1")
+    ).toMatchObject({ isStreaming: false });
+    expect(useAIStore.getState().messages.at(-1)).toMatchObject({
+      id: "run-1:runtime",
+      content: "Done",
+      isStreaming: true,
+    });
+  });
+
+  it("keeps an assistant comment snapshot separate from the following runtime answer", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Runtime chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [
+          {
+            id: "tool-boundary-1",
+            role: "assistant",
+            content: "",
+            toolGroupBoundary: true,
+          },
+          {
+            id: "assistant-comment-1",
+            role: "assistant",
+            content: "Проверяю доступность основных ресурсов.",
+          },
+        ],
+        runtime: {
+          activeRun: runtimeRun("running"),
+          assistantDraftContent: null,
+          assistantDraftVersion: 0,
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [
+            {
+              id: "tool-row-1",
+              runId: "run-1",
+              conversationId: "conversation-1",
+              assistantMessageId: "tool-boundary-1",
+              toolCallId: "tool-1",
+              toolName: "list_databases",
+              toolArgs: {},
+              classification: "read",
+              approvalPolicy: "auto_approved",
+              requiredScopes: [],
+              status: "completed",
+              decision: null,
+              result: { data: [] },
+              error: null,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(useAIStore.getState().messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "assistant-comment-1",
+          content: "Проверяю доступность основных ресурсов.",
+          isStreaming: false,
+        }),
+        expect.objectContaining({
+          id: "run-1:runtime",
+          content: "",
+          isStreaming: true,
+        }),
+      ])
+    );
+
+    socket.emit({
+      type: "assistant.delta",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      content: "Проверил доступность.",
+      version: 1,
+    });
+
+    expect(
+      useAIStore.getState().messages.find((message) => message.id === "assistant-comment-1")
+    ).toMatchObject({
+      content: "Проверяю доступность основных ресурсов.",
+      isStreaming: false,
+    });
+    expect(
+      useAIStore.getState().messages.find((message) => message.id === "run-1:runtime")
+    ).toMatchObject({
+      content: "Проверил доступность.",
+      isStreaming: true,
+    });
+  });
+
+  it("streams assistant comments into a separate live message from the final answer", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: "conversation-1",
+      messages: [
+        {
+          id: "run-1:runtime",
+          role: "assistant",
+          content: "",
+          sequence: 1,
+          isStreaming: true,
+        },
+      ],
+    });
+
+    socket.emit({
+      type: "assistant.comment_delta",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      content: "Проверяю ресурсы.",
+      version: 1,
+    });
+    socket.emit({
+      type: "assistant.delta",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      content: "Проверил ресурсы.",
+      version: 2,
+    });
+
+    expect(useAIStore.getState().messages).toEqual([
+      expect.objectContaining({
+        id: "run-1:comment",
+        content: "Проверяю ресурсы.",
+        isStreaming: true,
+      }),
+      expect.objectContaining({
+        id: "run-1:runtime",
+        content: "Проверил ресурсы.",
+        isStreaming: true,
+      }),
+    ]);
+  });
+
   it("keeps unassigned completed tool calls after the latest user turn", async () => {
     const socket = await connectAI();
     useAIStore.setState({ activeConversationId: "conversation-1" });
@@ -1138,6 +1580,63 @@ describe("AI backend runtime store", () => {
     expect(sentPayloads(socket)).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "conversation.send_message", content: "let me continue" }),
+      ])
+    );
+  });
+
+  it("allows new sends after a compact marker supersedes a context-blocked marker", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "Compacted chat",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+          status: "active",
+          blockReason: null,
+        },
+        messages: [
+          { id: "user-1", sequence: 0, role: "user", content: "Need a lot of context" },
+          {
+            id: "status-1",
+            sequence: 1,
+            role: "assistant",
+            content: "",
+            conversationStatus: "context_blocked",
+            blockReason: "Context window exceeded",
+          },
+          {
+            id: "compact-1",
+            sequence: 2,
+            role: "assistant",
+            content: "Compacted summary",
+            compactMarker: true,
+            compactTailMessageCount: 1,
+          },
+        ],
+        runtime: {
+          activeRun: null,
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          toolCalls: [],
+        },
+      },
+    });
+
+    useAIStore.getState().sendMessage("continue");
+
+    expect(sentPayloads(socket)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "conversation.send_message", content: "continue" }),
       ])
     );
   });

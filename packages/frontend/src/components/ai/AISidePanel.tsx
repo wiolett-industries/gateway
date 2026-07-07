@@ -15,6 +15,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -46,7 +47,7 @@ import type {
 } from "@/types/ai";
 import { AIComposer } from "./AIComposer";
 import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
-import { AIMessage } from "./AIMessage";
+import { AIMessageList } from "./AIMessageList";
 import { ApprovalBlock, QuestionBlock } from "./AIToolCallBlock";
 import { confirmAILiteMode } from "./confirm-lite-mode";
 import { QuickActionChips } from "./QuickActionChips";
@@ -138,6 +139,7 @@ function usePageContext(): PageContext {
 const SLASH_COMMANDS = [
   { name: "new", description: "Start new conversation" },
   { name: "clear", description: "Clear conversation" },
+  { name: "compact", description: "Compact older context" },
   { name: "context", description: "Show token usage" },
 ];
 
@@ -190,6 +192,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     savedName,
     activeConversationId,
     activeRunId,
+    isCompactingContext,
     sendMessage,
     approveTool,
     rejectTool,
@@ -456,6 +459,19 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
   const handleEditUserMessage = useCallback(
     async (messageId: string, content: string, nextAttachments: AIMessageAttachment[]) => {
       try {
+        if (isCompactingContext) return;
+        if (currentConversationStreaming || activeRunId) {
+          const ok = await confirm({
+            title: "Return to message?",
+            description:
+              "Returning to this message will cancel the current task and restore the conversation to that point.",
+            confirmLabel: "Return",
+            cancelLabel: "Cancel",
+            cancelVariant: "ghost",
+            variant: "destructive",
+          });
+          if (!ok) return;
+        }
         const message = await rollbackToMessage(messageId);
         if (!message) return;
         setInput(content);
@@ -471,7 +487,14 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
         toast.error(error instanceof Error ? error.message : "Failed to edit message");
       }
     },
-    [rollbackToMessage, setAttachments, setInput]
+    [
+      activeRunId,
+      currentConversationStreaming,
+      isCompactingContext,
+      rollbackToMessage,
+      setAttachments,
+      setInput,
+    ]
   );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -529,6 +552,11 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
     }
     return null;
   })();
+  const activeQuestionArgs =
+    activeQuestion?.arguments && typeof activeQuestion.arguments === "object"
+      ? activeQuestion.arguments
+      : {};
+  const isCompactionRetryQuestion = activeQuestionArgs._compactionRetry === true;
 
   return (
     <div className="flex h-full flex-col">
@@ -707,18 +735,14 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
           onScroll={updateStickToBottom}
         >
           <div className="space-y-3">
-            {messages.map((msg, index) => (
-              <AIMessage
-                key={msg.id || `${msg.role}-${index}`}
-                message={msg}
-                onApprove={approveTool}
-                onReject={rejectTool}
-                onAnswer={answerQuestion}
-                onEditUserMessage={
-                  !currentConversationStreaming && !activeRunId ? handleEditUserMessage : undefined
-                }
-              />
-            ))}
+            <AIMessageList
+              messages={messages}
+              onApprove={approveTool}
+              onReject={rejectTool}
+              onAnswer={answerQuestion}
+              onEditUserMessage={handleEditUserMessage}
+              editUserMessageDisabled={isCompactingContext || isCompactionRetryQuestion}
+            />
             <div className="pb-4" />
           </div>
         </div>
@@ -775,6 +799,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
             context={context}
             conversationId={activeConversationId}
             isStreaming={currentConversationStreaming}
+            stopDisabled={isCompactingContext}
             isConnected={isConnected}
             retryAfter={retryAfter}
             approvalMode={approvalMode}

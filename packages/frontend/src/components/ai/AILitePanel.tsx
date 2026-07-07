@@ -2,6 +2,7 @@ import { Minimize2, Pencil, Pin, PinOff, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,7 +30,7 @@ import type {
 } from "@/types/ai";
 import { AIComposer } from "./AIComposer";
 import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
-import { AIMessage } from "./AIMessage";
+import { AIMessageList } from "./AIMessageList";
 import { ApprovalBlock, QuestionBlock } from "./AIToolCallBlock";
 import { QuickActionChips } from "./QuickActionChips";
 import {
@@ -45,6 +46,7 @@ const BOTTOM_SCROLL_THRESHOLD = 48;
 const SLASH_COMMANDS = [
   { name: "new", description: "Start new conversation" },
   { name: "clear", description: "Clear conversation" },
+  { name: "compact", description: "Compact older context" },
   { name: "context", description: "Show token usage" },
 ];
 
@@ -115,6 +117,7 @@ export function AILitePanel() {
     savedName,
     activeConversationId,
     activeRunId,
+    isCompactingContext,
     recentConversations,
     sendMessage,
     approveTool,
@@ -388,6 +391,19 @@ export function AILitePanel() {
   const handleEditUserMessage = useCallback(
     async (messageId: string, content: string, nextAttachments: AIMessageAttachment[]) => {
       try {
+        if (isCompactingContext) return;
+        if (currentConversationStreaming || activeRunId) {
+          const ok = await confirm({
+            title: "Return to message?",
+            description:
+              "Returning to this message will cancel the current task and restore the conversation to that point.",
+            confirmLabel: "Return",
+            cancelLabel: "Cancel",
+            cancelVariant: "ghost",
+            variant: "destructive",
+          });
+          if (!ok) return;
+        }
         const message = await rollbackToMessage(messageId);
         if (!message) return;
         setInput(content);
@@ -403,7 +419,14 @@ export function AILitePanel() {
         toast.error(error instanceof Error ? error.message : "Failed to edit message");
       }
     },
-    [rollbackToMessage, setAttachments, setInput]
+    [
+      activeRunId,
+      currentConversationStreaming,
+      isCompactingContext,
+      rollbackToMessage,
+      setAttachments,
+      setInput,
+    ]
   );
 
   const handleQuickAction = (prompt: string) => {
@@ -447,6 +470,11 @@ export function AILitePanel() {
     }
     return null;
   })();
+  const activeQuestionArgs =
+    activeQuestion?.arguments && typeof activeQuestion.arguments === "object"
+      ? activeQuestion.arguments
+      : {};
+  const isCompactionRetryQuestion = activeQuestionArgs._compactionRetry === true;
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -558,21 +586,15 @@ export function AILitePanel() {
             onScroll={updateStickToBottom}
           >
             <div className="mx-auto w-full max-w-3xl space-y-4 px-4 pb-8">
-              {messages.map((msg, index) => (
-                <AIMessage
-                  key={msg.id || `${msg.role}-${index}`}
-                  message={msg}
-                  assistantMaxWidthClass="max-w-[90%]"
-                  onApprove={approveTool}
-                  onReject={rejectTool}
-                  onAnswer={answerQuestion}
-                  onEditUserMessage={
-                    !currentConversationStreaming && !activeRunId
-                      ? handleEditUserMessage
-                      : undefined
-                  }
-                />
-              ))}
+              <AIMessageList
+                messages={messages}
+                assistantMaxWidthClass="max-w-[90%]"
+                onApprove={approveTool}
+                onReject={rejectTool}
+                onAnswer={answerQuestion}
+                onEditUserMessage={handleEditUserMessage}
+                editUserMessageDisabled={isCompactingContext || isCompactionRetryQuestion}
+              />
             </div>
           </div>
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-background/50 to-transparent" />
@@ -636,6 +658,7 @@ export function AILitePanel() {
             context={context}
             conversationId={activeConversationId}
             isStreaming={currentConversationStreaming}
+            stopDisabled={isCompactingContext}
             isConnected={isConnected}
             retryAfter={retryAfter}
             approvalMode={approvalMode}

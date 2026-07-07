@@ -17,6 +17,7 @@ import { AISettingsService } from './ai.settings.service.js';
 import { AI_TOOLS } from './ai.tools.js';
 import { AIConversationService } from './ai-conversation.service.js';
 import { AIConversationFolderService } from './ai-conversation-folder.service.js';
+import { AIRunService } from './ai-run.service.js';
 
 export const aiRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
@@ -219,6 +220,9 @@ aiRoutes.post('/conversations/:id/rollback', requireScope('feat:ai:use'), async 
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const messageId = typeof body.messageId === 'string' ? body.messageId : '';
   if (!messageId) return c.json({ code: 'VALIDATION_ERROR', message: 'messageId is required' }, 400);
+
+  const runService = container.resolve(AIRunService);
+  await runService.stopActiveRunForRollback({ conversationId: c.req.param('id'), userId: user.id });
 
   const result = await service.rollbackToMessage(user.id, c.req.param('id'), messageId);
   if (!result) return c.json({ code: 'NOT_FOUND', message: 'Conversation message not found' }, 404);

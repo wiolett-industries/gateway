@@ -37,6 +37,11 @@ export interface EncryptedValue {
 
 // ── Tool Definitions ──
 
+export interface AIToolHistoryRetention {
+  mode: 'persistent_context' | 'recent_full' | 'summary_only' | 'never_full';
+  maxBytes?: number;
+}
+
 export interface AIToolDefinition {
   name: string;
   description: string;
@@ -45,6 +50,7 @@ export interface AIToolDefinition {
   category: string;
   requiredScope: string;
   invalidateStores: string[];
+  historyRetention?: AIToolHistoryRetention;
 }
 
 // ── Page Context (from frontend) ──
@@ -87,6 +93,7 @@ export type WSClientMessage =
   | { type: 'conversation.subscribe'; conversationId: string; clientCommandId?: string }
   | { type: 'conversation.unsubscribe'; conversationId: string }
   | { type: 'conversation.sync'; conversationId: string; clientCommandId?: string }
+  | { type: 'conversation.compact'; conversationId: string; clientCommandId: string; context?: PageContext }
   | {
       type: 'conversation.send_message';
       clientCommandId: string;
@@ -118,6 +125,8 @@ export type WSServerMessage =
   | { type: 'auth_ok'; userId: string }
   | { type: 'auth_error'; message: string }
   | { type: 'text_delta'; requestId: string; content: string }
+  | { type: 'assistant_comment_delta'; requestId: string; content: string }
+  | { type: 'assistant_comment'; requestId: string; content: string }
   | { type: 'tool_call_start'; requestId: string; id: string; name: string; arguments: Record<string, unknown> }
   | { type: 'tool_approval_required'; requestId: string; id: string; name: string; arguments: Record<string, unknown> }
   | { type: 'tool_result'; requestId: string; id: string; name: string; result: unknown; error?: string }
@@ -147,6 +156,7 @@ export type WSServerMessage =
     }
   | { type: 'conversation.snapshot'; conversationId: string; snapshot: AIConversationRuntimeSnapshot }
   | { type: 'assistant.delta'; conversationId: string; runId: string; content: string; version: number }
+  | { type: 'assistant.comment_delta'; conversationId: string; runId: string; content: string; version: number }
   | { type: 'run.status_changed'; conversationId: string; run: AIConversationRuntimeSnapshot['runtime']['activeRun'] }
   | { type: 'stores.invalidated'; conversationId: string; stores: string[] }
   | {

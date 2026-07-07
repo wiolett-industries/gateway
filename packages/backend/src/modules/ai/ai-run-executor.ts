@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { container } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import {
@@ -14,7 +14,7 @@ import {
 import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { User } from '@/types.js';
-import { AIService } from './ai.service.js';
+import { type AIContextCompactionResult, type AIContextCompactionTrigger, AIService } from './ai.service.js';
 import type { ChatMessage, WSServerMessage } from './ai.types.js';
 import { classifyAIToolForApproval } from './ai-approval-policy.js';
 import type { AIConversationSearchService } from './ai-conversation-search.service.js';
@@ -29,6 +29,16 @@ import {
 import { redactOneTimeSecretToolResult } from './ai-secret-result-redaction.js';
 
 const logger = createChildLogger('AI-Run-Executor');
+const COMPACTION_TAIL_MESSAGES = 8;
+const AUTO_COMPACTION_RETRY_PREFIX = 'auto-compact-retry-';
+const AUTO_COMPACTION_RETRY_ANSWER = 'Retry';
+
+class AutoCompactionPausedError extends Error {
+  constructor() {
+    super('Automatic context compaction is waiting for retry');
+    this.name = 'AutoCompactionPausedError';
+  }
+}
 
 type PublishConversationChanged = (userId: string, conversationId: string, invalidatedStores?: string[]) => void;
 type PublishAssistantDelta = (
@@ -38,6 +48,7 @@ type PublishAssistantDelta = (
   content: string,
   version: number
 ) => void;
+type PublishAssistantCommentDelta = PublishAssistantDelta;
 
 interface ApprovalContinuationInput {
   conversationId: string;
@@ -68,11 +79,13 @@ export class AIRunExecutor {
   private readonly abortControllers = new Map<string, AbortController>();
   private readonly executingRuns = new Set<string>();
   private readonly assistantLiveDrafts = new AssistantLiveDraftStore();
+  private readonly toolBoundaryMessageIds = new Map<string, string>();
 
   constructor(
     private readonly db: DrizzleClient,
     private readonly publishConversationChanged: PublishConversationChanged,
     private readonly publishAssistantDelta: PublishAssistantDelta,
+    private readonly publishAssistantCommentDelta: PublishAssistantCommentDelta,
     private readonly conversationSearchService?: AIConversationSearchService
   ) {}
 
@@ -100,10 +113,19 @@ export class AIRunExecutor {
     });
   }
 
+  startContextCompaction(user: User, runId: string, trigger: AIContextCompactionTrigger): void {
+    if (this.executingRuns.has(runId)) return;
+    this.executingRuns.add(runId);
+    void this.executeContextCompaction(user, runId, trigger).catch((error) => {
+      this.logExecutionError(runId, error);
+    });
+  }
+
   abortRun(runId: string): void {
     this.abortControllers.get(runId)?.abort();
     this.abortControllers.delete(runId);
     this.executingRuns.delete(runId);
+    this.toolBoundaryMessageIds.delete(runId);
   }
 
   getAssistantDraft(runId: string): AssistantLiveDraft | null {
@@ -137,9 +159,11 @@ export class AIRunExecutor {
     await this.updateRunStatus(run.id, 'running');
     this.publishConversationChanged(user.id, run.conversationId);
 
-    const messages = await this.loadConversationMessages(run.conversationId);
     const pageContext = toPageContext(conversation.lastContext);
     const aiService = container.resolve(AIService);
+    const messages = await this.loadConversationMessages(run.conversationId, {
+      includeHistoricalToolOutcomes: true,
+    });
     let assistantContent = '';
     let assistantMessageWritten = false;
 
@@ -150,7 +174,8 @@ export class AIRunExecutor {
         pageContext,
         abortController.signal,
         run.id,
-        run.conversationId
+        run.conversationId,
+        (currentMessages) => this.maybeAutoCompactContext(user, run, currentMessages, pageContext, abortController)
       )) {
         if (abortController.signal.aborted) return;
 
@@ -167,6 +192,18 @@ export class AIRunExecutor {
       }
     } catch (error) {
       if (abortController.signal.aborted) return;
+      if (error instanceof AutoCompactionPausedError) {
+        const assistantMessageId = await this.persistAssistantBoundary(
+          user.id,
+          run.conversationId,
+          run.id,
+          assistantContent
+        );
+        if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
+        this.forgetAssistantDraftState(run.id);
+        this.publishConversationChanged(user.id, run.conversationId);
+        return;
+      }
       const assistantMessageId = await this.persistAssistantBoundary(
         user.id,
         run.conversationId,
@@ -180,6 +217,7 @@ export class AIRunExecutor {
     } finally {
       this.abortControllers.delete(run.id);
       this.executingRuns.delete(run.id);
+      this.toolBoundaryMessageIds.delete(run.id);
     }
   }
 
@@ -215,6 +253,23 @@ export class AIRunExecutor {
       id: input.question.toolCallId,
       args: { question: input.question.question },
     };
+    if (firstQuestion.args._compactionRetry === true) {
+      await this.finishToolCall(
+        input.runId,
+        input.question.toolCallId,
+        'ask_question',
+        {
+          answer: input.question.answer ?? AUTO_COMPACTION_RETRY_ANSWER,
+        },
+        null
+      );
+      await this.executeAutoCompactionRetry(user, {
+        conversationId: input.conversationId,
+        runId: input.runId,
+        pendingMessages: checkpoint.pendingMessages,
+      });
+      return;
+    }
     await this.executeResume(user, {
       conversationId: input.conversationId,
       runId: input.runId,
@@ -260,7 +315,8 @@ export class AIRunExecutor {
         undefined,
         input.answers,
         input.queuedApprovals,
-        input.conversationId
+        input.conversationId,
+        (currentMessages) => this.maybeAutoCompactContext(user, run, currentMessages, pageContext, abortController)
       )) {
         if (abortController.signal.aborted) return;
 
@@ -277,6 +333,18 @@ export class AIRunExecutor {
       }
     } catch (error) {
       if (abortController.signal.aborted) return;
+      if (error instanceof AutoCompactionPausedError) {
+        const assistantMessageId = await this.persistAssistantBoundary(
+          user.id,
+          input.conversationId,
+          input.runId,
+          assistantContent
+        );
+        if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(input.runId, assistantMessageId);
+        this.forgetAssistantDraftState(input.runId);
+        this.publishConversationChanged(user.id, input.conversationId);
+        return;
+      }
       const assistantMessageId = await this.persistAssistantBoundary(
         user.id,
         input.conversationId,
@@ -290,6 +358,126 @@ export class AIRunExecutor {
     } finally {
       this.abortControllers.delete(input.runId);
       this.executingRuns.delete(input.runId);
+      this.toolBoundaryMessageIds.delete(input.runId);
+    }
+  }
+
+  private async executeAutoCompactionRetry(
+    user: User,
+    input: { conversationId: string; runId: string; pendingMessages: Record<string, unknown>[] }
+  ): Promise<void> {
+    const run = await this.getOwnedRun(user.id, input.runId);
+    if (!run) throw new AppError(404, 'AI_RUN_NOT_FOUND', 'AI run not found');
+    if (run.status !== 'waiting_for_answer') return;
+
+    const conversation = await getOwnedConversation(this.db, user.id, input.conversationId);
+    if (!conversation) throw new AppError(404, 'AI_CONVERSATION_NOT_FOUND', 'AI conversation not found');
+
+    const abortController = new AbortController();
+    this.abortControllers.set(input.runId, abortController);
+    await this.updateRunStatus(input.runId, 'running');
+    this.publishConversationChanged(user.id, input.conversationId);
+
+    const aiService = container.resolve(AIService);
+    const pageContext = toPageContext(conversation.lastContext);
+    const messages = input.pendingMessages
+      .map(toChatMessage)
+      .filter((message): message is ChatMessage => message !== null && message.role !== 'system');
+    let assistantContent = '';
+    let assistantMessageWritten = false;
+
+    try {
+      for await (const event of aiService.streamChat(
+        user,
+        messages,
+        pageContext,
+        abortController.signal,
+        input.runId,
+        input.conversationId,
+        (currentMessages) => this.maybeAutoCompactContext(user, run, currentMessages, pageContext, abortController)
+      )) {
+        if (abortController.signal.aborted) return;
+
+        const result = await this.applyRuntimeEvent({
+          user,
+          run,
+          event,
+          assistantContent,
+          assistantMessageWritten,
+        });
+        assistantContent = result.assistantContent;
+        assistantMessageWritten = result.assistantMessageWritten;
+        if (result.done) return;
+      }
+    } catch (error) {
+      if (abortController.signal.aborted) return;
+      if (error instanceof AutoCompactionPausedError) {
+        const assistantMessageId = await this.persistAssistantBoundary(
+          user.id,
+          input.conversationId,
+          input.runId,
+          assistantContent
+        );
+        if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(input.runId, assistantMessageId);
+        this.forgetAssistantDraftState(input.runId);
+        this.publishConversationChanged(user.id, input.conversationId);
+        return;
+      }
+      const assistantMessageId = await this.persistAssistantBoundary(
+        user.id,
+        input.conversationId,
+        input.runId,
+        assistantContent
+      );
+      if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(input.runId, assistantMessageId);
+      await this.updateRunStatus(input.runId, 'failed', error instanceof Error ? error.message : 'AI run failed');
+      this.forgetAssistantDraftState(input.runId);
+      this.publishConversationChanged(user.id, input.conversationId);
+    } finally {
+      this.abortControllers.delete(input.runId);
+      this.executingRuns.delete(input.runId);
+      this.toolBoundaryMessageIds.delete(input.runId);
+    }
+  }
+
+  private async executeContextCompaction(
+    user: User,
+    runId: string,
+    trigger: AIContextCompactionTrigger
+  ): Promise<void> {
+    const run = await this.getOwnedRun(user.id, runId);
+    if (!run) throw new AppError(404, 'AI_RUN_NOT_FOUND', 'AI run not found');
+    if (run.status !== 'queued') return;
+
+    const conversation = await getOwnedConversation(this.db, user.id, run.conversationId);
+    if (!conversation) throw new AppError(404, 'AI_CONVERSATION_NOT_FOUND', 'AI conversation not found');
+
+    const abortController = new AbortController();
+    this.abortControllers.set(run.id, abortController);
+    await this.updateRunStatus(run.id, 'running');
+    this.publishConversationChanged(user.id, run.conversationId);
+
+    try {
+      const messages = await this.loadConversationMessages(run.conversationId, {
+        includeHistoricalToolOutcomes: true,
+      });
+      const pageContext = toPageContext(conversation.lastContext);
+      await this.performContextCompaction(user, run, messages, pageContext, abortController, trigger, true);
+      await this.updateRunStatus(run.id, 'completed');
+      await this.setConversationCheckpoint(run.conversationId, null);
+      this.publishConversationChanged(user.id, run.conversationId);
+    } catch (error) {
+      if (abortController.signal.aborted) return;
+      await this.updateRunStatus(
+        run.id,
+        'failed',
+        error instanceof Error ? error.message : 'Context compaction failed'
+      );
+      this.publishConversationChanged(user.id, run.conversationId);
+    } finally {
+      this.abortControllers.delete(run.id);
+      this.executingRuns.delete(run.id);
+      this.toolBoundaryMessageIds.delete(run.id);
     }
   }
 
@@ -310,10 +498,34 @@ export class AIRunExecutor {
       return { assistantContent, assistantMessageWritten, done: false };
     }
 
+    if (event.type === 'assistant_comment_delta') {
+      const draft = this.appendAssistantDraft(run.id, run.conversationId, event.content);
+      this.publishAssistantCommentDelta(user.id, run.conversationId, run.id, event.content, draft.version);
+      return { assistantContent, assistantMessageWritten, done: false };
+    }
+
+    if (event.type === 'assistant_comment') {
+      if (!this.assistantLiveDrafts.get(run.id)) {
+        const draft = this.appendAssistantDraft(run.id, run.conversationId, event.content);
+        this.publishAssistantCommentDelta(user.id, run.conversationId, run.id, event.content, draft.version);
+      }
+      await this.persistAssistantBoundary(user.id, run.conversationId, run.id, event.content);
+      this.toolBoundaryMessageIds.delete(run.id);
+      this.publishConversationChanged(user.id, run.conversationId);
+      return { assistantContent: '', assistantMessageWritten: false, done: false };
+    }
+
     if (event.type === 'tool_call_start') {
+      if (assistantContent.trim()) {
+        await this.persistAssistantBoundary(user.id, run.conversationId, run.id, assistantContent);
+        assistantContent = '';
+        this.toolBoundaryMessageIds.delete(run.id);
+      }
+      const assistantMessageId = await this.getOrCreateToolBoundaryMessage(run.conversationId, run.id);
       await this.recordToolCall({
         runId: run.id,
         conversationId: run.conversationId,
+        assistantMessageId,
         toolCallId: event.id,
         toolName: event.name,
         toolArgs: event.arguments,
@@ -402,6 +614,118 @@ export class AIRunExecutor {
     return { assistantContent, assistantMessageWritten, done: false };
   }
 
+  private async maybeAutoCompactContext(
+    user: User,
+    run: AIRun,
+    messages: ChatMessage[],
+    pageContext: ReturnType<typeof toPageContext>,
+    abortController: AbortController
+  ): Promise<ChatMessage[]> {
+    const aiService = container.resolve(AIService);
+    const shouldCompact = await aiService.shouldAutoCompactContext(user, messages, pageContext, run.conversationId);
+    if (!shouldCompact) return messages;
+    try {
+      return await this.performContextCompaction(user, run, messages, pageContext, abortController, 'auto', false);
+    } catch (error) {
+      if (abortController.signal.aborted) throw error;
+      await this.pauseForAutoCompactionRetry(user, run, messages, error);
+      throw new AutoCompactionPausedError();
+    }
+  }
+
+  private async performContextCompaction(
+    user: User,
+    run: AIRun,
+    messages: ChatMessage[],
+    pageContext: ReturnType<typeof toPageContext>,
+    abortController: AbortController,
+    trigger: AIContextCompactionTrigger,
+    allowNoopResult: boolean
+  ): Promise<ChatMessage[]> {
+    const toolCallId =
+      trigger === 'auto' ? `${trigger}-compact-${run.id}-${Date.now()}` : `${trigger}-compact-${run.id}`;
+    await this.recordToolCall({
+      runId: run.id,
+      conversationId: run.conversationId,
+      toolCallId,
+      toolName: 'compact_context',
+      toolArgs: { trigger },
+      status: 'running',
+    });
+    this.publishConversationChanged(user.id, run.conversationId);
+
+    try {
+      const result = await container
+        .resolve(AIService)
+        .compactConversationContext(user, messages, pageContext, abortController.signal, trigger);
+      if (result.compacted) {
+        const markerMessageId = await this.persistCompactMarker(user.id, run.conversationId, result);
+        await this.linkToolCallToAssistantMessage(run.id, toolCallId, markerMessageId);
+      }
+      await this.finishToolCall(run.id, toolCallId, 'compact_context', result, null);
+      this.publishConversationChanged(user.id, run.conversationId);
+      if (!result.compacted && !allowNoopResult) return messages;
+      if (!result.compacted) return this.loadConversationMessages(run.conversationId);
+      return compactedRuntimeMessages(messages, result);
+    } catch (error) {
+      await this.finishToolCall(
+        run.id,
+        toolCallId,
+        'compact_context',
+        undefined,
+        error instanceof Error ? error.message : 'Context compaction failed'
+      );
+      this.publishConversationChanged(user.id, run.conversationId);
+      throw error;
+    }
+  }
+
+  private async pauseForAutoCompactionRetry(
+    user: User,
+    run: AIRun,
+    messages: ChatMessage[],
+    error: unknown
+  ): Promise<void> {
+    const retryQuestionId = `${AUTO_COMPACTION_RETRY_PREFIX}${run.id}-${Date.now()}`;
+    const question = 'Context compaction failed. Retry compaction to continue this chat.';
+    const args = {
+      question,
+      options: [{ label: AUTO_COMPACTION_RETRY_ANSWER }],
+      allowFreeText: false,
+      _compactionRetry: true,
+    };
+
+    await this.recordToolCall({
+      runId: run.id,
+      conversationId: run.conversationId,
+      toolCallId: retryQuestionId,
+      toolName: 'ask_question',
+      toolArgs: args,
+      status: 'running',
+    });
+    await this.db.insert(aiRunQuestions).values({
+      runId: run.id,
+      conversationId: run.conversationId,
+      toolCallId: retryQuestionId,
+      question,
+    });
+    await this.setConversationCheckpoint(run.conversationId, {
+      type: 'tool_approval_required',
+      requestId: run.id,
+      id: retryQuestionId,
+      name: 'ask_question',
+      arguments: args,
+      _pendingMessages: messages,
+      _allQuestions: [{ id: retryQuestionId, args }],
+    } as WSServerMessage);
+    await this.updateRunStatus(
+      run.id,
+      'waiting_for_answer',
+      error instanceof Error ? error.message : 'Context compaction failed'
+    );
+    this.publishConversationChanged(user.id, run.conversationId);
+  }
+
   private async getOwnedRun(userId: string, runId: string): Promise<AIRun | null> {
     const rows = await this.db
       .select()
@@ -411,15 +735,26 @@ export class AIRunExecutor {
     return rows[0] ?? null;
   }
 
-  private async loadConversationMessages(conversationId: string): Promise<ChatMessage[]> {
+  private async loadConversationMessages(
+    conversationId: string,
+    options: { includeHistoricalToolOutcomes?: boolean } = {}
+  ): Promise<ChatMessage[]> {
     const rows = await this.db
-      .select({ uiMessage: aiConversationMessages.uiMessage })
+      .select({ id: aiConversationMessages.id, uiMessage: aiConversationMessages.uiMessage })
       .from(aiConversationMessages)
       .where(eq(aiConversationMessages.conversationId, conversationId))
       .orderBy(asc(aiConversationMessages.sequence));
-    return rows
-      .map((row) => toChatMessage(row.uiMessage))
-      .filter((message): message is ChatMessage => message !== null);
+
+    const compactMarkerIndex = findLastCompactMarkerIndex(rows.map((row) => row.uiMessage));
+    const activeRows = compactMarkerIndex >= 0 ? rowsForCompactMarkerBoundary(rows, compactMarkerIndex) : rows;
+    const messages: Array<{ id: string | null; message: ChatMessage }> = [];
+    for (const row of activeRows) {
+      const message = toChatMessage(row.uiMessage);
+      if (message) messages.push({ id: row.id, message });
+    }
+
+    if (!options.includeHistoricalToolOutcomes) return messages.map((entry) => entry.message);
+    return this.appendHistoricalToolOutcomes(conversationId, messages);
   }
 
   private async persistAssistantMessageIfNeeded(
@@ -445,6 +780,35 @@ export class AIRunExecutor {
     await this.db.update(aiConversations).set({ updatedAt: new Date() }).where(eq(aiConversations.id, conversationId));
     this.conversationSearchService?.rebuildConversationIndexBestEffort(userId, conversationId);
     return message?.id ?? null;
+  }
+
+  private async getOrCreateToolBoundaryMessage(conversationId: string, runId: string): Promise<string> {
+    const existing = this.toolBoundaryMessageIds.get(runId);
+    if (existing) return existing;
+
+    const sequence = await nextMessageSequence(this.db, conversationId);
+    const [message] = await this.db
+      .insert(aiConversationMessages)
+      .values(
+        toConversationMessage(
+          conversationId,
+          {
+            role: 'assistant',
+            content: '',
+            toolGroupBoundary: true,
+          },
+          sequence
+        )
+      )
+      .returning({ id: aiConversationMessages.id });
+
+    if (!message?.id) {
+      throw new AppError(500, 'AI_TOOL_BOUNDARY_NOT_CREATED', 'AI tool call boundary was not created');
+    }
+
+    this.toolBoundaryMessageIds.set(runId, message.id);
+    await this.db.update(aiConversations).set({ updatedAt: new Date() }).where(eq(aiConversations.id, conversationId));
+    return message.id;
   }
 
   private appendAssistantDraft(runId: string, conversationId: string, delta: string): AssistantLiveDraft {
@@ -482,6 +846,37 @@ export class AIRunExecutor {
       )
     );
     await this.db.update(aiConversations).set({ updatedAt: new Date() }).where(eq(aiConversations.id, conversationId));
+  }
+
+  private async persistCompactMarker(
+    userId: string,
+    conversationId: string,
+    result: AIContextCompactionResult
+  ): Promise<string> {
+    const sequence = await nextMessageSequence(this.db, conversationId);
+    const [message] = await this.db
+      .insert(aiConversationMessages)
+      .values(
+        toConversationMessage(
+          conversationId,
+          {
+            role: 'assistant',
+            content: result.summary,
+            compactMarker: true,
+            compactedAt: new Date().toISOString(),
+            compactedMessageCount: result.compactedMessageCount,
+            compactTailMessageCount: result.tailMessageCount,
+            compactTrigger: result.trigger,
+          },
+          sequence
+        )
+      )
+      .returning({ id: aiConversationMessages.id });
+    await this.db.update(aiConversations).set({ updatedAt: new Date() }).where(eq(aiConversations.id, conversationId));
+    this.conversationSearchService?.rebuildConversationIndexBestEffort(userId, conversationId);
+    if (!message?.id)
+      throw new AppError(500, 'AI_COMPACT_MARKER_NOT_CREATED', 'Context compact marker was not created');
+    return message.id;
   }
 
   private async clearAssistantDraftState(runId: string): Promise<void> {
@@ -604,6 +999,63 @@ export class AIRunExecutor {
       .where(and(eq(aiRunToolCalls.runId, runId), isNull(aiRunToolCalls.assistantMessageId)));
   }
 
+  private async linkToolCallToAssistantMessage(
+    runId: string,
+    toolCallId: string,
+    assistantMessageId: string
+  ): Promise<void> {
+    await this.db
+      .update(aiRunToolCalls)
+      .set({ assistantMessageId, updatedAt: new Date() })
+      .where(and(eq(aiRunToolCalls.runId, runId), eq(aiRunToolCalls.toolCallId, toolCallId)));
+  }
+
+  private async appendHistoricalToolOutcomes(
+    conversationId: string,
+    entries: Array<{ id: string | null; message: ChatMessage }>
+  ): Promise<ChatMessage[]> {
+    const assistantMessageIds = entries
+      .filter((entry) => entry.id && entry.message.role === 'assistant')
+      .map((entry) => entry.id as string);
+    if (assistantMessageIds.length === 0) return entries.map((entry) => entry.message);
+
+    const toolCalls = await this.db
+      .select({
+        assistantMessageId: aiRunToolCalls.assistantMessageId,
+        toolName: aiRunToolCalls.toolName,
+        status: aiRunToolCalls.status,
+        decision: aiRunToolCalls.decision,
+        result: aiRunToolCalls.result,
+        error: aiRunToolCalls.error,
+      })
+      .from(aiRunToolCalls)
+      .where(
+        and(
+          eq(aiRunToolCalls.conversationId, conversationId),
+          inArray(aiRunToolCalls.assistantMessageId, assistantMessageIds)
+        )
+      )
+      .orderBy(asc(aiRunToolCalls.createdAt));
+
+    const summariesByMessageId = new Map<string, string[]>();
+    for (const toolCall of toolCalls) {
+      if (!toolCall.assistantMessageId) continue;
+      const summaries = summariesByMessageId.get(toolCall.assistantMessageId) ?? [];
+      summaries.push(formatHistoricalToolOutcome(toolCall));
+      summariesByMessageId.set(toolCall.assistantMessageId, summaries);
+    }
+
+    return entries.map((entry) => {
+      if (!entry.id || entry.message.role !== 'assistant') return entry.message;
+      const summaries = summariesByMessageId.get(entry.id);
+      if (!summaries?.length) return entry.message;
+      return {
+        ...entry.message,
+        content: `${entry.message.content}\n\n[Historical tool outcomes]\n${summaries.join('\n')}`,
+      };
+    });
+  }
+
   private async listAnsweredQuestions(runId: string): Promise<AIRunQuestion[]> {
     return this.db
       .select()
@@ -647,6 +1099,72 @@ export class AIRunExecutor {
 }
 
 type DbLike = Pick<DrizzleClient, 'select' | 'insert' | 'update'>;
+
+function findLastCompactMarkerIndex(messages: unknown[]): number {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (
+      message &&
+      typeof message === 'object' &&
+      !Array.isArray(message) &&
+      (message as Record<string, unknown>).compactMarker === true
+    ) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function rowsForCompactMarkerBoundary<T extends { uiMessage: Record<string, unknown> }>(
+  rows: T[],
+  markerIndex: number
+): T[] {
+  const marker = rows[markerIndex];
+  const tailCount =
+    typeof marker.uiMessage.compactTailMessageCount === 'number' &&
+    Number.isFinite(marker.uiMessage.compactTailMessageCount)
+      ? Math.max(0, Math.trunc(marker.uiMessage.compactTailMessageCount))
+      : 0;
+  const tailStart = Math.max(0, markerIndex - tailCount);
+  return [marker, ...rows.slice(tailStart, markerIndex), ...rows.slice(markerIndex + 1)];
+}
+
+function compactedRuntimeMessages(messages: ChatMessage[], result: AIContextCompactionResult): ChatMessage[] {
+  const tailStart = Math.max(0, messages.length - COMPACTION_TAIL_MESSAGES);
+  return [{ role: 'assistant', content: result.summary }, ...messages.slice(tailStart)];
+}
+
+function formatHistoricalToolOutcome(toolCall: {
+  toolName: string;
+  status: string;
+  decision: string | null;
+  result: unknown;
+  error: string | null;
+}): string {
+  const parts = [`${toolCall.toolName} status=${toolCall.status}`];
+  if (toolCall.decision) parts.push(`decision=${toolCall.decision}`);
+  if (toolCall.error) {
+    parts.push(`error=${safeInlineText(toolCall.error, 600)}`);
+  } else if (toolCall.result !== null && toolCall.result !== undefined) {
+    const redactedResult = redactOneTimeSecretToolResult(toolCall.toolName, toolCall.result);
+    parts.push(`result=${safeJsonPreview(redactedResult, 1200)}`);
+  }
+  return `- ${parts.join(' ')}`;
+}
+
+function safeJsonPreview(value: unknown, maxLength: number): string {
+  try {
+    return safeInlineText(JSON.stringify(value), maxLength);
+  } catch {
+    return safeInlineText(String(value), maxLength);
+  }
+}
+
+function safeInlineText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 15))}...[truncated]`;
+}
 
 async function getOwnedConversation(db: DbLike, userId: string, conversationId: string) {
   const rows = await db

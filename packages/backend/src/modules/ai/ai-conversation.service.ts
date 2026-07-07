@@ -11,13 +11,19 @@ import {
 import { AppError } from '@/middleware/error-handler.js';
 import type { AISandboxService } from './ai.sandbox.service.js';
 import type { AISandboxArtifactService } from './ai.sandbox-artifact.service.js';
-import type { AIConversationStatus, PageContext } from './ai.types.js';
+import { AI_TOOLS } from './ai.tools.js';
+import type { AIConversationStatus, AIToolHistoryRetention, PageContext } from './ai.types.js';
 import type { AIConversationSearchService } from './ai-conversation-search.service.js';
 import { toClientCheckpoint } from './ai-run-runtime.helpers.js';
 import { redactOneTimeSecretToolResult } from './ai-secret-result-redaction.js';
 
 const RETAIN_FULL_TOOL_OUTPUT_COUNT = 10;
+const DEFAULT_PERSISTENT_TOOL_OUTPUT_MAX_BYTES = 16000;
 const ACTIVE_RUN_STATUSES = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'] as const;
+const DEFAULT_TOOL_HISTORY_RETENTION: AIToolHistoryRetention = { mode: 'recent_full' };
+const TOOL_HISTORY_RETENTION_BY_NAME = new Map(
+  AI_TOOLS.map((tool) => [tool.name, tool.historyRetention ?? DEFAULT_TOOL_HISTORY_RETENTION])
+);
 
 interface LoadedConversationMessage {
   role: string;
@@ -366,7 +372,19 @@ export class AIConversationService {
               .from(aiRuns)
               .where(and(eq(aiRuns.conversationId, conversationId), inArray(aiRuns.activeMessageId, deletedMessageIds)))
           : [];
-      const deletedRunIds = deletedRuns.map((run) => run.id);
+      const deletedToolCallRuns =
+        deletedMessageIds.length > 0
+          ? await tx
+              .select({ id: aiRunToolCalls.runId })
+              .from(aiRunToolCalls)
+              .where(
+                and(
+                  eq(aiRunToolCalls.conversationId, conversationId),
+                  inArray(aiRunToolCalls.assistantMessageId, deletedMessageIds)
+                )
+              )
+          : [];
+      const deletedRunIds = Array.from(new Set([...deletedRuns, ...deletedToolCallRuns].map((run) => run.id)));
 
       if (deletedRunIds.length > 0) {
         await tx.delete(aiRunQuestions).where(inArray(aiRunQuestions.runId, deletedRunIds));
@@ -374,6 +392,7 @@ export class AIConversationService {
         await tx.delete(aiRuns).where(inArray(aiRuns.id, deletedRunIds));
       }
       if (deletedMessageIds.length > 0) {
+        await tx.delete(aiRunToolCalls).where(inArray(aiRunToolCalls.assistantMessageId, deletedMessageIds));
         await tx.delete(aiConversationMessages).where(inArray(aiConversationMessages.id, deletedMessageIds));
       }
       await tx
@@ -478,6 +497,9 @@ function collectRetainedToolCallIds(messages: unknown[]): Set<string> {
     for (const toolCall of record.toolCalls) {
       const toolRecord = toRecord(toolCall);
       if (!toolRecord || toolRecord.name === 'ask_question' || typeof toolRecord.id !== 'string') continue;
+      if (getToolHistoryRetention(typeof toolRecord.name === 'string' ? toolRecord.name : '').mode !== 'recent_full') {
+        continue;
+      }
       toolCallIds.push(toolRecord.id);
     }
   }
@@ -496,18 +518,75 @@ function sanitizeConversationMessage(message: unknown, retainedToolCallIds: Set<
 function sanitizeToolCall(toolCall: unknown, retainedToolCallIds: Set<string>): unknown {
   const record = toRecord(toolCall);
   if (!record || record.name === 'ask_question' || typeof record.id !== 'string') return toolCall;
-  const result = Object.hasOwn(record, 'result')
-    ? redactOneTimeSecretToolResult(typeof record.name === 'string' ? record.name : '', record.result)
-    : undefined;
+  const toolName = typeof record.name === 'string' ? record.name : '';
+  const result = Object.hasOwn(record, 'result') ? redactOneTimeSecretToolResult(toolName, record.result) : undefined;
   const toolCallWithRedactedSecrets = result !== record.result ? { ...record, result } : record;
-  if (retainedToolCallIds.has(record.id) || !Object.hasOwn(record, 'result')) return toolCallWithRedactedSecrets;
+  if (!Object.hasOwn(record, 'result')) return toolCallWithRedactedSecrets;
+
+  const retention = getToolHistoryRetention(toolName);
+  if (retention.mode === 'never_full' || retention.mode === 'summary_only') {
+    return {
+      ...toolCallWithRedactedSecrets,
+      result: createOmittedToolResult(toolName, result, retention.mode),
+    };
+  }
+
+  if (retention.mode === 'persistent_context') {
+    return {
+      ...toolCallWithRedactedSecrets,
+      result: compactPersistentToolResult(toolName, result, retention.maxBytes),
+    };
+  }
+
+  if (retainedToolCallIds.has(record.id)) return toolCallWithRedactedSecrets;
   return {
     ...toolCallWithRedactedSecrets,
-    result: {
-      summary: 'Tool output omitted from saved conversation after the latest 10 tool calls.',
-      fullOutputOmitted: true,
-    },
+    result: createOmittedToolResult(toolName, result, 'recent_full'),
   };
+}
+
+function getToolHistoryRetention(toolName: string): AIToolHistoryRetention {
+  return TOOL_HISTORY_RETENTION_BY_NAME.get(toolName) ?? DEFAULT_TOOL_HISTORY_RETENTION;
+}
+
+function compactPersistentToolResult(toolName: string, result: unknown, maxBytes?: number): unknown {
+  const limit = maxBytes ?? DEFAULT_PERSISTENT_TOOL_OUTPUT_MAX_BYTES;
+  const serialized = serializeToolResultForSize(result);
+  if (serialized.byteLength <= limit) return result;
+  return {
+    ...createOmittedToolResult(toolName, result, 'persistent_context'),
+    summary: `Tool output exceeded the ${limit} byte persistent context retention limit.`,
+    retainedBytesLimit: limit,
+  };
+}
+
+function createOmittedToolResult(
+  toolName: string,
+  result: unknown,
+  mode: AIToolHistoryRetention['mode']
+): Record<string, unknown> {
+  const omittedResult: Record<string, unknown> = {
+    summary:
+      mode === 'recent_full'
+        ? 'Tool output omitted from saved conversation after the latest 10 recent-full tool calls.'
+        : 'Tool output omitted from saved conversation by tool history retention policy.',
+    fullOutputOmitted: true,
+    historyRetention: mode,
+    toolName,
+    resultType: Array.isArray(result) ? 'array' : typeof result,
+  };
+  if (mode !== 'never_full') {
+    omittedResult.resultBytes = serializeToolResultForSize(result).byteLength;
+  }
+  return omittedResult;
+}
+
+function serializeToolResultForSize(result: unknown): { byteLength: number } {
+  try {
+    return { byteLength: Buffer.byteLength(JSON.stringify(result) ?? '', 'utf8') };
+  } catch {
+    return { byteLength: Buffer.byteLength(String(result), 'utf8') };
+  }
 }
 
 function toRecord(value: unknown): Record<string, unknown> | null {
@@ -520,7 +599,9 @@ export function deriveConversationStatus(messages: unknown[]): {
 } {
   for (let i = messages.length - 1; i >= 0; i--) {
     const record = toRecord(messages[i]);
-    if (!record || typeof record.conversationStatus !== 'string') continue;
+    if (!record) continue;
+    if (record.compactMarker === true) return { status: 'active', blockReason: null };
+    if (typeof record.conversationStatus !== 'string') continue;
     if (record.conversationStatus === 'ended' || record.conversationStatus === 'context_blocked') {
       return {
         status: record.conversationStatus,

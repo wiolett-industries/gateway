@@ -38,10 +38,11 @@ function sandboxToolNamesForScopes(scopes: string[], sandboxEnabled: boolean): s
 describe('AI tool scope filtering', () => {
   it('keeps core registry ordering, uniqueness, and invalidation contracts stable', () => {
     expect(new Set(AI_TOOLS.map((tool) => tool.name)).size).toBe(AI_TOOLS.length);
-    expect(AI_TOOLS.slice(0, 82).map((tool) => tool.name)).toEqual([
+    expect(AI_TOOLS.slice(0, 83).map((tool) => tool.name)).toEqual([
       'discover_tools',
       'get_current_context',
       'wait',
+      'send_comment',
       'end_conversation',
       'find_resource',
       'search_chats',
@@ -174,6 +175,7 @@ describe('AI tool scope filtering', () => {
         'discover_tools',
         'get_current_context',
         'wait',
+        'send_comment',
         'find_resource',
         'search_chats',
         'find_in_chat',
@@ -243,6 +245,7 @@ describe('AI tool scope filtering', () => {
         'discover_tools',
         'get_current_context',
         'wait',
+        'send_comment',
         'find_resource',
         'ask_question',
         'internal_documentation',

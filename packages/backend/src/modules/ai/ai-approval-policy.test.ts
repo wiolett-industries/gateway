@@ -9,6 +9,7 @@ describe('AI backend approval policy', () => {
       'internal_documentation',
       'get_current_context',
       'wait',
+      'send_comment',
       'search_chats',
       'find_in_chat',
       'read_chat_slice',
