@@ -14,6 +14,19 @@ function fdChildPath(parent: fs.FileHandle, segment: string): string {
   return `${FD_ROOT}/${parent.fd}/${segment}`;
 }
 
+function symlinkPathError(message: string): NodeJS.ErrnoException {
+  const error = new Error(message) as NodeJS.ErrnoException;
+  error.code = 'ELOOP';
+  return error;
+}
+
+async function isSymlink(pathname: string): Promise<boolean> {
+  return fs
+    .lstat(pathname)
+    .then((entry) => entry.isSymbolicLink())
+    .catch(() => false);
+}
+
 async function fdRootAvailable(): Promise<boolean> {
   if (process.platform !== 'linux') return false;
   return fs
@@ -108,8 +121,13 @@ async function openChildDirectory(parent: fs.FileHandle, segment: string): Promi
     );
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
-    if (err.code === 'ELOOP') throw new Error('artifact path must not contain symbolic links');
-    if (err.code === 'ENOTDIR') throw new Error('artifact path parent must be a directory');
+    if (err.code === 'ELOOP') throw symlinkPathError('artifact path must not contain symbolic links');
+    if (err.code === 'ENOTDIR') {
+      if (await isSymlink(fdChildPath(parent, segment))) {
+        throw symlinkPathError('artifact path must not contain symbolic links');
+      }
+      throw new Error('artifact path parent must be a directory');
+    }
     throw error;
   }
 }
