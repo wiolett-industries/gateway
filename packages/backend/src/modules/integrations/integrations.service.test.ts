@@ -133,6 +133,40 @@ function createToolProjectsDb(input: { connector: unknown; projects: unknown[]; 
   return { select };
 }
 
+function createProjectActionDb(input: { connector: unknown; project: unknown; allowlistEntries: unknown[] }) {
+  const select = vi.fn();
+  select
+    .mockReturnValueOnce({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn().mockResolvedValue([input.connector]),
+        })),
+      })),
+    })
+    .mockReturnValueOnce({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn().mockResolvedValue([input.project]),
+        })),
+      })),
+    })
+    .mockReturnValueOnce({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          orderBy: vi.fn().mockResolvedValue(input.allowlistEntries),
+        })),
+      })),
+    });
+  return {
+    select,
+    update: vi.fn(() => ({
+      set: vi.fn(() => ({
+        where: vi.fn().mockResolvedValue([]),
+      })),
+    })),
+  };
+}
+
 describe('IntegrationsService', () => {
   it('proves Cloudflare DNS edit capability with a temporary TXT record during preview test', async () => {
     const originalFetch = globalThis.fetch;
@@ -290,6 +324,166 @@ describe('IntegrationsService', () => {
         }),
       })
     );
+  });
+
+  it('refreshes stale GitLab capabilities before denying a project tool action', async () => {
+    const connector = connectorRow({
+      allowlistMode: 'all_visible',
+      capabilities: { projectsView: true, ciLint: false },
+      encryptedToken: JSON.stringify('encrypted-token'),
+    });
+    const project = {
+      id: 'project-row-1',
+      connectorId: '11111111-1111-4111-8111-111111111111',
+      remoteId: '28',
+      fullPath: 'general/balanceify',
+      name: 'balanceify',
+      webUrl: 'https://gitlab.example.com/general/balanceify',
+      visibility: 'private',
+      defaultBranch: 'main',
+      archived: false,
+      lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+      inaccessibleAt: null,
+      metadata: {},
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    const db = createProjectActionDb({ connector, project, allowlistEntries: [] });
+    const provider = {
+      provider: 'gitlab',
+      testConnection: vi.fn().mockResolvedValue({ projectsView: true, ciLint: true }),
+      searchAllowlist: vi.fn(),
+      listProjects: vi.fn(),
+      listRegistries: vi.fn(),
+      listTree: vi.fn(),
+      readFile: vi.fn(),
+      commitFiles: vi.fn(),
+      lintCiConfig: vi.fn().mockResolvedValue({ valid: true, errors: [], warnings: [], mergedYaml: null }),
+      listPipelines: vi.fn(),
+      getPipeline: vi.fn(),
+      listPipelineJobs: vi.fn(),
+      getJobLog: vi.fn(),
+      listProjectVariables: vi.fn(),
+      setProjectVariable: vi.fn(),
+      deleteProjectVariable: vi.fn(),
+      listProjectWebhooks: vi.fn(),
+      createOrUpdateProjectWebhook: vi.fn(),
+      deleteProjectWebhook: vi.fn(),
+      listRegistryRepositories: vi.fn(),
+      createDeployToken: vi.fn(),
+      updateProjectSettings: vi.fn(),
+      downloadRepositoryArchive: vi.fn(),
+    };
+    const cryptoService = { decryptString: vi.fn(() => 'glpat-token') };
+    const auditService = { log: vi.fn() };
+    const service = new IntegrationsService(db as never, auditService as never, cryptoService as never);
+    service.registerProvider(provider as never);
+
+    await expect(
+      service.gitLabLintCiConfig(
+        { ...BASE_USER, scopes: ['integrations:gitlab:ci:view'] },
+        {
+          connectorId: '11111111-1111-4111-8111-111111111111',
+          project: 'general/balanceify',
+          content: 'stages: [test]\n',
+        }
+      )
+    ).resolves.toMatchObject({ valid: true });
+
+    expect(provider.testConnection).toHaveBeenCalledWith({
+      baseUrl: 'https://gitlab.example.com',
+      token: 'glpat-token',
+    });
+    expect(db.update).toHaveBeenCalled();
+    expect(provider.lintCiConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'glpat-token' }),
+      expect.objectContaining({ fullPath: 'general/balanceify' }),
+      'stages: [test]\n'
+    );
+  });
+
+  it('syncs the GitLab connector after updating project registry settings', async () => {
+    const connector = connectorRow({
+      allowlistMode: 'all_visible',
+      capabilities: { projectsView: true, deployTokensManage: true },
+      encryptedToken: JSON.stringify('encrypted-token'),
+    });
+    const project = {
+      id: 'project-row-1',
+      connectorId: '11111111-1111-4111-8111-111111111111',
+      remoteId: '28',
+      fullPath: 'general/balanceify',
+      name: 'balanceify',
+      webUrl: 'https://gitlab.example.com/general/balanceify',
+      visibility: 'private',
+      defaultBranch: 'main',
+      archived: false,
+      lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+      inaccessibleAt: null,
+      metadata: {},
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    const db = createProjectActionDb({ connector, project, allowlistEntries: [] });
+    const provider = {
+      provider: 'gitlab',
+      testConnection: vi.fn(),
+      searchAllowlist: vi.fn(),
+      listProjects: vi.fn(),
+      listRegistries: vi.fn(),
+      listTree: vi.fn(),
+      readFile: vi.fn(),
+      commitFiles: vi.fn(),
+      lintCiConfig: vi.fn(),
+      listPipelines: vi.fn(),
+      getPipeline: vi.fn(),
+      listPipelineJobs: vi.fn(),
+      getJobLog: vi.fn(),
+      listProjectVariables: vi.fn(),
+      setProjectVariable: vi.fn(),
+      deleteProjectVariable: vi.fn(),
+      listProjectWebhooks: vi.fn(),
+      createOrUpdateProjectWebhook: vi.fn(),
+      deleteProjectWebhook: vi.fn(),
+      listRegistryRepositories: vi.fn(),
+      createDeployToken: vi.fn(),
+      updateProjectSettings: vi.fn().mockResolvedValue({
+        remoteId: '28',
+        fullPath: 'general/balanceify',
+        name: 'balanceify',
+        containerRegistryAccessLevel: 'enabled',
+      }),
+      downloadRepositoryArchive: vi.fn(),
+    };
+    const cryptoService = { decryptString: vi.fn(() => 'glpat-token') };
+    const auditService = { log: vi.fn() };
+    const service = new IntegrationsService(db as never, auditService as never, cryptoService as never);
+    const syncGitLabConnector = vi
+      .spyOn(service, 'syncGitLabConnector')
+      .mockResolvedValue({ status: 'success', projectCount: 1, registryCount: 1, skippedRegistryProjects: [] });
+    service.registerProvider(provider as never);
+
+    await expect(
+      service.gitLabUpdateProjectSettings(
+        { ...BASE_USER, scopes: ['integrations:gitlab:registry:manage'] },
+        {
+          connectorId: '11111111-1111-4111-8111-111111111111',
+          project: 'general/balanceify',
+          containerRegistryAccessLevel: 'enabled',
+        }
+      )
+    ).resolves.toMatchObject({
+      fullPath: 'general/balanceify',
+      sync: { status: 'success', registryCount: 1 },
+      syncError: null,
+    });
+
+    expect(provider.updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'glpat-token' }),
+      expect.objectContaining({ fullPath: 'general/balanceify' }),
+      { containerRegistryAccessLevel: 'enabled' }
+    );
+    expect(syncGitLabConnector).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', 'user-1');
   });
 
   it('does not fake provider-backed actions before a provider is registered', async () => {

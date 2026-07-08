@@ -49,6 +49,7 @@ type PublishAssistantDelta = (
   version: number
 ) => void;
 type PublishAssistantCommentDelta = PublishAssistantDelta;
+type PublishAssistantCommentDone = (userId: string, conversationId: string, runId: string) => void;
 
 interface ApprovalContinuationInput {
   conversationId: string;
@@ -86,6 +87,7 @@ export class AIRunExecutor {
     private readonly publishConversationChanged: PublishConversationChanged,
     private readonly publishAssistantDelta: PublishAssistantDelta,
     private readonly publishAssistantCommentDelta: PublishAssistantCommentDelta,
+    private readonly publishAssistantCommentDone: PublishAssistantCommentDone,
     private readonly conversationSearchService?: AIConversationSearchService
   ) {}
 
@@ -511,6 +513,7 @@ export class AIRunExecutor {
       }
       await this.persistAssistantBoundary(user.id, run.conversationId, run.id, event.content);
       this.toolBoundaryMessageIds.delete(run.id);
+      this.publishAssistantCommentDone(user.id, run.conversationId, run.id);
       this.publishConversationChanged(user.id, run.conversationId);
       return { assistantContent: '', assistantMessageWritten: false, done: false };
     }

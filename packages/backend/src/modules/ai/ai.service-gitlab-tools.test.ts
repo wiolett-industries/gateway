@@ -145,7 +145,10 @@ describe('AIService GitLab tool routing', () => {
         'gitlab_update_project_settings',
         { connectorId: 'connector-1', project: 'group/app', containerRegistryAccessLevel: 'enabled' }
       )
-    ).resolves.toMatchObject({ result: { fullPath: 'group/app' } });
+    ).resolves.toMatchObject({
+      result: { fullPath: 'group/app' },
+      invalidateStores: ['integrations', 'dockerRegistries'],
+    });
 
     expect(integrationsService.gitLabUpdateProjectSettings).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'user-1' }),

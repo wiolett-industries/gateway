@@ -157,6 +157,7 @@ export type WSServerMessage =
   | { type: 'conversation.snapshot'; conversationId: string; snapshot: AIConversationRuntimeSnapshot }
   | { type: 'assistant.delta'; conversationId: string; runId: string; content: string; version: number }
   | { type: 'assistant.comment_delta'; conversationId: string; runId: string; content: string; version: number }
+  | { type: 'assistant.comment_done'; conversationId: string; runId: string }
   | { type: 'run.status_changed'; conversationId: string; run: AIConversationRuntimeSnapshot['runtime']['activeRun'] }
   | { type: 'stores.invalidated'; conversationId: string; stores: string[] }
   | {

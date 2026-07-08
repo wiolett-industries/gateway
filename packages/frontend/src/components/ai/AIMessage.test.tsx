@@ -196,4 +196,44 @@ describe("AIMessage tool call groups", () => {
     expect(screen.getByText("Старый контекст сжат и сохранён.")).toBeInTheDocument();
     expect(screen.queryByText(/manual/)).not.toBeInTheDocument();
   });
+
+  it("does not show waiting for response after a question already has an answer", () => {
+    render(
+      <AIMessage
+        message={{
+          id: "assistant-question",
+          role: "assistant",
+          content: "",
+          isStreaming: true,
+          toolCalls: [
+            {
+              id: "question-1",
+              name: "ask_question",
+              arguments: { question: "Continue?" },
+              status: "awaiting_approval",
+              result: { answer: "yes" },
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(screen.queryByText("Waiting for response")).not.toBeInTheDocument();
+  });
+
+  it("keeps thinking visible while a progress comment is active", () => {
+    render(
+      <AIMessage
+        message={{
+          id: "run-1:comment:1",
+          role: "assistant",
+          content: "Проверяю конфигурацию.",
+          isStreaming: true,
+        }}
+      />
+    );
+
+    expect(screen.getByText("Проверяю конфигурацию.")).toBeInTheDocument();
+    expect(screen.getByText("Thinking")).toBeInTheDocument();
+  });
 });

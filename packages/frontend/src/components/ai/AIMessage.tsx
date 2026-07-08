@@ -177,17 +177,20 @@ export function AIMessage({
   const hasActiveQuestion =
     hasToolCalls &&
     message.toolCalls!.some(
-      (tc) => tc.name === "ask_question" && tc.status === "awaiting_approval"
+      (tc) =>
+        tc.name === "ask_question" && tc.status === "awaiting_approval" && !hasQuestionAnswer(tc)
     );
+  const isLiveComment = message.id.includes(":comment:") && Boolean(message.isStreaming);
 
   // Show thinking when:
   // 1. Streaming with nothing yet (initial)
   // 2. Streaming after all tools completed, waiting for next response
+  // 3. Streaming progress comments after the comment text has been emitted
   const isThinking =
     message.isStreaming &&
     !hasError &&
     !hasActiveQuestion &&
-    ((!hasContent && !hasToolCalls) || (allToolsDone && !hasContent));
+    (isLiveComment || (!hasContent && !hasToolCalls) || (allToolsDone && !hasContent));
   const isRetrying = message.isStreaming && hasError;
 
   return (
@@ -240,6 +243,11 @@ export function AIMessage({
       </div>
     </div>
   );
+}
+
+function hasQuestionAnswer(toolCall: AIToolCall): boolean {
+  if (!toolCall.result || typeof toolCall.result !== "object") return false;
+  return typeof (toolCall.result as { answer?: unknown }).answer === "string";
 }
 
 function openArtifactPreview(attachment: AIMessageAttachment | ArtifactAttachment) {

@@ -360,6 +360,11 @@ export type WSServerMessage =
       content: string;
       version: number;
     }
+  | {
+      type: "assistant.comment_done";
+      conversationId: string;
+      runId: string;
+    }
   | { type: "run.status_changed"; conversationId: string; run: AIRun | null }
   | { type: "stores.invalidated"; conversationId: string; stores: string[] }
   | {

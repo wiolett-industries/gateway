@@ -553,7 +553,7 @@ export class GitLabProvider implements VcsConnectorProvider {
     options: { maxBytes?: number; timeoutMs?: number } = {}
   ): Promise<VcsArchiveResult> {
     const { buffer, contentType } = await this.client(auth).requestBuffer(
-      this.projectPath(project, '/repository/archive.tar.gz'),
+      this.projectPath(project, '/repository/archive'),
       {
         query: { sha: ref },
         timeoutMs: options.timeoutMs ?? 120_000,

@@ -109,6 +109,16 @@ function subscribeToUserRuntime(ws: WSContext, state: WSConnectionState, userId:
       invalidatedStores?: string[];
     };
     if (event.userId !== userId || typeof event.conversationId !== 'string') return;
+    if (event.type === 'assistant.comment_done') {
+      if (state.subscribedConversationIds.has(event.conversationId) && typeof event.runId === 'string') {
+        send(ws, {
+          type: 'assistant.comment_done',
+          conversationId: event.conversationId,
+          runId: event.runId,
+        });
+      }
+      return;
+    }
     if (event.type === 'assistant.delta' || event.type === 'assistant.comment_delta') {
       if (
         state.subscribedConversationIds.has(event.conversationId) &&

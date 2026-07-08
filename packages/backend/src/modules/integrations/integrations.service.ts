@@ -1010,11 +1010,23 @@ export class IntegrationsService {
     const result = await context.provider.updateProjectSettings(context.auth, this.toProviderProject(context.project), {
       containerRegistryAccessLevel: input.containerRegistryAccessLevel,
     });
+    let syncResult: Awaited<ReturnType<IntegrationsService['syncGitLabConnector']>> | null = null;
+    let syncError: { code: string; message: string; statusCode?: number } | null = null;
+    try {
+      syncResult = await this.syncGitLabConnector(context.connector.id, user.id);
+    } catch (error) {
+      syncError =
+        error instanceof AppError
+          ? { code: error.code, message: error.message, statusCode: error.statusCode }
+          : { code: 'CONNECTOR_SYNC_FAILED', message: error instanceof Error ? error.message : String(error) };
+    }
     await this.auditGitLabTool(user, context.connector, GITLAB_AUDIT_ACTIONS.projectSettingsUpdate, {
       project: context.project.fullPath,
       settings: { containerRegistryAccessLevel: input.containerRegistryAccessLevel },
+      syncStatus: syncResult?.status ?? 'error',
+      syncError,
     });
-    return result;
+    return { ...result, sync: syncResult, syncError };
   }
 
   async gitLabListRepositoryTree(
@@ -1599,10 +1611,10 @@ export class IntegrationsService {
       connectorId: string;
       project: string;
       requiredScope: string;
-      requiredCapability?: string;
+      requiredCapability?: keyof IntegrationConnectorCapabilities;
     }
   ) {
-    const connector = await this.getConnectorRow(input.connectorId, 'gitlab');
+    let connector = await this.getConnectorRow(input.connectorId, 'gitlab');
     if (!connector.enabled) {
       throw new AppError(409, 'CONNECTOR_DISABLED', 'GitLab connector is disabled');
     }
@@ -1628,6 +1640,10 @@ export class IntegrationsService {
     const allowlistRows = await this.listAllowlistRows(connector.id);
     const isProjectAllowed =
       connector.allowlistMode === 'all_visible' || this.isGitLabProjectAllowed(project, allowlistRows);
+    if (input.requiredCapability && connector.capabilities?.[input.requiredCapability] !== true) {
+      const capabilities = await this.refreshGitLabConnectorCapabilities(connector);
+      connector = { ...connector, capabilities };
+    }
     assertConnectorOperationAccess({
       actor: { userId: user.id, scopes: user.scopes },
       provider: 'gitlab',
@@ -1646,6 +1662,16 @@ export class IntegrationsService {
       auth: this.authFor(connector),
       provider: this.getVcsProvider(connector.provider),
     };
+  }
+
+  private async refreshGitLabConnectorCapabilities(connector: ConnectorRow): Promise<IntegrationConnectorCapabilities> {
+    const provider = this.getProvider(connector.provider);
+    const capabilities = await provider.testConnection(this.authFor(connector));
+    await this.db
+      .update(integrationConnectors)
+      .set({ capabilities, testedAt: new Date(), updatedAt: new Date() })
+      .where(eq(integrationConnectors.id, connector.id));
+    return capabilities;
   }
 
   private toSafeProject(project: ProjectRow) {

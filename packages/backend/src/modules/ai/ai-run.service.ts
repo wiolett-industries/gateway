@@ -52,6 +52,13 @@ export interface AIAssistantCommentDeltaEvent {
   version: number;
 }
 
+export interface AIAssistantCommentDoneEvent {
+  type: 'assistant.comment_done';
+  userId: string;
+  conversationId: string;
+  runId: string;
+}
+
 export interface CreateAIRunInput {
   conversationId: string;
   userId: string;
@@ -140,6 +147,7 @@ export class AIRunService {
         this.publishAssistantDelta(userId, conversationId, runId, content, version),
       (userId, conversationId, runId, content, version) =>
         this.publishAssistantCommentDelta(userId, conversationId, runId, content, version),
+      (userId, conversationId, runId) => this.publishAssistantCommentDone(userId, conversationId, runId),
       conversationSearchService
     );
   }
@@ -798,6 +806,16 @@ export class AIRunService {
       content,
       version,
     } satisfies AIAssistantCommentDeltaEvent;
+    this.eventBus?.publish(aiUserConversationsChangedChannel(userId), event);
+  }
+
+  private publishAssistantCommentDone(userId: string, conversationId: string, runId: string): void {
+    const event = {
+      type: 'assistant.comment_done',
+      userId,
+      conversationId,
+      runId,
+    } satisfies AIAssistantCommentDoneEvent;
     this.eventBus?.publish(aiUserConversationsChangedChannel(userId), event);
   }
 }

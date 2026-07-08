@@ -244,6 +244,16 @@ function invalidateStore(storeName: string): void {
     case "networks":
       api.invalidateCache("req:/api/docker");
       break;
+    case "integrations":
+      api.invalidateCache("req:/api/integrations/gitlab/connectors");
+      api.invalidateCache("settings:gitlab-connectors");
+      api.invalidateCache("req:/api/integrations/cloudflare/connectors");
+      api.invalidateCache("settings:cloudflare-connectors");
+      break;
+    case "dockerRegistries":
+      api.invalidateCache("req:/api/docker/registries");
+      api.invalidateCache("settings:docker-registries");
+      break;
   }
 }
 
@@ -1441,6 +1451,15 @@ function handleWSMessage(
       }));
       break;
 
+    case "assistant.comment_done":
+      if (get().activeConversationId !== msg.conversationId) return;
+      set((state) => ({
+        activeRunId: msg.runId,
+        isStreaming: true,
+        messages: applyAssistantCommentDoneToMessages(state.messages, msg),
+      }));
+      break;
+
     case "run.status_changed":
       set((state) => ({
         recentConversations: patchRecentConversationRunStatus(
@@ -1464,8 +1483,25 @@ function handleWSMessage(
       for (const storeName of msg.stores) invalidateStore(storeName);
       break;
 
-    case "approval.updated":
     case "question.answered":
+      if (get().activeConversationId !== msg.conversationId) return;
+      set((state) => ({
+        activeRunId: msg.runId,
+        isStreaming: true,
+        pendingApprovalToolCallId: null,
+        messages: ensureActiveRuntimePlaceholder(
+          updateToolCallById(state.messages, msg.question.toolCallId, (tc) => ({
+            ...tc,
+            status: "completed",
+            result: { answer: msg.question.answer ?? tc.result },
+            error: undefined,
+          })),
+          msg.runId
+        ),
+      }));
+      break;
+
+    case "approval.updated":
       break;
   }
 }
@@ -1536,17 +1572,27 @@ function preserveFreshRuntimeDraft(
 ): AIMessage[] {
   if (!activeRunId) return snapshotMessages;
   const currentIndex = findActiveRuntimeAssistantIndex(currentMessages, activeRunId);
-  if (currentIndex === -1) return snapshotMessages;
-  const snapshotIndex = findActiveRuntimeAssistantIndex(snapshotMessages, activeRunId);
-  if (snapshotIndex === -1) return snapshotMessages;
-  const currentDraft = currentMessages[currentIndex];
   const nextMessages = [...snapshotMessages];
-  nextMessages[snapshotIndex] = {
-    ...nextMessages[snapshotIndex],
-    content: currentDraft.content,
-    isStreaming: currentDraft.isStreaming,
-  };
-  return nextMessages;
+  if (currentIndex !== -1) {
+    const snapshotIndex = findActiveRuntimeAssistantIndex(snapshotMessages, activeRunId);
+    if (snapshotIndex !== -1) {
+      const currentDraft = currentMessages[currentIndex];
+      nextMessages[snapshotIndex] = {
+        ...nextMessages[snapshotIndex],
+        content: currentDraft.content,
+        isStreaming: currentDraft.isStreaming,
+      };
+    }
+  }
+
+  const currentCommentIndex = findActiveCommentIndex(currentMessages, activeRunId);
+  if (
+    currentCommentIndex !== -1 &&
+    !nextMessages.some((message) => message.id === currentMessages[currentCommentIndex].id)
+  ) {
+    nextMessages.push(currentMessages[currentCommentIndex]);
+  }
+  return sortMessagesBySequence(nextMessages);
 }
 
 function applyAssistantDeltaToMessages(
@@ -1590,10 +1636,13 @@ function applyAssistantCommentDeltaToMessages(
   if (delta.version <= previousVersion) return messages;
   assistantDraftVersions.set(delta.runId, delta.version);
 
-  const commentId = `${delta.runId}:comment`;
   const nextMessages = [...messages];
-  let targetIndex = nextMessages.findIndex(
-    (message) => message.role === "assistant" && message.id === commentId
+  let targetIndex = findLastIndex(
+    nextMessages,
+    (message) =>
+      message.role === "assistant" &&
+      message.id.startsWith(`${delta.runId}:comment:`) &&
+      Boolean(message.isStreaming)
   );
   if (targetIndex === -1) {
     const placeholderIndex = nextMessages.findIndex(
@@ -1606,7 +1655,7 @@ function applyAssistantCommentDeltaToMessages(
     if (placeholderIndex === -1) {
       targetIndex = nextMessages.length;
       nextMessages.push({
-        id: commentId,
+        id: `${delta.runId}:comment:${delta.version}`,
         role: "assistant",
         content: "",
         sequence: nextMessageSequence(nextMessages),
@@ -1617,7 +1666,7 @@ function applyAssistantCommentDeltaToMessages(
       targetIndex = placeholderIndex;
       nextMessages[targetIndex] = {
         ...nextMessages[targetIndex],
-        id: commentId,
+        id: `${delta.runId}:comment:${delta.version}`,
       };
     }
   }
@@ -1629,6 +1678,50 @@ function applyAssistantCommentDeltaToMessages(
     isStreaming: true,
   };
   return sortMessagesBySequence(nextMessages);
+}
+
+function applyAssistantCommentDoneToMessages(
+  messages: AIMessage[],
+  event: Extract<WSServerMessage, { type: "assistant.comment_done" }>
+): AIMessage[] {
+  const nextMessages = messages.map((message) =>
+    message.role === "assistant" &&
+    message.id.startsWith(`${event.runId}:comment:`) &&
+    message.isStreaming
+      ? { ...message, isStreaming: false }
+      : message
+  );
+  return ensureActiveRuntimePlaceholder(nextMessages, event.runId);
+}
+
+function ensureActiveRuntimePlaceholder(messages: AIMessage[], runId: string): AIMessage[] {
+  if (
+    messages.some(
+      (message) =>
+        message.role === "assistant" &&
+        (message.id === `${runId}:runtime` || message.id === `${runId}:draft`)
+    )
+  ) {
+    return sortMessagesBySequence(messages);
+  }
+  return sortMessagesBySequence([
+    ...messages,
+    {
+      id: `${runId}:runtime`,
+      role: "assistant",
+      content: "",
+      sequence: nextMessageSequence(messages),
+      createdAt: nowIso(),
+      isStreaming: true,
+    },
+  ]);
+}
+
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) return index;
+  }
+  return -1;
 }
 
 function clearActiveToolBoundaryStreamingWhenTextStarted(
@@ -1964,6 +2057,16 @@ function findActiveRuntimeAssistantIndex(messages: AIMessage[], activeRunId: str
   const runtimeIds = new Set([`${activeRunId}:draft`, `${activeRunId}:runtime`]);
   return messages.findIndex(
     (message) => message.role === "assistant" && runtimeIds.has(message.id)
+  );
+}
+
+function findActiveCommentIndex(messages: AIMessage[], activeRunId: string): number {
+  return findLastIndex(
+    messages,
+    (message) =>
+      message.role === "assistant" &&
+      message.id.startsWith(`${activeRunId}:comment:`) &&
+      Boolean(message.isStreaming)
   );
 }
 

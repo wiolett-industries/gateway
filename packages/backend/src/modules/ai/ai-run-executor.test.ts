@@ -71,11 +71,13 @@ function createExecutorHarness(
   const publishConversationChanged = vi.fn();
   const publishAssistantDelta = vi.fn();
   const publishAssistantCommentDelta = vi.fn();
+  const publishAssistantCommentDone = vi.fn();
   const executor = new AIRunExecutor(
     { select, insert, update } as never,
     publishConversationChanged,
     publishAssistantDelta,
-    publishAssistantCommentDelta
+    publishAssistantCommentDelta,
+    publishAssistantCommentDone
   );
 
   container.registerInstance(AIService, {

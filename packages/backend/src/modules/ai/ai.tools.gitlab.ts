@@ -378,7 +378,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'gitlab_update_project_settings',
     description:
-      'Update supported GitLab project settings. Currently supports container_registry_access_level to enable, private-limit, or disable the project container registry.',
+      'Update supported GitLab project settings. Currently supports container_registry_access_level to enable, private-limit, or disable the project container registry. Automatically runs a connector sync afterward so Gateway refreshes discovered registries.',
     parameters: {
       type: 'object',
       properties: {
@@ -394,7 +394,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     destructive: true,
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:registry:manage',
-    invalidateStores: [],
+    invalidateStores: ['integrations', 'dockerRegistries'],
     historyRetention: { mode: 'persistent_context' },
   },
   {

@@ -940,6 +940,103 @@ describe("AI backend runtime store", () => {
     expect(getToolCall("call_question_1")?.result).toBeUndefined();
   });
 
+  it("marks answered questions complete and shows a runtime thinking placeholder", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({
+      activeConversationId: "conversation-1",
+      activeRunId: "run-1",
+      pendingApprovalToolCallId: "call_question_1",
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "call_question_1",
+              name: "ask_question",
+              arguments: { question: "Continue?" },
+              status: "awaiting_approval",
+            },
+          ],
+        },
+      ],
+    });
+
+    socket.emit({
+      type: "question.answered",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      duplicate: false,
+      question: {
+        id: "question-row-1",
+        runId: "run-1",
+        conversationId: "conversation-1",
+        toolCallId: "call_question_1",
+        question: "Continue?",
+        status: "answered",
+        answer: "yes",
+      },
+    });
+
+    expect(useAIStore.getState().pendingApprovalToolCallId).toBeNull();
+    expect(getToolCall("call_question_1")).toMatchObject({
+      status: "completed",
+      result: { answer: "yes" },
+    });
+    expect(useAIStore.getState().messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "run-1:runtime",
+          isStreaming: true,
+          content: "",
+        }),
+      ])
+    );
+  });
+
+  it("separates consecutive streamed assistant comments with a thinking placeholder", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+
+    socket.emit({
+      type: "assistant.comment_delta",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      content: "Первый комментарий.",
+      version: 1,
+    });
+
+    socket.emit({
+      type: "assistant.comment_done",
+      conversationId: "conversation-1",
+      runId: "run-1",
+    });
+
+    socket.emit({
+      type: "assistant.comment_delta",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      content: "Второй комментарий.",
+      version: 2,
+    });
+
+    expect(useAIStore.getState().messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "run-1:comment:1",
+          content: "Первый комментарий.",
+          isStreaming: false,
+        }),
+        expect.objectContaining({
+          id: "run-1:comment:2",
+          content: "Второй комментарий.",
+          isStreaming: true,
+        }),
+      ])
+    );
+  });
+
   it("updates background chat runtime status from snapshots and status events", async () => {
     const socket = await connectAI();
     useAIStore.setState({
@@ -1457,6 +1554,11 @@ describe("AI backend runtime store", () => {
       version: 1,
     });
     socket.emit({
+      type: "assistant.comment_done",
+      conversationId: "conversation-1",
+      runId: "run-1",
+    });
+    socket.emit({
       type: "assistant.delta",
       conversationId: "conversation-1",
       runId: "run-1",
@@ -1466,9 +1568,9 @@ describe("AI backend runtime store", () => {
 
     expect(useAIStore.getState().messages).toEqual([
       expect.objectContaining({
-        id: "run-1:comment",
+        id: "run-1:comment:1",
         content: "Проверяю ресурсы.",
-        isStreaming: true,
+        isStreaming: false,
       }),
       expect.objectContaining({
         id: "run-1:runtime",
