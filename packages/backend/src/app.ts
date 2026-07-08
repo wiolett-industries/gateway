@@ -285,6 +285,7 @@ export function createApp() {
     return c.json(
       {
         status: healthy ? 'ok' : 'unavailable',
+        version: getEnv().APP_VERSION,
         timestamp: new Date().toISOString(),
         dependencies: { redis },
       },

@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { stripGatewayReloadParam } from "@/lib/gateway-update-reload";
 import { registerAuthContextReset } from "@/stores/auth";
 import { resetClientSessionState } from "@/stores/session-reset";
 import App from "./App";
@@ -8,8 +9,9 @@ import "./index.css";
 registerAuthContextReset(resetClientSessionState);
 
 // Strip cache-bust param added by update reload
-if (window.location.search.includes("_v=")) {
-  window.history.replaceState(null, "", window.location.pathname);
+const cleanReloadUrl = stripGatewayReloadParam(window.location.href);
+if (cleanReloadUrl != null) {
+  window.history.replaceState(null, "", cleanReloadUrl);
 }
 
 const rootElement = document.getElementById("root");

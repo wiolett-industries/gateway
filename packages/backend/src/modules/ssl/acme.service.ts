@@ -4,6 +4,11 @@ import { x509 } from '@/lib/x509.js';
 
 const logger = createChildLogger('ACMEService');
 
+export function dns01RecordNameForDomain(domain: string): string {
+  const normalized = domain.startsWith('*.') ? domain.slice(2) : domain;
+  return `_acme-challenge.${normalized}`;
+}
+
 export class ACMEService {
   /** Set by bootstrap to deploy challenge files to the correct nginx node via daemon.
    *  `domains` is passed so the callback can look up which node hosts those domains. */
@@ -185,7 +190,7 @@ export class ACMEService {
 
       challenges.push({
         domain: authz.identifier.value,
-        recordName: `_acme-challenge.${authz.identifier.value}`,
+        recordName: dns01RecordNameForDomain(authz.identifier.value),
         recordValue: keyAuthorization,
       });
     }

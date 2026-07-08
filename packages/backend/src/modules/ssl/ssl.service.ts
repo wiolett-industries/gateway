@@ -3,10 +3,11 @@ import { and, count, desc, eq, ilike, inArray, lte, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificates, proxyHosts, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
-import { buildWhere, escapeLike } from '@/lib/utils.js';
+import { buildWhere, escapeLike, sleep } from '@/lib/utils.js';
 import { x509 } from '@/lib/x509.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import type { IntegrationsService } from '@/modules/integrations/integrations.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NginxConfigGenerator } from '@/services/nginx-config-generator.service.js';
@@ -16,8 +17,20 @@ import type { ACMEService } from './acme.service.js';
 import type { LinkInternalCertInput, RequestACMECertInput, SSLCertListQuery, UploadCertInput } from './ssl.schemas.js';
 
 const logger = createChildLogger('SSLService');
+const CLOUDFLARE_DNS01_PROPAGATION_DELAY_MS = 10_000;
 
-type DNSChallenge = { domain: string; recordName: string; recordValue: string };
+type DNSChallenge = {
+  domain: string;
+  recordName: string;
+  recordValue: string;
+  cloudflare?: {
+    connectorId: string;
+    zoneId: string;
+    zoneName: string;
+    recordId: string;
+    created: boolean;
+  };
+};
 
 export class SSLService {
   constructor(
@@ -30,8 +43,12 @@ export class SSLService {
   ) {}
 
   private eventBus?: EventBusService;
+  private integrationsService?: IntegrationsService;
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
+  }
+  setIntegrationsService(service: IntegrationsService) {
+    this.integrationsService = service;
   }
   private emitCert(
     id: string,
@@ -183,7 +200,11 @@ export class SSLService {
   // Complete DNS-01 verification
   // ---------------------------------------------------------------------------
 
-  async completeDNS01Verification(certId: string, userId: string) {
+  async completeDNS01Verification(
+    certId: string,
+    userId: string,
+    options: { cleanupCloudflare?: boolean; clearPendingOnFailure?: boolean } = {}
+  ) {
     const cert = await this.db.query.sslCertificates.findFirst({
       where: eq(sslCertificates.id, certId),
     });
@@ -225,65 +246,71 @@ export class SSLService {
       // Encrypt private key
       const encrypted = this.cryptoService.encryptPrivateKey(result.privateKeyPem);
 
-      // Update cert in DB
-      await this.db
-        .update(sslCertificates)
-        .set({
-          certificatePem: result.certificatePem,
-          privateKeyPem: encrypted.encryptedPrivateKey,
-          encryptedDek: encrypted.encryptedDek,
-          dekIv: encrypted.dekIv,
-          chainPem: result.chainPem,
-          notBefore: result.notBefore,
-          notAfter: result.notAfter,
-          status: 'active',
-          lastRenewedAt: pendingOperation === 'renewal' ? new Date() : cert.lastRenewedAt,
-          renewalError: null,
-          acmeOrderUrl: null, // Clear order URL after completion
-          acmePendingOperation: null,
-          acmePendingChallenges: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(sslCertificates.id, certId));
-
-      // Deploy to nginx — separate try/catch since cert is already valid at this point
       try {
-        await this.deployCertToDefaultNode(
-          certId,
-          result.certificatePem,
-          result.privateKeyPem,
-          result.chainPem || undefined
-        );
-      } catch (deployError) {
-        const deployMsg = deployError instanceof Error ? deployError.message : 'Unknown deploy error';
-        logger.error('Certificate obtained but deploy to nginx failed', { certId, error: deployMsg });
-        // Keep status as 'active' — cert is valid, just not deployed yet
+        // Update cert in DB
         await this.db
           .update(sslCertificates)
           .set({
-            renewalError: `Deploy failed: ${deployMsg}`,
+            certificatePem: result.certificatePem,
+            privateKeyPem: encrypted.encryptedPrivateKey,
+            encryptedDek: encrypted.encryptedDek,
+            dekIv: encrypted.dekIv,
+            chainPem: result.chainPem,
+            notBefore: result.notBefore,
+            notAfter: result.notAfter,
+            status: 'active',
+            lastRenewedAt: pendingOperation === 'renewal' ? new Date() : cert.lastRenewedAt,
+            renewalError: null,
+            acmeOrderUrl: null, // Clear order URL after completion
+            acmePendingOperation: null,
+            acmePendingChallenges: null,
             updatedAt: new Date(),
           })
           .where(eq(sslCertificates.id, certId));
-        throw new AppError(500, 'DEPLOY_FAILED', `Certificate obtained but deploy failed: ${deployMsg}`);
+
+        // Deploy to nginx — separate try/catch since cert is already valid at this point
+        try {
+          await this.deployCertToDefaultNode(
+            certId,
+            result.certificatePem,
+            result.privateKeyPem,
+            result.chainPem || undefined
+          );
+        } catch (deployError) {
+          const deployMsg = deployError instanceof Error ? deployError.message : 'Unknown deploy error';
+          logger.error('Certificate obtained but deploy to nginx failed', { certId, error: deployMsg });
+          // Keep status as 'active' — cert is valid, just not deployed yet
+          await this.db
+            .update(sslCertificates)
+            .set({
+              renewalError: `Deploy failed: ${deployMsg}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(sslCertificates.id, certId));
+          throw new AppError(500, 'DEPLOY_FAILED', `Certificate obtained but deploy failed: ${deployMsg}`);
+        }
+
+        await this.auditService.log({
+          userId,
+          action: pendingOperation === 'renewal' ? 'ssl.acme_dns01_renew_verify' : 'ssl.acme_dns01_verify',
+          resourceType: 'ssl_certificate',
+          resourceId: certId,
+          details: { domains: cert.domainNames },
+        });
+
+        logger.info('ACME DNS-01 certificate verified', { certId, domains: cert.domainNames, pendingOperation });
+        this.emitCert(certId, pendingOperation === 'renewal' ? 'renewed' : 'created', cert.name);
+
+        const updated = await this.db.query.sslCertificates.findFirst({
+          where: eq(sslCertificates.id, certId),
+        });
+
+        return this.sanitizeCert(updated!);
+      } finally {
+        if (options.cleanupCloudflare) {
+          await this.cleanupCloudflareDnsChallenges((cert.acmePendingChallenges ?? []) as DNSChallenge[]);
+        }
       }
-
-      await this.auditService.log({
-        userId,
-        action: pendingOperation === 'renewal' ? 'ssl.acme_dns01_renew_verify' : 'ssl.acme_dns01_verify',
-        resourceType: 'ssl_certificate',
-        resourceId: certId,
-        details: { domains: cert.domainNames },
-      });
-
-      logger.info('ACME DNS-01 certificate verified', { certId, domains: cert.domainNames, pendingOperation });
-      this.emitCert(certId, pendingOperation === 'renewal' ? 'renewed' : 'created', cert.name);
-
-      const updated = await this.db.query.sslCertificates.findFirst({
-        where: eq(sslCertificates.id, certId),
-      });
-
-      return this.sanitizeCert(updated!);
     } catch (error) {
       if (error instanceof AppError) throw error;
       const message = error instanceof Error ? error.message : 'Unknown verification error';
@@ -292,6 +319,13 @@ export class SSLService {
           .update(sslCertificates)
           .set({
             renewalError: `Renewal failed: ${message}`,
+            ...(options.clearPendingOnFailure
+              ? {
+                  acmeOrderUrl: null,
+                  acmePendingOperation: null,
+                  acmePendingChallenges: null,
+                }
+              : {}),
             updatedAt: new Date(),
           })
           .where(eq(sslCertificates.id, certId));
@@ -594,13 +628,16 @@ export class SSLService {
       dekIv: acmeKeyEncrypted.dekIv,
     });
 
+    const cloudflareChallenges = await this.tryProvisionCloudflareDnsChallenges(cert.id, result.challenges);
+    const pendingChallenges = cloudflareChallenges ?? result.challenges;
+
     await this.db
       .update(sslCertificates)
       .set({
         acmeAccountKey: acmeAccountKeyBlob,
         acmeOrderUrl: result.orderUrl,
         acmePendingOperation: 'renewal',
-        acmePendingChallenges: result.challenges,
+        acmePendingChallenges: pendingChallenges,
         renewalError: null,
         updatedAt: new Date(),
       })
@@ -611,10 +648,18 @@ export class SSLService {
       action: 'ssl.acme_dns01_renew_start',
       resourceType: 'ssl_certificate',
       resourceId: cert.id,
-      details: { domains: cert.domainNames, challengeType: 'dns-01' },
+      details: { domains: cert.domainNames, challengeType: 'dns-01', cloudflare: Boolean(cloudflareChallenges) },
     });
 
     logger.info('ACME DNS-01 renewal challenge started', { certId: cert.id, domains: cert.domainNames });
+
+    if (cloudflareChallenges) {
+      await sleep(CLOUDFLARE_DNS01_PROPAGATION_DELAY_MS);
+      return this.completeDNS01Verification(cert.id, userId, {
+        cleanupCloudflare: true,
+        clearPendingOnFailure: true,
+      });
+    }
 
     const updated = await this.db.query.sslCertificates.findFirst({
       where: eq(sslCertificates.id, cert.id),
@@ -625,6 +670,93 @@ export class SSLService {
       status: 'pending_dns_verification' as const,
       challenges: result.challenges as DNSChallenge[],
     };
+  }
+
+  private async tryProvisionCloudflareDnsChallenges(
+    certId: string,
+    challenges: DNSChallenge[]
+  ): Promise<DNSChallenge[] | null> {
+    if (!this.integrationsService) return null;
+
+    const provisioned: DNSChallenge[] = [];
+    const createdRecords: Array<{ zoneId: string; recordId: string; challenge: DNSChallenge }> = [];
+
+    try {
+      for (const challenge of challenges) {
+        const context = await this.integrationsService.resolveCloudflareDnsContext(challenge.domain);
+        const records = await context.client.listDnsRecords(context.zone.remoteId, challenge.recordName);
+        const existing = records.find((record) => record.type === 'TXT' && record.content === challenge.recordValue);
+        const record =
+          existing ??
+          (await context.client.createDnsRecord(context.zone.remoteId, {
+            type: 'TXT',
+            name: challenge.recordName,
+            content: challenge.recordValue,
+            ttl: 60,
+            comment: `Gateway ACME DNS-01 challenge for SSL certificate ${certId}`,
+          }));
+        const created = !existing;
+        const nextChallenge: DNSChallenge = {
+          ...challenge,
+          cloudflare: {
+            connectorId: context.connector.id,
+            zoneId: context.zone.remoteId,
+            zoneName: context.zone.name,
+            recordId: record.id,
+            created,
+          },
+        };
+        provisioned.push(nextChallenge);
+        if (created) {
+          createdRecords.push({ zoneId: context.zone.remoteId, recordId: record.id, challenge: nextChallenge });
+        }
+      }
+      return provisioned;
+    } catch (error) {
+      for (const created of createdRecords.reverse()) {
+        try {
+          const context = await this.integrationsService.getCloudflareDnsContextForRecord(
+            created.challenge.cloudflare!.connectorId,
+            created.zoneId
+          );
+          await context.client.deleteDnsRecord(created.zoneId, created.recordId);
+        } catch (cleanupError) {
+          logger.warn('Failed to clean up Cloudflare ACME challenge after provisioning failure', {
+            certId,
+            zoneId: created.zoneId,
+            recordId: created.recordId,
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          });
+        }
+      }
+      if (error instanceof AppError && error.code === 'CLOUDFLARE_ZONE_NOT_FOUND') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private async cleanupCloudflareDnsChallenges(challenges: DNSChallenge[]) {
+    if (!this.integrationsService) return;
+    for (const challenge of challenges) {
+      const cloudflare = challenge.cloudflare;
+      if (!cloudflare?.created) continue;
+      try {
+        const context = await this.integrationsService.getCloudflareDnsContextForRecord(
+          cloudflare.connectorId,
+          cloudflare.zoneId
+        );
+        await context.client.deleteDnsRecord(cloudflare.zoneId, cloudflare.recordId);
+      } catch (error) {
+        logger.warn('Failed to clean up Cloudflare ACME challenge record', {
+          domain: challenge.domain,
+          recordName: challenge.recordName,
+          zoneId: cloudflare.zoneId,
+          recordId: cloudflare.recordId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------

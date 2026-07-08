@@ -1,4 +1,4 @@
-import { and, eq, lte } from 'drizzle-orm';
+import { and, eq, isNull, lte, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
@@ -36,6 +36,7 @@ export class ACMERenewalJob {
         eq(sslCertificates.autoRenew, true),
         eq(sslCertificates.type, 'acme'),
         eq(sslCertificates.status, 'active'),
+        or(isNull(sslCertificates.acmePendingOperation), eq(sslCertificates.acmePendingOperation, 'renewal')),
         lte(sslCertificates.notAfter, threshold)
       ),
       columns: {
@@ -59,21 +60,50 @@ export class ACMERenewalJob {
 
     for (const cert of certsToRenew) {
       try {
+        if (cert.acmePendingOperation === 'renewal') {
+          if (cert.acmeChallengeType === 'dns-01' && hasCloudflareChallenges(cert.acmePendingChallenges)) {
+            await this.sslService.completeDNS01Verification(cert.id, SYSTEM_USER_ID, {
+              cleanupCloudflare: true,
+              clearPendingOnFailure: true,
+            });
+            renewed++;
+            logger.info(`Completed pending DNS-01 renewal: ${cert.name}`, {
+              certId: cert.id,
+              domains: cert.domainNames,
+            });
+          } else {
+            await this.alertService.createAlert({
+              type: 'expiry_warning',
+              resourceType: 'ssl_certificate',
+              resourceId: cert.id,
+              message: `Certificate "${cert.name}" (DNS-01) is expiring on ${cert.notAfter?.toISOString()} and requires manual DNS verification.`,
+            });
+            manualRequired++;
+            logger.warn(`DNS-01 certificate has pending manual verification: ${cert.name}`, { certId: cert.id });
+          }
+          continue;
+        }
+
         if (cert.acmeChallengeType === 'http-01') {
           // Automatic renewal via HTTP-01 challenge
           await this.sslService.renewCert(cert.id, SYSTEM_USER_ID);
           renewed++;
           logger.info(`Renewed certificate: ${cert.name}`, { certId: cert.id, domains: cert.domainNames });
         } else if (cert.acmeChallengeType === 'dns-01') {
-          // DNS-01 requires manual intervention
-          await this.alertService.createAlert({
-            type: 'expiry_warning',
-            resourceType: 'ssl_certificate',
-            resourceId: cert.id,
-            message: `Certificate "${cert.name}" (DNS-01) is expiring on ${cert.notAfter?.toISOString()} and requires manual renewal. DNS-01 certificates cannot be auto-renewed.`,
-          });
-          manualRequired++;
-          logger.warn(`DNS-01 certificate requires manual renewal: ${cert.name}`, { certId: cert.id });
+          const result = await this.sslService.renewCert(cert.id, SYSTEM_USER_ID);
+          if (result.status === 'active') {
+            renewed++;
+            logger.info(`Renewed DNS-01 certificate: ${cert.name}`, { certId: cert.id, domains: cert.domainNames });
+          } else {
+            await this.alertService.createAlert({
+              type: 'expiry_warning',
+              resourceType: 'ssl_certificate',
+              resourceId: cert.id,
+              message: `Certificate "${cert.name}" (DNS-01) is expiring on ${cert.notAfter?.toISOString()} and requires manual DNS verification.`,
+            });
+            manualRequired++;
+            logger.warn(`DNS-01 certificate requires manual verification: ${cert.name}`, { certId: cert.id });
+          }
         }
       } catch (error) {
         failed++;
@@ -93,4 +123,8 @@ export class ACMERenewalJob {
 
     logger.info('ACME renewal job completed', { renewed, failed, manualRequired, total: certsToRenew.length });
   }
+}
+
+function hasCloudflareChallenges(challenges: unknown): boolean {
+  return Array.isArray(challenges) && challenges.some((challenge) => Boolean(challenge?.cloudflare));
 }

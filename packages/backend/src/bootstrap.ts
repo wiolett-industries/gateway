@@ -453,6 +453,7 @@ export async function initializeContainer(): Promise<void> {
 
   const sslService = new SSLService(db, acmeService, nginxConfigGenerator, cryptoService, auditService, nodeDispatch);
   sslService.setEventBus(eventBus);
+  sslService.setIntegrationsService(integrationsService);
   container.registerInstance(SSLService, sslService);
 
   // Monitoring services

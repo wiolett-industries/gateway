@@ -22,7 +22,7 @@ import type { DockerRegistryService } from '@/modules/docker/docker-registry.ser
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { User } from '@/types.js';
-import { CloudflareClient, type CloudflareZoneRef } from './cloudflare-client.js';
+import { CloudflareClient, type CloudflareDnsRecord, type CloudflareZoneRef } from './cloudflare-client.js';
 import {
   buildGitLabFileCommitAuditDetails,
   CLOUDFLARE_AUDIT_ACTIONS,
@@ -1929,22 +1929,54 @@ export class IntegrationsService {
         status: tokenStatus.status,
       });
     }
-    const zones = await client.listZones();
+    let zones: CloudflareZoneRef[];
+    try {
+      zones = await client.listZones();
+    } catch (error) {
+      if (!this.isCloudflarePermissionError(error)) throw error;
+      throw new AppError(
+        400,
+        'CLOUDFLARE_ZONE_READ_REQUIRED',
+        'Cloudflare token must include Zone:Read permission for the zones Gateway should manage',
+        { cause: error instanceof Error ? error.message : String(error) }
+      );
+    }
     const probeZone = zones[0];
     if (!probeZone) {
       throw new AppError(400, 'CLOUDFLARE_ZONE_NOT_FOUND', 'Cloudflare token has no active zones');
     }
-    await client.listDnsRecords(probeZone.id);
+    try {
+      await client.listDnsRecords(probeZone.id);
+    } catch (error) {
+      if (!this.isCloudflarePermissionError(error)) throw error;
+      throw new AppError(
+        400,
+        'CLOUDFLARE_DNS_READ_REQUIRED',
+        'Cloudflare token must include DNS:Read permission for Gateway-managed zones',
+        { zone: probeZone.name, cause: error instanceof Error ? error.message : String(error) }
+      );
+    }
     let probeRecordId: string | null = null;
     let cleanupError: unknown = null;
     try {
-      const probeRecord = await client.createDnsRecord(probeZone.id, {
-        type: 'TXT',
-        name: `_gateway-permission-check.${probeZone.name}`,
-        content: `gateway-${Date.now()}`,
-        ttl: 60,
-        comment: 'Gateway permission check',
-      });
+      let probeRecord: CloudflareDnsRecord;
+      try {
+        probeRecord = await client.createDnsRecord(probeZone.id, {
+          type: 'TXT',
+          name: `_gateway-permission-check.${probeZone.name}`,
+          content: `gateway-${Date.now()}`,
+          ttl: 60,
+          comment: 'Gateway permission check',
+        });
+      } catch (error) {
+        if (!this.isCloudflarePermissionError(error)) throw error;
+        throw new AppError(
+          400,
+          'CLOUDFLARE_DNS_EDIT_REQUIRED',
+          'Cloudflare token must include DNS:Edit permission for Gateway-managed zones',
+          { zone: probeZone.name, cause: error instanceof Error ? error.message : String(error) }
+        );
+      }
       probeRecordId = probeRecord.id;
     } finally {
       if (probeRecordId) {
@@ -1971,6 +2003,10 @@ export class IntegrationsService {
       },
       zones,
     };
+  }
+
+  private isCloudflarePermissionError(error: unknown): boolean {
+    return error instanceof AppError && (error.statusCode === 401 || error.statusCode === 403);
   }
 
   private cloudflareZonePreview(zone: CloudflareZoneRef) {

@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import { applyForcedGatewayUpdateStatus } from "@/lib/dev-force-updates";
+import {
+  isGatewayUpdateTargetVersion,
+  publishGatewayReload,
+  reloadGatewayClient,
+} from "@/lib/gateway-update-reload";
 import { api } from "@/services/api";
 import { useAppStatusStore } from "@/stores/app-status";
 import type { UpdateStatus } from "@/types";
@@ -53,9 +58,13 @@ export const useUpdateStore = create<UpdateState>()((set, get) => ({
       const poll = setInterval(async () => {
         try {
           const status = await api.getVersionInfo();
-          if (status.currentVersion !== currentVersion) {
+          if (
+            (currentVersion && status.currentVersion !== currentVersion) ||
+            isGatewayUpdateTargetVersion(status.currentVersion, version)
+          ) {
             clearInterval(poll);
-            window.location.href = `${window.location.pathname}?_v=${Date.now()}`;
+            publishGatewayReload(status.currentVersion, "gateway-update-complete");
+            reloadGatewayClient();
           }
         } catch {
           // App still down

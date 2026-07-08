@@ -339,8 +339,8 @@ export function CloudflareIntegrationsSection() {
 
               <Field label={editingConnector ? "Token" : "API Token"}>
                 <p className="mb-2 text-xs text-muted-foreground">
-                  Required Cloudflare token permissions: Zone read and DNS edit for the zones
-                  Gateway should manage.
+                  Required Cloudflare token permissions: Zone:Read plus DNS:Read and DNS:Edit for
+                  the zones Gateway should manage.
                 </p>
                 <div className="flex min-w-0 border border-input bg-background">
                   <Input

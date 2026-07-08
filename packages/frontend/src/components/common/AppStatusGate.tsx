@@ -1,19 +1,36 @@
 import { AlertTriangle, RotateCw, ServerCrash, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  isGatewayUpdateTargetVersion,
+  normalizeGatewayUpdateVersion,
+  publishGatewayReload,
+  reloadGatewayClient,
+  subscribeGatewayReload,
+} from "@/lib/gateway-update-reload";
 import { useAppStatusStore } from "@/stores/app-status";
 
-export function normalizeGatewayUpdateVersion(version: string | null | undefined): string {
-  return (version ?? "").trim().replace(/^v/i, "");
-}
+export { isGatewayUpdateTargetVersion, normalizeGatewayUpdateVersion };
 
-export function isGatewayUpdateTargetVersion(
-  currentVersion: string | null | undefined,
-  targetVersion: string
-): boolean {
-  return (
-    normalizeGatewayUpdateVersion(currentVersion) === normalizeGatewayUpdateVersion(targetVersion)
-  );
+const VERSION_RELOAD_CHECK_INTERVAL_MS = 30_000;
+
+async function fetchGatewayCurrentVersion(): Promise<string | null> {
+  try {
+    const response = await fetch("/api/system/version", {
+      cache: "no-store",
+      credentials: "include",
+    });
+    if (response.ok) {
+      const payload = (await response.json()) as { data?: { currentVersion?: string } };
+      return payload.data?.currentVersion ?? null;
+    }
+  } catch {
+    // Fall through to the public health endpoint.
+  }
+
+  const response = await fetch("/health", { cache: "no-store" });
+  const payload = (await response.json()) as { version?: string };
+  return payload.version ?? null;
 }
 
 function MaintenanceScreen() {
@@ -80,25 +97,19 @@ function GatewayUpdatingScreen() {
         }
 
         if (targetVersion) {
-          const versionResponse = await fetch("/api/system/version", {
-            cache: "no-store",
-            credentials: "include",
-          });
-          if (versionResponse.ok) {
-            const payload = (await versionResponse.json()) as {
-              data?: { currentVersion?: string };
-            };
-            if (isGatewayUpdateTargetVersion(payload.data?.currentVersion, targetVersion)) {
-              clearGatewayUpdating();
-              window.location.reload();
-              return;
-            }
+          const currentVersion = await fetchGatewayCurrentVersion();
+          if (isGatewayUpdateTargetVersion(currentVersion, targetVersion)) {
+            publishGatewayReload(currentVersion, "gateway-update-target-ready");
+            clearGatewayUpdating();
+            reloadGatewayClient();
+            return;
           }
         }
 
         if (seenUnavailable) {
+          publishGatewayReload(null, "gateway-update-recovered");
           clearGatewayUpdating();
-          window.location.reload();
+          reloadGatewayClient();
         }
       } catch {
         seenUnavailable = true;
@@ -135,6 +146,57 @@ function GatewayUpdatingScreen() {
       </div>
     </div>
   );
+}
+
+function GatewayReloadCoordinator() {
+  const gatewayUpdatingActive = useAppStatusStore((s) => s.gatewayUpdatingActive);
+  const rateLimitedUntil = useAppStatusStore((s) => s.rateLimitedUntil);
+
+  useEffect(() => {
+    if (rateLimitedUntil != null) return;
+    return subscribeGatewayReload(() => reloadGatewayClient());
+  }, [rateLimitedUntil]);
+
+  useEffect(() => {
+    if (gatewayUpdatingActive || rateLimitedUntil != null) return;
+
+    let cancelled = false;
+    let baselineVersion: string | null = null;
+
+    const checkVersion = async () => {
+      try {
+        const currentVersion = await fetchGatewayCurrentVersion();
+        if (!currentVersion || cancelled) return;
+
+        if (baselineVersion == null) {
+          baselineVersion = currentVersion;
+          return;
+        }
+
+        if (
+          normalizeGatewayUpdateVersion(currentVersion) !==
+          normalizeGatewayUpdateVersion(baselineVersion)
+        ) {
+          publishGatewayReload(currentVersion, "gateway-version-changed");
+          reloadGatewayClient();
+        }
+      } catch {
+        // Ignore transient backend downtime; explicit update mode has its own faster polling.
+      }
+    };
+
+    void checkVersion();
+    const interval = window.setInterval(() => {
+      void checkVersion();
+    }, VERSION_RELOAD_CHECK_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [gatewayUpdatingActive, rateLimitedUntil]);
+
+  return null;
 }
 
 function GatewayUpdateErrorScreen() {
@@ -240,9 +302,18 @@ export function AppStatusGate() {
     return () => window.clearTimeout(timeout);
   }, [maintenanceActive]);
 
-  if (rateLimitedUntil != null) return <RateLimitScreen />;
-  if (gatewayUpdateError) return <GatewayUpdateErrorScreen />;
-  if (gatewayUpdatingActive) return <GatewayUpdatingScreen />;
-  if (showMaintenanceScreen) return <MaintenanceScreen />;
-  return null;
+  return (
+    <>
+      <GatewayReloadCoordinator />
+      {rateLimitedUntil != null ? (
+        <RateLimitScreen />
+      ) : gatewayUpdateError ? (
+        <GatewayUpdateErrorScreen />
+      ) : gatewayUpdatingActive ? (
+        <GatewayUpdatingScreen />
+      ) : showMaintenanceScreen ? (
+        <MaintenanceScreen />
+      ) : null}
+    </>
+  );
 }

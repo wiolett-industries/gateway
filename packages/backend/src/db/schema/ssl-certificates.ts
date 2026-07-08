@@ -28,7 +28,20 @@ export const sslCertificates = pgTable(
     acmeOrderUrl: text('acme_order_url'),
     acmePendingOperation: varchar('acme_pending_operation', { length: 20 }), // 'issue' | 'renewal'
     acmePendingChallenges:
-      jsonb('acme_pending_challenges').$type<Array<{ domain: string; recordName: string; recordValue: string }>>(),
+      jsonb('acme_pending_challenges').$type<
+        Array<{
+          domain: string;
+          recordName: string;
+          recordValue: string;
+          cloudflare?: {
+            connectorId: string;
+            zoneId: string;
+            zoneName: string;
+            recordId: string;
+            created: boolean;
+          };
+        }>
+      >(),
 
     // Internal CA link — references existing PKI cert
     internalCertId: uuid('internal_cert_id').references(() => certificates.id, { onDelete: 'set null' }),

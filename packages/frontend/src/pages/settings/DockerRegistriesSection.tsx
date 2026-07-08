@@ -1,4 +1,4 @@
-import { Gitlab, Globe, Play, Plus, RefreshCw, Server, Trash2 } from "lucide-react";
+import { ChevronDown, Gitlab, Globe, Play, Plus, RefreshCw, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -51,6 +51,7 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
   const [regNodeId, setRegNodeId] = useState("");
   const [regSaving, setRegSaving] = useState(false);
   const [regTesting, setRegTesting] = useState<string | null>(null);
+  const [gitLabRegistriesExpanded, setGitLabRegistriesExpanded] = useState(true);
   const manualRegistries = registries.filter((registry) => !registry.integration);
   const gitLabRegistries = registries.filter(
     (registry) => registry.integration?.provider === "gitlab"
@@ -283,11 +284,33 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
             <div className="divide-y divide-border">
               {manualRegistries.map(renderRegistryRow)}
               {gitLabRegistries.length > 0 && (
-                <div className="bg-muted/30 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Provided by GitLab integrations
-                </div>
+                <>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between bg-muted/30 px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/45"
+                    onClick={() => setGitLabRegistriesExpanded((expanded) => !expanded)}
+                    aria-expanded={gitLabRegistriesExpanded}
+                  >
+                    <span>Provided by GitLab integrations</span>
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform duration-200 ${
+                        gitLabRegistriesExpanded ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  <div
+                    aria-hidden={!gitLabRegistriesExpanded}
+                    inert={gitLabRegistriesExpanded ? undefined : true}
+                    className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+                      gitLabRegistriesExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                    }`}
+                  >
+                    <div className="min-h-0 overflow-hidden">
+                      {gitLabRegistries.map(renderRegistryRow)}
+                    </div>
+                  </div>
+                </>
               )}
-              {gitLabRegistries.map(renderRegistryRow)}
             </div>
           ) : (
             <EmptyState
