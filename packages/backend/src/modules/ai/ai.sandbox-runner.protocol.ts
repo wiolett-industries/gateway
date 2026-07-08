@@ -7,6 +7,7 @@ export type SandboxRunnerMethod =
   | 'fetch'
   | 'uploadArtifact'
   | 'downloadArtifact'
+  | 'listArtifactFiles'
   | 'readArtifact'
   | 'sendArtifact'
   | 'readProcessOutput'
@@ -82,6 +83,14 @@ export interface SandboxRunnerReadArtifactParams extends SandboxRunnerProcessPar
   offset?: number;
   length?: number;
   encoding?: 'utf8' | 'base64';
+}
+
+export interface SandboxRunnerListArtifactFilesParams extends SandboxRunnerProcessParams {
+  path?: string;
+  maxDepth?: number;
+  limit?: number;
+  includeFiles?: boolean;
+  includeDirectories?: boolean;
 }
 
 export interface SandboxRunnerSendArtifactParams extends SandboxRunnerProcessParams {
@@ -166,6 +175,20 @@ export interface SandboxRunnerReadArtifactResult {
   encoding: 'utf8' | 'base64';
   content?: string;
   contentBase64?: string;
+}
+
+export interface SandboxRunnerListArtifactFilesEntry {
+  path: string;
+  type: 'file' | 'directory' | 'symlink' | 'other';
+  sizeBytes?: number;
+}
+
+export interface SandboxRunnerListArtifactFilesResult {
+  processId: string;
+  path: string;
+  maxDepth: number;
+  entries: SandboxRunnerListArtifactFilesEntry[];
+  truncated: boolean;
 }
 
 export interface SandboxRunnerSendArtifactResult {

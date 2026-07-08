@@ -602,6 +602,7 @@ export class GitLabProvider implements VcsConnectorProvider {
     capabilities.repoRead = capabilities.repoRead || readRepository;
     capabilities.repoWrite = capabilities.repoWrite || writeRepository;
     capabilities.ciView = capabilities.ciView || readApi;
+    capabilities.ciLint = capabilities.ciLint || readApi;
     capabilities.ciEdit = capabilities.ciEdit || (writeRepository && readApi);
     capabilities.pipelineRead = capabilities.pipelineRead || readApi;
     capabilities.variablesView = capabilities.variablesView || readApi;

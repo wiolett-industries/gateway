@@ -33,6 +33,8 @@ const MCP_EXCLUDED_TOOLS = new Set([
   'run_process',
   'fetch',
   'download_artifact',
+  'gitlab_clone_repository_to_sandbox',
+  'list_artifact_files',
   'read_artifact',
   'send_artifact',
   'read_process_output',

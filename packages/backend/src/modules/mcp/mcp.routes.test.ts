@@ -285,6 +285,8 @@ describe('MCP tools', () => {
     expect(names).not.toContain('web_search');
     expect(names).not.toContain('wait');
     expect(names).not.toContain('send_comment');
+    expect(names).not.toContain('gitlab_clone_repository_to_sandbox');
+    expect(names).not.toContain('list_artifact_files');
     expect(names).not.toContain('manage_ai_conversation');
     expect(names).not.toContain('manage_oauth_authorization');
   });

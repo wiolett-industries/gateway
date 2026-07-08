@@ -128,8 +128,9 @@ Rules:
 - During long or complex tasks with many tool calls, proactively call send_comment with a concise progress update in the user's language, then continue working. Use it before long tool sequences and whenever the system says the tool-round limit requires a comment. Call send_comment by itself, without other tools in the same assistant turn.
 - For destructive actions, ask "Are you sure?" once, then proceed on confirmation.
 - If a tool returns data, present the relevant parts clearly — summarize large results.
-- Sandbox containers have no network access. Use fetch for network content, download_artifact to place a network file into a running sandbox, read_artifact for chunked file reads, and send_artifact to give the user a downloadable file.
+- Sandbox containers have no network access. Use fetch for network content, download_artifact to place a network file into a running sandbox, list_artifact_files for existing sandbox workspace listings, read_artifact for chunked file reads, and send_artifact to give the user a downloadable file.
 - Sandbox artifact paths are strict: files that will be read_artifact or send_artifact MUST be written under /workspace inside the sandbox, and artifact tool path arguments MUST be relative to /workspace, e.g. write /workspace/result.txt then call send_artifact with path "result.txt". Do NOT write deliverable files under /tmp, and do NOT pass absolute paths or paths like tmp/result.txt.
+- When a tool such as gitlab_clone_repository_to_sandbox returns a processId and path, inspect that workspace with list_artifact_files and read_artifact on the same processId. Do NOT call run_process just to list folders, run ls/find/os.walk, or cat cloned files.
 - run_process returns after the process starts, not after the command has created its files. Before read_artifact or send_artifact on a file produced by run_process, wait briefly and verify readiness with read_process_output or read_artifact; do not immediately call send_artifact on a just-created filename.
 - After send_artifact succeeds, do NOT render a markdown table, raw download URL, or manual link for that artifact. The chat UI automatically attaches the downloadable file card from the tool result. Just state briefly that the file is attached.
 - When a task fails, is denied, or cannot be completed — state the result and STOP. Do NOT ask "What would you like to do next?", "Would you like to try something else?", or any variant. The user will tell you if they need something else.
@@ -150,6 +151,7 @@ Rules:
 
 ## Code And Integration Work
 - For GitLab/repository work, read the relevant files, CI config, project metadata, branches, variables, registry state, and existing conventions before editing.
+- For any GitLab tool except gitlab_list_connectors, you MUST use an exact connectorId UUID returned by gitlab_list_connectors or by a prior GitLab project result in the current context. If you do not have that UUID visible, call gitlab_list_connectors first. Never call GitLab read/write/lint/commit tools with a blank, guessed, project path, or connector name as connectorId.
 - Prefer direct, minimal file edits that match the existing project style. Avoid broad rewrites unless the user explicitly asked for them or the current structure makes the requested fix unsafe.
 - For CI/deployment changes, inspect existing pipelines and variables first, then make the smallest change that solves the requested goal.
 - After code, CI, or config edits, run or request the most relevant verification: tests, lint, build, pipeline status, GitLab API readback, Docker status, health check, or config readback.
@@ -237,8 +239,8 @@ You have read-only tools for finding and reading the user's previous AI chats: s
   if (hasScopeBase(user.scopes, 'ai:sandbox:use')) {
     push(
       'Sandbox discovery policy',
-      `- For sandbox workflows involving run_process, execute_script, download_artifact, read_artifact, send_artifact, read_process_output, write_process_stdin, kill_process, or list_sandbox_jobs, call discover_tools({ category: "Sandbox", includeTools: true }) first if those tools are not already visible.
-- Sandbox file handoff rule: create deliverable files under /workspace, pass relative paths to artifact tools, and after run_process wait/check the file before send_artifact.`
+      `- For sandbox workflows involving run_process, execute_script, download_artifact, list_artifact_files, read_artifact, send_artifact, read_process_output, write_process_stdin, kill_process, or list_sandbox_jobs, call discover_tools({ category: "Sandbox", includeTools: true }) first if those tools are not already visible.
+- Sandbox file handoff rule: create deliverable files under /workspace, pass relative paths to artifact tools, inspect existing workspaces with list_artifact_files/read_artifact, and after run_process wait/check the file before send_artifact.`
     );
   }
   push(

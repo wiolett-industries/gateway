@@ -1529,6 +1529,7 @@ export class IntegrationsService {
     const connectorSettings = this.gitLabSettings(context.connector);
     const cloneTimeoutSeconds = Math.max(10, connectorSettings.cloneTimeoutSeconds);
     const effectiveTtlSeconds = Math.min(input.ttlSeconds ?? cloneTimeoutSeconds, cloneTimeoutSeconds);
+    const processTtlSeconds = effectiveTtlSeconds + cloneTimeoutSeconds;
     const archive = await context.provider.downloadRepositoryArchive(
       context.auth,
       this.toProviderProject(context.project),
@@ -1557,7 +1558,7 @@ export class IntegrationsService {
     const process = await sandboxService.runProcess(user, {
       runtime: 'alpine',
       command,
-      ttlSeconds: effectiveTtlSeconds,
+      ttlSeconds: processTtlSeconds,
       conversationId,
     });
     await sandboxService.uploadArtifact(user, {
@@ -1579,7 +1580,8 @@ export class IntegrationsService {
       ref: input.ref ?? context.project.defaultBranch ?? null,
       archiveBytes: archive.bytes.byteLength,
       status: 'extracting',
-      nextStep: 'Call read_process_output for CLONE_READY, then inspect files under the returned path.',
+      nextStep:
+        'Call read_process_output for CLONE_READY, then use list_artifact_files with this processId/path for repository structure and read_artifact for specific files. Do not start another sandbox process just to list or read cloned files.',
     };
   }
 

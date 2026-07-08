@@ -13,6 +13,8 @@ import type {
   SandboxRunnerFetchResult,
   SandboxRunnerHealth,
   SandboxRunnerKillResult,
+  SandboxRunnerListArtifactFilesParams,
+  SandboxRunnerListArtifactFilesResult,
   SandboxRunnerProcessParams,
   SandboxRunnerProcessResult,
   SandboxRunnerReadArtifactParams,
@@ -113,6 +115,11 @@ export class AISandboxRunnerService {
   async uploadArtifact(params: SandboxRunnerUploadArtifactParams) {
     await this.ensureStarted();
     return this.callRunner<SandboxRunnerUploadArtifactResult>('uploadArtifact', params);
+  }
+
+  async listArtifactFiles(params: SandboxRunnerListArtifactFilesParams) {
+    await this.ensureStarted();
+    return this.callRunner<SandboxRunnerListArtifactFilesResult>('listArtifactFiles', params);
   }
 
   async readArtifact(params: SandboxRunnerReadArtifactParams) {

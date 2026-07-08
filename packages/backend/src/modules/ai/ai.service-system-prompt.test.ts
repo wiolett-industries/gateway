@@ -101,6 +101,7 @@ describe('AIService system prompt', () => {
     expect(prompt).toContain('Use get_current_context');
     expect(prompt).toContain('Use discover_tools');
     expect(prompt).toContain('Use find_resource FIRST');
+    expect(prompt).toContain('Never call GitLab read/write/lint/commit tools with a blank');
     expect(prompt).toContain('## Conversation Retrieval');
     expect(prompt).toContain('search_chats');
   });
@@ -238,7 +239,9 @@ describe('AIService system prompt', () => {
     expect(prompt).toContain('do NOT say the tool is unavailable');
     expect(prompt).toContain('discover_tools({ category: "Sandbox", includeTools: true })');
     expect(prompt).toContain('download_artifact');
+    expect(prompt).toContain('list_artifact_files');
     expect(prompt).toContain('send_artifact');
+    expect(prompt).toContain('Do NOT call run_process just to list folders');
     expect(prompt).toContain('files that will be read_artifact or send_artifact MUST be written under /workspace');
     expect(prompt).toContain('artifact tool path arguments MUST be relative to /workspace');
     expect(prompt).toContain('run_process returns after the process starts');

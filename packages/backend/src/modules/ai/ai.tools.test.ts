@@ -143,6 +143,21 @@ describe('AI tool scope filtering', () => {
     expect(isDestructiveTool('execute_node_console_command')).toBe(true);
   });
 
+  it('exposes Cloudflare DNS-01 and SSL auto-renew controls to the agent', () => {
+    const requestAcme = AI_TOOLS.find((tool) => tool.name === 'request_acme_cert');
+    expect(requestAcme?.parameters.properties).toMatchObject({
+      dnsProvider: { enum: ['cloudflare'] },
+      autoRenew: expect.any(Object),
+    });
+
+    const manageSsl = AI_TOOLS.find((tool) => tool.name === 'manage_ssl_certificate');
+    expect(manageSsl?.parameters.properties).toMatchObject({
+      operation: { enum: expect.arrayContaining(['set_auto_renew']) },
+      enabled: expect.any(Object),
+      provider: { enum: ['cloudflare'] },
+    });
+  });
+
   it('requires approval metadata for every store-invalidating tool', () => {
     const invalidatingNonDestructiveTools = AI_TOOLS.filter(
       (tool) => tool.invalidateStores.length > 0 && !tool.destructive
@@ -506,6 +521,7 @@ describe('AI tool scope filtering', () => {
       'run_process',
       'fetch',
       'download_artifact',
+      'list_artifact_files',
       'read_artifact',
       'send_artifact',
       'read_process_output',
@@ -526,10 +542,14 @@ describe('AI tool scope filtering', () => {
     expect(AI_TOOLS.find((tool) => tool.name === 'send_artifact')?.description).toContain(
       'path argument must be relative to /workspace'
     );
+    expect(AI_TOOLS.find((tool) => tool.name === 'list_artifact_files')?.description).toContain(
+      'without starting another sandbox process'
+    );
     expect(isDestructiveTool('execute_script')).toBe(true);
     expect(isDestructiveTool('run_process')).toBe(true);
     expect(isDestructiveTool('fetch')).toBe(false);
     expect(isDestructiveTool('download_artifact')).toBe(false);
+    expect(isDestructiveTool('list_artifact_files')).toBe(false);
     expect(isDestructiveTool('read_artifact')).toBe(false);
     expect(isDestructiveTool('send_artifact')).toBe(false);
     expect(isDestructiveTool('read_process_output')).toBe(false);

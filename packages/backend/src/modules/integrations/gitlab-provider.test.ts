@@ -52,6 +52,38 @@ describe('GitLabProvider', () => {
     );
   });
 
+  it('allows CI lint from API token scopes even when the live lint probe is unavailable', async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/api/v4/user') return jsonResponse({ id: 1, username: 'bot' });
+      if (url.pathname === '/api/v4/personal_access_tokens/self') {
+        return jsonResponse({ scopes: ['read_api'] });
+      }
+      if (url.pathname === '/api/v4/projects') {
+        return jsonResponse([
+          { id: 10, path_with_namespace: 'org/app', name: 'app', web_url: 'https://gitlab.test/org/app' },
+        ]);
+      }
+      if (url.pathname === '/api/v4/groups') return jsonResponse([]);
+      if (url.pathname === '/api/v4/projects/10/repository/tree') return new Response('forbidden', { status: 403 });
+      if (url.pathname === '/api/v4/projects/10/pipelines') return new Response('forbidden', { status: 403 });
+      if (url.pathname === '/api/v4/projects/10/variables') return new Response('forbidden', { status: 403 });
+      if (url.pathname === '/api/v4/projects/10/registry/repositories')
+        return new Response('forbidden', { status: 403 });
+      if (url.pathname === '/api/v4/ci/lint') return new Response('not acceptable', { status: 406 });
+      return new Response('not found', { status: 404 });
+    });
+
+    const provider = new GitLabProvider(fetchImpl as typeof fetch);
+    const capabilities = await provider.testConnection({ baseUrl: 'https://gitlab.test/', token: 'glpat-secret' });
+
+    expect(capabilities).toMatchObject({
+      tokenSelf: true,
+      ciView: true,
+      ciLint: true,
+    });
+  });
+
   it('combines group and project search results for allowlist selection', async () => {
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));

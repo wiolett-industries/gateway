@@ -15,6 +15,9 @@ import type {
   SandboxRunnerFetchResult,
   SandboxRunnerHealth,
   SandboxRunnerKillResult,
+  SandboxRunnerListArtifactFilesEntry,
+  SandboxRunnerListArtifactFilesParams,
+  SandboxRunnerListArtifactFilesResult,
   SandboxRunnerProcessParams,
   SandboxRunnerProcessResult,
   SandboxRunnerReadArtifactParams,
@@ -35,7 +38,15 @@ import type {
   SandboxRunnerWriteStdinResult,
 } from '@/modules/ai/ai.sandbox-runner.protocol.js';
 import { type DockerCreateContainerConfig, DockerService } from '@/services/docker.service.js';
-import { openHostArtifact, resolveHostArtifactPath as resolveSafeHostArtifactPath } from './artifact-path.js';
+import {
+  hostArtifactHandleChildPath,
+  hostArtifactHandlePath,
+  openHostArtifact,
+  openHostArtifactChildDirectory,
+  openHostArtifactDirectory,
+  resolveHostArtifactDirectory,
+  resolveHostArtifactPath as resolveSafeHostArtifactPath,
+} from './artifact-path.js';
 import { readResponseBodyCapped } from './network.js';
 
 const logger = createChildLogger('SandboxRunner');
@@ -48,6 +59,9 @@ const DOWNLOAD_LIMIT_BYTES = 200 * 1024 * 1024;
 const UPLOAD_ARTIFACT_LIMIT_BYTES = 200 * 1024 * 1024;
 const READ_ARTIFACT_LIMIT_BYTES = 1024 * 1024;
 const SEND_ARTIFACT_LIMIT_BYTES = 10 * 1024 * 1024;
+const LIST_ARTIFACT_FILES_DEFAULT_LIMIT = 200;
+const LIST_ARTIFACT_FILES_MAX_LIMIT = 1000;
+const LIST_ARTIFACT_FILES_MAX_DEPTH = 8;
 const CPU_PERIOD = 100_000;
 const RECONCILE_INTERVAL_MS = 30_000;
 const ARTIFACT_ROOT = '/workspace';
@@ -169,6 +183,20 @@ function resolveArtifactPath(rawPath: unknown, fallbackFilename?: string) {
     parentPath: path.posix.join(ARTIFACT_ROOT, path.posix.dirname(normalized)),
     basename: path.posix.basename(normalized),
   };
+}
+
+function resolveArtifactDirectoryPath(rawPath: unknown) {
+  const input = typeof rawPath === 'string' && rawPath.trim() ? rawPath.trim() : '.';
+  if (input.includes('\0')) throw new Error('artifact path must not contain null bytes');
+  if (path.posix.isAbsolute(input)) throw new Error('artifact path must be relative to /workspace');
+  const normalized = path.posix.normalize(input).replace(/^(\.\/)+/, '');
+  if (normalized === '.' || normalized === '') {
+    return { relativePath: '' };
+  }
+  if (normalized === '..' || normalized.startsWith('../')) {
+    throw new Error('artifact path must stay inside /workspace');
+  }
+  return { relativePath: normalized };
 }
 
 function isTextContentType(contentType: string | null): boolean {
@@ -502,6 +530,89 @@ async function uploadArtifact(params: SandboxRunnerUploadArtifactParams): Promis
   };
 }
 
+function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+async function listArtifactFiles(
+  params: SandboxRunnerListArtifactFilesParams
+): Promise<SandboxRunnerListArtifactFilesResult> {
+  const artifactPath = resolveArtifactDirectoryPath(params.path);
+  const workspaceDir = await workspaceDirForProcess(params.processId);
+  const rootDirectory = await resolveHostArtifactDirectory(workspaceDir, artifactPath.relativePath);
+  const maxDepth = boundedInteger(params.maxDepth, 3, 1, LIST_ARTIFACT_FILES_MAX_DEPTH);
+  const limit = boundedInteger(params.limit, LIST_ARTIFACT_FILES_DEFAULT_LIMIT, 1, LIST_ARTIFACT_FILES_MAX_LIMIT);
+  const includeFiles = params.includeFiles !== false;
+  const includeDirectories = params.includeDirectories !== false;
+  const entries: SandboxRunnerListArtifactFilesEntry[] = [];
+  let truncated = false;
+
+  const addEntry = (entry: SandboxRunnerListArtifactFilesEntry): void => {
+    if (entries.length >= limit) {
+      truncated = true;
+      return;
+    }
+    entries.push(entry);
+  };
+
+  const walk = async (hostDirectory: fs.FileHandle, relativeDirectory: string, depth: number): Promise<void> => {
+    try {
+      if (entries.length >= limit) {
+        truncated = true;
+        return;
+      }
+      const dirents = await fs.readdir(hostArtifactHandlePath(hostDirectory), { withFileTypes: true });
+      dirents.sort((a, b) => a.name.localeCompare(b.name));
+
+      for (const dirent of dirents) {
+        if (entries.length >= limit) {
+          truncated = true;
+          return;
+        }
+        const localPath = relativeDirectory ? path.posix.join(relativeDirectory, dirent.name) : dirent.name;
+        const entryPath = artifactPath.relativePath ? path.posix.join(artifactPath.relativePath, localPath) : localPath;
+        const hostPath = hostArtifactHandleChildPath(hostDirectory, dirent.name);
+        const stat = await fs.lstat(hostPath).catch(() => null);
+        if (!stat) continue;
+
+        if (stat.isSymbolicLink()) {
+          addEntry({ path: entryPath, type: 'symlink' });
+          continue;
+        }
+
+        if (stat.isDirectory()) {
+          if (includeDirectories) addEntry({ path: entryPath, type: 'directory' });
+          if (depth < maxDepth) {
+            const childDirectory = await openHostArtifactChildDirectory(hostDirectory, dirent.name).catch(() => null);
+            if (childDirectory) await walk(childDirectory, localPath, depth + 1);
+          }
+          continue;
+        }
+
+        if (stat.isFile()) {
+          if (includeFiles) addEntry({ path: entryPath, type: 'file', sizeBytes: stat.size });
+          continue;
+        }
+
+        addEntry({ path: entryPath, type: 'other' });
+      }
+    } finally {
+      await hostDirectory.close().catch(() => {});
+    }
+  };
+
+  await walk(await openHostArtifactDirectory(rootDirectory), '', 1);
+
+  return {
+    processId: params.processId,
+    path: artifactPath.relativePath || '.',
+    maxDepth,
+    entries,
+    truncated,
+  };
+}
+
 async function readArtifactBytes(
   processId: string,
   rawPath: unknown,
@@ -688,6 +799,8 @@ async function handle(request: SandboxRunnerRequest): Promise<unknown> {
       return downloadArtifact(request.params as SandboxRunnerDownloadArtifactParams);
     case 'uploadArtifact':
       return uploadArtifact(request.params as SandboxRunnerUploadArtifactParams);
+    case 'listArtifactFiles':
+      return listArtifactFiles(request.params as SandboxRunnerListArtifactFilesParams);
     case 'readArtifact':
       return readArtifact(request.params as SandboxRunnerReadArtifactParams);
     case 'sendArtifact':

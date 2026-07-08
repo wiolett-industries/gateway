@@ -23,7 +23,7 @@ import type {
 } from './ssl.schemas.js';
 
 const logger = createChildLogger('SSLService');
-const CLOUDFLARE_DNS01_PROPAGATION_DELAY_MS = 10_000;
+const CLOUDFLARE_DNS01_PROPAGATION_DELAY_MS = process.env.NODE_ENV === 'test' ? 0 : 10_000;
 
 type DNSChallenge = {
   domain: string;
@@ -183,11 +183,91 @@ export class SSLService {
         acmeOrderUrl: result.orderUrl,
         acmePendingOperation: 'issue',
         acmePendingChallenges: result.challenges,
-        autoRenew: input.autoRenew,
+        autoRenew: input.dnsProvider === 'cloudflare' ? false : input.autoRenew,
         status: 'pending',
         createdById: userId,
       })
       .returning();
+
+    if (input.dnsProvider === 'cloudflare') {
+      let cloudflareChallenges: DNSChallenge[] | null = null;
+      try {
+        const autoRenewBindings = input.autoRenew
+          ? await this.resolveCloudflareAutoRenewBindings({
+              id: cert.id,
+              domainNames: input.domains,
+              autoRenewDnsBindings: null,
+              autoRenewProvider: 'cloudflare',
+            })
+          : null;
+        cloudflareChallenges = await this.tryProvisionCloudflareDnsChallenges(
+          cert.id,
+          result.challenges,
+          autoRenewBindings
+        );
+        if (!cloudflareChallenges) {
+          throw new AppError(
+            409,
+            'CLOUDFLARE_DNS_NOT_CONFIGURED',
+            'Cloudflare DNS automation is not available for this certificate'
+          );
+        }
+
+        await this.db
+          .update(sslCertificates)
+          .set({
+            acmePendingChallenges: cloudflareChallenges,
+            autoRenew: input.autoRenew,
+            autoRenewProvider: autoRenewBindings ? 'cloudflare' : null,
+            autoRenewDnsBindings: autoRenewBindings,
+            updatedAt: new Date(),
+          })
+          .where(eq(sslCertificates.id, cert.id));
+
+        await this.auditService.log({
+          userId,
+          action: 'ssl.acme_dns01_cloudflare_provision',
+          resourceType: 'ssl_certificate',
+          resourceId: cert.id,
+          details: {
+            domains: input.domains,
+            challengeType: 'dns-01',
+            provider: input.provider,
+            autoRenew: input.autoRenew,
+          },
+        });
+      } catch (error) {
+        if (cloudflareChallenges) {
+          await this.cleanupCloudflareDnsChallenges(cloudflareChallenges);
+        }
+        const message = error instanceof Error ? error.message : 'Cloudflare DNS automation failed';
+        await this.db
+          .update(sslCertificates)
+          .set({
+            status: 'error',
+            renewalError: message,
+            acmeOrderUrl: null,
+            acmePendingOperation: null,
+            acmePendingChallenges: null,
+            autoRenew: false,
+            autoRenewProvider: null,
+            autoRenewDnsBindings: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(sslCertificates.id, cert.id));
+        throw error;
+      }
+
+      await sleep(CLOUDFLARE_DNS01_PROPAGATION_DELAY_MS);
+      const issued = await this.completeDNS01Verification(cert.id, userId, {
+        cleanupCloudflare: true,
+        clearPendingOnFailure: true,
+      });
+      return {
+        certificate: issued,
+        status: 'issued' as const,
+      };
+    }
 
     await this.auditService.log({
       userId,
@@ -240,6 +320,7 @@ export class SSLService {
       throw new AppError(400, 'CERT_NOT_RENEWABLE', 'Certificate is not in a renewable state');
     }
 
+    let cloudflareCleanupDone = false;
     try {
       // Decrypt the stored ACME account key
       const acmeKeyBlob = JSON.parse(cert.acmeAccountKey);
@@ -323,9 +404,13 @@ export class SSLService {
       } finally {
         if (options.cleanupCloudflare) {
           await this.cleanupCloudflareDnsChallenges((cert.acmePendingChallenges ?? []) as DNSChallenge[]);
+          cloudflareCleanupDone = true;
         }
       }
     } catch (error) {
+      if (options.cleanupCloudflare && !cloudflareCleanupDone) {
+        await this.cleanupCloudflareDnsChallenges((cert.acmePendingChallenges ?? []) as DNSChallenge[]);
+      }
       if (error instanceof AppError) throw error;
       const message = error instanceof Error ? error.message : 'Unknown verification error';
       if (pendingOperation === 'renewal') {
@@ -350,6 +435,16 @@ export class SSLService {
           .set({
             status: 'error',
             renewalError: message,
+            ...(options.clearPendingOnFailure
+              ? {
+                  acmeOrderUrl: null,
+                  acmePendingOperation: null,
+                  acmePendingChallenges: null,
+                  autoRenew: false,
+                  autoRenewProvider: null,
+                  autoRenewDnsBindings: null,
+                }
+              : {}),
             updatedAt: new Date(),
           })
           .where(eq(sslCertificates.id, certId));

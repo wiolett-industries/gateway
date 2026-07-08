@@ -78,6 +78,7 @@ describe('AI internal docs registry', () => {
     expect(getInternalDocumentation('nodes', ['nodes:details']).content).toContain('manage_node_config');
     expect(getInternalDocumentation('node-files', ['nodes:files:read']).content).toContain('manage_node_file');
     expect(getInternalDocumentation('sandbox', ['ai:sandbox:use']).content).toContain('download_artifact');
+    expect(getInternalDocumentation('sandbox', ['ai:sandbox:use']).content).toContain('list_artifact_files');
     expect(getInternalDocumentation('sandbox', ['ai:sandbox:use']).content).toContain(
       'Artifact tool path arguments are relative to /workspace'
     );
@@ -98,7 +99,17 @@ describe('AI internal docs registry', () => {
       'gitlab_update_ci_config'
     );
     expect(getInternalDocumentation('gitlab', ['integrations:gitlab:view']).content).toContain('gitlab_sync_connector');
+    expect(getInternalDocumentation('gitlab', ['integrations:gitlab:view']).content).toContain(
+      'Every GitLab tool except gitlab_list_connectors requires the exact connectorId UUID'
+    );
     expect(getInternalDocumentation('gitlab', ['integrations:gitlab:view']).content).toContain('masked metadata only');
+  });
+
+  it('documents Cloudflare DNS-01 issuance and auto-renew for SSL certificates', () => {
+    expect(INTERNAL_DOCS.ssl).toContain('dnsProvider: "cloudflare"');
+    expect(INTERNAL_DOCS.ssl).toContain('set_auto_renew');
+    expect(INTERNAL_DOCS.acme).toContain('Cloudflare dns-01');
+    expect(INTERNAL_DOCS.acme).toContain('DNS-01 auto-renew requires Cloudflare');
   });
 
   it('does not regress to stale model-facing tool names or enum examples', () => {

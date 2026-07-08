@@ -28,7 +28,7 @@ import type { ProxyService } from '@/modules/proxy/proxy.service.js';
 import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
-import { UploadCertSchema } from '@/modules/ssl/ssl.schemas.js';
+import { RequestACMECertSchema, SetSslAutoRenewSchema, UploadCertSchema } from '@/modules/ssl/ssl.schemas.js';
 import type { SSLService } from '@/modules/ssl/ssl.service.js';
 import { CreateTokenSchema, UpdateTokenSchema } from '@/modules/tokens/tokens.schemas.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
@@ -98,6 +98,7 @@ const SANDBOX_TOOL_NAMES = new Set([
   'run_process',
   'fetch',
   'download_artifact',
+  'list_artifact_files',
   'read_artifact',
   'send_artifact',
   'read_process_output',
@@ -655,6 +656,15 @@ export class AIService {
           url: String(a.url ?? ''),
           path: typeof a.path === 'string' ? a.path : undefined,
         });
+      case 'list_artifact_files':
+        return this.sandboxService.listArtifactFiles(user, {
+          processId: String(a.processId ?? ''),
+          path: typeof a.path === 'string' ? a.path : undefined,
+          maxDepth: typeof a.maxDepth === 'number' ? a.maxDepth : undefined,
+          limit: typeof a.limit === 'number' ? a.limit : undefined,
+          includeFiles: typeof a.includeFiles === 'boolean' ? a.includeFiles : undefined,
+          includeDirectories: typeof a.includeDirectories === 'boolean' ? a.includeDirectories : undefined,
+        });
       case 'read_artifact':
         return this.sandboxService.readArtifact(user, {
           processId: String(a.processId ?? ''),
@@ -952,15 +962,7 @@ export class AIService {
       case 'link_internal_cert':
         return this.sslService.linkInternalCert({ internalCertId: a.internalCertId, name: a.name }, user.id);
       case 'request_acme_cert':
-        return this.sslService.requestACMECert(
-          {
-            domains: a.domains,
-            challengeType: a.challengeType,
-            provider: a.provider || 'letsencrypt',
-            autoRenew: a.autoRenew !== false,
-          },
-          user.id
-        );
+        return this.sslService.requestACMECert(RequestACMECertSchema.parse(args), user.id);
       case 'manage_ssl_certificate': {
         if (a.operation === 'get') {
           this.ensureToolScopeForResource(user, 'ssl:cert:view', String(a.sslCertificateId));
@@ -977,6 +979,10 @@ export class AIService {
         if (a.operation === 'verify_dns') {
           this.ensureToolScopeForResource(user, 'ssl:cert:issue', String(a.sslCertificateId));
           return this.sslService.completeDNS01Verification(a.sslCertificateId, user.id);
+        }
+        if (a.operation === 'set_auto_renew') {
+          this.ensureToolScopeForResource(user, 'ssl:cert:issue', String(a.sslCertificateId));
+          return this.sslService.setAutoRenew(a.sslCertificateId, SetSslAutoRenewSchema.parse(args), user.id);
         }
         if (a.operation === 'delete') {
           this.ensureToolScopeForResource(user, 'ssl:cert:delete', String(a.sslCertificateId));

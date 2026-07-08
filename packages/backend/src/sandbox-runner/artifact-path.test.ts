@@ -3,7 +3,14 @@ import { mkdir, mkdtemp, realpath, rm, stat, symlink, unlink, writeFile } from '
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { openHostArtifact, resolveHostArtifactPath, supportsFdRelativeArtifactOpen } from './artifact-path.js';
+import {
+  openHostArtifact,
+  openHostArtifactChildDirectory,
+  openHostArtifactDirectory,
+  resolveHostArtifactDirectory,
+  resolveHostArtifactPath,
+  supportsFdRelativeArtifactOpen,
+} from './artifact-path.js';
 
 let tempDir: string;
 let workspaceDir: string;
@@ -92,6 +99,30 @@ describe('sandbox artifact host path resolution', () => {
     }
 
     await expect(openHostArtifact(artifact, constants.O_RDONLY)).rejects.toMatchObject({ code: 'ELOOP' });
+  });
+
+  it('opens artifact directories without following a swapped child symlink', async () => {
+    const workspaceParent = path.join(workspaceDir, 'artifacts');
+    const outsideParent = path.join(outsideDir, 'artifacts');
+    await mkdir(workspaceParent);
+    await mkdir(outsideParent);
+
+    const directory = await resolveHostArtifactDirectory(workspaceDir, '.');
+
+    if (!(await supportsFdRelativeArtifactOpen())) {
+      await expect(openHostArtifactDirectory(directory)).rejects.toThrow('secure artifact access requires');
+      return;
+    }
+
+    const handle = await openHostArtifactDirectory(directory);
+    try {
+      await rm(workspaceParent, { recursive: true, force: true });
+      await symlink(outsideParent, workspaceParent, 'dir');
+
+      await expect(openHostArtifactChildDirectory(handle, 'artifacts')).rejects.toMatchObject({ code: 'ELOOP' });
+    } finally {
+      await handle.close().catch(() => {});
+    }
   });
 
   it('rejects an artifact target that is a symbolic link', async () => {

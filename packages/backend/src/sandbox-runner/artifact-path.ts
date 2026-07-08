@@ -14,6 +14,14 @@ function fdChildPath(parent: fs.FileHandle, segment: string): string {
   return `${FD_ROOT}/${parent.fd}/${segment}`;
 }
 
+export function hostArtifactHandlePath(directory: fs.FileHandle): string {
+  return `${FD_ROOT}/${directory.fd}`;
+}
+
+export function hostArtifactHandleChildPath(directory: fs.FileHandle, segment: string): string {
+  return fdChildPath(directory, segment);
+}
+
 function symlinkPathError(message: string): NodeJS.ErrnoException {
   const error = new Error(message) as NodeJS.ErrnoException;
   error.code = 'ELOOP';
@@ -47,6 +55,12 @@ export interface HostArtifactPath {
   filename: string;
 }
 
+export interface HostArtifactDirectory {
+  path: string;
+  rootPath: string;
+  segments: string[];
+}
+
 type DirectoryPathAccess = (directoryPath: string) => Promise<void>;
 type DirectoryHandleAccess = (directory: fs.FileHandle) => Promise<void>;
 
@@ -57,6 +71,68 @@ function artifactPathSegments(relativePath: string): { segments: string[]; filen
     throw new Error('artifact path must stay inside /workspace');
   }
   return { segments, filename };
+}
+
+function artifactDirectorySegments(relativePath: string): string[] {
+  const segments = relativePath.split('/').filter((segment) => segment && segment !== '.');
+  if (segments.includes('..')) {
+    throw new Error('artifact path must stay inside /workspace');
+  }
+  return segments;
+}
+
+export async function resolveHostArtifactDirectory(
+  workspaceDir: string,
+  relativePath: string
+): Promise<HostArtifactDirectory> {
+  const root = await fs.realpath(workspaceDir);
+  const segments = artifactDirectorySegments(relativePath);
+
+  if (await fdRootAvailable()) {
+    return resolveHostArtifactDirectoryViaFd(root, segments);
+  }
+
+  return resolveHostArtifactDirectoryByPath(root, segments);
+}
+
+async function resolveHostArtifactDirectoryByPath(root: string, segments: string[]): Promise<HostArtifactDirectory> {
+  let current = root;
+  for (const segment of segments) {
+    const next = path.join(current, segment);
+    const existing = await fs.lstat(next).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') throw new Error('artifact path directory not found');
+      throw error;
+    });
+    if (existing.isSymbolicLink()) throw new Error('artifact path must not contain symbolic links');
+    if (!existing.isDirectory()) throw new Error('artifact path must be a directory');
+    assertInsideRoot(root, await fs.realpath(next));
+    current = next;
+  }
+
+  return { path: current, rootPath: root, segments };
+}
+
+async function resolveHostArtifactDirectoryViaFd(root: string, segments: string[]): Promise<HostArtifactDirectory> {
+  let current = await fs.open(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  let currentPath = root;
+  try {
+    for (const segment of segments) {
+      const next = await openHostArtifactChildDirectory(current, segment).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') throw new Error('artifact path directory not found');
+        throw error;
+      });
+      const previous = current;
+      current = next;
+      currentPath = path.join(currentPath, segment);
+      await previous.close().catch(() => {});
+    }
+
+    await current.close().catch(() => {});
+    return { path: currentPath, rootPath: root, segments };
+  } catch (error) {
+    await current.close().catch(() => {});
+    throw error;
+  }
 }
 
 export async function resolveHostArtifactPath(
@@ -113,7 +189,7 @@ async function resolveHostArtifactPathByPath(
   return { path: hostPath, rootPath: root, parentPath: realParent, parentSegments: segments, filename };
 }
 
-async function openChildDirectory(parent: fs.FileHandle, segment: string): Promise<fs.FileHandle> {
+export async function openHostArtifactChildDirectory(parent: fs.FileHandle, segment: string): Promise<fs.FileHandle> {
   try {
     return await fs.open(
       fdChildPath(parent, segment),
@@ -143,12 +219,14 @@ async function resolveHostArtifactPathViaFd(
   try {
     for (const segment of segments) {
       let created = false;
-      const next = await openChildDirectory(current, segment).catch(async (error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') throw error;
-        await fs.mkdir(fdChildPath(current, segment), { mode: 0o700 });
-        created = true;
-        return openChildDirectory(current, segment);
-      });
+      const next = await openHostArtifactChildDirectory(current, segment).catch(
+        async (error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+          await fs.mkdir(fdChildPath(current, segment), { mode: 0o700 });
+          created = true;
+          return openHostArtifactChildDirectory(current, segment);
+        }
+      );
       const previous = current;
       current = next;
       currentPath = path.join(currentPath, segment);
@@ -184,7 +262,7 @@ async function openHostArtifactViaFd(artifact: HostArtifactPath, flags: number, 
   try {
     for (const segment of artifact.parentSegments) {
       const previous = current;
-      const next = await openChildDirectory(previous, segment);
+      const next = await openHostArtifactChildDirectory(previous, segment);
       current = next;
       await previous.close().catch(() => {});
     }
@@ -205,4 +283,22 @@ export async function openHostArtifact(
 ): Promise<fs.FileHandle> {
   if (await fdRootAvailable()) return openHostArtifactViaFd(artifact, flags, mode);
   throw new Error(`secure artifact access requires ${FD_ROOT}`);
+}
+
+export async function openHostArtifactDirectory(directory: HostArtifactDirectory): Promise<fs.FileHandle> {
+  if (!(await fdRootAvailable())) throw new Error(`secure artifact access requires ${FD_ROOT}`);
+
+  let current = await fs.open(directory.rootPath, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    for (const segment of directory.segments) {
+      const previous = current;
+      const next = await openHostArtifactChildDirectory(previous, segment);
+      current = next;
+      await previous.close().catch(() => {});
+    }
+    return current;
+  } catch (error) {
+    await current.close().catch(() => {});
+    throw error;
+  }
 }

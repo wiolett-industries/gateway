@@ -70,6 +70,14 @@ describeIfDocker('AISandboxRunnerService docker smoke', () => {
     expect(readResult.content).toBe('process-ready\n');
     expect(readResult.contentBase64).toBeUndefined();
 
+    const listResult = await runner.listArtifactFiles({
+      processId: processResult.processId,
+      path: '.',
+      maxDepth: 1,
+      limit: 10,
+    });
+    expect(listResult.entries).toContainEqual({ path: 'result.txt', type: 'file', sizeBytes: 14 });
+
     const sendResult = await runner.sendArtifact({
       processId: processResult.processId,
       path: 'result.txt',

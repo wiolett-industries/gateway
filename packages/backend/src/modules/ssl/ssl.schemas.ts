@@ -7,11 +7,12 @@ export const RequestACMECertSchema = z
     domains: z.array(z.string().regex(domainRegex, 'Invalid domain format')).min(1, 'At least one domain is required'),
     challengeType: z.enum(['http-01', 'dns-01']),
     provider: z.enum(['letsencrypt', 'letsencrypt-staging']).default('letsencrypt'),
+    dnsProvider: z.enum(['cloudflare']).optional(),
     autoRenew: z.boolean().optional(),
   })
   .transform((data) => ({
     ...data,
-    autoRenew: data.challengeType === 'http-01' ? (data.autoRenew ?? true) : false,
+    autoRenew: data.challengeType === 'http-01' || data.dnsProvider === 'cloudflare' ? (data.autoRenew ?? true) : false,
   }));
 
 export const UploadCertSchema = z.object({

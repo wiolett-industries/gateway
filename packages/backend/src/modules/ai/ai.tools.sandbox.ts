@@ -81,6 +81,28 @@ export const SANDBOX_AI_TOOLS: AIToolDefinition[] = [
     historyRetention: { mode: 'summary_only' },
   },
   {
+    name: 'list_artifact_files',
+    description:
+      'List files and directories already present in a running sandbox workspace without starting another sandbox process. The path argument must be relative to /workspace, not absolute. Results are bounded by maxDepth and limit; use read_artifact for specific file contents.',
+    parameters: {
+      type: 'object',
+      properties: {
+        processId: { type: 'string', description: 'Process ID returned by run_process or a sandbox-backed tool.' },
+        path: { type: 'string', description: 'Relative directory path inside /workspace. Defaults to workspace root.' },
+        maxDepth: { type: 'number', description: 'Maximum directory depth to list. Default: 3, max: 8.' },
+        limit: { type: 'number', description: 'Maximum entries to return. Default: 200, max: 1000.' },
+        includeFiles: { type: 'boolean', description: 'Include file entries. Default: true.' },
+        includeDirectories: { type: 'boolean', description: 'Include directory entries. Default: true.' },
+      },
+      required: ['processId'],
+    },
+    destructive: false,
+    category: 'Sandbox',
+    requiredScope: 'ai:sandbox:use',
+    invalidateStores: [],
+    historyRetention: { mode: 'summary_only' },
+  },
+  {
     name: 'read_artifact',
     description:
       'Read a file from a running sandbox container in chunks. The path argument must be relative to /workspace, not absolute. Use offset and length for large files. Each read is capped at 1 MB.',

@@ -595,7 +595,8 @@ export const AI_TOOLS: AIToolDefinition[] = [
   },
   {
     name: 'request_acme_cert',
-    description: "Request a new SSL certificate via ACME (Let's Encrypt). Requires DNS/HTTP challenge verification.",
+    description:
+      "Request a new SSL certificate via ACME (Let's Encrypt). HTTP-01 is fully automatic. For DNS-01, pass dnsProvider: 'cloudflare' when Gateway should create the TXT records through a configured Cloudflare connector and finish issuance automatically; omit dnsProvider for manual DNS-01.",
     parameters: {
       type: 'object',
       properties: {
@@ -610,7 +611,17 @@ export const AI_TOOLS: AIToolDefinition[] = [
           enum: ['letsencrypt', 'letsencrypt-staging'],
           description: 'ACME provider (default: letsencrypt)',
         },
-        autoRenew: { type: 'boolean', description: 'Auto-renew before expiry (default: true)' },
+        dnsProvider: {
+          type: 'string',
+          enum: ['cloudflare'],
+          description:
+            'DNS automation provider for DNS-01. Use cloudflare only when matching Cloudflare zones are synced.',
+        },
+        autoRenew: {
+          type: 'boolean',
+          description:
+            'Auto-renew before expiry. Defaults true for HTTP-01 and Cloudflare DNS-01; manual DNS-01 cannot auto-renew.',
+        },
       },
       required: ['domains', 'challengeType'],
     },
@@ -640,16 +651,22 @@ export const AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'manage_ssl_certificate',
     description:
-      'Manage SSL certificates beyond listing/request/link. Operations: get, upload, renew, verify_dns, delete. Operation-specific ssl:cert:* scopes are enforced.',
+      'Manage SSL certificates beyond listing/request/link. Operations: get, upload, renew, verify_dns, set_auto_renew, delete. Operation-specific ssl:cert:* scopes are enforced.',
     parameters: {
       type: 'object',
       properties: {
-        operation: { type: 'string', enum: ['get', 'upload', 'renew', 'verify_dns', 'delete'] },
+        operation: { type: 'string', enum: ['get', 'upload', 'renew', 'verify_dns', 'set_auto_renew', 'delete'] },
         sslCertificateId: { type: 'string' },
         name: { type: 'string' },
         certificatePem: { type: 'string' },
         privateKeyPem: { type: 'string' },
         chainPem: { type: 'string' },
+        enabled: { type: 'boolean', description: 'Enable or disable auto-renewal when operation is set_auto_renew' },
+        provider: {
+          type: 'string',
+          enum: ['cloudflare'],
+          description: 'Required when enabling DNS-01 auto-renewal; omitted for HTTP-01 or disabling.',
+        },
       },
       required: ['operation'],
     },

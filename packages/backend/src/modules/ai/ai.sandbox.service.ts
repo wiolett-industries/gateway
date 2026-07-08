@@ -56,6 +56,15 @@ export interface SandboxReadArtifactInput {
   encoding?: 'utf8' | 'base64';
 }
 
+export interface SandboxListArtifactFilesInput {
+  processId: string;
+  path?: string;
+  maxDepth?: number;
+  limit?: number;
+  includeFiles?: boolean;
+  includeDirectories?: boolean;
+}
+
 export interface SandboxSendArtifactInput {
   processId: string;
   path: string;
@@ -212,6 +221,19 @@ export class AISandboxService {
       processId: containerId,
       path: input.path,
       contentBase64: input.contentBase64,
+    });
+  }
+
+  async listArtifactFiles(user: User, input: SandboxListArtifactFilesInput) {
+    const job = await this.resolveOwnedJob(user, input.processId);
+    const containerId = job.containerId ?? input.processId;
+    return this.runner.listArtifactFiles({
+      processId: containerId,
+      path: input.path,
+      maxDepth: input.maxDepth,
+      limit: input.limit,
+      includeFiles: input.includeFiles,
+      includeDirectories: input.includeDirectories,
     });
   }
 

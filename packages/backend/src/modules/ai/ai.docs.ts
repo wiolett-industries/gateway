@@ -81,8 +81,10 @@ SSL certificates in Gateway are used to enable HTTPS on proxy hosts. Three types
 ## ACME Certificates (Let's Encrypt)
 - request_acme_cert({ domains: ["example.com", "www.example.com"], challengeType: "http-01" })
 - **http-01**: Gateway automatically serves the challenge at /.well-known/acme-challenge/ on port 80. The daemon deploys challenge files to nginx. Port 80 must be publicly accessible.
-- **dns-01**: For wildcard certs or when port 80 is blocked. Returns { domain, recordName, recordValue } — user must create a DNS TXT record manually, then confirm.
+- **dns-01 with Cloudflare**: For wildcard certs or when port 80 is blocked and a matching Cloudflare connector/zone is configured. Use request_acme_cert({ domains, challengeType: "dns-01", dnsProvider: "cloudflare" }). Gateway creates the TXT records, waits for propagation, verifies the ACME order, cleans up created TXT records, and returns the issued certificate.
+- **manual dns-01**: If no Cloudflare connector/zone is available, omit dnsProvider. The tool returns { domain, recordName, recordValue }; user must create a DNS TXT record manually, then confirm with manage_ssl_certificate({ operation: "verify_dns", sslCertificateId }).
 - Auto-renew: checked daily at 3 AM. Renews certificates 30 days before expiry.
+- DNS-01 auto-renew requires Cloudflare. Enable or disable it with manage_ssl_certificate({ operation: "set_auto_renew", sslCertificateId, enabled: true, provider: "cloudflare" }) or enabled: false.
 - Staging mode available for testing (certs not browser-trusted).
 
 ## Uploading Custom Certificates
@@ -246,17 +248,20 @@ Let's Encrypt integration for free, automated SSL certificates.
 1. request_acme_cert({ domains: ["example.com", "www.example.com"], challengeType: "http-01" })
 2. Gateway contacts Let's Encrypt, receives a challenge
 3. For http-01: Gateway deploys challenge files to nginx nodes automatically, Let's Encrypt verifies
-4. For dns-01: Gateway returns { domain, recordName, recordValue } — user creates DNS TXT record, then confirms
-5. Certificate is issued and stored as an SSL certificate
+4. For Cloudflare dns-01: use request_acme_cert({ domains, challengeType: "dns-01", dnsProvider: "cloudflare" }); Gateway creates TXT records, verifies, cleans up, and can enable Cloudflare auto-renew.
+5. For manual dns-01: Gateway returns { domain, recordName, recordValue } — user creates DNS TXT record, then confirms
+6. Certificate is issued and stored as an SSL certificate
 
 ## Challenge Types
 - **http-01** (recommended): Fully automatic. Gateway serves the challenge at \`/.well-known/acme-challenge/\` on port 80. Requires: port 80 publicly accessible, domain resolving to nginx node IP.
-- **dns-01**: For wildcard certificates (*.example.com) or when port 80 is blocked. Manual step: add a TXT record at \`_acme-challenge.example.com\`. Supports wildcard issuance.
+- **dns-01 with Cloudflare**: Automatic when a matching Cloudflare connector/zone is configured. Use dnsProvider: "cloudflare".
+- **manual dns-01**: For wildcard certificates (*.example.com) or when port 80 is blocked. Manual step: add a TXT record at \`_acme-challenge.example.com\`. Supports wildcard issuance.
 
 ## Auto-Renewal
 - Checked daily at 3 AM (configurable via ACME_RENEWAL_CRON setting)
 - Renews certificates 30 days before expiry
 - Uses the same challenge type as the original issuance
+- DNS-01 auto-renew requires Cloudflare and is controlled with manage_ssl_certificate({ operation: "set_auto_renew", sslCertificateId, enabled, provider: "cloudflare" })
 - Renewal failures are logged and alerted
 
 ## Staging Mode
@@ -755,6 +760,7 @@ Sandbox tools run bounded commands in Docker containers owned by the current use
 Sandbox containers have no direct network access. Use Gateway-mediated helpers:
 - fetch: read network content through Gateway, capped at 10 MB.
 - download_artifact: download a URL through Gateway and place it in a running sandbox under /workspace, capped at 200 MB.
+- list_artifact_files: list files/directories already present in a running sandbox workspace without starting another process.
 - read_artifact: read a file from the sandbox in chunks, capped per read.
 - send_artifact: save a sandbox file as a Gateway-managed downloadable artifact for the user.
 
@@ -762,6 +768,7 @@ Artifact path rules:
 - The sandbox process working directory is /workspace.
 - Files that must be read_artifact or send_artifact must be written under /workspace.
 - Artifact tool path arguments are relative to /workspace. Example: write /workspace/report.txt, then send_artifact with path "report.txt".
+- If a sandbox-backed tool returns a processId and path, use list_artifact_files and read_artifact with that same processId/path to inspect files; do not launch another run_process just to run ls/find/os.walk/cat.
 - Do not write deliverable files under /tmp, and do not pass absolute paths such as "/workspace/report.txt" or relative paths like "tmp/report.txt" for files created in /tmp.
 - run_process returns as soon as the process starts. If a file is created by a running process, wait briefly and verify it with read_process_output or read_artifact before send_artifact.
 
@@ -966,6 +973,7 @@ Gateway GitLab connectors are system-level integrations configured by admins in 
 - Use gitlab_list_connectors to find enabled connectors.
 - Use gitlab_list_projects or gitlab_search_projects to find projects already synced through Gateway allowlist rules.
 - Project arguments accept the synced project remote ID or full path.
+- Every GitLab tool except gitlab_list_connectors requires the exact connectorId UUID from gitlab_list_connectors or from a prior GitLab project result. Do not use connector names, project paths, or blank values as connectorId.
 - If a visible GitLab project exists but is not enabled in the connector allowlist, use gitlab_add_connector_projects with explicit approval, then gitlab_sync_connector.
 - Do not guess connector IDs or scan GitLab directly outside these tools.
 
@@ -975,6 +983,7 @@ Gateway GitLab connectors are system-level integrations configured by admins in 
   - gitlab_read_file for bounded file reads. Use offset and length for large files.
   - gitlab_commit_files for create/update/delete/move commits.
 - Use gitlab_clone_repository_to_sandbox only when local analysis, tests, or multi-file tooling actually requires a checkout.
+- After gitlab_clone_repository_to_sandbox, wait for CLONE_READY with read_process_output, then inspect the checkout through list_artifact_files/read_artifact on the returned processId. Do not call run_process merely to list or read cloned repository files.
 - Clone runs with connector-configured limits: shallow clone, depth, LFS/submodule settings, max size, and timeout.
 
 ## CI

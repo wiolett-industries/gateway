@@ -3,7 +3,8 @@ import type { AIToolDefinition } from './ai.types.js';
 const connectorIdSchema = {
   type: 'string',
   pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-  description: 'Exact GitLab connector UUID returned by gitlab_list_connectors.',
+  description:
+    'Exact GitLab connector UUID returned by gitlab_list_connectors or a prior GitLab project result. Never use a connector name, project path, or blank value.',
 };
 
 const projectSelector = {
@@ -148,7 +149,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'gitlab_commit_files',
     description:
-      'Commit file create/update/delete/move actions directly to GitLab. Direct commits to protected/default branches require explicit approval and GitLab PAT permission.',
+      'Commit file create/update/delete/move actions directly to GitLab. Requires the exact connectorId UUID from gitlab_list_connectors or a prior GitLab project result. Direct commits to protected/default branches require explicit approval and GitLab PAT permission.',
     parameters: {
       type: 'object',
       properties: {
@@ -421,7 +422,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
   {
     name: 'gitlab_clone_repository_to_sandbox',
     description:
-      'Download a GitLab repository archive through Gateway, upload it into a no-network sandbox, and extract it under /workspace. No PAT or deploy token is exposed in command text, output, or tool result.',
+      'Download a GitLab repository archive through Gateway, upload it into a no-network sandbox, and extract it under /workspace. After CLONE_READY, inspect the checkout with list_artifact_files/read_artifact on the returned processId; do not start a second sandbox process just to list or read cloned files. No PAT or deploy token is exposed in command text, output, or tool result.',
     parameters: {
       type: 'object',
       properties: {
