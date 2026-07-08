@@ -2,6 +2,7 @@ import { appRoute, createdJson, IdParamSchema, jsonBody, okJson, UnknownDataResp
 import {
   LinkInternalCertSchema,
   RequestACMECertSchema,
+  SetSslAutoRenewSchema,
   SSLCertListQuerySchema,
   UploadCertSchema,
 } from './ssl.schemas.js';
@@ -57,6 +58,15 @@ export const renewSslCertificateRoute = appRoute({
   tags: ['SSL Certificates'],
   summary: 'Renew an SSL certificate',
   request: { params: IdParamSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const setSslCertificateAutoRenewRoute = appRoute({
+  method: 'patch',
+  path: '/{id}/auto-renew',
+  tags: ['SSL Certificates'],
+  summary: 'Update SSL certificate auto-renewal settings',
+  request: { params: IdParamSchema, ...jsonBody(SetSslAutoRenewSchema) },
   responses: okJson(UnknownDataResponseSchema),
 });
 

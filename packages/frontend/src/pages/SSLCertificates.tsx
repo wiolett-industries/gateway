@@ -1,4 +1,12 @@
-import { ChevronLeft, ChevronRight, MoreVertical, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Cloud,
+  MoreVertical,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -176,6 +184,7 @@ export function SSLCertificates() {
     setPage,
     resetFilters,
     renewCert,
+    setAutoRenew,
     completeDNSVerify,
     deleteCert,
   } = useSSLStore();
@@ -245,6 +254,18 @@ export function SSLCertificates() {
       toast.error(err instanceof Error ? err.message : "Failed to renew certificate");
     } finally {
       setRenewingCert(null);
+    }
+  };
+
+  const handleSetCloudflareAutoRenew = async (cert: SSLCertificate, enabled: boolean) => {
+    try {
+      await setAutoRenew(
+        cert.id,
+        enabled ? { enabled: true, provider: "cloudflare" } : { enabled: false }
+      );
+      toast.success(enabled ? "Cloudflare auto-renew enabled" : "Auto-renew disabled");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update auto-renew");
     }
   };
 
@@ -391,12 +412,23 @@ export function SSLCertificates() {
     {
       id: "autoRenew",
       header: "Auto-Renew",
-      render: (cert) =>
-        cert.type === "acme" && cert.acmeChallengeType !== "dns-01" && cert.autoRenew ? (
-          <Badge variant="success">Yes</Badge>
-        ) : (
-          <Badge variant="secondary">No</Badge>
-        ),
+      render: (cert) => {
+        if (cert.type !== "acme") return <Badge variant="secondary">No</Badge>;
+        if (cert.autoRenew && cert.autoRenewProvider === "cloudflare") {
+          return <Badge variant="success">Cloudflare</Badge>;
+        }
+        if (cert.autoRenew && cert.acmeChallengeType !== "dns-01") {
+          return <Badge variant="success">Yes</Badge>;
+        }
+        if (cert.autoRenew && cert.acmeChallengeType === "dns-01") {
+          return <Badge variant="warning">Needs Setup</Badge>;
+        }
+        return (
+          <Badge variant={cert.autoRenewDisabledReason ? "warning" : "secondary"}>
+            {cert.autoRenewDisabledReason ? "Disabled" : "No"}
+          </Badge>
+        );
+      },
     },
     {
       id: "actions",
@@ -414,8 +446,26 @@ export function SSLCertificates() {
           Boolean(cert.notAfter) &&
           (cert.status === "active" || cert.status === "error") &&
           !hasPendingDNSVerification;
+        const canEnableCloudflareAutoRenew =
+          hasScope("ssl:cert:issue") &&
+          cert.type === "acme" &&
+          cert.acmeChallengeType === "dns-01" &&
+          cert.status === "active" &&
+          !(cert.autoRenew && cert.autoRenewProvider === "cloudflare") &&
+          !hasPendingDNSVerification;
+        const canDisableCloudflareAutoRenew =
+          hasScope("ssl:cert:issue") &&
+          cert.type === "acme" &&
+          cert.acmeChallengeType === "dns-01" &&
+          cert.autoRenew &&
+          cert.autoRenewProvider === "cloudflare";
         const canDeleteCert = !cert.isSystem && hasScope("ssl:cert:delete");
-        const hasActions = canContinueDNSVerification || canRenewCert || canDeleteCert;
+        const hasActions =
+          canContinueDNSVerification ||
+          canRenewCert ||
+          canEnableCloudflareAutoRenew ||
+          canDisableCloudflareAutoRenew ||
+          canDeleteCert;
         if (!hasActions) return null;
         return (
           <div onClick={(event) => event.stopPropagation()}>
@@ -436,6 +486,18 @@ export function SSLCertificates() {
                   <DropdownMenuItem onClick={() => handleRenew(cert)}>
                     <RefreshCw className="h-4 w-4" />
                     Renew
+                  </DropdownMenuItem>
+                )}
+                {canEnableCloudflareAutoRenew && (
+                  <DropdownMenuItem onClick={() => handleSetCloudflareAutoRenew(cert, true)}>
+                    <Cloud className="h-4 w-4" />
+                    Enable Cloudflare Auto-Renew
+                  </DropdownMenuItem>
+                )}
+                {canDisableCloudflareAutoRenew && (
+                  <DropdownMenuItem onClick={() => handleSetCloudflareAutoRenew(cert, false)}>
+                    <Cloud className="h-4 w-4" />
+                    Disable Auto-Renew
                   </DropdownMenuItem>
                 )}
                 {canDeleteCert && (
@@ -624,7 +686,17 @@ export function SSLCertificates() {
                 ["Challenge", previewCert.acmeChallengeType ?? "-"],
                 ["Valid From", previewCert.notBefore ? formatDate(previewCert.notBefore) : "-"],
                 ["Valid Until", previewCert.notAfter ? formatDate(previewCert.notAfter) : "-"],
-                ["Auto-Renew", previewCert.autoRenew ? "Yes" : "No"],
+                [
+                  "Auto-Renew",
+                  previewCert.autoRenewProvider === "cloudflare" && previewCert.autoRenew
+                    ? `Cloudflare (${previewCert.autoRenewDnsBindings?.[0]?.connectorName ?? "connector"})`
+                    : previewCert.autoRenew
+                      ? previewCert.acmeChallengeType === "dns-01"
+                        ? "Needs Cloudflare setup"
+                        : "Yes"
+                      : "No",
+                ],
+                ["Auto-Renew Disabled", previewCert.autoRenewDisabledReason ?? "-"],
                 [
                   "Last Renewed",
                   previewCert.lastRenewedAt ? formatDate(previewCert.lastRenewedAt) : "-",

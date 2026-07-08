@@ -154,7 +154,7 @@ export function SSLCertificateCreateDialog({
         domains,
         challengeType,
         provider: acmeProvider,
-        autoRenew: true,
+        autoRenew: challengeType === "http-01",
       });
       if (result.status === "pending_dns_verification" && result.challenges) {
         setDnsChallenges(result.challenges as DNSChallenge[]);

@@ -1478,6 +1478,18 @@ class ApiClient extends withIntegrationsApi(
     );
   }
 
+  async setSSLCertAutoRenew(
+    id: string,
+    data: { enabled: boolean; provider?: "cloudflare" }
+  ): Promise<SSLCertificate> {
+    return this.unwrapData(
+      this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}/auto-renew`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      })
+    );
+  }
+
   async completeDNSVerify(id: string): Promise<SSLCertificate> {
     return this.unwrapData(
       this.request<{ data: SSLCertificate }>(`/ssl-certificates/${id}/dns-verify`, {

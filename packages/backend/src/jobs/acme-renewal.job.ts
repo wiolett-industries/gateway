@@ -90,6 +90,19 @@ export class ACMERenewalJob {
           renewed++;
           logger.info(`Renewed certificate: ${cert.name}`, { certId: cert.id, domains: cert.domainNames });
         } else if (cert.acmeChallengeType === 'dns-01') {
+          if (cert.autoRenewProvider !== 'cloudflare') {
+            await this.alertService.createAlert({
+              type: 'expiry_warning',
+              resourceType: 'ssl_certificate',
+              resourceId: cert.id,
+              message: `Certificate "${cert.name}" (DNS-01) is expiring on ${cert.notAfter?.toISOString()} and requires Cloudflare auto-renewal to be enabled or manual DNS verification.`,
+            });
+            manualRequired++;
+            logger.warn(`DNS-01 certificate is not configured for Cloudflare auto-renewal: ${cert.name}`, {
+              certId: cert.id,
+            });
+            continue;
+          }
           const result = await this.sslService.renewCert(cert.id, SYSTEM_USER_ID);
           if (result.status === 'active') {
             renewed++;

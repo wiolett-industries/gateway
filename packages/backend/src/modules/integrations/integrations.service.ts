@@ -19,6 +19,7 @@ import { AppError } from '@/middleware/error-handler.js';
 import type { AISandboxService } from '@/modules/ai/ai.sandbox.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
+import type { SSLService } from '@/modules/ssl/ssl.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { User } from '@/types.js';
@@ -83,6 +84,7 @@ export interface SafeIntegrationConnector extends Omit<ConnectorRow, 'encryptedT
 export class IntegrationsService {
   private eventBus?: EventBusService;
   private dockerRegistryService?: DockerRegistryService;
+  private sslService?: SSLService;
   private readonly providers = new Map<IntegrationProvider, ConnectorProvider>();
   private readonly syncLocks = new Set<string>();
 
@@ -103,6 +105,10 @@ export class IntegrationsService {
 
   setDockerRegistryService(service: DockerRegistryService) {
     this.dockerRegistryService = service;
+  }
+
+  setSSLService(service: SSLService) {
+    this.sslService = service;
   }
 
   registerProvider(provider: ConnectorProvider) {
@@ -460,6 +466,7 @@ export class IntegrationsService {
       .returning();
 
     await this.persistCloudflareZones(row.id, zones);
+    await this.sslService?.revalidateCloudflareAutoRenew();
 
     await this.auditService.log({
       action: CLOUDFLARE_AUDIT_ACTIONS.connectorCreate,
@@ -498,6 +505,7 @@ export class IntegrationsService {
       .where(eq(integrationConnectors.id, id))
       .returning();
     await this.persistCloudflareZones(id, zones);
+    await this.sslService?.revalidateCloudflareAutoRenew();
 
     await this.auditService.log({
       action: CLOUDFLARE_AUDIT_ACTIONS.connectorUpdate,
@@ -532,6 +540,7 @@ export class IntegrationsService {
 
     if (!row) throw new AppError(404, 'NOT_FOUND', 'Cloudflare connector not found');
     await this.persistCloudflareZones(id, zones);
+    await this.sslService?.revalidateCloudflareAutoRenew();
 
     await this.auditService.log({
       action: CLOUDFLARE_AUDIT_ACTIONS.connectorTokenRotate,
@@ -558,6 +567,7 @@ export class IntegrationsService {
         domains: linkedDomains,
       });
     }
+    await this.sslService?.disableCloudflareAutoRenewForConnector(id, 'cloudflare_connector_deleted');
     await this.db
       .delete(integrationConnectors)
       .where(and(eq(integrationConnectors.id, id), eq(integrationConnectors.provider, 'cloudflare')));
@@ -582,6 +592,7 @@ export class IntegrationsService {
       .where(eq(integrationConnectors.id, id))
       .returning();
     await this.persistCloudflareZones(id, zones);
+    await this.sslService?.revalidateCloudflareAutoRenew();
 
     await this.auditService.log({
       action: CLOUDFLARE_AUDIT_ACTIONS.connectorTest,
@@ -623,6 +634,7 @@ export class IntegrationsService {
     try {
       const { capabilities, zones } = await this.testCloudflareToken(this.cloudflareTokenFor(row));
       await this.persistCloudflareZones(id, zones);
+      await this.sslService?.revalidateCloudflareAutoRenew();
       await this.db
         .update(integrationConnectors)
         .set({
@@ -649,6 +661,9 @@ export class IntegrationsService {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown sync failure';
       const failureCount = row.syncFailureCount + 1;
+      if (this.shouldDisableCloudflareAutoRenew(error)) {
+        await this.sslService?.disableCloudflareAutoRenewForConnector(id, 'cloudflare_connector_unavailable');
+      }
       await this.db
         .update(integrationConnectors)
         .set({
@@ -2007,6 +2022,17 @@ export class IntegrationsService {
 
   private isCloudflarePermissionError(error: unknown): boolean {
     return error instanceof AppError && (error.statusCode === 401 || error.statusCode === 403);
+  }
+
+  private shouldDisableCloudflareAutoRenew(error: unknown): boolean {
+    if (!(error instanceof AppError)) return false;
+    return [
+      'CLOUDFLARE_TOKEN_INACTIVE',
+      'CLOUDFLARE_ZONE_READ_REQUIRED',
+      'CLOUDFLARE_ZONE_NOT_FOUND',
+      'CLOUDFLARE_DNS_READ_REQUIRED',
+      'CLOUDFLARE_DNS_EDIT_REQUIRED',
+    ].includes(error.code);
   }
 
   private cloudflareZonePreview(zone: CloudflareZoneRef) {

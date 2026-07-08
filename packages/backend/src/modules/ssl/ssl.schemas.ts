@@ -11,7 +11,7 @@ export const RequestACMECertSchema = z
   })
   .transform((data) => ({
     ...data,
-    autoRenew: data.autoRenew ?? data.challengeType === 'http-01',
+    autoRenew: data.challengeType === 'http-01' ? (data.autoRenew ?? true) : false,
   }));
 
 export const UploadCertSchema = z.object({
@@ -30,6 +30,11 @@ export const LinkInternalCertSchema = z.object({
   name: z.string().min(1).max(255).optional(),
 });
 
+export const SetSslAutoRenewSchema = z.object({
+  enabled: z.boolean(),
+  provider: z.enum(['cloudflare']).optional(),
+});
+
 export const SSLCertListQuerySchema = z.object({
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20),
@@ -42,4 +47,5 @@ export const SSLCertListQuerySchema = z.object({
 export type RequestACMECertInput = z.output<typeof RequestACMECertSchema>;
 export type UploadCertInput = z.infer<typeof UploadCertSchema>;
 export type LinkInternalCertInput = z.infer<typeof LinkInternalCertSchema>;
+export type SetSslAutoRenewInput = z.infer<typeof SetSslAutoRenewSchema>;
 export type SSLCertListQuery = z.infer<typeof SSLCertListQuerySchema>;

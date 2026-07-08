@@ -16,12 +16,14 @@ import {
   listSslCertificatesRoute,
   renewSslCertificateRoute,
   requestAcmeCertificateRoute,
+  setSslCertificateAutoRenewRoute,
   uploadSslCertificateRoute,
   verifyDnsSslCertificateRoute,
 } from './ssl.docs.js';
 import {
   LinkInternalCertSchema,
   RequestACMECertSchema,
+  SetSslAutoRenewSchema,
   SSLCertListQuerySchema,
   UploadCertSchema,
 } from './ssl.schemas.js';
@@ -100,6 +102,16 @@ sslRoutes.openapi({ ...renewSslCertificateRoute, middleware: requireScope('ssl:c
   const user = c.get('user')!;
   const id = c.req.param('id')!;
   const cert = await sslService.renewCert(id, user.id);
+  return c.json({ data: cert });
+});
+
+sslRoutes.openapi({ ...setSslCertificateAutoRenewRoute, middleware: requireScope('ssl:cert:issue') }, async (c) => {
+  const sslService = container.resolve(SSLService);
+  const user = c.get('user')!;
+  const id = c.req.param('id')!;
+  const body = await c.req.json();
+  const input = SetSslAutoRenewSchema.parse(body);
+  const cert = await sslService.setAutoRenew(id, input, user.id);
   return c.json({ data: cert });
 });
 

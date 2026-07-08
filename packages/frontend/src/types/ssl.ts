@@ -16,6 +16,16 @@ export interface SSLCertificate {
   notBefore: string | null;
   notAfter: string | null;
   autoRenew: boolean;
+  autoRenewProvider: "cloudflare" | null;
+  autoRenewDnsBindings: Array<{
+    domain: string;
+    connectorId: string;
+    connectorName: string;
+    zoneId: string;
+    zoneName: string;
+  }> | null;
+  autoRenewDisabledReason: string | null;
+  autoRenewDisabledAt: string | null;
   lastRenewedAt: string | null;
   renewalError: string | null;
   status: SSLCertStatus;

@@ -50,6 +50,19 @@ export const sslCertificates = pgTable(
     notBefore: timestamp('not_before', { withTimezone: true }),
     notAfter: timestamp('not_after', { withTimezone: true }),
     autoRenew: boolean('auto_renew').notNull().default(false),
+    autoRenewProvider: varchar('auto_renew_provider', { length: 50 }).$type<'cloudflare'>(),
+    autoRenewDnsBindings:
+      jsonb('auto_renew_dns_bindings').$type<
+        Array<{
+          domain: string;
+          connectorId: string;
+          connectorName: string;
+          zoneId: string;
+          zoneName: string;
+        }>
+      >(),
+    autoRenewDisabledReason: text('auto_renew_disabled_reason'),
+    autoRenewDisabledAt: timestamp('auto_renew_disabled_at', { withTimezone: true }),
     lastRenewedAt: timestamp('last_renewed_at', { withTimezone: true }),
     renewalError: text('renewal_error'),
 
@@ -70,6 +83,7 @@ export const sslCertificates = pgTable(
     statusIdx: index('ssl_cert_status_idx').on(table.status),
     notAfterIdx: index('ssl_cert_not_after_idx').on(table.notAfter),
     typeIdx: index('ssl_cert_type_idx').on(table.type),
+    autoRenewProviderIdx: index('ssl_cert_auto_renew_provider_idx').on(table.autoRenewProvider),
     createdByIdx: index('ssl_cert_created_by_idx').on(table.createdById),
   })
 );

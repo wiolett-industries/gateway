@@ -19,6 +19,7 @@ describe('ACMERenewalJob', () => {
       type: 'acme',
       status: 'active',
       autoRenew: true,
+      autoRenewProvider: 'cloudflare',
       acmeChallengeType: 'dns-01',
       domainNames: ['example.com'],
       notAfter: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
@@ -43,6 +44,7 @@ describe('ACMERenewalJob', () => {
       type: 'acme',
       status: 'active',
       autoRenew: true,
+      autoRenewProvider: 'cloudflare',
       acmeChallengeType: 'dns-01',
       domainNames: ['example.com'],
       notAfter: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
@@ -98,6 +100,37 @@ describe('ACMERenewalJob', () => {
     expect(db.query.sslCertificates.findMany).toHaveBeenCalled();
     expect(sslService.renewCert).not.toHaveBeenCalled();
     expect(sslService.completeDNS01Verification).not.toHaveBeenCalled();
+    expect(alertService.createAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'expiry_warning',
+        resourceType: 'ssl_certificate',
+        resourceId: 'cert-1',
+      })
+    );
+  });
+
+  it('alerts instead of renewing unmanaged DNS-01 certificates', async () => {
+    const cert = {
+      id: 'cert-1',
+      name: 'example.com',
+      type: 'acme',
+      status: 'active',
+      autoRenew: true,
+      acmeChallengeType: 'dns-01',
+      domainNames: ['example.com'],
+      notAfter: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+    };
+    const db = createDb([cert]);
+    const sslService = {
+      renewCert: vi.fn(),
+      completeDNS01Verification: vi.fn(),
+    };
+    const alertService = { createAlert: vi.fn() };
+    const job = new ACMERenewalJob(db as never, sslService as never, alertService as never);
+
+    await job.run();
+
+    expect(sslService.renewCert).not.toHaveBeenCalled();
     expect(alertService.createAlert).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'expiry_warning',

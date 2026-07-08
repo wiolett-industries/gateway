@@ -36,6 +36,10 @@ interface SSLState {
   uploadCert: (data: UploadCertRequest) => Promise<SSLCertificate>;
   linkInternal: (data: LinkInternalCertRequest) => Promise<SSLCertificate>;
   renewCert: (id: string) => Promise<SSLCertificate | SSLCertificateOperationResult>;
+  setAutoRenew: (
+    id: string,
+    data: { enabled: boolean; provider?: "cloudflare" }
+  ) => Promise<SSLCertificate>;
   deleteCert: (id: string) => Promise<void>;
   completeDNSVerify: (id: string) => Promise<SSLCertificate>;
   setFilters: (filters: Partial<SSLCertFilters>) => void;
@@ -154,6 +158,15 @@ export const useSSLStore = create<SSLState>()((set, get) => ({
       selectedCert: state.selectedCert?.id === id ? cert : state.selectedCert,
     }));
     return result;
+  },
+
+  setAutoRenew: async (id, data) => {
+    const cert = await api.setSSLCertAutoRenew(id, data);
+    set((state) => ({
+      certificates: state.certificates.map((c) => (c.id === id ? cert : c)),
+      selectedCert: state.selectedCert?.id === id ? cert : state.selectedCert,
+    }));
+    return cert;
   },
 
   deleteCert: async (id: string) => {

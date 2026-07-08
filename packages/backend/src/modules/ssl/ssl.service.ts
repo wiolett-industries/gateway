@@ -14,7 +14,13 @@ import type { NginxConfigGenerator } from '@/services/nginx-config-generator.ser
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { PaginatedResponse } from '@/types.js';
 import type { ACMEService } from './acme.service.js';
-import type { LinkInternalCertInput, RequestACMECertInput, SSLCertListQuery, UploadCertInput } from './ssl.schemas.js';
+import type {
+  LinkInternalCertInput,
+  RequestACMECertInput,
+  SetSslAutoRenewInput,
+  SSLCertListQuery,
+  UploadCertInput,
+} from './ssl.schemas.js';
 
 const logger = createChildLogger('SSLService');
 const CLOUDFLARE_DNS01_PROPAGATION_DELAY_MS = 10_000;
@@ -30,6 +36,14 @@ type DNSChallenge = {
     recordId: string;
     created: boolean;
   };
+};
+
+type AutoRenewDnsBinding = {
+  domain: string;
+  connectorId: string;
+  connectorName: string;
+  zoneId: string;
+  zoneName: string;
 };
 
 export class SSLService {
@@ -617,7 +631,115 @@ export class SSLService {
     }
   }
 
+  async setAutoRenew(certId: string, input: SetSslAutoRenewInput, userId: string) {
+    const cert = await this.db.query.sslCertificates.findFirst({
+      where: eq(sslCertificates.id, certId),
+    });
+
+    if (!cert) throw new AppError(404, 'SSL_CERT_NOT_FOUND', 'SSL certificate not found');
+    if (cert.type !== 'acme') throw new AppError(400, 'NOT_ACME', 'Only ACME certificates support auto-renewal');
+
+    const updates: Partial<typeof sslCertificates.$inferInsert> = {
+      autoRenew: false,
+      autoRenewProvider: null,
+      autoRenewDnsBindings: null,
+      autoRenewDisabledReason: null,
+      autoRenewDisabledAt: null,
+      updatedAt: new Date(),
+    };
+
+    if (input.enabled) {
+      updates.renewalError = null;
+      if (cert.acmeChallengeType === 'http-01') {
+        updates.autoRenew = true;
+      } else if (cert.acmeChallengeType === 'dns-01') {
+        if (input.provider !== 'cloudflare') {
+          throw new AppError(400, 'CLOUDFLARE_PROVIDER_REQUIRED', 'DNS-01 auto-renewal requires Cloudflare');
+        }
+        if (cert.status !== 'active') {
+          throw new AppError(400, 'CERT_NOT_ACTIVE', 'DNS-01 auto-renewal can only be enabled for active certificates');
+        }
+        const bindings = await this.resolveCloudflareAutoRenewBindings(cert);
+        updates.autoRenew = true;
+        updates.autoRenewProvider = 'cloudflare';
+        updates.autoRenewDnsBindings = bindings;
+      } else {
+        throw new AppError(400, 'UNSUPPORTED_ACME_CHALLENGE', 'Unsupported ACME challenge type');
+      }
+    }
+
+    await this.db.update(sslCertificates).set(updates).where(eq(sslCertificates.id, certId));
+
+    await this.auditService.log({
+      userId,
+      action: input.enabled ? 'ssl.auto_renew_enable' : 'ssl.auto_renew_disable',
+      resourceType: 'ssl_certificate',
+      resourceId: certId,
+      details: {
+        domains: cert.domainNames,
+        provider: input.enabled && cert.acmeChallengeType === 'dns-01' ? input.provider : null,
+      },
+    });
+
+    this.emitCert(certId, 'updated', cert.name);
+    return this.getCert(certId);
+  }
+
+  async revalidateCloudflareAutoRenewForConnector(connectorId: string) {
+    await this.revalidateCloudflareAutoRenew((bindings) =>
+      bindings.some((binding) => binding.connectorId === connectorId)
+    );
+  }
+
+  async revalidateCloudflareAutoRenew(shouldCheck?: (bindings: AutoRenewDnsBinding[]) => boolean) {
+    const certs = await this.db.query.sslCertificates.findMany({
+      where: eq(sslCertificates.autoRenewProvider, 'cloudflare'),
+      columns: {
+        privateKeyPem: false,
+        encryptedDek: false,
+        dekIv: false,
+        acmeAccountKey: false,
+      },
+    });
+
+    for (const cert of certs) {
+      const bindings = (cert.autoRenewDnsBindings ?? []) as AutoRenewDnsBinding[];
+      if (shouldCheck && !shouldCheck(bindings)) continue;
+      try {
+        await this.resolveCloudflareAutoRenewBindings(cert, { requireExistingMatch: true });
+      } catch (error) {
+        await this.disableCloudflareAutoRenew(cert, 'cloudflare_zone_unavailable', error);
+      }
+    }
+  }
+
+  async disableCloudflareAutoRenewForConnector(connectorId: string, reason = 'cloudflare_connector_unavailable') {
+    const certs = await this.db.query.sslCertificates.findMany({
+      where: eq(sslCertificates.autoRenewProvider, 'cloudflare'),
+      columns: {
+        privateKeyPem: false,
+        encryptedDek: false,
+        dekIv: false,
+        acmeAccountKey: false,
+      },
+    });
+
+    for (const cert of certs) {
+      const bindings = (cert.autoRenewDnsBindings ?? []) as AutoRenewDnsBinding[];
+      if (bindings.some((binding) => binding.connectorId === connectorId)) {
+        await this.disableCloudflareAutoRenew(cert, reason);
+      }
+    }
+  }
+
   private async startDNS01Renewal(cert: typeof sslCertificates.$inferSelect, userId: string) {
+    const cloudflareAutoRenewBindings =
+      cert.autoRenewProvider === 'cloudflare'
+        ? await this.resolveCloudflareAutoRenewBindings(cert, { requireExistingMatch: true }).catch(async (error) => {
+            await this.disableCloudflareAutoRenew(cert, 'cloudflare_zone_unavailable', error);
+            throw error;
+          })
+        : null;
     const renewIsStaging = cert.acmeProvider === 'letsencrypt-staging';
     const result = await this.acmeService.requestCertDNS01Start(cert.domainNames, renewIsStaging);
 
@@ -628,7 +750,19 @@ export class SSLService {
       dekIv: acmeKeyEncrypted.dekIv,
     });
 
-    const cloudflareChallenges = await this.tryProvisionCloudflareDnsChallenges(cert.id, result.challenges);
+    const cloudflareChallenges = await this.tryProvisionCloudflareDnsChallenges(
+      cert.id,
+      result.challenges,
+      cloudflareAutoRenewBindings
+    );
+    if (cert.autoRenewProvider === 'cloudflare' && !cloudflareChallenges) {
+      await this.disableCloudflareAutoRenew(cert, 'cloudflare_zone_unavailable');
+      throw new AppError(
+        409,
+        'CLOUDFLARE_ZONE_NOT_FOUND',
+        'Cloudflare DNS automation is no longer available for this certificate'
+      );
+    }
     const pendingChallenges = cloudflareChallenges ?? result.challenges;
 
     await this.db
@@ -674,16 +808,30 @@ export class SSLService {
 
   private async tryProvisionCloudflareDnsChallenges(
     certId: string,
-    challenges: DNSChallenge[]
+    challenges: DNSChallenge[],
+    expectedBindings?: AutoRenewDnsBinding[] | null
   ): Promise<DNSChallenge[] | null> {
     if (!this.integrationsService) return null;
 
     const provisioned: DNSChallenge[] = [];
     const createdRecords: Array<{ zoneId: string; recordId: string; challenge: DNSChallenge }> = [];
+    const expectedByDomain = new Map(
+      (expectedBindings ?? []).map((binding) => [this.normalizeAcmeDomain(binding.domain), binding])
+    );
 
     try {
       for (const challenge of challenges) {
         const context = await this.integrationsService.resolveCloudflareDnsContext(challenge.domain);
+        const expected = expectedByDomain.get(this.normalizeAcmeDomain(challenge.domain));
+        if (expected && (context.connector.id !== expected.connectorId || context.zone.remoteId !== expected.zoneId)) {
+          throw new AppError(409, 'CLOUDFLARE_ZONE_CHANGED', 'Cloudflare zone binding changed for this certificate', {
+            domain: challenge.domain,
+            expectedConnectorId: expected.connectorId,
+            expectedZoneId: expected.zoneId,
+            actualConnectorId: context.connector.id,
+            actualZoneId: context.zone.remoteId,
+          });
+        }
         const records = await context.client.listDnsRecords(context.zone.remoteId, challenge.recordName);
         const existing = records.find((record) => record.type === 'TXT' && record.content === challenge.recordValue);
         const record =
@@ -757,6 +905,97 @@ export class SSLService {
         });
       }
     }
+  }
+
+  private async resolveCloudflareAutoRenewBindings(
+    cert: Pick<
+      typeof sslCertificates.$inferSelect,
+      'id' | 'domainNames' | 'autoRenewDnsBindings' | 'autoRenewProvider'
+    >,
+    options: { requireExistingMatch?: boolean } = {}
+  ): Promise<AutoRenewDnsBinding[]> {
+    if (!this.integrationsService) {
+      throw new AppError(409, 'CLOUDFLARE_DNS_NOT_CONFIGURED', 'Cloudflare DNS integration is not configured');
+    }
+
+    const bindings: AutoRenewDnsBinding[] = [];
+    for (const domain of cert.domainNames) {
+      const context = await this.integrationsService.resolveCloudflareDnsContext(domain);
+      bindings.push({
+        domain,
+        connectorId: context.connector.id,
+        connectorName: context.connector.name,
+        zoneId: context.zone.remoteId,
+        zoneName: context.zone.name,
+      });
+    }
+
+    const connectorIds = new Set(bindings.map((binding) => binding.connectorId));
+    if (connectorIds.size > 1) {
+      throw new AppError(
+        409,
+        'CLOUDFLARE_CONNECTOR_MISMATCH',
+        'All certificate domains must resolve through the same Cloudflare connector',
+        {
+          certId: cert.id,
+          connectors: [...connectorIds],
+        }
+      );
+    }
+
+    if (options.requireExistingMatch) {
+      const existingByDomain = new Map(
+        ((cert.autoRenewDnsBindings ?? []) as AutoRenewDnsBinding[]).map((binding) => [
+          this.normalizeAcmeDomain(binding.domain),
+          binding,
+        ])
+      );
+      for (const binding of bindings) {
+        const existing = existingByDomain.get(this.normalizeAcmeDomain(binding.domain));
+        if (!existing || existing.connectorId !== binding.connectorId || existing.zoneId !== binding.zoneId) {
+          throw new AppError(409, 'CLOUDFLARE_ZONE_CHANGED', 'Cloudflare zone binding changed for this certificate', {
+            certId: cert.id,
+            domain: binding.domain,
+          });
+        }
+      }
+    }
+
+    return bindings;
+  }
+
+  private async disableCloudflareAutoRenew(
+    cert: Pick<typeof sslCertificates.$inferSelect, 'id' | 'name' | 'domainNames'>,
+    reason: string,
+    cause?: unknown
+  ) {
+    const message = cause instanceof Error ? cause.message : cause ? String(cause) : reason;
+    await this.db
+      .update(sslCertificates)
+      .set({
+        autoRenew: false,
+        autoRenewProvider: null,
+        autoRenewDnsBindings: null,
+        autoRenewDisabledReason: reason,
+        autoRenewDisabledAt: new Date(),
+        renewalError: `Cloudflare auto-renew disabled: ${message}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(sslCertificates.id, cert.id));
+
+    await this.auditService.log({
+      userId: null,
+      action: 'ssl.auto_renew_disabled',
+      resourceType: 'ssl_certificate',
+      resourceId: cert.id,
+      details: { domains: cert.domainNames, provider: 'cloudflare', reason, message },
+    });
+
+    this.emitCert(cert.id, 'updated', cert.name);
+  }
+
+  private normalizeAcmeDomain(domain: string) {
+    return domain.trim().toLowerCase().replace(/^\*\./, '');
   }
 
   // ---------------------------------------------------------------------------
