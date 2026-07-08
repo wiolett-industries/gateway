@@ -17,10 +17,13 @@ import type {
   VcsPipelineJobRef,
   VcsPipelineRef,
   VcsProjectRef,
+  VcsProjectSettingsInput,
+  VcsProjectSettingsResult,
   VcsProjectVariableInput,
   VcsProjectVariableRef,
   VcsProjectWebhookInput,
   VcsProjectWebhookRef,
+  VcsRegistryDiscoveryResult,
   VcsRegistryRef,
   VcsRegistryRepositoryRef,
   VcsTreeEntry,
@@ -43,6 +46,7 @@ interface GitLabProject {
   visibility?: string;
   default_branch?: string | null;
   archived?: boolean;
+  container_registry_access_level?: string | null;
 }
 
 interface GitLabGroup {
@@ -225,15 +229,30 @@ export class GitLabProvider implements VcsConnectorProvider {
     return projects.map((project) => this.toProjectRef(project));
   }
 
-  async listRegistries(auth: VcsConnectorAuth, projectsToScan?: VcsProjectRef[]): Promise<VcsRegistryRef[]> {
+  async listRegistries(auth: VcsConnectorAuth, projectsToScan?: VcsProjectRef[]): Promise<VcsRegistryDiscoveryResult> {
     const client = this.client(auth);
     const projects = projectsToScan ?? (await this.listProjects(auth));
     const registries: VcsRegistryRef[] = [];
+    const skippedProjects: VcsRegistryDiscoveryResult['skippedProjects'] = [];
     for (const project of projects.slice(0, 100)) {
-      const entries = await client.request<GitLabRegistryRepository[]>(
-        `/projects/${encodeURIComponent(project.remoteId)}/registry/repositories`,
-        { query: { per_page: 100 }, allowNotFound: true }
-      );
+      const path = `/projects/${encodeURIComponent(project.remoteId)}/registry/repositories`;
+      let entries: GitLabRegistryRepository[] | null = null;
+      try {
+        entries = await client.request<GitLabRegistryRepository[]>(path, {
+          query: { per_page: 100 },
+          allowNotFound: true,
+        });
+      } catch (error) {
+        if (error instanceof AppError && (error.statusCode === 403 || error.statusCode === 404)) {
+          skippedProjects.push({
+            remoteId: project.remoteId,
+            fullPath: project.fullPath,
+            reason: error.statusCode === 403 ? 'forbidden' : 'not_found',
+          });
+          continue;
+        }
+        throw error;
+      }
       for (const entry of entries ?? []) {
         if (!entry.location) continue;
         registries.push({
@@ -245,7 +264,7 @@ export class GitLabProvider implements VcsConnectorProvider {
         });
       }
     }
-    return registries;
+    return { registries, skippedProjects };
   }
 
   async listTree(auth: VcsConnectorAuth, project: VcsProjectRef, path: string, ref?: string): Promise<VcsTreeEntry[]> {
@@ -504,6 +523,26 @@ export class GitLabProvider implements VcsConnectorProvider {
       token: token.token,
       scopes: token.scopes ?? input.scopes,
       expiresAt: token.expires_at ?? input.expiresAt ?? null,
+    };
+  }
+
+  async updateProjectSettings(
+    auth: VcsConnectorAuth,
+    project: VcsProjectRef,
+    input: VcsProjectSettingsInput
+  ): Promise<VcsProjectSettingsResult> {
+    const updated = await this.client(auth).request<GitLabProject>(this.projectPath(project, ''), {
+      method: 'PUT',
+      body: {
+        container_registry_access_level: input.containerRegistryAccessLevel,
+      },
+    });
+    return {
+      remoteId: String(updated.id),
+      fullPath: updated.path_with_namespace,
+      name: updated.name,
+      webUrl: updated.web_url ?? null,
+      containerRegistryAccessLevel: updated.container_registry_access_level ?? null,
     };
   }
 

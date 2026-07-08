@@ -97,6 +97,7 @@ describe('AI internal docs registry', () => {
     expect(getInternalDocumentation('gitlab', ['integrations:gitlab:view']).content).toContain(
       'gitlab_update_ci_config'
     );
+    expect(getInternalDocumentation('gitlab', ['integrations:gitlab:view']).content).toContain('gitlab_sync_connector');
     expect(getInternalDocumentation('gitlab', ['integrations:gitlab:view']).content).toContain('masked metadata only');
   });
 

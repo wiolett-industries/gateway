@@ -8,6 +8,8 @@ export const GITLAB_TOOL_NAMES = new Set([
   'gitlab_list_projects',
   'gitlab_get_project',
   'gitlab_search_projects',
+  'gitlab_sync_connector',
+  'gitlab_add_connector_projects',
   'gitlab_list_repository_tree',
   'gitlab_read_file',
   'gitlab_commit_files',
@@ -24,6 +26,7 @@ export const GITLAB_TOOL_NAMES = new Set([
   'gitlab_create_or_update_project_webhook',
   'gitlab_delete_project_webhook',
   'gitlab_list_registry_repositories',
+  'gitlab_update_project_settings',
   'gitlab_create_deploy_token',
   'gitlab_clone_repository_to_sandbox',
 ]);
@@ -57,6 +60,14 @@ export async function executeGitLabTool(
       });
     case 'gitlab_get_project':
       return service.getGitLabProjectForTool(user, { connectorId, project });
+    case 'gitlab_sync_connector':
+      return service.gitLabSyncConnectorForTool(user, { connectorId });
+    case 'gitlab_add_connector_projects':
+      return service.gitLabAddConnectorProjects(user, {
+        connectorId,
+        projects: Array.isArray(a.projects) ? a.projects.map(String) : [],
+        syncAfter: optionalBoolean(a.syncAfter),
+      });
     case 'gitlab_list_repository_tree':
       return service.gitLabListRepositoryTree(user, {
         connectorId,
@@ -173,6 +184,12 @@ export async function executeGitLabTool(
       return service.gitLabDeleteProjectWebhook(user, { connectorId, project, hookId: numberArg(a.hookId) });
     case 'gitlab_list_registry_repositories':
       return service.gitLabListRegistryRepositories(user, { connectorId, project });
+    case 'gitlab_update_project_settings':
+      return service.gitLabUpdateProjectSettings(user, {
+        connectorId,
+        project,
+        containerRegistryAccessLevel: gitLabRegistryAccessLevelArg(a.containerRegistryAccessLevel),
+      });
     case 'gitlab_create_deploy_token':
       return service.gitLabCreateDeployToken(user, {
         connectorId,
@@ -226,4 +243,9 @@ function numberArg(value: unknown): number {
 
 function optionalBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function gitLabRegistryAccessLevelArg(value: unknown): 'enabled' | 'private' | 'disabled' {
+  if (value === 'enabled' || value === 'private' || value === 'disabled') return value;
+  throw new Error('containerRegistryAccessLevel must be one of: enabled, private, disabled');
 }

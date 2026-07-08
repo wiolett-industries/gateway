@@ -966,6 +966,7 @@ Gateway GitLab connectors are system-level integrations configured by admins in 
 - Use gitlab_list_connectors to find enabled connectors.
 - Use gitlab_list_projects or gitlab_search_projects to find projects already synced through Gateway allowlist rules.
 - Project arguments accept the synced project remote ID or full path.
+- If a visible GitLab project exists but is not enabled in the connector allowlist, use gitlab_add_connector_projects with explicit approval, then gitlab_sync_connector.
 - Do not guess connector IDs or scan GitLab directly outside these tools.
 
 ## Repository Access
@@ -987,6 +988,7 @@ Gateway GitLab connectors are system-level integrations configured by admins in 
 - gitlab_delete_project_variable always requires explicit tool approval.
 - Webhook management uses GitLab project webhook tools and must respect connector allowlist and Gateway scopes.
 - gitlab_create_deploy_token captures the raw deploy token only inside Gateway, encrypts it as connector-managed credentials, and returns masked metadata only.
+- If a project registry is disabled, use gitlab_update_project_settings with containerRegistryAccessLevel=enabled after approval, then run gitlab_sync_connector so Gateway discovers the new registry.
 
 ## Safety Rules
 - Gateway scopes, connector allowlist, provider capabilities, and tool approval rules are authoritative. GitLab PAT permissions are only an upper bound.

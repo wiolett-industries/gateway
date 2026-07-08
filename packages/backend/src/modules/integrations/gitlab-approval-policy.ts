@@ -5,6 +5,8 @@ const FORCED_APPROVAL_TOOLS = new Set([
   'gitlab_delete_project_variable',
   'gitlab_commit_files',
   'gitlab_update_ci_config',
+  'gitlab_update_project_settings',
+  'gitlab_add_connector_projects',
 ]);
 
 const READ_TOOL_PATTERNS = [
@@ -18,7 +20,7 @@ const READ_TOOL_PATTERNS = [
 const CREATE_TOOL_PATTERNS = [/^gitlab_(?:create|clone)_/, /^gitlab_repository_clone$/, /^gitlab_deploy_token_create$/];
 
 const UPDATE_TOOL_PATTERNS = [
-  /^gitlab_(?:update|upsert|commit|write|set|manage|use)_/,
+  /^gitlab_(?:update|upsert|commit|write|set|manage|use|sync|add)_/,
   /^gitlab_file_commit$/,
   /^gitlab_commit_files$/,
   /^gitlab_ci_update$/,

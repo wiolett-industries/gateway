@@ -98,11 +98,11 @@ describe('GitLabProvider', () => {
     });
 
     const provider = new GitLabProvider(fetchImpl as typeof fetch);
-    const registries = await provider.listRegistries({ baseUrl: 'https://gitlab.test', token: 'token' }, [
+    const result = await provider.listRegistries({ baseUrl: 'https://gitlab.test', token: 'token' }, [
       { remoteId: '11', fullPath: 'org/app', name: 'app' },
     ]);
 
-    expect(registries).toEqual([
+    expect(result.registries).toEqual([
       {
         remoteRegistryId: '101',
         projectRemoteId: '11',
@@ -116,5 +116,35 @@ describe('GitLabProvider', () => {
       expect.stringContaining('/api/v4/projects/11/registry/repositories'),
       expect.any(Object)
     );
+  });
+
+  it('skips forbidden project registries without failing the whole registry discovery', async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/api/v4/projects/10/registry/repositories') {
+        return new Response('forbidden', { status: 403 });
+      }
+      if (url.pathname === '/api/v4/projects/11/registry/repositories') {
+        return jsonResponse([{ id: 101, location: 'registry.gitlab.test/org/app', name: 'app' }]);
+      }
+      return jsonResponse([]);
+    });
+
+    const provider = new GitLabProvider(fetchImpl as typeof fetch);
+    const result = await provider.listRegistries({ baseUrl: 'https://gitlab.test', token: 'token' }, [
+      { remoteId: '10', fullPath: 'org/blocked', name: 'blocked' },
+      { remoteId: '11', fullPath: 'org/app', name: 'app' },
+    ]);
+
+    expect(result.registries).toEqual([
+      {
+        remoteRegistryId: '101',
+        projectRemoteId: '11',
+        projectFullPath: 'org/app',
+        registryUrl: 'registry.gitlab.test/org/app',
+        name: 'app',
+      },
+    ]);
+    expect(result.skippedProjects).toEqual([{ remoteId: '10', fullPath: 'org/blocked', reason: 'forbidden' }]);
   });
 });

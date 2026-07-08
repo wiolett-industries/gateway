@@ -490,6 +490,7 @@ function GitLabIntegrationsSection() {
         name: form.name.trim(),
         baseUrl: form.baseUrl.trim(),
         enabled: form.enabled,
+        ...(form.token.trim() ? { token: form.token.trim() } : {}),
         allowlistMode: form.allowlistMode,
         settings: form.settings,
         allowlistEntries:
@@ -499,10 +500,7 @@ function GitLabIntegrationsSection() {
       };
 
       if (editingConnector) {
-        let updated = await api.updateGitLabConnector(editingConnector.id, payload);
-        if (form.token.trim()) {
-          updated = await api.rotateGitLabConnectorToken(editingConnector.id, form.token.trim());
-        }
+        const updated = await api.updateGitLabConnector(editingConnector.id, payload);
         setEditingConnector(updated);
         toast.success("GitLab connector saved");
       } else {
@@ -605,7 +603,7 @@ function GitLabIntegrationsSection() {
         open={dialogOpen}
         onOpenChange={(open) => (open ? setDialogOpen(true) : closeDialog())}
       >
-        <DialogContent className="flex max-h-[min(46rem,calc(100dvh-2rem))] flex-col overflow-hidden sm:max-w-2xl">
+        <DialogContent className="max-h-[min(46rem,calc(100dvh-2rem))] sm:max-w-2xl">
           <DialogHeader className="shrink-0">
             <DialogTitle>
               {editingConnector ? "GitLab Connector" : "Add GitLab Connector"}
@@ -620,7 +618,7 @@ function GitLabIntegrationsSection() {
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+            <div>
               <ConnectorStepHeight>
                 <AnimatePresence mode="wait" initial={false}>
                   {dialogStep === 1 && (
@@ -684,6 +682,35 @@ function GitLabIntegrationsSection() {
                       {...CONNECTOR_STEP_ANIMATION}
                       className="space-y-4"
                     >
+                      {editingConnector && (
+                        <Field label="Token">
+                          <p className="mb-2 text-xs text-muted-foreground">
+                            Leave empty to keep the current token.
+                          </p>
+                          <div className="flex min-w-0 border border-input bg-background">
+                            <Input
+                              value={form.token}
+                              disabled={!canManage}
+                              onChange={(event) =>
+                                setForm((current) => ({ ...current, token: event.target.value }))
+                              }
+                              placeholder={editingConnector.tokenMasked ?? "glpat-..."}
+                              type="password"
+                              className="h-9 min-w-0 flex-1 rounded-none border-0 bg-transparent focus-visible:ring-0"
+                            />
+                            <Button
+                              variant="ghost"
+                              className="h-9 shrink-0 rounded-none border-l border-input bg-muted px-3 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              onClick={() => void testConnectionForDialog({ advance: false })}
+                              disabled={testingConnection}
+                            >
+                              {testingConnection && <Loader2 className="h-4 w-4 animate-spin" />}
+                              Test Connection
+                            </Button>
+                          </div>
+                        </Field>
+                      )}
+
                       <Field label="Project Access">
                         <div className="flex gap-2">
                           <Select

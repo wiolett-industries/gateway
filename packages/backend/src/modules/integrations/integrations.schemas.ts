@@ -37,6 +37,7 @@ export const GitLabConnectorUpdateSchema = z.object({
   name: z.string().trim().min(1).max(255).optional(),
   baseUrl: z.string().trim().url().max(2048).optional(),
   enabled: z.boolean().optional(),
+  token: z.string().min(1).max(4096).optional(),
   allowlistMode: GitLabAllowlistModeSchema.optional(),
   settings: GitLabConnectorSettingsSchema.partial().optional(),
   allowlistEntries: z.array(GitLabAllowlistEntrySchema).max(1000).optional(),

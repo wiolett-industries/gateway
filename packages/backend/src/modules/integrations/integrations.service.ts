@@ -167,6 +167,7 @@ export class IntegrationsService {
     });
 
     this.emitConnector(row.id, 'created');
+    await this.syncConnectorAfterCreate('gitlab', row.id, userId);
     return this.getGitLabConnector(row.id);
   }
 
@@ -174,26 +175,36 @@ export class IntegrationsService {
     const existing = await this.getConnectorRow(id, 'gitlab');
     const updates: Record<string, unknown> = { updatedAt: new Date() };
 
+    const nextBaseUrl = input.baseUrl !== undefined ? this.normalizeBaseUrl(input.baseUrl) : existing.baseUrl;
+    const nextSettings =
+      input.settings !== undefined ? this.mergeSettings(input.settings, this.gitLabSettings(existing)) : undefined;
+    const nextToken = input.token?.trim();
+    const existingAuth = this.authFor(existing);
+    const auth =
+      nextToken && nextToken.length > 0
+        ? { baseUrl: nextBaseUrl, token: nextToken }
+        : { ...existingAuth, baseUrl: nextBaseUrl };
+    const capabilities = await this.getProvider(existing.provider).testConnection(auth);
+
     if (input.name !== undefined) updates.name = input.name;
-    if (input.baseUrl !== undefined) updates.baseUrl = this.normalizeBaseUrl(input.baseUrl);
+    if (input.baseUrl !== undefined) updates.baseUrl = nextBaseUrl;
     if (input.enabled !== undefined) updates.enabled = input.enabled;
     if (input.allowlistMode !== undefined) updates.allowlistMode = input.allowlistMode;
-    if (input.settings !== undefined)
-      updates.settings = this.mergeSettings(input.settings, this.gitLabSettings(existing));
+    if (nextSettings !== undefined) updates.settings = nextSettings;
+    if (nextToken && nextToken.length > 0) {
+      updates.encryptedToken = this.encryptToken(nextToken);
+      updates.tokenLast4 = this.tokenLast4(nextToken);
+    }
+    updates.capabilities = capabilities;
+    updates.testedAt = new Date();
 
-    let [row] = await this.db
+    const [row] = await this.db
       .update(integrationConnectors)
       .set(updates)
       .where(and(eq(integrationConnectors.id, id), eq(integrationConnectors.provider, 'gitlab')))
       .returning();
 
     if (!row) throw new AppError(404, 'NOT_FOUND', 'GitLab connector not found');
-    const capabilities = await this.getProvider(row.provider).testConnection(this.authFor(row));
-    [row] = await this.db
-      .update(integrationConnectors)
-      .set({ capabilities, testedAt: new Date(), updatedAt: new Date() })
-      .where(eq(integrationConnectors.id, id))
-      .returning();
     if (input.allowlistEntries !== undefined) {
       await this.replaceAllowlistEntries(id, this.dedupeAllowlistEntries(input.allowlistEntries));
     }
@@ -205,10 +216,21 @@ export class IntegrationsService {
       resourceId: id,
       details: {
         name: existing.name,
-        changes: Object.keys(updates).filter((key) => key !== 'updatedAt'),
+        changes: Object.keys(updates).filter((key) => !['updatedAt', 'encryptedToken', 'tokenLast4'].includes(key)),
+        tokenRotated: Boolean(nextToken),
         allowlistUpdated: input.allowlistEntries !== undefined,
       },
     });
+
+    if (nextToken) {
+      await this.auditService.log({
+        action: GITLAB_AUDIT_ACTIONS.connectorTokenRotate,
+        userId,
+        resourceType: 'integration-connector',
+        resourceId: id,
+        details: { name: row.name, tokenLast4: row.tokenLast4 },
+      });
+    }
 
     this.emitConnector(id, 'updated');
     return this.getGitLabConnector(id);
@@ -316,13 +338,9 @@ export class IntegrationsService {
       const allProjects = await provider.listProjects(auth);
       const allowlistEntries = await this.listAllowlistRows(id);
       const projects = this.filterAllowedProjects(row, allowlistEntries, allProjects);
-      const registries = this.filterAllowedRegistries(
-        row,
-        allowlistEntries,
-        projects,
-        await provider.listRegistries(auth, projects)
-      );
-      await this.persistProjects(id, projects);
+      const registryDiscovery = await provider.listRegistries(auth, projects);
+      const registries = this.filterAllowedRegistries(row, allowlistEntries, projects, registryDiscovery.registries);
+      await this.persistProjects(id, allProjects);
       await this.persistRegistries(id, registries);
       await this.dockerRegistryService?.reconcileGitLabConnectorRegistries(id);
       await this.db
@@ -343,12 +361,22 @@ export class IntegrationsService {
         userId,
         resourceType: 'integration-connector',
         resourceId: id,
-        details: { name: row.name, projectCount: projects.length, registryCount: registries.length },
+        details: {
+          name: row.name,
+          projectCount: projects.length,
+          registryCount: registries.length,
+          skippedRegistryProjects: registryDiscovery.skippedProjects.length,
+        },
       });
 
       this.emitConnector(id, 'synced');
       this.emitConnector(id, 'registries-synced');
-      return { status: 'success', projectCount: projects.length, registryCount: registries.length };
+      return {
+        status: 'success',
+        projectCount: projects.length,
+        registryCount: registries.length,
+        skippedRegistryProjects: registryDiscovery.skippedProjects,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown sync failure';
       const failureCount = row.syncFailureCount + 1;
@@ -442,6 +470,7 @@ export class IntegrationsService {
     });
 
     this.emitConnector(row.id, 'created', 'cloudflare');
+    await this.markCloudflareInitialSync(row.id, userId, row.name, zones.length);
     return this.getCloudflareConnector(row.id);
   }
 
@@ -849,6 +878,128 @@ export class IntegrationsService {
       project: context.project.fullPath,
     });
     return this.toSafeProject(context.project);
+  }
+
+  async gitLabSyncConnectorForTool(user: User, input: { connectorId: string }) {
+    await this.assertGitLabConnectorAccess(user, 'integrations:gitlab:manage', 'connector.sync');
+    return this.syncGitLabConnector(input.connectorId, user.id);
+  }
+
+  async gitLabAddConnectorProjects(
+    user: User,
+    input: { connectorId: string; projects: string[]; syncAfter?: boolean }
+  ) {
+    const connector = await this.getConnectorRow(input.connectorId, 'gitlab');
+    if (!connector.enabled) {
+      throw new AppError(409, 'CONNECTOR_DISABLED', 'GitLab connector is disabled');
+    }
+    assertConnectorOperationAccess({
+      actor: { userId: user.id, scopes: user.scopes },
+      provider: 'gitlab',
+      operation: 'connector.allowlist.update',
+      requiredScope: 'integrations:gitlab:manage',
+      capabilities: connector.capabilities,
+      requiredCapability: 'projectsView',
+      connectorId: connector.id,
+      connectorName: connector.name,
+    });
+
+    const requested = [...new Set(input.projects.map((project) => project.trim()).filter(Boolean))];
+    if (requested.length === 0) {
+      throw new AppError(400, 'GITLAB_PROJECTS_REQUIRED', 'At least one GitLab project path or remote ID is required');
+    }
+    const provider = this.getProvider(connector.provider);
+    const visibleProjects = await provider.listProjects(this.authFor(connector));
+    await this.persistProjects(connector.id, visibleProjects);
+    const visibleByKey = new Map<string, VcsProjectRef>();
+    for (const project of visibleProjects) {
+      visibleByKey.set(project.remoteId, project);
+      visibleByKey.set(project.fullPath.toLowerCase(), project);
+    }
+
+    const missing = requested.filter(
+      (project) => !visibleByKey.has(project) && !visibleByKey.has(project.toLowerCase())
+    );
+    if (missing.length > 0) {
+      throw new AppError(
+        404,
+        'GITLAB_PROJECT_NOT_VISIBLE',
+        'One or more GitLab projects are not visible to this connector',
+        {
+          missing,
+        }
+      );
+    }
+
+    const allowlistRows = await this.listAllowlistRows(connector.id);
+    const matchedProjects = requested.map(
+      (project) => visibleByKey.get(project) ?? visibleByKey.get(project.toLowerCase())!
+    );
+    const alreadyAllowed = matchedProjects.filter(
+      (project) => connector.allowlistMode === 'all_visible' || this.isGitLabProjectAllowed(project, allowlistRows)
+    );
+    const toAdd = matchedProjects.filter(
+      (project) => connector.allowlistMode !== 'all_visible' && !this.isGitLabProjectAllowed(project, allowlistRows)
+    );
+
+    if (toAdd.length > 0) {
+      await this.replaceAllowlistEntries(connector.id, [
+        ...allowlistRows.map((entry) => ({
+          entryType: entry.entryType,
+          remoteId: entry.remoteId,
+          fullPath: entry.fullPath,
+          name: entry.name ?? undefined,
+          webUrl: entry.webUrl,
+        })),
+        ...toAdd.map((project) => ({
+          entryType: 'project' as const,
+          remoteId: project.remoteId,
+          fullPath: project.fullPath,
+          name: project.name,
+          webUrl: project.webUrl ?? null,
+        })),
+      ]);
+      this.emitConnector(connector.id, 'updated');
+    }
+
+    await this.auditGitLabTool(user, connector, GITLAB_AUDIT_ACTIONS.connectorAllowlistUpdate, {
+      addedProjects: toAdd.map((project) => project.fullPath),
+      alreadyAllowedProjects: alreadyAllowed.map((project) => project.fullPath),
+      allowlistMode: connector.allowlistMode,
+    });
+
+    const syncResult = input.syncAfter ? await this.syncGitLabConnector(connector.id, user.id) : null;
+    return {
+      connectorId: connector.id,
+      allowlistMode: connector.allowlistMode,
+      added: toAdd.map((project) => this.toSafeProjectRef(connector.id, project)),
+      alreadyAllowed: alreadyAllowed.map((project) => this.toSafeProjectRef(connector.id, project)),
+      sync: syncResult,
+    };
+  }
+
+  async gitLabUpdateProjectSettings(
+    user: User,
+    input: {
+      connectorId: string;
+      project: string;
+      containerRegistryAccessLevel: 'enabled' | 'private' | 'disabled';
+    }
+  ) {
+    const context = await this.resolveGitLabProjectContext(user, {
+      connectorId: input.connectorId,
+      project: input.project,
+      requiredScope: 'integrations:gitlab:registry:manage',
+      requiredCapability: 'deployTokensManage',
+    });
+    const result = await context.provider.updateProjectSettings(context.auth, this.toProviderProject(context.project), {
+      containerRegistryAccessLevel: input.containerRegistryAccessLevel,
+    });
+    await this.auditGitLabTool(user, context.connector, GITLAB_AUDIT_ACTIONS.projectSettingsUpdate, {
+      project: context.project.fullPath,
+      settings: { containerRegistryAccessLevel: input.containerRegistryAccessLevel },
+    });
+    return result;
   }
 
   async gitLabListRepositoryTree(
@@ -1498,6 +1649,19 @@ export class IntegrationsService {
     };
   }
 
+  private toSafeProjectRef(connectorId: string, project: VcsProjectRef) {
+    return {
+      connectorId,
+      remoteId: project.remoteId,
+      fullPath: project.fullPath,
+      name: project.name,
+      webUrl: project.webUrl ?? null,
+      visibility: project.visibility ?? null,
+      defaultBranch: project.defaultBranch ?? null,
+      archived: project.archived ?? false,
+    };
+  }
+
   private projectToAllowlistEntry(project: ProjectRow) {
     return {
       entryType: 'project' as const,
@@ -1559,6 +1723,40 @@ export class IntegrationsService {
 
   private shellQuote(value: string) {
     return `'${value.replace(/'/g, "'\"'\"'")}'`;
+  }
+
+  private async syncConnectorAfterCreate(provider: IntegrationProvider, id: string, userId: string) {
+    try {
+      if (provider === 'gitlab') {
+        await this.syncGitLabConnector(id, userId);
+      }
+    } catch {
+      // Sync methods persist failure state. Connector creation should not fail after the row exists.
+    }
+  }
+
+  private async markCloudflareInitialSync(id: string, userId: string, name: string, zoneCount: number) {
+    await this.db
+      .update(integrationConnectors)
+      .set({
+        syncStatus: 'success',
+        syncStartedAt: new Date(),
+        syncFinishedAt: new Date(),
+        syncFailureCount: 0,
+        syncNextRetryAt: null,
+        syncLastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(integrationConnectors.id, id));
+
+    await this.auditService.log({
+      action: CLOUDFLARE_AUDIT_ACTIONS.connectorSync,
+      userId,
+      resourceType: 'integration-connector',
+      resourceId: id,
+      details: { name, zoneCount, source: 'connector.create' },
+    });
+    this.emitConnector(id, 'synced', 'cloudflare');
   }
 
   private async getConnectorRow(id: string, provider?: IntegrationProvider): Promise<ConnectorRow> {
@@ -1926,6 +2124,7 @@ export class IntegrationsService {
     if (
       !('readFile' in implementation) ||
       !('commitFiles' in implementation) ||
+      !('updateProjectSettings' in implementation) ||
       !('downloadRepositoryArchive' in implementation)
     ) {
       throw new AppError(501, 'CONNECTOR_VCS_PROVIDER_UNAVAILABLE', `The ${provider} VCS provider is not available`);

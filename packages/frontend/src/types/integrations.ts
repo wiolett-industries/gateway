@@ -157,6 +157,7 @@ export interface GitLabConnectorUpdateRequest {
   name?: string;
   baseUrl?: string;
   enabled?: boolean;
+  token?: string;
   allowlistMode?: GitLabAllowlistMode;
   settings?: Partial<GitLabConnectorSettings>;
   allowlistEntries?: GitLabAllowlistEntry[];

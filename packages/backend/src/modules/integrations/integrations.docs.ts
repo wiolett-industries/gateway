@@ -202,7 +202,7 @@ export const updateGitLabConnectorRoute = appRoute({
   tags: ['Integrations'],
   summary: 'Update a GitLab connector',
   description:
-    'Updates connector metadata, allowlist, and database-backed runtime settings. Use token rotation to replace the PAT.',
+    'Updates connector metadata, allowlist, database-backed runtime settings, and optionally replaces the PAT.',
   request: { params: connectorParams, ...jsonBody(GitLabConnectorUpdateSchema) },
   responses: okJson(dataResponseSchema(GitLabConnectorWithAllowlistResponseSchema)),
 });

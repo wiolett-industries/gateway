@@ -97,6 +97,86 @@ describe('AIService GitLab tool routing', () => {
     });
   });
 
+  it('routes GitLab connector sync and allowlist update through IntegrationsService', async () => {
+    const integrationsService = {
+      gitLabSyncConnectorForTool: vi.fn().mockResolvedValue({ status: 'success' }),
+      gitLabAddConnectorProjects: vi.fn().mockResolvedValue({ added: [{ fullPath: 'group/app' }] }),
+    };
+    vi.spyOn(container, 'resolve').mockImplementation((token) => {
+      if (token === IntegrationsService) return integrationsService as never;
+      throw new Error('unexpected resolver call');
+    });
+
+    await expect(
+      createService().executeTool({ ...BASE_USER, scopes: ['integrations:gitlab:manage'] }, 'gitlab_sync_connector', {
+        connectorId: 'connector-1',
+      })
+    ).resolves.toMatchObject({ result: { status: 'success' } });
+    await expect(
+      createService().executeTool(
+        { ...BASE_USER, scopes: ['integrations:gitlab:manage'] },
+        'gitlab_add_connector_projects',
+        { connectorId: 'connector-1', projects: ['group/app'], syncAfter: true }
+      )
+    ).resolves.toMatchObject({ result: { added: [{ fullPath: 'group/app' }] } });
+
+    expect(integrationsService.gitLabSyncConnectorForTool).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-1' }),
+      { connectorId: 'connector-1' }
+    );
+    expect(integrationsService.gitLabAddConnectorProjects).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-1' }),
+      { connectorId: 'connector-1', projects: ['group/app'], syncAfter: true }
+    );
+  });
+
+  it('routes GitLab project settings updates through IntegrationsService', async () => {
+    const integrationsService = {
+      gitLabUpdateProjectSettings: vi.fn().mockResolvedValue({ fullPath: 'group/app' }),
+    };
+    vi.spyOn(container, 'resolve').mockImplementation((token) => {
+      if (token === IntegrationsService) return integrationsService as never;
+      throw new Error('unexpected resolver call');
+    });
+
+    await expect(
+      createService().executeTool(
+        { ...BASE_USER, scopes: ['integrations:gitlab:registry:manage'] },
+        'gitlab_update_project_settings',
+        { connectorId: 'connector-1', project: 'group/app', containerRegistryAccessLevel: 'enabled' }
+      )
+    ).resolves.toMatchObject({ result: { fullPath: 'group/app' } });
+
+    expect(integrationsService.gitLabUpdateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-1' }),
+      {
+        connectorId: 'connector-1',
+        project: 'group/app',
+        containerRegistryAccessLevel: 'enabled',
+      }
+    );
+  });
+
+  it('rejects invalid GitLab project registry access levels instead of defaulting open', async () => {
+    const integrationsService = {
+      gitLabUpdateProjectSettings: vi.fn().mockResolvedValue({ fullPath: 'group/app' }),
+    };
+    vi.spyOn(container, 'resolve').mockImplementation((token) => {
+      if (token === IntegrationsService) return integrationsService as never;
+      throw new Error('unexpected resolver call');
+    });
+
+    await expect(
+      createService().executeTool(
+        { ...BASE_USER, scopes: ['integrations:gitlab:registry:manage'] },
+        'gitlab_update_project_settings',
+        { connectorId: 'connector-1', project: 'group/app', containerRegistryAccessLevel: 'public' }
+      )
+    ).resolves.toMatchObject({ error: 'containerRegistryAccessLevel must be one of: enabled, private, disabled' });
+
+    expect(integrationsService.gitLabUpdateProjectSettings).not.toHaveBeenCalled();
+  });
+
   it('redacts GitLab secret input values in the standard AI tool audit entry', async () => {
     const integrationsService = {
       gitLabSetProjectVariable: vi.fn().mockResolvedValue({

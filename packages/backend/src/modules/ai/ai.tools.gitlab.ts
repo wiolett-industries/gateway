@@ -72,6 +72,40 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     historyRetention: { mode: 'persistent_context' },
   },
   {
+    name: 'gitlab_sync_connector',
+    description:
+      'Run a GitLab connector sync now so Gateway refreshes visible projects and discovered registries. Use after changing GitLab registry/project settings or connector allowlists.',
+    parameters: { type: 'object', properties: { connectorId: connectorIdSchema }, required: ['connectorId'] },
+    destructive: false,
+    category: 'GitLab',
+    requiredScope: 'integrations:gitlab:manage',
+    invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
+  },
+  {
+    name: 'gitlab_add_connector_projects',
+    description:
+      'Add visible GitLab projects to a connector allowlist by full path or remote ID. This changes Gateway connector access and requires approval.',
+    parameters: {
+      type: 'object',
+      properties: {
+        connectorId: connectorIdSchema,
+        projects: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Project full paths or remote IDs visible to the connector PAT.',
+        },
+        syncAfter: { type: 'boolean', description: 'If true, run connector sync after updating the allowlist.' },
+      },
+      required: ['connectorId', 'projects'],
+    },
+    destructive: true,
+    category: 'GitLab',
+    requiredScope: 'integrations:gitlab:manage',
+    invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
+  },
+  {
     name: 'gitlab_list_repository_tree',
     description: 'List a GitLab repository folder through direct GitLab API. Results are bounded and do not clone.',
     parameters: {
@@ -338,6 +372,28 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     destructive: false,
     category: 'GitLab',
     requiredScope: 'integrations:gitlab:registry:view',
+    invalidateStores: [],
+    historyRetention: { mode: 'persistent_context' },
+  },
+  {
+    name: 'gitlab_update_project_settings',
+    description:
+      'Update supported GitLab project settings. Currently supports container_registry_access_level to enable, private-limit, or disable the project container registry.',
+    parameters: {
+      type: 'object',
+      properties: {
+        ...projectSelector,
+        containerRegistryAccessLevel: {
+          type: 'string',
+          enum: ['enabled', 'private', 'disabled'],
+          description: 'GitLab container_registry_access_level. Use enabled to turn on the registry.',
+        },
+      },
+      required: ['connectorId', 'project', 'containerRegistryAccessLevel'],
+    },
+    destructive: true,
+    category: 'GitLab',
+    requiredScope: 'integrations:gitlab:registry:manage',
     invalidateStores: [],
     historyRetention: { mode: 'persistent_context' },
   },

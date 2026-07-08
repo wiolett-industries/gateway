@@ -7,6 +7,8 @@ describe('GitLab AI approval policy', () => {
     expect(classifyGitLabAIToolForApproval('gitlab_read_file')).toBe('read');
     expect(classifyGitLabAIToolForApproval('gitlab_lint_ci_config')).toBe('read');
     expect(classifyGitLabAIToolForApproval('gitlab_commit_files')).toBe('update');
+    expect(classifyGitLabAIToolForApproval('gitlab_sync_connector')).toBe('update');
+    expect(classifyGitLabAIToolForApproval('gitlab_add_connector_projects')).toBe('update');
     expect(classifyGitLabAIToolForApproval('gitlab_delete_project_variable')).toBe('delete');
   });
 
@@ -25,6 +27,16 @@ describe('GitLab AI approval policy', () => {
       requiresApproval: true,
     });
     expect(getAIToolApprovalDecision('gitlab_update_ci_config', 'bypass-everything')).toMatchObject({
+      classification: 'update',
+      approvalPolicy: 'requires_approval',
+      requiresApproval: true,
+    });
+    expect(getAIToolApprovalDecision('gitlab_update_project_settings', 'bypass-everything')).toMatchObject({
+      classification: 'update',
+      approvalPolicy: 'requires_approval',
+      requiresApproval: true,
+    });
+    expect(getAIToolApprovalDecision('gitlab_add_connector_projects', 'bypass-everything')).toMatchObject({
       classification: 'update',
       approvalPolicy: 'requires_approval',
       requiresApproval: true,

@@ -308,7 +308,7 @@ export function CloudflareIntegrationsSection() {
         open={dialogOpen}
         onOpenChange={(open) => (open ? setDialogOpen(true) : closeDialog())}
       >
-        <DialogContent className="flex max-h-[min(44rem,calc(100dvh-2rem))] flex-col overflow-hidden sm:max-w-xl">
+        <DialogContent className="max-h-[min(44rem,calc(100dvh-2rem))] sm:max-w-xl">
           <DialogHeader className="shrink-0">
             <DialogTitle>
               {editingConnector ? "Cloudflare Connector" : "Add Cloudflare Connector"}
@@ -323,7 +323,7 @@ export function CloudflareIntegrationsSection() {
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1">
+            <div className="space-y-4">
               <div className="space-y-4">
                 <Field label="Name">
                   <Input

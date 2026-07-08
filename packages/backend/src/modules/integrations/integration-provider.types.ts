@@ -207,12 +207,35 @@ export interface VcsRegistryRef {
   name: string;
 }
 
+export interface VcsRegistryDiscoverySkippedProject {
+  remoteId: string;
+  fullPath: string;
+  reason: 'forbidden' | 'not_found';
+}
+
+export interface VcsRegistryDiscoveryResult {
+  registries: VcsRegistryRef[];
+  skippedProjects: VcsRegistryDiscoverySkippedProject[];
+}
+
+export interface VcsProjectSettingsInput {
+  containerRegistryAccessLevel?: 'enabled' | 'private' | 'disabled';
+}
+
+export interface VcsProjectSettingsResult {
+  remoteId: string;
+  fullPath: string;
+  name: string;
+  webUrl?: string | null;
+  containerRegistryAccessLevel?: string | null;
+}
+
 export interface ConnectorProvider {
   provider: IntegrationProvider;
   testConnection(auth: VcsConnectorAuth): Promise<IntegrationConnectorCapabilities>;
   searchAllowlist(auth: VcsConnectorAuth, query: string): Promise<VcsAllowlistSearchResult[]>;
   listProjects(auth: VcsConnectorAuth): Promise<VcsProjectRef[]>;
-  listRegistries(auth: VcsConnectorAuth, projects?: VcsProjectRef[]): Promise<VcsRegistryRef[]>;
+  listRegistries(auth: VcsConnectorAuth, projects?: VcsProjectRef[]): Promise<VcsRegistryDiscoveryResult>;
 }
 
 export interface VcsConnectorProvider extends ConnectorProvider {
@@ -264,6 +287,11 @@ export interface VcsConnectorProvider extends ConnectorProvider {
     project: VcsProjectRef,
     input: VcsDeployTokenInput
   ): Promise<VcsDeployTokenResult>;
+  updateProjectSettings(
+    auth: VcsConnectorAuth,
+    project: VcsProjectRef,
+    input: VcsProjectSettingsInput
+  ): Promise<VcsProjectSettingsResult>;
   downloadRepositoryArchive(
     auth: VcsConnectorAuth,
     project: VcsProjectRef,
