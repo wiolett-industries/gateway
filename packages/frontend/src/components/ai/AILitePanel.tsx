@@ -392,18 +392,19 @@ export function AILitePanel() {
     async (messageId: string, content: string, nextAttachments: AIMessageAttachment[]) => {
       try {
         if (isCompactingContext) return;
-        if (currentConversationStreaming || activeRunId) {
-          const ok = await confirm({
-            title: "Return to message?",
-            description:
-              "Returning to this message will cancel the current task and restore the conversation to that point.",
-            confirmLabel: "Return",
-            cancelLabel: "Cancel",
-            cancelVariant: "ghost",
-            variant: "destructive",
-          });
-          if (!ok) return;
-        }
+        const ok = await confirm({
+          title: "Return to message?",
+          description:
+            currentConversationStreaming || activeRunId
+              ? "All history after this message will be deleted. Returning now will also cancel the current task."
+              : "All history after this message will be deleted.",
+          confirmLabel: "Return",
+          cancelLabel: "Cancel",
+          cancelVariant: "ghost",
+          bodyDescription: true,
+          variant: "destructive",
+        });
+        if (!ok) return;
         const message = await rollbackToMessage(messageId);
         if (!message) return;
         setInput(content);

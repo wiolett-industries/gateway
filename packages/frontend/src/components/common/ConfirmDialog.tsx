@@ -118,7 +118,7 @@ export function ConfirmDialog() {
           )}
         </DialogHeader>
         {bodyDescription && (
-          <p className="break-words text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+          <p className="break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">
             {description}
           </p>
         )}

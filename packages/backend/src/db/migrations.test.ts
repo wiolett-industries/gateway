@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -15,8 +15,18 @@ function readMigrationJournal(): JournalEntry[] {
 }
 
 describe('drizzle migration metadata', () => {
-  it('keeps journal entries monotonic and backed by SQL files', () => {
+  it('keeps journal entries monotonic and aligned with migration files', () => {
     const entries = readMigrationJournal();
+    const journalTags = new Set(entries.map((entry) => entry.tag));
+    const sqlTags = readdirSync(join(process.cwd(), 'src/db/migrations'))
+      .filter((file) => file.endsWith('.sql'))
+      .map((file) => file.slice(0, -'.sql'.length))
+      .sort();
+    const snapshotTags = readdirSync(join(process.cwd(), 'src/db/migrations/meta'))
+      .filter((file) => file.endsWith('_snapshot.json'))
+      .map((file) => file.slice(0, -'_snapshot.json'.length))
+      .sort();
+    const journalPrefixes = entries.map((entry) => entry.tag.slice(0, 4));
 
     for (const [index, entry] of entries.entries()) {
       expect(entry.idx).toBe(index);
@@ -27,6 +37,11 @@ describe('drizzle migration metadata', () => {
         expect(entry.when).toBeGreaterThan(previous.when);
       }
     }
+
+    expect(sqlTags.filter((tag) => !journalTags.has(tag))).toEqual([]);
+    expect(journalPrefixes.filter((tag) => !snapshotTags.includes(tag))).toEqual([]);
+    expect(snapshotTags.filter((tag) => !journalPrefixes.includes(tag))).toEqual([]);
+    expect(snapshotTags.at(-1)).toBe(entries.at(-1)?.tag.slice(0, 4));
   });
 
   it('keeps the AI search payload purge scoped to unsafe derived documents', () => {

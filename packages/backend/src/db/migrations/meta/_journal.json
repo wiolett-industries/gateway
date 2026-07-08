@@ -386,6 +386,13 @@
       "when": 1783530000000,
       "tag": "0054_cloudflare_dns_domains",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1783616400000,
+      "tag": "0055_ssl_cloudflare_auto_renew",
+      "breakpoints": true
     }
   ]
 }

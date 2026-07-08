@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GitLabProvider } from './gitlab-provider.js';
 
-function jsonResponse(body: unknown, headers: Record<string, string> = {}) {
-  return new Response(JSON.stringify(body), { status: 200, headers });
+function jsonResponse(body: unknown, headers: Record<string, string> = {}, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers });
 }
 
 describe('GitLabProvider', () => {
@@ -121,7 +121,7 @@ describe('GitLabProvider', () => {
   it('downloads repository archives through the default tar.gz archive endpoint', async () => {
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));
-      expect(url.pathname).toBe('/api/v4/projects/42/repository/archive');
+      expect(url.pathname).toBe('/api/v4/projects/42/repository/archive.tar.gz');
       expect(url.searchParams.get('sha')).toBe('main');
       return new Response(Buffer.from('archive-body'), {
         status: 200,

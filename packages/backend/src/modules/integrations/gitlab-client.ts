@@ -1,3 +1,5 @@
+import http from 'node:http';
+import https from 'node:https';
 import { AppError } from '@/middleware/error-handler.js';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -84,6 +86,17 @@ export class GitLabClient {
     options: GitLabBufferRequestOptions
   ): Promise<{ buffer: Buffer; contentType: string | null }> {
     const url = this.buildUrl(path, options.query);
+    if (this.fetchImpl === fetch) {
+      return this.requestBufferNative(url, path, options);
+    }
+    return this.requestBufferWithFetch(url, path, options);
+  }
+
+  private async requestBufferWithFetch(
+    url: string,
+    path: string,
+    options: GitLabBufferRequestOptions
+  ): Promise<{ buffer: Buffer; contentType: string | null }> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     try {
@@ -136,6 +149,117 @@ export class GitLabClient {
     }
   }
 
+  private async requestBufferNative(
+    url: string,
+    path: string,
+    options: GitLabBufferRequestOptions,
+    redirectCount = 0
+  ): Promise<{ buffer: Buffer; contentType: string | null }> {
+    return new Promise((resolve, reject) => {
+      const parsed = new URL(url);
+      const transport = parsed.protocol === 'http:' ? http : https;
+      const body = options.body === undefined ? undefined : JSON.stringify(options.body);
+      const request = transport.request(
+        parsed,
+        {
+          method: options.method ?? 'GET',
+          headers: {
+            Accept: '*/*',
+            ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+            'PRIVATE-TOKEN': this.token,
+            'User-Agent': 'Gateway GitLab Connector',
+          },
+          timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        },
+        (response) => {
+          const location = response.headers.location;
+          if (
+            location &&
+            response.statusCode &&
+            response.statusCode >= 300 &&
+            response.statusCode < 400 &&
+            redirectCount < 5
+          ) {
+            response.resume();
+            const redirectUrl = new URL(location, url).toString();
+            this.requestBufferNative(redirectUrl, path, options, redirectCount + 1).then(resolve, reject);
+            return;
+          }
+
+          if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
+            const errorChunks: Buffer[] = [];
+            response.on('data', (chunk: Buffer) => errorChunks.push(chunk));
+            response.on('end', () => {
+              reject(
+                new AppError(
+                  response.statusCode ?? 502,
+                  'GITLAB_API_ERROR',
+                  `GitLab API request failed with ${response.statusCode ?? 502}`,
+                  {
+                    status: response.statusCode,
+                    path,
+                    body: Buffer.concat(errorChunks).toString('utf8').slice(0, 500),
+                  }
+                )
+              );
+            });
+            return;
+          }
+
+          const declaredLength = Number(response.headers['content-length']);
+          if (Number.isFinite(declaredLength) && declaredLength > options.maxBytes) {
+            response.destroy();
+            reject(
+              new AppError(413, 'GITLAB_RESPONSE_TOO_LARGE', 'GitLab response exceeds configured size limit', {
+                path,
+                maxBytes: options.maxBytes,
+              })
+            );
+            return;
+          }
+
+          const chunks: Buffer[] = [];
+          let totalBytes = 0;
+          response.on('error', reject);
+          response.on('data', (chunk: Buffer) => {
+            totalBytes += chunk.byteLength;
+            if (totalBytes > options.maxBytes) {
+              response.destroy(
+                new AppError(413, 'GITLAB_RESPONSE_TOO_LARGE', 'GitLab response exceeds configured size limit', {
+                  path,
+                  maxBytes: options.maxBytes,
+                })
+              );
+              return;
+            }
+            chunks.push(chunk);
+          });
+          response.on('end', () =>
+            resolve({ buffer: Buffer.concat(chunks), contentType: this.headerString(response.headers['content-type']) })
+          );
+        }
+      );
+
+      request.on('timeout', () => {
+        request.destroy(new AppError(504, 'GITLAB_API_TIMEOUT', 'GitLab API request timed out', { path }));
+      });
+      request.on('error', (error) => {
+        if (error instanceof AppError) {
+          reject(error);
+          return;
+        }
+        reject(
+          new AppError(502, 'GITLAB_API_UNAVAILABLE', 'GitLab API request failed', {
+            path,
+            message: error instanceof Error ? error.message : String(error),
+          })
+        );
+      });
+      if (body !== undefined) request.write(body);
+      request.end();
+    });
+  }
+
   async paginate<T>(
     path: string,
     query: Record<string, string | number | boolean | undefined> = {},
@@ -167,5 +291,10 @@ export class GitLabClient {
     parsed.hash = '';
     parsed.search = '';
     return parsed.toString().replace(/\/+$/, '');
+  }
+
+  private headerString(value: string | string[] | undefined): string | null {
+    if (Array.isArray(value)) return value[0] ?? null;
+    return value ?? null;
   }
 }
