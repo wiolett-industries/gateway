@@ -189,6 +189,11 @@ export function SSLCertificates() {
   const [previewCert, setPreviewCert] = useState<SSLCertificate | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [isVerifyingRenewal, setIsVerifyingRenewal] = useState(false);
+  const [renewingCert, setRenewingCert] = useState<{
+    id: string;
+    name: string;
+    challengeType: SSLCertificate["acmeChallengeType"];
+  } | null>(null);
   const previewCleanupTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -216,10 +221,16 @@ export function SSLCertificates() {
   const hasActiveFilters =
     filters.type !== "all" || filters.status !== "active" || filters.search !== "";
 
-  const handleRenew = async (id: string) => {
+  const handleRenew = async (cert: SSLCertificate) => {
+    setRenewingCert({
+      id: cert.id,
+      name: cert.name,
+      challengeType: cert.acmeChallengeType,
+    });
     try {
-      const result = await renewCert(id);
+      const result = await renewCert(cert.id);
       if ("certificate" in result && result.status === "pending_dns_verification") {
+        setRenewingCert(null);
         setPendingRenewal({
           certId: result.certificate.id,
           certName: result.certificate.name,
@@ -232,6 +243,8 @@ export function SSLCertificates() {
       toast.success("Certificate renewed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to renew certificate");
+    } finally {
+      setRenewingCert(null);
     }
   };
 
@@ -420,7 +433,7 @@ export function SSLCertificates() {
                   </DropdownMenuItem>
                 )}
                 {canRenewCert && (
-                  <DropdownMenuItem onClick={() => handleRenew(cert.id)}>
+                  <DropdownMenuItem onClick={() => handleRenew(cert)}>
                     <RefreshCw className="h-4 w-4" />
                     Renew
                   </DropdownMenuItem>
@@ -633,6 +646,29 @@ export function SSLCertificates() {
               ))}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!renewingCert}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Renewing Certificate</DialogTitle>
+            <DialogDescription>{renewingCert?.name}</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-start gap-4 border border-border bg-muted/20 px-4 py-4">
+            <RefreshCw className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-muted-foreground" />
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium text-foreground">
+                {renewingCert?.challengeType === "dns-01"
+                  ? "Preparing DNS-01 renewal"
+                  : "Renewal in progress"}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {renewingCert?.challengeType === "dns-01"
+                  ? "Gateway is creating or checking DNS TXT records and will continue automatically when Cloudflare is configured."
+                  : "Gateway is requesting and deploying the renewed certificate."}
+              </p>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
       <Dialog open={!!pendingRenewal} onOpenChange={(open) => !open && setPendingRenewal(null)}>
