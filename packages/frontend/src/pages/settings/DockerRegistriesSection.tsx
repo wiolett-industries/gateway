@@ -31,6 +31,26 @@ interface DockerRegistriesSectionProps {
   nodesList: Node[];
 }
 
+const GITLAB_REGISTRIES_EXPANDED_STORAGE_KEY = "gateway.dockerRegistries.gitlabExpanded";
+
+function readGitLabRegistriesExpanded(): boolean | null {
+  try {
+    const stored = window.localStorage.getItem(GITLAB_REGISTRIES_EXPANDED_STORAGE_KEY);
+    if (stored == null) return null;
+    return stored === "true";
+  } catch {
+    return null;
+  }
+}
+
+function writeGitLabRegistriesExpanded(expanded: boolean) {
+  try {
+    window.localStorage.setItem(GITLAB_REGISTRIES_EXPANDED_STORAGE_KEY, String(expanded));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionProps) {
   const { hasScope } = useAuthStore();
   const canCreateRegistry = hasScope("docker:registries:create");
@@ -51,11 +71,15 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
   const [regNodeId, setRegNodeId] = useState("");
   const [regSaving, setRegSaving] = useState(false);
   const [regTesting, setRegTesting] = useState<string | null>(null);
-  const [gitLabRegistriesExpanded, setGitLabRegistriesExpanded] = useState(true);
+  const [gitLabRegistriesExpanded, setGitLabRegistriesExpanded] = useState<boolean | null>(
+    readGitLabRegistriesExpanded
+  );
   const manualRegistries = registries.filter((registry) => !registry.integration);
   const gitLabRegistries = registries.filter(
     (registry) => registry.integration?.provider === "gitlab"
   );
+  const effectiveGitLabRegistriesExpanded =
+    gitLabRegistriesExpanded ?? manualRegistries.length === 0;
 
   const loadRegistries = useCallback(async () => {
     try {
@@ -74,6 +98,12 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
   useRealtime("docker.registry.changed", () => {
     loadRegistries();
   });
+
+  const toggleGitLabRegistriesExpanded = () => {
+    const next = !effectiveGitLabRegistriesExpanded;
+    writeGitLabRegistriesExpanded(next);
+    setGitLabRegistriesExpanded(next);
+  };
 
   const openRegCreate = () => {
     setRegEditId(null);
@@ -284,32 +314,38 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
             <div className="divide-y divide-border">
               {manualRegistries.map(renderRegistryRow)}
               {gitLabRegistries.length > 0 && (
-                <>
+                <div>
                   <button
                     type="button"
                     className="flex w-full items-center justify-between bg-muted/30 px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/45"
-                    onClick={() => setGitLabRegistriesExpanded((expanded) => !expanded)}
-                    aria-expanded={gitLabRegistriesExpanded}
+                    onClick={toggleGitLabRegistriesExpanded}
+                    aria-expanded={effectiveGitLabRegistriesExpanded}
                   >
                     <span>Provided by GitLab integrations</span>
                     <ChevronDown
                       className={`h-4 w-4 transition-transform duration-200 ${
-                        gitLabRegistriesExpanded ? "rotate-180" : ""
+                        effectiveGitLabRegistriesExpanded ? "rotate-180" : ""
                       }`}
                     />
                   </button>
                   <div
-                    aria-hidden={!gitLabRegistriesExpanded}
-                    inert={gitLabRegistriesExpanded ? undefined : true}
+                    aria-hidden={!effectiveGitLabRegistriesExpanded}
+                    inert={effectiveGitLabRegistriesExpanded ? undefined : true}
                     className={`grid transition-[grid-template-rows] duration-200 ease-out ${
-                      gitLabRegistriesExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                      effectiveGitLabRegistriesExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
                     }`}
                   >
-                    <div className="min-h-0 overflow-hidden">
+                    <div
+                      className={`min-h-0 overflow-hidden ${
+                        effectiveGitLabRegistriesExpanded
+                          ? "divide-y divide-border border-t border-border"
+                          : ""
+                      }`}
+                    >
                       {gitLabRegistries.map(renderRegistryRow)}
                     </div>
                   </div>
-                </>
+                </div>
               )}
             </div>
           ) : (
