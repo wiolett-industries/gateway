@@ -27,7 +27,7 @@ import (
 
 const (
 	defaultContainerStopTimeoutSeconds = 20
-	maxDockerLogReadBytes              = 16 * 1024 * 1024
+	maxDockerLogReadBytes              = 8 * 1024 * 1024
 	maxDockerLogLineBytes              = 1024 * 1024
 )
 
@@ -311,8 +311,7 @@ func (c *Client) ContainerLogs(ctx context.Context, id string, tail int, timesta
 func (c *Client) containerLogsWithUntil(ctx context.Context, id string, tail int, timestamps bool, since string, until string) ([]string, error) {
 	untilTime, err := time.Parse(time.RFC3339Nano, until)
 	if err != nil {
-		// Fallback: fetch without tail
-		return c.ContainerLogs(ctx, id, 0, timestamps, since, until)
+		return nil, fmt.Errorf("invalid docker logs until timestamp: %w", err)
 	}
 
 	// Try expanding time windows. Start small so busy containers do not require
@@ -325,8 +324,13 @@ func (c *Client) containerLogsWithUntil(ctx context.Context, id string, tail int
 		6 * time.Hour,
 		24 * time.Hour,
 		7 * 24 * time.Hour,
+		30 * 24 * time.Hour,
+		90 * 24 * time.Hour,
+		365 * 24 * time.Hour,
+		10 * 365 * 24 * time.Hour,
 	}
 
+	var lastLines []string
 	for _, window := range windows {
 		windowSince := untilTime.Add(-window).Format(time.RFC3339Nano)
 		if since != "" {
@@ -364,6 +368,9 @@ func (c *Client) containerLogsWithUntil(ctx context.Context, id string, tail int
 			// Got enough — return the last `tail` lines
 			return lines[len(lines)-tail:], nil
 		}
+		if len(lines) > 0 {
+			lastLines = lines
+		}
 
 		// If we got some lines but not enough, and since was limiting us, return what we have
 		if since != "" && windowSince == since {
@@ -371,32 +378,10 @@ func (c *Client) containerLogsWithUntil(ctx context.Context, id string, tail int
 		}
 	}
 
-	// Final fallback: fetch all lines up to until (no since)
-	opts := client.ContainerLogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-		Tail:       "all",
-		Timestamps: timestamps,
-		Until:      until,
+	if len(lastLines) > 0 {
+		return lastLines, nil
 	}
-	reader, err := c.cli.ContainerLogs(ctx, id, opts)
-	if err != nil {
-		return nil, fmt.Errorf("container logs: %w", err)
-	}
-	defer reader.Close()
-
-	lines, err := parseDockerLogsBounded(reader, tail, maxDockerLogReadBytes)
-	if err != nil {
-		if errors.Is(err, errDockerLogsTooLarge) {
-			return nil, fmt.Errorf("container logs history window is too large; narrow the range or reduce log volume")
-		}
-		return nil, err
-	}
-
-	if len(lines) > tail {
-		return lines[len(lines)-tail:], nil
-	}
-	return lines, nil
+	return []string{}, nil
 }
 
 // ContainerLogsFollow opens a follow-mode log stream for a container.
@@ -404,11 +389,8 @@ func (c *Client) containerLogsWithUntil(ctx context.Context, id string, tail int
 // The stream will continue until the context is cancelled or the container stops.
 // Optional since parameter starts streaming from the given RFC3339 timestamp.
 func (c *Client) ContainerLogsFollow(ctx context.Context, id string, tail int, timestamps bool, since string) (io.ReadCloser, error) {
-	tailStr := "all"
-	if tail >= 0 && since != "" {
-		// When following with since, use tail=0 to only get new lines
-		tailStr = "0"
-	} else if tail > 0 {
+	tailStr := "0"
+	if tail > 0 {
 		tailStr = strconv.Itoa(tail)
 	}
 

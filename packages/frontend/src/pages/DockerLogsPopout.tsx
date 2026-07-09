@@ -6,6 +6,11 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 
 const CHANNEL_PREFIX = "docker-logs:";
+const MAX_LOG_LINES = 10000;
+
+function capNewestLogs(logs: string[]): string[] {
+  return logs.length > MAX_LOG_LINES ? logs.slice(-MAX_LOG_LINES) : logs;
+}
 
 function isTerminalLogError(message: string): boolean {
   const lower = message.toLowerCase();
@@ -122,12 +127,15 @@ export function DockerLogsPopout() {
       try {
         const msg = JSON.parse(evt.data);
         if (msg.type === "initial") {
-          setLines(processLogs(msg.lines ?? []));
+          setLines(capNewestLogs(processLogs(msg.lines ?? [])));
           setHasMore(msg.hasMore ?? false);
           setIsConnecting(false);
         } else if (msg.type === "history") {
           const historyLines = processLogs(msg.lines ?? []);
-          setLines((prev) => [...historyLines, ...prev]);
+          setLines((prev) => {
+            const updated = [...historyLines, ...prev];
+            return capNewestLogs(updated);
+          });
           if (historyLines.length > 0) {
             setHistoryPrependVersion((version) => version + 1);
           }
@@ -136,7 +144,7 @@ export function DockerLogsPopout() {
         } else if (msg.type === "new") {
           setLines((prev) => {
             const updated = [...prev, ...processLogs(msg.lines ?? [])];
-            return updated.length > 10000 ? updated.slice(-10000) : updated;
+            return capNewestLogs(updated);
           });
         } else if (msg.type === "auth_error") {
           authFailedRef.current = true;

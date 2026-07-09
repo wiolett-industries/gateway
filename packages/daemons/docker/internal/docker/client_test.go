@@ -72,6 +72,81 @@ func TestParseDockerLogsBoundedRejectsOversizedResponses(t *testing.T) {
 	}
 }
 
+func TestContainerLogsFollowDoesNotReplayAllHistoryByDefault(t *testing.T) {
+	var logsQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/v1.43/containers/container-1/logs") {
+			http.NotFound(w, r)
+			return
+		}
+		logsQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/vnd.docker.raw-stream")
+	}))
+	defer server.Close()
+
+	cli, err := client.NewClientWithOpts(client.WithHost(server.URL), client.WithVersion("1.43"))
+	if err != nil {
+		t.Fatalf("create docker client: %v", err)
+	}
+	defer cli.Close()
+
+	c := &Client{cli: cli, logger: slog.Default()}
+	reader, err := c.ContainerLogsFollow(context.Background(), "container-1", 0, true, "")
+	if err != nil {
+		t.Fatalf("container logs follow: %v", err)
+	}
+	_ = reader.Close()
+
+	if logsQuery == "" {
+		t.Fatal("expected logs request")
+	}
+	if strings.Contains(logsQuery, "tail=all") {
+		t.Fatalf("follow logs must not request full history, query = %q", logsQuery)
+	}
+	if !strings.Contains(logsQuery, "tail=0") {
+		t.Fatalf("follow logs should request tail=0 by default, query = %q", logsQuery)
+	}
+}
+
+func TestContainerLogsWithUntilDoesNotFallbackToUnboundedHistory(t *testing.T) {
+	var queries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/v1.43/containers/container-1/logs") {
+			http.NotFound(w, r)
+			return
+		}
+		queries = append(queries, r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/vnd.docker.raw-stream")
+	}))
+	defer server.Close()
+
+	cli, err := client.NewClientWithOpts(client.WithHost(server.URL), client.WithVersion("1.43"))
+	if err != nil {
+		t.Fatalf("create docker client: %v", err)
+	}
+	defer cli.Close()
+
+	c := &Client{cli: cli, logger: slog.Default()}
+	lines, err := c.ContainerLogs(context.Background(), "container-1", 200, true, "", "2026-07-09T12:00:00Z")
+	if err != nil {
+		t.Fatalf("container logs: %v", err)
+	}
+	if len(lines) != 0 {
+		t.Fatalf("expected no lines, got %#v", lines)
+	}
+	if len(queries) == 0 {
+		t.Fatal("expected bounded window log requests")
+	}
+	for _, rawQuery := range queries {
+		if !strings.Contains(rawQuery, "since=") {
+			t.Fatalf("unexpected unbounded logs request without since: %q", rawQuery)
+		}
+		if !strings.Contains(rawQuery, "until=") {
+			t.Fatalf("expected until in logs request: %q", rawQuery)
+		}
+	}
+}
+
 func TestContainerCreateConfigKeepsLegacyRestartPolicyAlias(t *testing.T) {
 	var cfg ContainerCreateConfig
 	if err := json.Unmarshal([]byte(`{"image":"nginx:latest","restart_policy":"unless-stopped"}`), &cfg); err != nil {
