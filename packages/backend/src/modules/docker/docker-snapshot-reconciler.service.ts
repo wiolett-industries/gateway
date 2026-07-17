@@ -121,28 +121,26 @@ export class DockerSnapshotReconciler {
 
   async enqueueDueDetails(): Promise<void> {
     for (const node of this.registry.getNodesByType('docker')) {
-      await this.enqueueOldestDetail(node.nodeId, 'container-detail', 'containers');
-      await this.enqueueOldestDetail(node.nodeId, 'volume-detail', 'volumes');
+      await this.enqueueStaleDetails(node.nodeId, 'container-detail', 'containers');
+      await this.enqueueStaleDetails(node.nodeId, 'volume-detail', 'volumes');
     }
   }
 
-  private async enqueueOldestDetail(nodeId: string, detailKind: DockerDetailKind, listKind: DockerSnapshotKind) {
+  private async enqueueStaleDetails(nodeId: string, detailKind: DockerDetailKind, listKind: DockerSnapshotKind) {
     const list = await this.snapshots.getList<Record<string, unknown>[]>(nodeId, listKind);
     if (!Array.isArray(list.data)) return;
-    let selected: { key: string; observedAt: number } | null = null;
+    const details = await this.snapshots.getDetails(nodeId, detailKind);
+    const now = Date.now();
     for (const item of list.data) {
       const key = listItemKey(detailKind, item);
       if (!key) continue;
-      const detail = await this.snapshots.getDetail(nodeId, detailKind, key);
+      const detail = details[key];
       const observedAt = detail?.observedAt
         ? Date.parse(detail.observedAt)
         : detail?.lastAttemptAt
           ? Date.parse(detail.lastAttemptAt)
           : 0;
-      if (!selected || observedAt < selected.observedAt) selected = { key, observedAt };
-    }
-    if (selected && Date.now() - selected.observedAt >= 5 * 60_000) {
-      this.enqueue({ nodeId, kind: detailKind, key: selected.key });
+      if (now - observedAt >= 5 * 60_000) this.enqueue({ nodeId, kind: detailKind, key });
     }
   }
 
@@ -157,6 +155,10 @@ export class DockerSnapshotReconciler {
         .catch((error) => logger.warn('Failed to purge node snapshots', { nodeId, error }));
     } else if (event.status === 'online' && this.registry.getNode(nodeId)?.type === 'docker') {
       this.enqueueNode(nodeId);
+    } else if (event.status === 'offline') {
+      void this.snapshots.publishNodeAvailability(nodeId).catch(() => {
+        // Non-Docker nodes share node.changed; they have no Docker snapshots to announce.
+      });
     }
   }
 

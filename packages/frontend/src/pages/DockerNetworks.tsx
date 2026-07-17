@@ -93,8 +93,8 @@ export function DockerNetworks({
     onCreateRef?.(() => openCreate());
   }, [onCreateRef, openCreate]);
   useEffect(() => {
-    onRefreshRef?.(() => void requestSnapshotRefresh("networks", fixedNodeId));
-  }, [fixedNodeId, onRefreshRef, requestSnapshotRefresh]);
+    onRefreshRef?.(() => void requestSnapshotRefresh("networks", visibleNodeId));
+  }, [onRefreshRef, requestSnapshotRefresh, visibleNodeId]);
   const [createName, setCreateName] = useState("");
   const [createDriver, setCreateDriver] = useState("bridge");
   const [createSubnet, setCreateSubnet] = useState("");

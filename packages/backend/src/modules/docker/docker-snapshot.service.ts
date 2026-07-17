@@ -157,6 +157,13 @@ export class DockerSnapshotService {
     return JSON.parse(value) as DockerSnapshotEnvelope<T>;
   }
 
+  async getDetails<T = unknown>(nodeId: string, kind: DockerDetailKind) {
+    const values = await this.cache.getClient().hgetall(this.detailKey(nodeId, kind));
+    return Object.fromEntries(
+      Object.entries(values).map(([key, value]) => [key, JSON.parse(value) as DockerSnapshotEnvelope<T>])
+    );
+  }
+
   async getContainerDetailSnapshot(nodeId: string, key: string): Promise<DockerSnapshotEnvelope<any>> {
     await this.assertDockerNode(nodeId);
     const direct = await this.getDetail<any>(nodeId, 'container-detail', key);
@@ -244,6 +251,21 @@ export class DockerSnapshotService {
       lastAttemptAt: envelope.lastAttemptAt,
       lastError: envelope.lastError,
     };
+  }
+
+  async publishNodeAvailability(nodeId: string): Promise<void> {
+    await this.assertDockerNode(nodeId);
+    await Promise.all(
+      DOCKER_SNAPSHOT_KINDS.map(async (kind) => {
+        const snapshot = await this.getList(nodeId, kind);
+        this.eventBus.publish('docker.snapshot.changed', {
+          nodeId,
+          kind,
+          revision: snapshot.revision,
+          availability: this.availability(nodeId, snapshot),
+        });
+      })
+    );
   }
 
   async purgeNode(nodeId: string): Promise<void> {

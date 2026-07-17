@@ -82,8 +82,8 @@ export function DockerVolumes({
     onCreateRef?.(() => openCreate());
   }, [onCreateRef, openCreate]);
   useEffect(() => {
-    onRefreshRef?.(() => void requestSnapshotRefresh("volumes", fixedNodeId));
-  }, [fixedNodeId, onRefreshRef, requestSnapshotRefresh]);
+    onRefreshRef?.(() => void requestSnapshotRefresh("volumes", visibleNodeId));
+  }, [onRefreshRef, requestSnapshotRefresh, visibleNodeId]);
   const [createName, setCreateName] = useState("");
   const [createDriver, setCreateDriver] = useState("local");
   const [creating, setCreating] = useState(false);

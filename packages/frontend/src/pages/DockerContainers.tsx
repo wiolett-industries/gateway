@@ -247,8 +247,8 @@ export function DockerContainers({
   );
 
   useEffect(() => {
-    onRefreshRef?.(() => void requestSnapshotRefresh("containers", fixedNodeId));
-  }, [fixedNodeId, onRefreshRef, requestSnapshotRefresh]);
+    onRefreshRef?.(() => void requestSnapshotRefresh("containers", visibleNodeId));
+  }, [onRefreshRef, requestSnapshotRefresh, visibleNodeId]);
 
   useEffect(() => {
     if (embedded && !fixedNodeId && !dockerNodesLoaded) {

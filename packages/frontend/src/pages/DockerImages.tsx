@@ -139,8 +139,8 @@ export function DockerImages({
     onPullRef?.(() => openPull());
   }, [onPullRef, openPull]);
   useEffect(() => {
-    onRefreshRef?.(() => void requestSnapshotRefresh("images", fixedNodeId));
-  }, [fixedNodeId, onRefreshRef, requestSnapshotRefresh]);
+    onRefreshRef?.(() => void requestSnapshotRefresh("images", visibleNodeId));
+  }, [onRefreshRef, requestSnapshotRefresh, visibleNodeId]);
   const [pullRef, setPullRef] = useState("");
   const [pullRegistryId, setPullRegistryId] = useState<string>("");
   const [pulling, setPulling] = useState(false);

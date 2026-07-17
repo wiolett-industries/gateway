@@ -20,7 +20,9 @@ function createReconciler(dispatchOverrides: Record<string, unknown> = {}) {
     markDetailError: vi.fn().mockResolvedValue(undefined),
     getList: vi.fn().mockResolvedValue({ data: [] }),
     getDetail: vi.fn().mockResolvedValue(null),
+    getDetails: vi.fn().mockResolvedValue({}),
     purgeNode: vi.fn().mockResolvedValue(undefined),
+    publishNodeAvailability: vi.fn().mockResolvedValue(undefined),
   };
   const ok = { success: true, detail: '[]' };
   const dispatch = {
@@ -134,6 +136,16 @@ describe('DockerSnapshotReconciler', () => {
     await vi.waitFor(() => expect(dispatch.sendDockerImageCommand).toHaveBeenCalled());
     await vi.waitFor(() => expect(dispatch.sendDockerVolumeCommand).toHaveBeenCalled());
     await vi.waitFor(() => expect(dispatch.sendDockerNetworkCommand).toHaveBeenCalled());
+    reconciler.stop();
+  });
+
+  it('announces snapshot availability changes when a node disconnects', async () => {
+    const { reconciler, snapshots, eventBus } = createReconciler();
+    reconciler.start();
+
+    eventBus.publish('node.changed', { id: 'node-1', action: 'updated', status: 'offline' });
+
+    await vi.waitFor(() => expect(snapshots.publishNodeAvailability).toHaveBeenCalledWith('node-1'));
     reconciler.stop();
   });
 
