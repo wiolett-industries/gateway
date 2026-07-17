@@ -40,6 +40,44 @@ afterEach(() => {
 });
 
 describe('events websocket authentication', () => {
+  it('filters Docker snapshot events by resource kind and node scope', async () => {
+    const eventBus = new EventBusService();
+    container.registerInstance(EventBusService, eventBus);
+    mocks.resolveLiveSessionUser.mockResolvedValue({
+      user: { ...USER, scopes: ['docker:images:view:node-1'] },
+      effectiveScopes: ['docker:images:view:node-1'],
+    });
+    const ws = createWs();
+    const handlers = createEventsWSHandlers();
+
+    handlers.onOpen(new Event('open'), ws as any);
+    await authenticateEventsConnection(ws as any, 'session-1');
+    handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'subscribe', channels: ['docker.snapshot.changed'] }),
+      }),
+      ws as any
+    );
+
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'subscribed', channels: ['docker.snapshot.changed'], rejected: [] })
+    );
+    eventBus.publish('docker.snapshot.changed', { nodeId: 'node-1', kind: 'containers', revision: 1 });
+    eventBus.publish('docker.snapshot.changed', { nodeId: 'node-2', kind: 'images', revision: 1 });
+    eventBus.publish('docker.snapshot.changed', { nodeId: 'node-1', kind: 'images', revision: 2 });
+
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'event',
+        channel: 'docker.snapshot.changed',
+        payload: { nodeId: 'node-1', kind: 'images', revision: 2 },
+      })
+    );
+    expect(ws.send).not.toHaveBeenCalledWith(expect.stringContaining('"kind":"containers"'));
+    expect(ws.send).not.toHaveBeenCalledWith(expect.stringContaining('"nodeId":"node-2"'));
+    handlers.onClose(new Event('close'), ws as any);
+  });
+
   it('rejects blocked session users', async () => {
     mocks.resolveLiveSessionUser.mockResolvedValue({
       user: { ...USER, isBlocked: true },

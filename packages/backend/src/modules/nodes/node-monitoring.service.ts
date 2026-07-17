@@ -104,6 +104,17 @@ export class NodeMonitoringService extends EventEmitter {
     }
   }
 
+  getLatestContainerStats(nodeId: string, containerId: string): Record<string, unknown> | null {
+    const report = this.registry.getNode(nodeId)?.lastHealthReport;
+    const stats = (report as any)?.containerStats;
+    if (!Array.isArray(stats)) return null;
+    return (
+      (stats.find((item: any) => (item.containerId ?? item.container_id) === containerId) as
+        | Record<string, unknown>
+        | undefined) ?? null
+    );
+  }
+
   registerClient(nodeId: string): void {
     const count = (this.clientCounts.get(nodeId) ?? 0) + 1;
     this.clientCounts.set(nodeId, count);

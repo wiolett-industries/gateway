@@ -13,6 +13,7 @@ import {
 import { ImagePullSchema } from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
 import { DockerRegistryService } from './docker-registry.service.js';
+import { DockerSnapshotService } from './docker-snapshot.service.js';
 
 const DOCKER_RESOURCE_LIST_MAX = 1000;
 const DOCKER_IMAGE_REF_PREVIEW_MAX = 20;
@@ -23,7 +24,7 @@ function dockerCommandErrorMessage(result: { error?: string; detail?: string }, 
   return fallback;
 }
 
-function compactImageListItem(image: Record<string, any>) {
+export function compactImageListItem(image: Record<string, any>) {
   const repoTags = image.repoTags ?? image.RepoTags;
   const repoDigests = image.repoDigests ?? image.RepoDigests;
   return {
@@ -43,7 +44,7 @@ function compactImageListItem(image: Record<string, any>) {
   };
 }
 
-function matchesImageSearch(image: Record<string, any>, search: string | undefined) {
+export function matchesImageSearch(image: Record<string, any>, search: string | undefined) {
   if (!search) return true;
   const repoTags = image.repoTags ?? image.RepoTags;
   const repoDigests = image.repoDigests ?? image.RepoDigests;
@@ -66,14 +67,20 @@ export function registerImageRoutes(router: OpenAPIHono<AppEnv>) {
   router.openapi(
     { ...listImagesRoute, middleware: requireScopeForResource('docker:images:view', 'nodeId') },
     async (c) => {
-      const service = container.resolve(DockerManagementService);
+      const snapshots = container.resolve(DockerSnapshotService);
       const nodeId = c.req.param('nodeId')!;
-      const data = await service.listImages(nodeId);
+      await snapshots.assertDockerNode(nodeId);
+      const snapshot = await snapshots.getList<any[]>(nodeId, 'images');
+      const data = snapshot.data;
       if (!Array.isArray(data)) return c.json({ data });
       const search = c.req.query('search')?.trim().toLowerCase();
       const compacted = data
         .filter((item) => matchesImageSearch(item, search))
-        .map((item) => compactImageListItem(item));
+        .map((item) => ({
+          ...compactImageListItem(item),
+          nodeId,
+          availability: snapshots.availability(nodeId, snapshot),
+        }));
       const truncated = compacted.length > DOCKER_RESOURCE_LIST_MAX;
       return c.json({
         data: truncated ? compacted.slice(0, DOCKER_RESOURCE_LIST_MAX) : compacted,

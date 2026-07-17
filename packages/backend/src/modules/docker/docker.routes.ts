@@ -14,6 +14,7 @@ import { registerImageRoutes } from './docker-image.routes.js';
 import { registerNetworkRoutes } from './docker-network.routes.js';
 import { registerRegistryRoutes } from './docker-registry.routes.js';
 import { hasDockerNodeRouteAccess, resolveDockerNodeBySlug } from './docker-route-resolvers.js';
+import { registerDockerSnapshotRoutes } from './docker-snapshot.routes.js';
 import { registerTaskRoutes } from './docker-task.routes.js';
 import { registerVolumeRoutes } from './docker-volume.routes.js';
 import { registerWebhookConfigRoutes } from './docker-webhook.routes.js';
@@ -32,6 +33,7 @@ dockerRoutes.openapi(getDockerNodeBySlugRoute, async (c) => {
 });
 
 // Register all route groups
+registerDockerSnapshotRoutes(dockerRoutes);
 registerWebhookConfigRoutes(dockerRoutes);
 registerDockerDeploymentRoutes(dockerRoutes);
 registerDockerHealthCheckRoutes(dockerRoutes);

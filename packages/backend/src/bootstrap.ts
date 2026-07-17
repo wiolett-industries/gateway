@@ -39,6 +39,8 @@ import { DockerImageCleanupService } from '@/modules/docker/docker-image-cleanup
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
 import { DockerRuntimeSettingsService } from '@/modules/docker/docker-runtime-settings.service.js';
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
+import { DockerSnapshotService } from '@/modules/docker/docker-snapshot.service.js';
+import { DockerSnapshotReconciler } from '@/modules/docker/docker-snapshot-reconciler.service.js';
 import { DockerTaskService } from '@/modules/docker/docker-task.service.js';
 import { DockerWebhookService } from '@/modules/docker/docker-webhook.service.js';
 import { detectPublicIP, initDnsResolver } from '@/modules/domains/dns.utils.js';
@@ -300,6 +302,17 @@ export async function initializeContainer(): Promise<void> {
 
   const dockerManagementService = new DockerManagementService(db, auditService, nodeDispatch, nodeRegistry);
   container.registerInstance(DockerManagementService, dockerManagementService);
+
+  const dockerSnapshotService = new DockerSnapshotService(db, cacheService, nodeRegistry, eventBus);
+  container.registerInstance(DockerSnapshotService, dockerSnapshotService);
+  const dockerSnapshotReconciler = new DockerSnapshotReconciler(
+    dockerSnapshotService,
+    nodeDispatch,
+    nodeRegistry,
+    eventBus
+  );
+  container.registerInstance(DockerSnapshotReconciler, dockerSnapshotReconciler);
+  dockerSnapshotReconciler.start();
 
   const dockerFolderService = new DockerFolderService(db, auditService);
   container.registerInstance(DockerFolderService, dockerFolderService);
@@ -693,6 +706,18 @@ export async function initializeContainer(): Promise<void> {
   scheduler.register('acme-renewal', env.ACME_RENEWAL_CRON, () => acmeRenewalJob.run());
   scheduler.registerInterval('health-check', env.HEALTH_CHECK_INTERVAL_SECONDS * 1000, () => healthCheckJob.run());
   scheduler.registerInterval('docker-health-check', 10000, () => dockerHealthCheckService.runDueChecks());
+  scheduler.registerInterval('docker-snapshot-containers', 10000, async () => {
+    dockerSnapshotReconciler.enqueueConnected('containers');
+  });
+  scheduler.registerInterval('docker-snapshot-inventory', 60000, async () => {
+    dockerSnapshotReconciler.enqueueConnected('images');
+    dockerSnapshotReconciler.enqueueConnected('volumes');
+    dockerSnapshotReconciler.enqueueConnected('networks');
+  });
+  scheduler.registerInterval('docker-snapshot-details', 5000, () => dockerSnapshotReconciler.enqueueDueDetails());
+  scheduler.registerInterval('docker-snapshot-housekeeping', 60 * 60 * 1000, () =>
+    dockerSnapshotService.purgeOrphans()
+  );
   scheduler.register('expiry-alerts', env.EXPIRY_CHECK_CRON, async () => {
     await Promise.all([expiryAlertJob.run(), notifEvaluatorService.evaluateCertificateExpiry()]);
   });

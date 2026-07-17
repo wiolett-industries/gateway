@@ -37,11 +37,12 @@ import {
 } from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
 import { resolveDockerVolumeByName } from './docker-route-resolvers.js';
+import { DockerSnapshotService } from './docker-snapshot.service.js';
 
 const DOCKER_RESOURCE_LIST_MAX = 1000;
 const DOCKER_VOLUME_USED_BY_PREVIEW_MAX = 100;
 
-function compactVolumeListItem(volume: Record<string, any>) {
+export function compactVolumeListItem(volume: Record<string, any>) {
   const usedBy = volume.usedBy ?? volume.UsedBy;
   return {
     name: volume.name ?? volume.Name,
@@ -55,7 +56,7 @@ function compactVolumeListItem(volume: Record<string, any>) {
   };
 }
 
-function normalizeVolumeDetailItem(volume: Record<string, any>) {
+export function normalizeVolumeDetailItem(volume: Record<string, any>) {
   const usedBy = volume.usedBy ?? volume.UsedBy;
   const normalizedUsedBy = Array.isArray(usedBy) ? usedBy : [];
   return {
@@ -71,7 +72,7 @@ function normalizeVolumeDetailItem(volume: Record<string, any>) {
   };
 }
 
-function matchesVolumeSearch(volume: Record<string, any>, search: string | undefined) {
+export function matchesVolumeSearch(volume: Record<string, any>, search: string | undefined) {
   if (!search) return true;
   const usedBy = volume.usedBy ?? volume.UsedBy;
   const haystack = [
@@ -100,14 +101,20 @@ export function registerVolumeRoutes(router: OpenAPIHono<AppEnv>) {
   router.openapi(
     { ...listVolumesRoute, middleware: requireScopeForResource('docker:volumes:view', 'nodeId') },
     async (c) => {
-      const service = container.resolve(DockerManagementService);
+      const snapshots = container.resolve(DockerSnapshotService);
       const nodeId = c.req.param('nodeId')!;
-      const data = await service.listVolumes(nodeId);
+      await snapshots.assertDockerNode(nodeId);
+      const snapshot = await snapshots.getList<any[]>(nodeId, 'volumes');
+      const data = snapshot.data;
       if (!Array.isArray(data)) return c.json({ data });
       const search = c.req.query('search')?.trim().toLowerCase();
       const compacted = data
         .filter((item) => matchesVolumeSearch(item, search))
-        .map((item) => compactVolumeListItem(item));
+        .map((item) => ({
+          ...compactVolumeListItem(item),
+          nodeId,
+          availability: snapshots.availability(nodeId, snapshot),
+        }));
       const truncated = compacted.length > DOCKER_RESOURCE_LIST_MAX;
       return c.json({
         data: truncated ? compacted.slice(0, DOCKER_RESOURCE_LIST_MAX) : compacted,
@@ -122,11 +129,18 @@ export function registerVolumeRoutes(router: OpenAPIHono<AppEnv>) {
   router.openapi(
     { ...inspectVolumeRoute, middleware: requireScopeForResource('docker:volumes:view', 'nodeId') },
     async (c) => {
-      const service = container.resolve(DockerManagementService);
+      const snapshots = container.resolve(DockerSnapshotService);
       const nodeId = c.req.param('nodeId')!;
       const name = c.req.param('name')!;
-      const data = await resolveDockerVolumeByName(service, nodeId, name);
-      return c.json({ data: normalizeVolumeDetailItem(data) });
+      const detail = await snapshots.getDetail(nodeId, 'volume-detail', name);
+      const data = await resolveDockerVolumeByName({ inspectVolume: async () => detail?.data }, nodeId, name);
+      return c.json({
+        data: {
+          ...normalizeVolumeDetailItem(data),
+          nodeId,
+          availability: detail ? snapshots.availability(nodeId, detail) : 'unavailable',
+        },
+      });
     }
   );
 
