@@ -64,6 +64,7 @@ import { DockerManagementService } from './docker.service.js';
 import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment-labels.js';
 import { resolveDockerContainerByName } from './docker-route-resolvers.js';
 import { DockerSecretService } from './docker-secret.service.js';
+import { DockerSnapshotService } from './docker-snapshot.service.js';
 
 const DOCKER_RESOURCE_LIST_MAX = 1000;
 const DOCKER_CONTAINER_PORT_PREVIEW_MAX = 64;
@@ -74,7 +75,7 @@ async function parseFileContentRequest(c: Parameters<Parameters<OpenAPIHono<AppE
   return { path, content };
 }
 
-function compactContainerListItem(container: Record<string, any>) {
+export function compactContainerListItem(container: Record<string, any>) {
   const ports = container.ports ?? container.Ports;
   return {
     id: container.id ?? container.Id,
@@ -102,7 +103,7 @@ function compactContainerListItem(container: Record<string, any>) {
   };
 }
 
-function matchesContainerSearch(container: Record<string, any>, search: string | undefined) {
+export function matchesContainerSearch(container: Record<string, any>, search: string | undefined) {
   if (!search) return true;
   const ports = container.ports ?? container.Ports;
   const portText = Array.isArray(ports)
@@ -150,13 +151,20 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
     { ...listContainersRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerManagementService);
+      const snapshots = container.resolve(DockerSnapshotService);
       const nodeId = c.req.param('nodeId')!;
-      const data = await service.listContainers(nodeId);
+      await snapshots.assertDockerNode(nodeId);
+      const snapshot = await snapshots.getList<any[]>(nodeId, 'containers');
+      const data = await service.decorateContainerSnapshot(nodeId, snapshot.data);
       if (!Array.isArray(data)) return c.json({ data });
       const search = c.req.query('search')?.trim().toLowerCase();
       const compacted = data
         .filter((item) => matchesContainerSearch(item, search))
-        .map((item) => compactContainerListItem(item));
+        .map((item) => ({
+          ...compactContainerListItem(item),
+          nodeId,
+          availability: snapshots.availability(nodeId, snapshot),
+        }));
       const truncated = compacted.length > DOCKER_RESOURCE_LIST_MAX;
       return c.json({
         data: truncated ? compacted.slice(0, DOCKER_RESOURCE_LIST_MAX) : compacted,
@@ -185,20 +193,42 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   router.openapi(
     { ...inspectContainerByNameRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
     async (c) => {
+      const snapshots = container.resolve(DockerSnapshotService);
       const service = container.resolve(DockerManagementService);
-      const data = await resolveDockerContainerByName(service, c.req.param('nodeId')!, c.req.param('containerName')!);
-      return c.json({ data });
+      const nodeId = c.req.param('nodeId')!;
+      const detail = await snapshots.getContainerDetailSnapshot(nodeId, c.req.param('containerName')!);
+      const resolved = await resolveDockerContainerByName(
+        { inspectContainer: async () => detail.data },
+        nodeId,
+        c.req.param('containerName')!
+      );
+      const data = await service.decorateContainerDetailSnapshot(nodeId, resolved);
+      return c.json({
+        data: {
+          ...(data && typeof data === 'object' ? data : { value: data }),
+          nodeId,
+          availability: snapshots.availability(nodeId, detail),
+        },
+      });
     }
   );
 
   router.openapi(
     { ...inspectContainerRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
     async (c) => {
+      const snapshots = container.resolve(DockerSnapshotService);
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId')!;
       const containerId = c.req.param('containerId')!;
-      const data = await service.inspectContainer(nodeId, containerId);
-      return c.json({ data });
+      const detail = await snapshots.getContainerDetailSnapshot(nodeId, containerId);
+      const data = await service.decorateContainerDetailSnapshot(nodeId, detail.data);
+      return c.json({
+        data: {
+          ...(data && typeof data === 'object' ? data : { value: data }),
+          nodeId,
+          availability: snapshots.availability(nodeId, detail),
+        },
+      });
     }
   );
 
@@ -365,14 +395,15 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
     }
   );
 
-  // Container stats (live one-shot)
+  // Container stats from background health reports (never dispatches from this GET)
   router.openapi(
     { ...containerStatsRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
     async (c) => {
-      const service = container.resolve(DockerManagementService);
+      const { NodeMonitoringService } = await import('@/modules/nodes/node-monitoring.service.js');
+      const monitoring = container.resolve(NodeMonitoringService);
       const nodeId = c.req.param('nodeId')!;
       const containerId = c.req.param('containerId')!;
-      const data = await service.getContainerStats(nodeId, containerId);
+      const data = monitoring.getLatestContainerStats(nodeId, containerId);
       return c.json({ data });
     }
   );

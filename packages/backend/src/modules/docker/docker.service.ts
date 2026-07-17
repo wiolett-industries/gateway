@@ -535,6 +535,11 @@ export class DockerManagementService {
     await this.validateDockerNode(nodeId);
     const result = await this.nodeDispatch.sendDockerContainerCommand(nodeId, 'list');
     const containers = this.parseResult(result);
+    return this.decorateContainerSnapshot(nodeId, containers);
+  }
+
+  /** Add DB-backed folders, health checks and deployment rows without contacting a daemon. */
+  async decorateContainerSnapshot(nodeId: string, containers: any) {
     const folderAssignments =
       Array.isArray(containers) && this.folderService
         ? await this.folderService.syncNodeContainers(nodeId, containers as any[])
@@ -629,14 +634,20 @@ export class DockerManagementService {
           });
         }
       }
-      const transition = cName ? this.getTransition(nodeId, cName) : undefined;
-      if (transition) data._transition = transition;
-      if (this.runtimeSettingsService && cName) {
-        const persistedRuntime = await this.runtimeSettingsService.get(nodeId, cName);
-        if (persistedRuntime) {
-          return applyRuntimeSettingsToInspect(data, persistedRuntime);
-        }
-      }
+      return this.decorateContainerDetailSnapshot(nodeId, data);
+    }
+    return data;
+  }
+
+  /** Add local transition/runtime state to a cached inspect without contacting a daemon. */
+  async decorateContainerDetailSnapshot(nodeId: string, data: any) {
+    if (!data) return data;
+    const cName = ((data.Name ?? data.name ?? '') as string).replace(/^\/+/, '');
+    const transition = cName ? this.getTransition(nodeId, cName) : undefined;
+    if (transition) data._transition = transition;
+    if (this.runtimeSettingsService && cName) {
+      const persistedRuntime = await this.runtimeSettingsService.get(nodeId, cName);
+      if (persistedRuntime) return applyRuntimeSettingsToInspect(data, persistedRuntime);
     }
     return data;
   }

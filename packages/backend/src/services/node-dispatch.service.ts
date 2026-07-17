@@ -237,7 +237,7 @@ export class NodeDispatchService {
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {
-    if (action !== 'list') {
+    if (!['list', 'inspect'].includes(action)) {
       await this.assertNodeMutable(nodeId);
     }
     const payload = {

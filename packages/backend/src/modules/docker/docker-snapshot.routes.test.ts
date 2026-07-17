@@ -1,0 +1,119 @@
+import 'reflect-metadata';
+import { OpenAPIHono } from '@hono/zod-openapi';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { container } from '@/container.js';
+import { EventBusService } from '@/services/event-bus.service.js';
+import { NodeDispatchService } from '@/services/node-dispatch.service.js';
+import type { AppEnv } from '@/types.js';
+import { DockerManagementService } from './docker.service.js';
+import { registerContainerRoutes } from './docker-container.routes.js';
+import { registerDockerSnapshotRoutes } from './docker-snapshot.routes.js';
+import { DockerSnapshotService } from './docker-snapshot.service.js';
+
+const NODE_1 = '11111111-1111-4111-8111-111111111111';
+const NODE_2 = '22222222-2222-4222-8222-222222222222';
+
+class MemoryCache {
+  strings = new Map<string, string>();
+  sets = new Map<string, Set<string>>();
+  async get<T>(key: string): Promise<T | null> {
+    const value = this.strings.get(key);
+    return value ? (JSON.parse(value) as T) : null;
+  }
+  async set<T>(key: string, value: T) {
+    this.strings.set(key, JSON.stringify(value));
+  }
+  async sadd(key: string, ...values: string[]) {
+    this.sets.set(key, new Set([...(this.sets.get(key) ?? []), ...values]));
+    return values.length;
+  }
+  getClient() {
+    return { hget: vi.fn(), hset: vi.fn(), del: vi.fn() };
+  }
+}
+
+const NODES = [
+  { id: NODE_1, type: 'docker', slug: 'one', hostname: 'one', displayName: null, appearanceColor: null },
+  { id: NODE_2, type: 'docker', slug: 'two', hostname: 'two', displayName: null, appearanceColor: null },
+];
+
+function fakeDb() {
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => {
+          const rows = [...NODES];
+          return Object.assign(Promise.resolve(rows), { limit: vi.fn().mockResolvedValue([NODES[0]]) });
+        }),
+      })),
+    })),
+  };
+}
+
+async function setup() {
+  const cache = new MemoryCache();
+  const snapshots = new DockerSnapshotService(
+    fakeDb() as never,
+    cache as never,
+    { getNode: vi.fn((id) => ({ nodeId: id })) } as never,
+    new EventBusService()
+  );
+  await snapshots.replaceList(NODE_1, 'containers', [{ id: 'c1', name: 'one', state: 'running' }]);
+  await snapshots.replaceList(NODE_2, 'containers', [{ id: 'c2', name: 'two', state: 'running' }]);
+  const docker = {
+    decorateContainerSnapshot: vi.fn(async (_nodeId, data) => data),
+    listContainers: vi.fn(),
+  };
+  const dispatch = {
+    sendDockerContainerCommand: vi.fn(),
+    sendDockerImageCommand: vi.fn(),
+    sendDockerVolumeCommand: vi.fn(),
+    sendDockerNetworkCommand: vi.fn(),
+  };
+  container.registerInstance(DockerSnapshotService, snapshots);
+  container.registerInstance(DockerManagementService, docker as never);
+  container.registerInstance(NodeDispatchService, dispatch as never);
+  return { snapshots, docker, dispatch };
+}
+
+function appWithScopes(scopes: string[]) {
+  const app = new OpenAPIHono<AppEnv>();
+  app.use('*', async (c, next) => {
+    c.set('effectiveScopes', scopes);
+    await next();
+  });
+  return app;
+}
+
+afterEach(() => {
+  container.reset();
+});
+
+describe('Docker snapshot routes', () => {
+  it('aggregate GET filters unauthorized nodes and never dispatches a daemon command', async () => {
+    const { dispatch } = await setup();
+    const app = appWithScopes([`docker:containers:view:${NODE_1}`]);
+    registerDockerSnapshotRoutes(app);
+
+    const response = await app.request('/containers');
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as any;
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0]).toMatchObject({ nodeId: NODE_1, name: 'one', availability: 'available' });
+    expect(body.nodes.map((node: any) => node.id)).toEqual([NODE_1]);
+    expect(dispatch.sendDockerContainerCommand).not.toHaveBeenCalled();
+  });
+
+  it('per-node list GET reads the snapshot and does not call the live list service or dispatch', async () => {
+    const { docker, dispatch } = await setup();
+    const app = appWithScopes([`docker:containers:view:${NODE_1}`]);
+    registerContainerRoutes(app);
+
+    const response = await app.request(`/nodes/${NODE_1}/containers`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as any;
+    expect(body.data[0]).toMatchObject({ nodeId: NODE_1, name: 'one', availability: 'available' });
+    expect(docker.listContainers).not.toHaveBeenCalled();
+    expect(dispatch.sendDockerContainerCommand).not.toHaveBeenCalled();
+  });
+});

@@ -71,6 +71,7 @@ function requiredScopeFor(channel: string): string | null {
   if (channel === 'docker.registry.changed') return 'docker:registries:view';
   if (channel === 'docker.file.changed') return 'docker:containers:files';
   if (channel === 'docker.volume.file.changed') return 'docker:volumes:files:read';
+  if (channel === 'docker.snapshot.changed') return 'docker:containers:view';
   if (channel === 'node.file.changed') return 'nodes:files:read';
   if (channel.startsWith('docker.container')) return 'docker:containers:view';
   if (channel.startsWith('docker.image')) return 'docker:images:view';
@@ -123,6 +124,14 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
       hasScopeBase(scopes, 'docker:volumes:view') ||
       hasScopeBase(scopes, 'docker:networks:view') ||
       hasScope(scopes, 'docker:containers:folders:manage')
+    );
+  }
+  if (channel === 'docker.snapshot.changed') {
+    return (
+      hasScopeBase(scopes, 'docker:containers:view') ||
+      hasScopeBase(scopes, 'docker:images:view') ||
+      hasScopeBase(scopes, 'docker:volumes:view') ||
+      hasScopeBase(scopes, 'docker:networks:view')
     );
   }
   if (channel.startsWith('docker.task')) {
@@ -203,6 +212,21 @@ function isProxyFolderLayoutPayload(payload: unknown): boolean {
 
 function canReceiveChannelPayload(scopes: string[], channel: string, payload: unknown): boolean {
   if (channel === 'system.update.changed') return true;
+  if (channel === 'docker.snapshot.changed') {
+    const event = payload as { nodeId?: string; kind?: string } | undefined;
+    if (!event?.nodeId || !event.kind) return false;
+    const scope =
+      event.kind === 'containers' || event.kind === 'container-detail'
+        ? 'docker:containers:view'
+        : event.kind === 'images'
+          ? 'docker:images:view'
+          : event.kind === 'volumes' || event.kind === 'volume-detail'
+            ? 'docker:volumes:view'
+            : event.kind === 'networks'
+              ? 'docker:networks:view'
+              : null;
+    return !!scope && (hasScope(scopes, scope) || hasScope(scopes, `${scope}:${event.nodeId}`));
+  }
   if (channel === 'docker.folder.changed') {
     if (
       hasScope(scopes, 'docker:containers:view') ||

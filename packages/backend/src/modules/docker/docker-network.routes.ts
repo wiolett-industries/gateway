@@ -11,6 +11,7 @@ import {
 } from './docker.docs.js';
 import { NetworkConnectSchema, NetworkCreateSchema } from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
+import { DockerSnapshotService } from './docker-snapshot.service.js';
 
 const DOCKER_RESOURCE_LIST_MAX = 1000;
 const DOCKER_NETWORK_CONTAINER_PREVIEW_MAX = 100;
@@ -40,7 +41,7 @@ function compactNetworkIpam(ipam: any) {
   };
 }
 
-function compactNetworkListItem(network: Record<string, any>) {
+export function compactNetworkListItem(network: Record<string, any>) {
   const containers = network.containers ?? network.Containers;
   const containerEntries = containers && typeof containers === 'object' ? Object.entries(containers) : [];
   return {
@@ -59,7 +60,7 @@ function compactNetworkListItem(network: Record<string, any>) {
   };
 }
 
-function matchesNetworkSearch(network: ReturnType<typeof compactNetworkListItem>, search: string | undefined) {
+export function matchesNetworkSearch(network: ReturnType<typeof compactNetworkListItem>, search: string | undefined) {
   if (!search) return true;
   const haystack = [network.id, network.name, network.driver, network.scope].filter(Boolean).join(' ').toLowerCase();
   return haystack.includes(search);
@@ -72,13 +73,19 @@ export function registerNetworkRoutes(router: OpenAPIHono<AppEnv>) {
   router.openapi(
     { ...listNetworksRoute, middleware: requireScopeForResource('docker:networks:view', 'nodeId') },
     async (c) => {
-      const service = container.resolve(DockerManagementService);
+      const snapshots = container.resolve(DockerSnapshotService);
       const nodeId = c.req.param('nodeId')!;
-      const data = await service.listNetworks(nodeId);
+      await snapshots.assertDockerNode(nodeId);
+      const snapshot = await snapshots.getList<any[]>(nodeId, 'networks');
+      const data = snapshot.data;
       if (!Array.isArray(data)) return c.json({ data });
       const search = c.req.query('search')?.trim().toLowerCase();
       const compacted = data
-        .map((item) => compactNetworkListItem(item))
+        .map((item) => ({
+          ...compactNetworkListItem(item),
+          nodeId,
+          availability: snapshots.availability(nodeId, snapshot),
+        }))
         .filter((item) => matchesNetworkSearch(item, search));
       const truncated = compacted.length > DOCKER_RESOURCE_LIST_MAX;
       return c.json({
