@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LoggingEnvironment, LoggingSchema } from "@/types";
-import { isLoggingEnvironmentSettingsDirty, isLoggingSchemaDirty, slugify } from "./logging-state";
+import { isLoggingEnvironmentSettingsDirty, isLoggingSchemaDirty } from "./logging-state";
 
 const environment: LoggingEnvironment = {
   id: "env-1",
@@ -33,11 +33,6 @@ const schema: LoggingSchema = {
 };
 
 describe("logging state helpers", () => {
-  it("normalizes arbitrary names into slugs", () => {
-    expect(slugify("  Audit Events!! ")).toBe("audit-events");
-    expect(slugify("Already---Slug")).toBe("already-slug");
-  });
-
   it("detects logging environment setting changes", () => {
     expect(
       isLoggingEnvironmentSettingsDirty(environment, {

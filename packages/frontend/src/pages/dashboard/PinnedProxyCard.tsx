@@ -1,6 +1,7 @@
 import { Globe } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { proxyHostRoute } from "@/lib/resource-routes";
 import type { ProxyHost } from "@/types";
 
 interface PinnedProxyCardProps {
@@ -21,7 +22,7 @@ export function PinnedProxyCard({ proxy }: PinnedProxyCardProps) {
 
   return (
     <Link
-      to={`/proxy-hosts/${proxy.id}`}
+      to={proxyHostRoute(proxy.slug)}
       className="flex items-center justify-between border border-border bg-card px-4 py-3 hover:bg-accent transition-colors"
     >
       <div className="flex items-center gap-3 min-w-0">

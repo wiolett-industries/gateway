@@ -1,6 +1,7 @@
 import { and, asc, eq, ilike, inArray, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { type LoggingFieldDefinition, loggingEnvironments, loggingSchemas } from '@/db/schema/index.js';
+import { writeWithAllocatedSlug } from '@/lib/resource-slugs.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
@@ -44,19 +45,40 @@ export class LoggingEnvironmentService {
     return toView(row.environment, row.schema);
   }
 
+  async getBySlug(slug: string): Promise<LoggingEnvironmentView> {
+    const rows = await this.db
+      .select({ environment: loggingEnvironments, schema: loggingSchemas })
+      .from(loggingEnvironments)
+      .leftJoin(loggingSchemas, eq(loggingEnvironments.schemaId, loggingSchemas.id))
+      .where(eq(loggingEnvironments.slug, slug))
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new AppError(404, 'LOGGING_ENVIRONMENT_NOT_FOUND', 'Logging environment not found');
+    return toView(row.environment, row.schema);
+  }
+
   async create(input: CreateLoggingEnvironmentInput, userId: string): Promise<LoggingEnvironmentView> {
     this.validateLimits(input);
-    const [row] = await this.db
-      .insert(loggingEnvironments)
-      .values({
-        ...input,
-        description: input.description ?? null,
-        schemaId: input.schemaId ?? null,
-        rateLimitRequestsPerWindow: input.rateLimitRequestsPerWindow ?? null,
-        rateLimitEventsPerWindow: input.rateLimitEventsPerWindow ?? null,
-        createdById: userId,
-      })
-      .returning();
+    const row = await writeWithAllocatedSlug({
+      source: input.name,
+      fallback: 'logging-environment',
+      constraint: 'logging_environments_slug_unique',
+      write: async (slug) => {
+        const [created] = await this.db
+          .insert(loggingEnvironments)
+          .values({
+            ...input,
+            slug,
+            description: input.description ?? null,
+            schemaId: input.schemaId ?? null,
+            rateLimitRequestsPerWindow: input.rateLimitRequestsPerWindow ?? null,
+            rateLimitEventsPerWindow: input.rateLimitEventsPerWindow ?? null,
+            createdById: userId,
+          })
+          .returning();
+        return created;
+      },
+    });
     await this.auditService.log({
       userId,
       action: 'logging.environment.create',
@@ -72,20 +94,33 @@ export class LoggingEnvironmentService {
     this.validateLimits(input);
     const existing = await this.findRaw(id);
     if (!existing) throw new AppError(404, 'LOGGING_ENVIRONMENT_NOT_FOUND', 'Logging environment not found');
-    const [row] = await this.db
-      .update(loggingEnvironments)
-      .set({
-        ...input,
-        description: input.description === undefined ? undefined : input.description,
-        schemaId: input.schemaId === undefined ? undefined : input.schemaId,
-        rateLimitRequestsPerWindow:
-          input.rateLimitRequestsPerWindow === undefined ? undefined : input.rateLimitRequestsPerWindow,
-        rateLimitEventsPerWindow:
-          input.rateLimitEventsPerWindow === undefined ? undefined : input.rateLimitEventsPerWindow,
-        updatedAt: new Date(),
-      })
-      .where(eq(loggingEnvironments.id, id))
-      .returning();
+    const updateData = {
+      ...input,
+      description: input.description === undefined ? undefined : input.description,
+      schemaId: input.schemaId === undefined ? undefined : input.schemaId,
+      rateLimitRequestsPerWindow:
+        input.rateLimitRequestsPerWindow === undefined ? undefined : input.rateLimitRequestsPerWindow,
+      rateLimitEventsPerWindow:
+        input.rateLimitEventsPerWindow === undefined ? undefined : input.rateLimitEventsPerWindow,
+      updatedAt: new Date(),
+    };
+    const updateEnvironment = async (slug?: string) => {
+      const [updated] = await this.db
+        .update(loggingEnvironments)
+        .set({ ...updateData, ...(slug === undefined ? {} : { slug }) })
+        .where(eq(loggingEnvironments.id, id))
+        .returning();
+      return updated;
+    };
+    const row =
+      input.name !== undefined && input.name !== existing.name
+        ? await writeWithAllocatedSlug({
+            source: input.name,
+            fallback: 'logging-environment',
+            constraint: 'logging_environments_slug_unique',
+            write: updateEnvironment,
+          })
+        : await updateEnvironment();
     await this.auditService.log({
       userId,
       action: 'logging.environment.update',
@@ -93,7 +128,11 @@ export class LoggingEnvironmentService {
       resourceId: id,
       details: { name: row.name, slug: row.slug },
     });
-    this.eventBus?.publish('logging.environment.changed', { action: 'update', id });
+    this.eventBus?.publish('logging.environment.changed', {
+      action: 'update',
+      id,
+      ...(row.slug === existing.slug ? {} : { oldSlug: existing.slug, slug: row.slug }),
+    });
     return this.get(row.id);
   }
 

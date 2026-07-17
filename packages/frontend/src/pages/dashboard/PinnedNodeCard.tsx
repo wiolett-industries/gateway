@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { HealthBars } from "@/components/ui/health-bars";
 import { StatCard as MetricCard } from "@/components/ui/stat-card";
+import { nodeRoute } from "@/lib/resource-routes";
 import { formatBytes } from "@/lib/utils";
 import type { Node, NodeHealthReport } from "@/types";
 import { effectiveNodeStatus } from "@/types";
@@ -56,7 +57,7 @@ export function PinnedNodeCard({ node, liveHealth, healthHistory }: PinnedNodeCa
     <div className="grid grid-cols-4 border border-border bg-card overflow-visible">
       {/* Node info — clickable, navigates to node detail */}
       <Link
-        to={`/nodes/${node.id}`}
+        to={nodeRoute(node.slug)}
         className="border-r border-border p-4 space-y-2 overflow-hidden cursor-pointer hover:bg-accent transition-colors"
       >
         <p className="text-xs text-muted-foreground truncate">

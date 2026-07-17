@@ -4,6 +4,7 @@ import { useDockerStore } from "./docker";
 function dockerNode(id: string) {
   return {
     id,
+    slug: id,
     type: "docker" as const,
     hostname: id,
     displayName: null,
@@ -61,20 +62,32 @@ describe("docker store", () => {
 
     useDockerStore.getState().syncNodeAppearance({
       id: "node-a",
+      slug: "node-a-renamed",
       hostname: "node-a",
       displayName: "Blue Node",
       appearanceColor: "blue",
     });
 
     expect(useDockerStore.getState().dockerNodes[0]).toMatchObject({
+      slug: "node-a-renamed",
       displayName: "Blue Node",
       appearanceColor: "blue",
     });
     expect(useDockerStore.getState().containers[0]).toMatchObject({
+      _nodeSlug: "node-a-renamed",
       _nodeName: "Blue Node",
       _nodeColor: "blue",
     });
     expect(useDockerStore.getState().containersByScope.node_a?.[0]).toMatchObject({
+      _nodeSlug: "node-a-renamed",
+      _nodeName: "Blue Node",
+      _nodeColor: "blue",
+    });
+
+    useDockerStore.getState().syncNodeAppearance({ id: "node-a", slug: "node-a-final" });
+
+    expect(useDockerStore.getState().containers[0]).toMatchObject({
+      _nodeSlug: "node-a-final",
       _nodeName: "Blue Node",
       _nodeColor: "blue",
     });

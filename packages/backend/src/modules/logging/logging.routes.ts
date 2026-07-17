@@ -25,7 +25,9 @@ import {
   deleteLoggingSchemaFolderRoute,
   deleteLoggingSchemaRoute,
   deleteLoggingTokenRoute,
+  getLoggingEnvironmentBySlugRoute,
   getLoggingEnvironmentRoute,
+  getLoggingSchemaBySlugRoute,
   getLoggingSchemaRoute,
   listLoggingEnvironmentFoldersRoute,
   listLoggingEnvironmentsRoute,
@@ -124,6 +126,19 @@ loggingRoutes.openapi(
     return c.json({ data }, 201);
   }
 );
+
+loggingRoutes.openapi(getLoggingEnvironmentBySlugRoute, async (c) => {
+  const service = container.resolve(LoggingEnvironmentService);
+  const data = await service.getBySlug(c.req.param('slug')!);
+  const scopes = c.get('effectiveScopes') ?? [];
+  if (
+    !TokensService.hasScope(scopes, 'logs:manage') &&
+    !TokensService.hasScope(scopes, `logs:environments:view:${data.id}`)
+  ) {
+    throw new AppError(403, 'FORBIDDEN', `Missing required scope: logs:environments:view:${data.id}`);
+  }
+  return c.json({ data });
+});
 
 loggingRoutes.openapi(
   { ...getLoggingEnvironmentRoute, middleware: requireLoggingResourceScope('logs:environments:view') },
@@ -359,6 +374,19 @@ loggingRoutes.openapi(
     return c.json({ data }, 201);
   }
 );
+
+loggingRoutes.openapi(getLoggingSchemaBySlugRoute, async (c) => {
+  const service = container.resolve(LoggingSchemaService);
+  const data = await service.getBySlug(c.req.param('slug')!);
+  const scopes = c.get('effectiveScopes') ?? [];
+  if (
+    !TokensService.hasScope(scopes, 'logs:manage') &&
+    !TokensService.hasScope(scopes, `logs:schemas:view:${data.id}`)
+  ) {
+    throw new AppError(403, 'FORBIDDEN', `Missing required scope: logs:schemas:view:${data.id}`);
+  }
+  return c.json({ data });
+});
 
 loggingRoutes.openapi(
   { ...getLoggingSchemaRoute, middleware: requireLoggingSchemaScope('logs:schemas:view') },

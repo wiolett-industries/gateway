@@ -1,28 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildScopedDockerNodes } from "./docker-node-access";
 
 describe("docker node access helpers", () => {
-  it("derives Docker node placeholders from resource-scoped Docker view grants", () => {
-    const nodes = buildScopedDockerNodes(
-      [
-        "docker:containers:view:node-1",
-        "docker:images:view:node-2",
-        "docker:volumes:view:node-3",
-        "docker:containers:view:node-1",
-      ],
-      ["docker:containers:view", "docker:images:view", "docker:volumes:view"]
-    );
-
-    expect(nodes.map((node) => node.id)).toEqual(["node-1", "node-2", "node-3"]);
-    expect(nodes[0]).toMatchObject({
-      type: "docker",
-      status: "online",
-      isConnected: true,
-      metadata: { scopedOnly: true },
-    });
-  });
-
-  it("keeps scoped Docker placeholders that are not returned by node listing", async () => {
+  it("loads server-provided node context for resource-scoped Docker access", async () => {
     const { loadVisibleDockerNodes } = await import("./docker-node-access");
     const { api } = await import("@/services/api");
     const originalListNodes = api.listNodes;
@@ -31,6 +10,7 @@ describe("docker node access helpers", () => {
         data: [
           {
             id: "node-a",
+            slug: "node-a",
             type: "docker",
             hostname: "node-a",
             displayName: "Node A",
@@ -52,12 +32,12 @@ describe("docker node access helpers", () => {
 
     try {
       const nodes = await loadVisibleDockerNodes(
-        ["nodes:details:node-a", "docker:containers:view:node-b"],
+        ["docker:containers:view:node-a"],
         ["docker:containers:view"],
-        true
+        false
       );
 
-      expect(nodes.map((node) => node.id)).toEqual(["node-a", "node-b"]);
+      expect(nodes.map((node) => node.slug)).toEqual(["node-a"]);
     } finally {
       api.listNodes = originalListNodes;
     }
@@ -72,6 +52,7 @@ describe("docker node access helpers", () => {
         data: [
           {
             id: "node-a",
+            slug: "node-a",
             type: "docker",
             hostname: "node-a",
             displayName: "Node A",
@@ -113,6 +94,7 @@ describe("docker node access helpers", () => {
         data: [
           {
             id: "node-a",
+            slug: "node-a",
             type: "docker",
             hostname: "node-a",
             displayName: "Node A",
@@ -140,6 +122,50 @@ describe("docker node access helpers", () => {
       );
 
       expect(nodes.map((node) => node.id)).toEqual(["node-a"]);
+    } finally {
+      api.listNodes = originalListNodes;
+    }
+  });
+
+  it("filters mixed node visibility to the requested Docker scopes", async () => {
+    const { loadVisibleDockerNodes } = await import("./docker-node-access");
+    const { api } = await import("@/services/api");
+    const originalListNodes = api.listNodes;
+    const node = (id: string) => ({
+      id,
+      slug: id,
+      type: "docker" as const,
+      hostname: id,
+      displayName: id,
+      appearanceColor: null,
+      status: "online" as const,
+      serviceCreationLocked: false,
+      daemonVersion: null,
+      osInfo: null,
+      configVersionHash: null,
+      capabilities: {},
+      lastSeenAt: null,
+      metadata: {},
+      isConnected: true,
+      createdAt: "",
+      updatedAt: "",
+    });
+    api.listNodes = async () => ({ data: [node("node-a"), node("node-b")] }) as never;
+
+    try {
+      const scopedNodeUser = await loadVisibleDockerNodes(
+        ["nodes:details:node-a", "docker:containers:view:node-b"],
+        ["docker:containers:view"],
+        true
+      );
+      const broadNodeUser = await loadVisibleDockerNodes(
+        ["nodes:details", "docker:containers:view:node-b"],
+        ["docker:containers:view"],
+        true
+      );
+
+      expect(scopedNodeUser.map((candidate) => candidate.id)).toEqual(["node-b"]);
+      expect(broadNodeUser.map((candidate) => candidate.id)).toEqual(["node-b"]);
     } finally {
       api.listNodes = originalListNodes;
     }

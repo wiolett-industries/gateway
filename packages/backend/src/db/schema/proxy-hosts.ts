@@ -1,4 +1,16 @@
-import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core';
 import { accessLists } from './access-lists.js';
 import { certificates } from './certificates.js';
 import { nginxTemplates } from './nginx-templates.js';
@@ -44,6 +56,7 @@ export const proxyHosts = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     type: proxyHostTypeEnum('type').notNull().default('proxy'),
     domainNames: jsonb('domain_names').$type<string[]>().notNull().default([]),
+    slug: varchar('slug', { length: 60 }).notNull(),
     enabled: boolean('enabled').notNull().default(true),
 
     // Upstream — for proxy type
@@ -128,5 +141,6 @@ export const proxyHosts = pgTable(
     createdByIdx: index('proxy_host_created_by_idx').on(table.createdById),
     nodeIdx: index('proxy_host_node_idx').on(table.nodeId),
     systemKindIdx: index('proxy_host_system_kind_idx').on(table.systemKind),
+    slugUnique: unique('proxy_hosts_slug_unique').on(table.slug),
   })
 );

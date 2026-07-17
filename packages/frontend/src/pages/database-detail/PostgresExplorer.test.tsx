@@ -9,6 +9,7 @@ import { PostgresExplorer } from "./PostgresExplorer";
 function makeDatabase(): DatabaseConnection {
   return {
     id: "db-1",
+    slug: "db-1",
     name: "Main Postgres",
     type: "postgres",
     description: null,

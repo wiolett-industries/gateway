@@ -13,6 +13,7 @@ import type {
   DockerTask,
   DockerVolume,
   FileEntry,
+  Node,
 } from "@/types";
 import { API_BASE } from "./api-base";
 import { withDockerWebhookApi } from "./api-docker-webhooks";
@@ -48,6 +49,18 @@ function withDockerListMeta<T extends object>(response: DockerListEnvelope<T>): 
 
 export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBase) {
   return class DockerApiClient extends withDockerWebhookApi(Base) {
+    async getDockerNodeBySlug(
+      slug: string
+    ): Promise<
+      Pick<Node, "id" | "slug" | "type" | "hostname" | "displayName" | "appearanceColor">
+    > {
+      return this.unwrapData(
+        this.requestRouteContext<{
+          data: Pick<Node, "id" | "slug" | "type" | "hostname" | "displayName" | "appearanceColor">;
+        }>(`/docker/nodes/by-slug/${encodeURIComponent(slug)}`)
+      );
+    }
+
     // ── Docker Folders ─────────────────────────────────────────────
 
     async listDockerFolders(
@@ -186,6 +199,14 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
       return this.unwrapData(this.request<{ data: Record<string, unknown> }>(url));
     }
 
+    async inspectContainerByName(nodeId: string, name: string): Promise<Record<string, unknown>> {
+      return this.unwrapData(
+        this.requestRouteContext<{ data: Record<string, unknown> }>(
+          `/docker/nodes/${nodeId}/containers/by-name/${encodeURIComponent(name)}`
+        )
+      );
+    }
+
     async createContainer(
       nodeId: string,
       config: ContainerCreateConfig
@@ -213,6 +234,14 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
       return this.unwrapData(
         this.request<{ data: DockerDeployment }>(
           `/docker/nodes/${nodeId}/deployments/${deploymentId}`
+        )
+      );
+    }
+
+    async getDockerDeploymentByName(nodeId: string, name: string): Promise<DockerDeployment> {
+      return this.unwrapData(
+        this.requestRouteContext<{ data: DockerDeployment }>(
+          `/docker/nodes/${nodeId}/deployments/by-name/${encodeURIComponent(name)}`
         )
       );
     }
@@ -742,6 +771,14 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
     async inspectDockerVolume(nodeId: string, name: string): Promise<DockerVolume> {
       return this.unwrapData(
         this.request<{ data: DockerVolume }>(
+          `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}`
+        )
+      );
+    }
+
+    async resolveDockerVolumeByName(nodeId: string, name: string): Promise<DockerVolume> {
+      return this.unwrapData(
+        this.requestRouteContext<{ data: DockerVolume }>(
           `/docker/nodes/${nodeId}/volumes/${encodeURIComponent(name)}`
         )
       );

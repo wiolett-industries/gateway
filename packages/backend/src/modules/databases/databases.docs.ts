@@ -1,5 +1,13 @@
 import { z } from '@hono/zod-openapi';
-import { appRoute, createdJson, IdParamSchema, jsonBody, okJson, UnknownDataResponseSchema } from '@/lib/openapi.js';
+import {
+  appRoute,
+  createdJson,
+  IdParamSchema,
+  jsonBody,
+  okJson,
+  pathParamSchema,
+  UnknownDataResponseSchema,
+} from '@/lib/openapi.js';
 import {
   CreateResourceFolderSchema,
   MoveResourceFolderSchema,
@@ -131,6 +139,15 @@ export const getDatabaseConnectionRoute = appRoute({
   tags: ['Databases'],
   summary: 'Get database connection details',
   request: { params: IdParamSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const getDatabaseConnectionBySlugRoute = appRoute({
+  method: 'get',
+  path: '/by-slug/{slug}',
+  tags: ['Databases'],
+  summary: 'Resolve database connection by slug',
+  request: { params: pathParamSchema('slug') },
   responses: okJson(UnknownDataResponseSchema),
 });
 

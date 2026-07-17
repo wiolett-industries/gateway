@@ -22,12 +22,14 @@ describe("resetClientSessionState", () => {
     useUIStore.setState({ aiPanelOpen: true });
     usePinnedDatabasesStore.setState({
       sidebarDatabaseIds: ["db-1"],
-      databaseMeta: { "db-1": { name: "Prod", type: "postgres" } },
+      databaseMeta: { "db-1": { slug: "prod", name: "Prod", type: "postgres" } },
     });
     usePinnedContainersStore.setState({
       sidebarContainerIds: ["container-1"],
       dashboardContainerIds: ["container-1"],
-      containerMeta: { "container-1": { nodeId: "node-1", name: "payments" } },
+      containerMeta: {
+        "container-1": { nodeId: "node-1", nodeSlug: "prod-node", name: "payments" },
+      },
     });
 
     resetClientSessionState();

@@ -81,6 +81,14 @@ export const getLoggingEnvironmentRoute = appRoute({
   request: { params: IdParamSchema },
   responses: okJson(UnknownDataResponseSchema),
 });
+export const getLoggingEnvironmentBySlugRoute = appRoute({
+  method: 'get',
+  path: '/environments/by-slug/{slug}',
+  tags: ['Logging'],
+  summary: 'Resolve a logging environment by slug',
+  request: { params: pathParamSchema('slug') },
+  responses: okJson(UnknownDataResponseSchema),
+});
 export const updateLoggingEnvironmentRoute = appRoute({
   method: 'put',
   path: '/environments/{id}',
@@ -245,6 +253,14 @@ export const getLoggingSchemaRoute = appRoute({
   tags: ['Logging'],
   summary: 'Get a logging schema',
   request: { params: schemaParams },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const getLoggingSchemaBySlugRoute = appRoute({
+  method: 'get',
+  path: '/schemas/by-slug/{slug}',
+  tags: ['Logging'],
+  summary: 'Resolve a logging schema by slug',
+  request: { params: pathParamSchema('slug') },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const updateLoggingSchemaRoute = appRoute({

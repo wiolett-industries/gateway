@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useRealtime } from "@/hooks/use-realtime";
+import { proxyHostRoute } from "@/lib/resource-routes";
 import { formatRelativeDate } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -231,7 +232,7 @@ export function DomainDetailDialog({
                     {domain.usage.proxyHosts.map((ph) => (
                       <Link
                         key={ph.id}
-                        to={`/proxy-hosts/${ph.id}`}
+                        to={proxyHostRoute(ph.slug)}
                         onClick={() => handleClose(false)}
                         className="flex items-center gap-2 py-1 text-sm hover:underline"
                       >

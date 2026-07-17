@@ -41,7 +41,7 @@ export interface Domain {
 }
 
 export interface DomainUsage {
-  proxyHosts: Array<{ id: string; domainNames: string[]; enabled: boolean }>;
+  proxyHosts: Array<{ id: string; slug: string; domainNames: string[]; enabled: boolean }>;
   sslCertificates: Array<{
     id: string;
     domainNames: string[];

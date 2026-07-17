@@ -1,0 +1,18 @@
+const segment = (value: string) => encodeURIComponent(value);
+const withTab = (path: string, tab?: string) => (tab ? `${path}/${segment(tab)}` : path);
+
+export const nodeRoute = (slug: string, tab?: string) => withTab(`/nodes/${segment(slug)}`, tab);
+export const databaseRoute = (slug: string, tab?: string) =>
+  withTab(`/databases/${segment(slug)}`, tab);
+export const proxyHostRoute = (slug: string, tab?: string) =>
+  withTab(`/proxy-hosts/${segment(slug)}`, tab);
+export const loggingEnvironmentRoute = (slug: string, tab?: string) =>
+  withTab(`/logging/environments/${segment(slug)}`, tab);
+export const loggingSchemaRoute = (slug: string, tab?: string) =>
+  withTab(`/logging/schemas/${segment(slug)}`, tab);
+export const dockerContainerRoute = (nodeSlug: string, name: string, tab?: string) =>
+  withTab(`/docker/containers/${segment(nodeSlug)}/${segment(name)}`, tab);
+export const dockerDeploymentRoute = (nodeSlug: string, name: string, tab?: string) =>
+  withTab(`/docker/deployments/${segment(nodeSlug)}/${segment(name)}`, tab);
+export const dockerVolumeRoute = (nodeSlug: string, name: string, tab?: string) =>
+  withTab(`/docker/volumes/${segment(nodeSlug)}/${segment(name)}`, tab);

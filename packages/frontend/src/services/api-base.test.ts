@@ -9,6 +9,10 @@ class TestApiClient extends ApiClientBase {
   updateThing() {
     return this.request<void>("/thing", { method: "POST", body: JSON.stringify({ ok: true }) });
   }
+
+  getRouteContextThing() {
+    return this.requestRouteContext<{ value: number }>("/route-context");
+  }
 }
 
 describe("ApiClientBase", () => {
@@ -174,6 +178,28 @@ describe("ApiClientBase", () => {
       code: "SERVICE_UNAVAILABLE",
     } satisfies Partial<ApiRequestError>);
     expect(useAppStatusStore.getState().maintenanceActive).toBe(true);
+  });
+
+  it("keeps route-context failures local instead of opening global blockers", async () => {
+    const client = new TestApiClient();
+    useAppStatusStore.setState({ maintenanceActive: false, rateLimitedUntil: null });
+    vi.spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(new Response(null, { status: 429 }));
+
+    await expect(client.getRouteContextThing()).rejects.toMatchObject({
+      status: 0,
+      code: "SERVICE_UNAVAILABLE",
+    } satisfies Partial<ApiRequestError>);
+    await expect(client.getRouteContextThing()).rejects.toMatchObject({
+      status: 429,
+      code: "RATE_LIMIT_EXCEEDED",
+    } satisfies Partial<ApiRequestError>);
+
+    expect(useAppStatusStore.getState()).toMatchObject({
+      maintenanceActive: false,
+      rateLimitedUntil: null,
+    });
   });
 
   it("opens the rate-limit blocker with a 60-second fallback window", async () => {

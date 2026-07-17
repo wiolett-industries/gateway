@@ -3,17 +3,17 @@ import { persist } from "zustand/middleware";
 
 interface PinnedDatabasesState {
   sidebarDatabaseIds: string[];
-  databaseMeta: Record<string, { name: string; type: string; healthStatus?: string }>;
+  databaseMeta: Record<string, { slug: string; name: string; type: string; healthStatus?: string }>;
   refreshTick: number;
   toggleSidebar: (
     databaseId: string,
-    meta?: { name: string; type: string; healthStatus?: string }
+    meta?: { slug: string; name: string; type: string; healthStatus?: string }
   ) => void;
   removePin: (databaseId: string) => void;
   isPinnedSidebar: (databaseId: string) => boolean;
   updateMeta: (
     databaseId: string,
-    meta: { name: string; type: string; healthStatus?: string }
+    meta: { slug: string; name: string; type: string; healthStatus?: string }
   ) => void;
   removeOrphans: (validIds: string[]) => void;
   invalidate: () => void;

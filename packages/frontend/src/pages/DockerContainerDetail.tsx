@@ -40,6 +40,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { formatDisplayImageRef } from "@/lib/docker-image-ref";
+import { dockerContainerRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
@@ -69,12 +70,31 @@ export {
 
 // ── Main Page ────────────────────────────────────────────────────
 
-export function DockerContainerDetail() {
-  const { nodeId, containerId } = useParams<{
-    nodeId: string;
-    containerId: string;
+export function DockerContainerDetail({
+  resolvedNodeId,
+  resolvedNodeSlug,
+  resolvedContainerId,
+  resolvedContainerName,
+  pageContextToken,
+}: {
+  resolvedNodeId?: string;
+  resolvedNodeSlug?: string;
+  resolvedContainerId?: string;
+  resolvedContainerName?: string;
+  pageContextToken?: number | null;
+} = {}) {
+  const params = useParams<{
+    nodeId?: string;
+    nodeSlug?: string;
+    containerId?: string;
+    containerName?: string;
     tab?: string;
   }>();
+  const nodeId = resolvedNodeId ?? params.nodeId;
+  const nodeSlug = resolvedNodeSlug ?? params.nodeSlug ?? params.nodeId ?? "";
+  const routeContainerName =
+    resolvedContainerName ?? params.containerName ?? params.containerId ?? "";
+  const [containerId, setContainerId] = useState(resolvedContainerId ?? params.containerId);
   const navigate = useStableNavigate();
   const { hasScope, isLoading: authLoading } = useAuthStore();
   const canManage =
@@ -129,12 +149,16 @@ export function DockerContainerDetail() {
   const [activeTab, setActiveTab] = useUrlTab(
     ["overview", "logs", "console", "files", "stats", "environment", "settings", "config"],
     "overview",
-    (tab) => `/docker/containers/${nodeId}/${containerId}/${tab}`
+    (tab) => dockerContainerRoute(nodeSlug, routeContainerName, tab)
   );
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+
+  useEffect(() => {
+    setContainerId(resolvedContainerId ?? params.containerId);
+  }, [params.containerId, resolvedContainerId]);
 
   // Pin
   const [pinOpen, setPinOpen] = useState(false);
@@ -171,7 +195,7 @@ export function DockerContainerDetail() {
           const cName =
             String((data as any)?.Name ?? "").replace(/^\//, "") || containerId.slice(0, 12);
           const cState = (data as any)?._transition ?? (data as any)?.State?.Status ?? "unknown";
-          updateMeta(containerId, { nodeId, name: cName, state: cState });
+          updateMeta(containerId, { nodeId, nodeSlug, name: cName, state: cState });
         }
       } catch (err) {
         if (err instanceof ApiRequestError && err.status === 404) {
@@ -185,7 +209,7 @@ export function DockerContainerDetail() {
         if (!silent) setIsLoading(false);
       }
     },
-    [clearMutationTransition, nodeId, containerId, navigate, updateMeta]
+    [clearMutationTransition, nodeId, nodeSlug, containerId, navigate, updateMeta]
   );
 
   useEffect(() => {
@@ -246,12 +270,15 @@ export function DockerContainerDetail() {
   }, [fetchHealthCheck]);
   useContainerDetailRealtime({
     nodeId,
+    nodeSlug,
     containerId,
-    containerName,
+    routeContainerName,
     activeTab,
     navigate,
     fetchContainer,
     clearMutationTransition,
+    onContainerIdChange: setContainerId,
+    pageContextToken,
   });
 
   useRealtime("docker.health.changed", (payload) => {
@@ -316,9 +343,11 @@ export function DockerContainerDetail() {
       const result = await api.duplicateContainer(nodeId!, containerId!, dName);
       toast.success("Container duplicated");
       await invalidate("containers");
-      const newId = (result as any)?.id;
-      if (newId) {
-        navigate(`/docker/containers/${nodeId}/${newId}`);
+      if ((result as any)?.id ?? (result as any)?.Id) {
+        const currentNodeSlug =
+          useDockerStore.getState().dockerNodes.find((node) => node.id === nodeId)?.slug ||
+          nodeSlug;
+        navigate(dockerContainerRoute(currentNodeSlug, dName), { replace: true });
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to duplicate");
@@ -334,13 +363,16 @@ export function DockerContainerDetail() {
 
   const handleRename = async () => {
     if (!renameValue.trim()) return;
+    const nextName = renameValue.trim();
     setActionLoading(true);
     try {
-      await api.renameContainer(nodeId!, containerId!, renameValue.trim());
+      await api.renameContainer(nodeId!, containerId!, nextName);
       toast.success("Container renamed");
       setRenameOpen(false);
       invalidate("containers");
-      fetchContainer();
+      const currentNodeSlug =
+        useDockerStore.getState().dockerNodes.find((node) => node.id === nodeId)?.slug || nodeSlug;
+      navigate(dockerContainerRoute(currentNodeSlug, nextName, activeTab), { replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to rename");
     } finally {
@@ -738,7 +770,12 @@ export function DockerContainerDetail() {
                 checked={isPinnedSidebar(containerId!)}
                 disabled={!!effectiveTransition}
                 onChange={() => {
-                  toggleSidebar(containerId!, { nodeId: nodeId!, name, state: baseState });
+                  toggleSidebar(containerId!, {
+                    nodeId: nodeId!,
+                    nodeSlug,
+                    name,
+                    state: baseState,
+                  });
                   usePinnedContainersStore.getState().invalidate();
                 }}
               />

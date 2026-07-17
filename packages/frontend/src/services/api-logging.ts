@@ -33,6 +33,14 @@ export function withLoggingApi<TBase extends ApiClientBaseConstructor>(Base: TBa
       );
     }
 
+    async getLoggingEnvironmentBySlug(slug: string): Promise<LoggingEnvironment> {
+      return this.unwrapData(
+        this.requestRouteContext<{ data: LoggingEnvironment }>(
+          `/logging/environments/by-slug/${encodeURIComponent(slug)}`
+        )
+      );
+    }
+
     async updateLoggingEnvironment(
       id: string,
       data: Partial<LoggingEnvironment>
@@ -117,6 +125,14 @@ export function withLoggingApi<TBase extends ApiClientBaseConstructor>(Base: TBa
 
     async getLoggingSchema(id: string): Promise<LoggingSchema> {
       return this.unwrapData(this.request<{ data: LoggingSchema }>(`/logging/schemas/${id}`));
+    }
+
+    async getLoggingSchemaBySlug(slug: string): Promise<LoggingSchema> {
+      return this.unwrapData(
+        this.requestRouteContext<{ data: LoggingSchema }>(
+          `/logging/schemas/by-slug/${encodeURIComponent(slug)}`
+        )
+      );
     }
 
     async createLoggingSchema(data: Partial<LoggingSchema>): Promise<LoggingSchema> {

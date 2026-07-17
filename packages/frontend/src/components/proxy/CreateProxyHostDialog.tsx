@@ -353,7 +353,7 @@ export function CreateProxyHostDialog({
       } else {
         const created = await api.createProxyHost(data);
         toast.success("Proxy host created");
-        onSuccess?.(created.id);
+        onSuccess?.(created.id, created);
       }
       resetForm();
       onOpenChange(false);

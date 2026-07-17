@@ -35,12 +35,14 @@ function normList<T>(data: unknown): T[] {
 function tagWithNode<T>(
   items: T[],
   nodeId: string,
+  nodeSlug: string,
   nodeName: string,
   nodeColor?: NodeAppearanceColor | null
 ): T[] {
   return items.map((item) => ({
     ...item,
     _nodeId: nodeId,
+    _nodeSlug: nodeSlug,
     _nodeName: nodeName,
     _nodeColor: nodeColor ?? null,
   }));
@@ -111,7 +113,8 @@ interface DockerState {
   setSelectedNode: (nodeId: string | null) => void;
   setDockerNodes: (nodes: Node[]) => void;
   syncNodeAppearance: (
-    node: Pick<Node, "id" | "displayName" | "hostname" | "appearanceColor">
+    node: Pick<Node, "id" | "slug"> &
+      Partial<Pick<Node, "displayName" | "hostname" | "appearanceColor">>
   ) => void;
   setFilters: (filters: Partial<DockerFilters>) => void;
   resetFilters: () => void;
@@ -161,7 +164,13 @@ async function fetchAllNodes<T>(
     nodes.map(async (node) => {
       const data = await fetcher(node.id);
       const items = normalizer(data);
-      return tagWithNode(items, node.id, node.displayName || node.hostname, node.appearanceColor);
+      return tagWithNode(
+        items,
+        node.id,
+        node.slug,
+        node.displayName || node.hostname,
+        node.appearanceColor
+      );
     })
   );
 
@@ -244,20 +253,28 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     set((state) => {
       type NodeTaggedRow = {
         _nodeId?: string;
+        _nodeSlug?: string;
         _nodeName?: string;
         _nodeColor?: NodeAppearanceColor | null;
       };
-      const nodeName = node.displayName || node.hostname;
+      const hasNodeName = node.displayName !== undefined || node.hostname !== undefined;
+      const nodeName = hasNodeName ? node.displayName || node.hostname || "" : undefined;
+      const hasAppearanceColor = node.appearanceColor !== undefined;
       const patchNodeRow = <T extends object>(item: T): T => {
         const tagged = item as T & NodeTaggedRow;
         return tagged._nodeId === node.id
-          ? { ...tagged, _nodeName: nodeName, _nodeColor: node.appearanceColor }
+          ? {
+              ...tagged,
+              _nodeSlug: node.slug,
+              ...(hasNodeName ? { _nodeName: nodeName } : {}),
+              ...(hasAppearanceColor ? { _nodeColor: node.appearanceColor } : {}),
+            }
           : item;
       };
 
       return {
         dockerNodes: state.dockerNodes.map((dockerNode) =>
-          dockerNode.id === node.id ? { ...dockerNode, ...node } : dockerNode
+          dockerNode.id === node.id ? { ...dockerNode, ...node, slug: node.slug } : dockerNode
         ),
         containers: state.containers.map(patchNodeRow),
         containersByScope: Object.fromEntries(
@@ -299,6 +316,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         const items = tagWithNode(
           normList<DockerContainer>(data),
           effectiveNodeId,
+          node?.slug ?? "",
           node?.displayName || node?.hostname || "",
           node?.appearanceColor
         );
@@ -345,6 +363,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         const items = tagWithNode(
           normList<DockerContainer>(data),
           effectiveNodeId,
+          node?.slug ?? "",
           node?.displayName || node?.hostname || "",
           node?.appearanceColor
         );
@@ -387,6 +406,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         const tagged = tagWithNode(
           normList<DockerImage>(data),
           effectiveNodeId,
+          node?.slug ?? "",
           node?.displayName || node?.hostname || "",
           node?.appearanceColor
         );
@@ -429,6 +449,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         const tagged = tagWithNode(
           normList<DockerVolume>(data),
           effectiveNodeId,
+          node?.slug ?? "",
           node?.displayName || node?.hostname || "",
           node?.appearanceColor
         );
@@ -471,6 +492,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
         const tagged = tagWithNode(
           normList<DockerNetwork>(data),
           effectiveNodeId,
+          node?.slug ?? "",
           node?.displayName || node?.hostname || "",
           node?.appearanceColor
         );

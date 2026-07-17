@@ -30,6 +30,7 @@ import {
   executePostgresQueryRoute,
   executeRedisCommandRoute,
   expireRedisKeyRoute,
+  getDatabaseConnectionBySlugRoute,
   getDatabaseConnectionRoute,
   getDatabaseHealthHistoryRoute,
   getRedisKeyRoute,
@@ -205,6 +206,16 @@ databaseRoutes.openapi(
     return c.json({ data }, 201);
   }
 );
+
+databaseRoutes.openapi(getDatabaseConnectionBySlugRoute, async (c) => {
+  const service = container.resolve(DatabaseConnectionService);
+  const data = await service.getBySlug(c.req.param('slug')!);
+  const scopes = c.get('effectiveScopes') ?? [];
+  if (!hasScope(scopes, `databases:view:${data.id}`)) {
+    throw new AppError(403, 'FORBIDDEN', `Missing required scope: databases:view:${data.id}`);
+  }
+  return c.json({ data });
+});
 
 databaseRoutes.openapi(
   { ...getDatabaseConnectionRoute, middleware: requireScopeForResource('databases:view', 'id') },

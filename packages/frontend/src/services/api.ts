@@ -461,6 +461,10 @@ class ApiClient extends withIntegrationsApi(
     return this.unwrapData(this.request(`/nodes/${id}`));
   }
 
+  async getNodeBySlug(slug: string): Promise<import("@/types").NodeDetail> {
+    return this.unwrapData(this.requestRouteContext(`/nodes/by-slug/${encodeURIComponent(slug)}`));
+  }
+
   async getNodeHealthHistory(id: string): Promise<Array<{ ts: string; status: string }>> {
     return this.unwrapData(this.request(`/nodes/${id}/health-history`));
   }

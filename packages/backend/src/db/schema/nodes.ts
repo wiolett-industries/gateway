@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgEnum, pgTable, timestamp, unique, uuid, varchar } from 'drizzle-orm/pg-core';
 import { nodeFolders } from './node-folders.js';
 
 export const nodeTypeEnum = pgEnum('node_type', ['nginx', 'bastion', 'monitoring', 'docker']);
@@ -80,6 +80,7 @@ export const nodes = pgTable(
     type: nodeTypeEnum('type').notNull().default('nginx'),
     hostname: varchar('hostname', { length: 255 }).notNull(),
     displayName: varchar('display_name', { length: 255 }),
+    slug: varchar('slug', { length: 60 }).notNull(),
     appearanceColor: varchar('appearance_color', { length: 32 }),
     status: nodeStatusEnum('status').notNull().default('pending'),
     serviceCreationLocked: boolean('service_creation_locked').notNull().default(false),
@@ -122,5 +123,6 @@ export const nodes = pgTable(
     hostnameIdx: index('node_hostname_idx').on(table.hostname),
     enrollmentTokenSelectorIdx: index('node_enrollment_token_selector_idx').on(table.enrollmentTokenSelector),
     folderIdx: index('node_folder_idx').on(table.folderId),
+    slugUnique: unique('nodes_slug_unique').on(table.slug),
   })
 );

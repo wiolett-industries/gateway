@@ -1,5 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
-import { container } from '@/container.js';
+import { container, TOKENS } from '@/container.js';
+import type { DrizzleClient } from '@/db/client.js';
 import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
 import type { AppEnv } from '@/types.js';
@@ -12,6 +13,7 @@ import {
   deployDeploymentRoute,
   deploymentActionRoute,
   deploymentWebhookRoute,
+  getDeploymentByNameRoute,
   getDeploymentImageCleanupRoute,
   getDeploymentRoute,
   listDeploymentSecretsRoute,
@@ -35,6 +37,7 @@ import {
 import { DockerDeploymentService } from './docker-deployment.service.js';
 import { ImageCleanupUpsertSchema } from './docker-image-cleanup.schemas.js';
 import { DockerImageCleanupService } from './docker-image-cleanup.service.js';
+import { resolveDockerDeploymentIdByName } from './docker-route-resolvers.js';
 import { DockerSecretService } from './docker-secret.service.js';
 import { WebhookUpsertSchema } from './docker-webhook.schemas.js';
 
@@ -153,6 +156,21 @@ export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
         c.get('effectiveScopes') || []
       );
       return c.json({ data }, 201);
+    }
+  );
+
+  router.openapi(
+    { ...getDeploymentByNameRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerDeploymentService);
+      const db = container.resolve(TOKENS.DrizzleClient) as DrizzleClient;
+      const deploymentId = await resolveDockerDeploymentIdByName(
+        db,
+        c.req.param('nodeId')!,
+        c.req.param('deploymentName')!
+      );
+      const data = await service.get(c.req.param('nodeId')!, deploymentId);
+      return c.json({ data });
     }
   );
 

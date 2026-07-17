@@ -39,6 +39,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { dockerDeploymentRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
@@ -92,8 +93,28 @@ function transitionForAction(name: string) {
   return transitionByAction[name];
 }
 
-export function DockerDeploymentDetail() {
-  const { nodeId = "", deploymentId = "" } = useParams();
+export function DockerDeploymentDetail({
+  resolvedNodeId,
+  resolvedNodeSlug,
+  resolvedDeploymentId,
+  resolvedDeploymentName,
+}: {
+  resolvedNodeId?: string;
+  resolvedNodeSlug?: string;
+  resolvedDeploymentId?: string;
+  resolvedDeploymentName?: string;
+} = {}) {
+  const params = useParams<{
+    nodeId?: string;
+    nodeSlug?: string;
+    deploymentId?: string;
+    deploymentName?: string;
+  }>();
+  const nodeId = resolvedNodeId ?? params.nodeId ?? "";
+  const nodeSlug = resolvedNodeSlug ?? params.nodeSlug ?? params.nodeId ?? "";
+  const deploymentId = resolvedDeploymentId ?? params.deploymentId ?? "";
+  const routeDeploymentName =
+    resolvedDeploymentName ?? params.deploymentName ?? params.deploymentId ?? "";
   const navigate = useStableNavigate();
   const { hasScope } = useAuthStore();
   const canManage =
@@ -135,7 +156,7 @@ export function DockerDeploymentDetail() {
   const [activeTab, setActiveTab] = useUrlTab(
     ["overview", "logs", "console", "files", "stats", "environment", "slots", "settings", "config"],
     "overview",
-    (tab) => `/docker/deployments/${nodeId}/${deploymentId}/${tab}`
+    (tab) => dockerDeploymentRoute(nodeSlug, routeDeploymentName, tab)
   );
 
   const load = useCallback(async () => {
@@ -148,6 +169,7 @@ export function DockerDeploymentDetail() {
       if (usePinnedContainersStore.getState().isPinnedSidebar(deploymentId)) {
         updateMeta(deploymentId, {
           nodeId,
+          nodeSlug,
           name: next.name,
           state: next._transition ?? next.status,
           kind: "deployment",
@@ -169,7 +191,7 @@ export function DockerDeploymentDetail() {
     } finally {
       setLoading(false);
     }
-  }, [deploymentId, navigate, nodeId, updateMeta]);
+  }, [deploymentId, navigate, nodeId, nodeSlug, updateMeta]);
 
   useEffect(() => {
     void load();
@@ -181,8 +203,15 @@ export function DockerDeploymentDetail() {
       deploymentId?: string;
       action?: string;
       transition?: string;
+      oldName?: string;
+      name?: string;
     };
     if (event.nodeId !== nodeId || event.deploymentId !== deploymentId) return;
+
+    if (event.oldName === routeDeploymentName && event.name) {
+      navigate(dockerDeploymentRoute(nodeSlug, event.name, activeTab), { replace: true });
+      return;
+    }
 
     if (event.action === "transitioning" && event.transition) {
       setDeployment((current) =>
@@ -197,6 +226,12 @@ export function DockerDeploymentDetail() {
     }
 
     void load();
+  });
+
+  useRealtime("node.slug.changed", (payload) => {
+    const event = payload as { id?: string; oldSlug?: string; slug?: string };
+    if (event.id !== nodeId || event.oldSlug !== nodeSlug || !event.slug) return;
+    navigate(dockerDeploymentRoute(event.slug, routeDeploymentName, activeTab), { replace: true });
   });
 
   useRealtime("docker.container.changed", (payload) => {
@@ -759,6 +794,7 @@ export function DockerDeploymentDetail() {
                 onChange={() => {
                   toggleSidebar(deployment.id, {
                     nodeId,
+                    nodeSlug,
                     name: deployment.name,
                     state: deployment._transition ?? deployment.status,
                     kind: "deployment",

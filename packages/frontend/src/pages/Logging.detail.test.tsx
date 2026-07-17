@@ -75,10 +75,10 @@ describe("Logging detail views", () => {
       expect(onSave).toHaveBeenCalledWith(
         expect.objectContaining({
           name: "Payments v2",
-          slug: "payments",
           schemaMode: "reject",
         })
       );
+      expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("slug");
     });
   });
 

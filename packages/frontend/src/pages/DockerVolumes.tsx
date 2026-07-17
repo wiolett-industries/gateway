@@ -30,6 +30,7 @@ import { TruncateStart } from "@/components/ui/truncate-start";
 import { useRealtime } from "@/hooks/use-realtime";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { nodeBadgeClassName } from "@/lib/node-appearance";
+import { dockerVolumeRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -37,6 +38,7 @@ import type { DockerVolume, Node, NodeAppearanceColor } from "@/types";
 
 interface DockerVolumeListItem extends DockerVolume {
   _nodeId: string;
+  _nodeSlug: string;
   _nodeName?: string;
   _nodeColor?: NodeAppearanceColor | null;
 }
@@ -381,9 +383,7 @@ export function DockerVolumes({
         canManageFolders={canManageFolders}
         getResourceKey={(volume) => volume.name}
         getResourceLabel={(volume) => volume.name}
-        onItemClick={(volume) =>
-          navigate(`/docker/volumes/${volume._nodeId}/${encodeURIComponent(volume.name)}`)
-        }
+        onItemClick={(volume) => navigate(dockerVolumeRoute(volume._nodeSlug, volume.name))}
         onRefresh={() => fetchVolumes(undefined, search)}
         onCreateFolderRef={(fn) => {
           createFolderRef.current = fn;

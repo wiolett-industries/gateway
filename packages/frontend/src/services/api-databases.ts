@@ -36,6 +36,14 @@ export function withDatabaseApi<TBase extends ApiClientBaseConstructor>(Base: TB
       return this.unwrapData(this.request<{ data: DatabaseConnection }>(`/databases/${id}`));
     }
 
+    async getDatabaseBySlug(slug: string): Promise<DatabaseConnection> {
+      return this.unwrapData(
+        this.requestRouteContext<{ data: DatabaseConnection }>(
+          `/databases/by-slug/${encodeURIComponent(slug)}`
+        )
+      );
+    }
+
     async getDatabaseHealthHistory(id: string): Promise<DatabaseConnection["healthHistory"]> {
       return this.unwrapData(this.request(`/databases/${id}/health-history`));
     }

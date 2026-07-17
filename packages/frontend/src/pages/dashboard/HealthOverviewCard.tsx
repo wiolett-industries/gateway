@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
+import { proxyHostRoute } from "@/lib/resource-routes";
 import type { ProxyHost } from "@/types";
 
 interface HealthOverviewCardProps {
@@ -39,7 +40,7 @@ export function HealthOverviewCard({
           {healthHosts.slice(0, 6).map((host) => (
             <Link
               key={host.id}
-              to={`/proxy-hosts/${host.id}`}
+              to={proxyHostRoute(host.slug)}
               className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
             >
               <span className="text-sm font-medium truncate flex-1">

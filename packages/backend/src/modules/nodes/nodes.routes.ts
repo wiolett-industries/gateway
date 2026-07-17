@@ -43,6 +43,7 @@ import {
   deleteNodeFileRoute,
   deleteNodeFolderRoute,
   deleteNodeRoute,
+  getNodeBySlugRoute,
   getNodeConfigRoute,
   getNodeHealthHistoryRoute,
   getNodeRoute,
@@ -151,6 +152,7 @@ function compactDockerNodeForDockerAccess(node: Record<string, unknown>) {
   const health = node.lastHealthReport as Record<string, unknown> | null | undefined;
   return {
     id: node.id,
+    slug: node.slug,
     type: node.type,
     hostname: node.hostname,
     displayName: node.displayName,
@@ -317,6 +319,16 @@ nodesRoutes.openapi({ ...deleteNodeFolderRoute, middleware: requireScope('nodes:
   const user = c.get('user')!;
   await service.deleteFolder(c.req.param('id')!, user.id);
   return c.json({ success: true });
+});
+
+nodesRoutes.openapi(getNodeBySlugRoute, async (c) => {
+  const service = container.resolve(NodesService);
+  const node = await service.getBySlug(c.req.param('slug')!);
+  const scopes = c.get('effectiveScopes') || [];
+  if (!hasScope(scopes, `nodes:details:${node.id}`)) {
+    throw new AppError(403, 'FORBIDDEN', `Missing required scope: nodes:details:${node.id}`);
+  }
+  return c.json({ data: node });
 });
 
 nodesRoutes.openapi({ ...getNodeRoute, middleware: requireScopeForResource('nodes:details', 'id') }, async (c) => {

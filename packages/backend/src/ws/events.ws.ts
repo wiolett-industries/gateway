@@ -4,6 +4,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { hasScope, hasScopeBase } from '@/lib/permissions.js';
 import { resolveLiveSessionUser, resolveLiveUser } from '@/modules/auth/live-session-user.js';
+import { hasAnyDockerNodeRouteAccess, hasDockerNodeRouteAccess } from '@/modules/docker/docker-route-resolvers.js';
 import { EventBusService } from '@/services/event-bus.service.js';
 import type { User } from '@/types.js';
 
@@ -86,6 +87,7 @@ function requiredScopeFor(channel: string): string | null {
   if (channel === 'cert.changed') return 'pki:cert:view';
   if (channel === 'ca.changed') return 'pki:ca:view:root';
   if (channel === 'access-list.changed') return 'acl:view';
+  if (channel === 'node.slug.changed') return 'nodes:details';
   if (channel === 'node.changed' || channel === 'node.folder.changed') return 'nodes:details';
   if (channel === 'user.changed') return 'admin:users';
   if (channel === 'group.changed') return 'admin:groups';
@@ -163,6 +165,9 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
   }
   if (channel === 'node.file.changed') {
     return hasScopeBase(scopes, 'nodes:files:read');
+  }
+  if (channel === 'node.slug.changed') {
+    return hasScopeBase(scopes, 'nodes:details') || hasAnyDockerNodeRouteAccess(scopes);
   }
   if (channel === 'logging.logs.ingested') {
     return hasScopeBase(scopes, 'logs:read');
@@ -333,6 +338,10 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
   if (channel === 'access-list.changed') {
     const aclId = (payload as { id?: string } | undefined)?.id;
     return hasScope(scopes, 'acl:view') || !!(aclId && hasScope(scopes, `acl:view:${aclId}`));
+  }
+  if (channel === 'node.slug.changed') {
+    const nodeId = (payload as { id?: string } | undefined)?.id;
+    return !!nodeId && (hasScope(scopes, `nodes:details:${nodeId}`) || hasDockerNodeRouteAccess(scopes, nodeId));
   }
   if (channel === 'node.changed') {
     const nodeId = (payload as { id?: string } | undefined)?.id;

@@ -59,6 +59,10 @@ export interface DockerContainer {
   folderIsSystem?: boolean;
   folderSortOrder?: number;
   _transition?: string;
+  _nodeId?: string;
+  _nodeSlug?: string;
+  _nodeName?: string;
+  _nodeColor?: import("./nodes").NodeAppearanceColor | null;
   _listTruncated?: boolean;
   _listTotal?: number;
   _listLimit?: number;
@@ -201,6 +205,8 @@ export interface DockerImage {
   folderId?: string | null;
   folderIsSystem?: boolean;
   folderSortOrder?: number;
+  _nodeId?: string;
+  _nodeSlug?: string;
 }
 
 export interface DockerVolume {
@@ -219,6 +225,8 @@ export interface DockerVolume {
   folderId?: string | null;
   folderIsSystem?: boolean;
   folderSortOrder?: number;
+  _nodeId?: string;
+  _nodeSlug?: string;
 }
 
 export interface DockerNetwork {
@@ -240,6 +248,8 @@ export interface DockerNetwork {
   folderId?: string | null;
   folderIsSystem?: boolean;
   folderSortOrder?: number;
+  _nodeId?: string;
+  _nodeSlug?: string;
 }
 
 export interface DockerTask {

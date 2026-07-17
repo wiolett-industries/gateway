@@ -34,6 +34,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { formatDisplayImageRef } from "@/lib/docker-image-ref";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { nodeBadgeClassName } from "@/lib/node-appearance";
+import { dockerContainerRoute } from "@/lib/resource-routes";
 import { formatBytes, formatCreated } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -42,6 +43,7 @@ import type { DockerImage, DockerRegistry, Node, NodeAppearanceColor } from "@/t
 
 interface DockerImageListItem extends DockerImage {
   _nodeId: string;
+  _nodeSlug: string;
   _nodeName?: string;
   _nodeColor?: NodeAppearanceColor | null;
 }
@@ -51,6 +53,8 @@ interface DockerImageUsageContainer {
   name: string;
   state: string;
   image: string;
+  nodeId: string;
+  nodeSlug: string;
 }
 
 export function DockerImages({
@@ -94,7 +98,7 @@ export function DockerImages({
   } = useDeferredDialogState<DockerImageListItem>();
 
   const loadUsageContainers = useCallback(
-    async (imageTag: string, nodeId?: string) => {
+    async (imageTag: string, nodeId?: string, nodeSlug = "") => {
       const nid = nodeId || selectedNodeId;
       if (!nid) return;
       setUsageContainers([]);
@@ -107,6 +111,8 @@ export function DockerImages({
             name: c.name ?? c.Name ?? "",
             state: c.state ?? c.State ?? "",
             image: c.image ?? c.Image ?? "",
+            nodeId: nid,
+            nodeSlug,
           }))
           .filter(
             (c: any) => c.image === imageTag || c.image.split(":")[0] === imageTag.split(":")[0]
@@ -295,7 +301,7 @@ export function DockerImages({
       const tags = image.repoTags ?? [];
       const rawTag = tags.length > 0 ? tags[0] : "<none>:<none>";
       setDetailsImage(image);
-      void loadUsageContainers(rawTag, image._nodeId);
+      void loadUsageContainers(rawTag, image._nodeId, image._nodeSlug);
     },
     [loadUsageContainers, setDetailsImage]
   );
@@ -705,7 +711,10 @@ export function DockerImages({
                   emptyMessage="No containers found using this image."
                   onRowClick={(container) => {
                     closeDetails();
-                    navigate(`/docker/containers/${detailsImage._nodeId}/${container.id}`);
+                    const nodeSlug =
+                      storeDockerNodes.find((node) => node.id === container.nodeId)?.slug ||
+                      container.nodeSlug;
+                    navigate(dockerContainerRoute(nodeSlug, container.name.replace(/^\//, "")));
                   }}
                 />
               </PanelShell>

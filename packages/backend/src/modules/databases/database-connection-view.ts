@@ -29,6 +29,7 @@ export type DatabaseConnectionConfig = PostgresConnectionConfig | RedisConnectio
 export interface DatabaseConnectionView {
   id: string;
   name: string;
+  slug: string;
   type: DatabaseType;
   description: string | null;
   tags: string[];
@@ -55,6 +56,7 @@ export interface DatabaseConnectionView {
 type DatabaseConnectionRow = {
   id: string;
   name: string;
+  slug: string;
   type: DatabaseType;
   description: string | null;
   tags: unknown;
@@ -106,6 +108,7 @@ export function toDatabaseConnectionView(
   return {
     id: row.id,
     name: row.name,
+    slug: row.slug,
     type: row.type,
     description: row.description,
     tags: (row.tags as string[] | null) ?? [],

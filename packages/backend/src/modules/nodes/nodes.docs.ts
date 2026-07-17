@@ -6,6 +6,7 @@ import {
   IdParamSchema,
   jsonBody,
   okJson,
+  pathParamSchema,
   successJson,
   UnknownDataResponseSchema,
 } from '@/lib/openapi.js';
@@ -176,6 +177,15 @@ export const getNodeRoute = appRoute({
   tags: ['Nodes'],
   summary: 'Get node details',
   request: { params: IdParamSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const getNodeBySlugRoute = appRoute({
+  method: 'get',
+  path: '/by-slug/{slug}',
+  tags: ['Nodes'],
+  summary: 'Resolve node details by slug',
+  request: { params: pathParamSchema('slug') },
   responses: okJson(UnknownDataResponseSchema),
 });
 

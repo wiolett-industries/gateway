@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { proxyHostRoute } from "@/lib/resource-routes";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
@@ -55,8 +56,16 @@ import { SettingsTab } from "./proxy-detail/SettingsTab";
 import { deriveProxyHostDetailFormState } from "./proxy-detail/state";
 
 // ── Main Component ──────────────────────────────────────────────
-export function ProxyHostDetail() {
-  const { id } = useParams<{ id: string; tab?: string }>();
+export function ProxyHostDetail({
+  resolvedProxyHostId,
+  resolvedProxySlug,
+}: {
+  resolvedProxyHostId?: string;
+  resolvedProxySlug?: string;
+} = {}) {
+  const params = useParams<{ id?: string; proxySlug?: string; tab?: string }>();
+  const id = resolvedProxyHostId ?? params.id;
+  const routeSlug = resolvedProxySlug ?? params.proxySlug ?? params.id ?? "";
   const navigate = useStableNavigate();
   const { hasScope } = useAuthStore();
   const canViewAdvancedConfig = !!id && hasScope(`proxy:advanced:${id}`);
@@ -78,10 +87,8 @@ export function ProxyHostDetail() {
   const [healthHistory, setHealthHistory] = useState<NonNullable<ProxyHost["healthHistory"]>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [activeTab, setActiveTab] = useUrlTab(
-    visibleTabs,
-    "details",
-    (tab) => `/proxy-hosts/${id}/${tab}`
+  const [activeTab, setActiveTab] = useUrlTab(visibleTabs, "details", (tab) =>
+    proxyHostRoute(routeSlug, tab)
   );
 
   // Edit dialog
@@ -194,8 +201,12 @@ export function ProxyHostDetail() {
   }, [loadHost]);
 
   useRealtime(id ? "proxy.host.changed" : null, (payload) => {
-    const ev = payload as { id?: string; action?: string };
+    const ev = payload as { id?: string; action?: string; oldSlug?: string; slug?: string };
     if (!ev || ev.id !== id) return;
+    if (ev.oldSlug === routeSlug && ev.slug) {
+      navigate(proxyHostRoute(ev.slug, activeTab), { replace: true });
+      return;
+    }
     if (ev.action === "deleted") {
       toast.info("Proxy host was deleted");
       navigate("/proxy-hosts");
@@ -928,6 +939,9 @@ export function ProxyHostDetail() {
             setHealthHistory(
               updatedHost.healthCheckEnabled ? (updatedHost.healthHistory ?? []) : []
             );
+            if (updatedHost.slug !== routeSlug) {
+              navigate(proxyHostRoute(updatedHost.slug, activeTab), { replace: true });
+            }
             return;
           }
           loadHost();

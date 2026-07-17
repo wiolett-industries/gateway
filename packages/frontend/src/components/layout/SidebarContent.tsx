@@ -44,6 +44,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRealtime } from "@/hooks/use-realtime";
+import {
+  databaseRoute,
+  dockerContainerRoute,
+  dockerDeploymentRoute,
+  nodeRoute,
+  proxyHostRoute,
+} from "@/lib/resource-routes";
 import { deriveAllowedResourceIdsByScope } from "@/lib/scope-utils";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -209,6 +216,8 @@ export function SidebarContent({
 
   const sidebarPinnedContainerIds = usePinnedContainersStore((s) => s.sidebarContainerIds);
   const pinnedContainerMeta = usePinnedContainersStore((s) => s.containerMeta);
+  const pinnedContainerRefreshTick = usePinnedContainersStore((s) => s.refreshTick);
+  const dockerNodes = useDockerStore((s) => s.dockerNodes);
   const sidebarPinnedDatabaseIds = usePinnedDatabasesStore((s) => s.sidebarDatabaseIds);
   const pinnedDatabaseMeta = usePinnedDatabasesStore((s) => s.databaseMeta);
   const pinnedDatabaseRefreshTick = usePinnedDatabasesStore((s) => s.refreshTick);
@@ -301,11 +310,13 @@ export function SidebarContent({
           const existing = pinnedDatabaseMeta[db.id];
           if (
             !existing ||
+            existing.slug !== db.slug ||
             existing.name !== db.name ||
             existing.type !== db.type ||
             existing.healthStatus !== db.healthStatus
           ) {
             usePinnedDatabasesStore.getState().updateMeta(db.id, {
+              slug: db.slug,
               name: db.name,
               type: db.type,
               healthStatus: db.healthStatus,
@@ -333,12 +344,14 @@ export function SidebarContent({
           const existing = pinnedDatabaseMeta[db.id];
           if (
             existing?.name === db.name &&
+            existing.slug === db.slug &&
             existing.type === db.type &&
             existing.healthStatus === db.healthStatus
           ) {
             return;
           }
           usePinnedDatabasesStore.getState().updateMeta(db.id, {
+            slug: db.slug,
             name: db.name,
             type: db.type,
             healthStatus: db.healthStatus,
@@ -357,30 +370,114 @@ export function SidebarContent({
   }, [canViewDatabaseDetails, pinnedDatabaseMeta, sidebarPinnedDatabaseIds]);
 
   useEffect(() => {
+    // Re-fetch pinned details when a matching realtime event increments the store tick.
+    void pinnedContainerRefreshTick;
     if (sidebarPinnedContainerIds.length === 0) return;
     let cancelled = false;
     for (const containerId of sidebarPinnedContainerIds) {
       const meta = pinnedContainerMeta[containerId];
       if (!meta || !canViewContainerDetails(meta.nodeId)) continue;
+      const nodeSlug = dockerNodes.find((node) => node.id === meta.nodeId)?.slug || meta.nodeSlug;
       const request =
         meta.kind === "deployment"
           ? api.getDockerDeployment(meta.nodeId, containerId)
           : api.inspectContainer(meta.nodeId, containerId);
-      request.catch((error) => {
-        if (cancelled) return;
-        if (error instanceof ApiRequestError && error.status === 404) {
-          usePinnedContainersStore.getState().removePin(containerId);
-        }
-      });
+      request
+        .then((value) => {
+          if (cancelled) return;
+          const current = usePinnedContainersStore.getState().containerMeta[containerId];
+          if (!current) return;
+          if (meta.kind === "deployment") {
+            const deployment = value as Awaited<ReturnType<typeof api.getDockerDeployment>>;
+            const nextNodeSlug = nodeSlug || current.nodeSlug;
+            const nextState = deployment._transition ?? deployment.status;
+            if (
+              current.nodeSlug === nextNodeSlug &&
+              current.name === deployment.name &&
+              current.state === nextState &&
+              current.kind === "deployment"
+            ) {
+              return;
+            }
+            usePinnedContainersStore.getState().updateMeta(containerId, {
+              ...current,
+              nodeSlug: nextNodeSlug,
+              name: deployment.name,
+              state: nextState,
+              kind: "deployment",
+            });
+            return;
+          }
+          const inspect = value as Record<string, any>;
+          const nextNodeSlug = nodeSlug || current.nodeSlug;
+          const nextName = String(inspect.Name ?? inspect.name ?? current.name).replace(/^\//, "");
+          const nextState =
+            inspect._transition ?? inspect.State?.Status ?? inspect.state ?? current.state;
+          if (
+            current.nodeSlug === nextNodeSlug &&
+            current.name === nextName &&
+            current.state === nextState &&
+            current.kind === "container"
+          ) {
+            return;
+          }
+          usePinnedContainersStore.getState().updateMeta(containerId, {
+            ...current,
+            nodeSlug: nextNodeSlug,
+            name: nextName,
+            state: nextState,
+            kind: "container",
+          });
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          if (error instanceof ApiRequestError && error.status === 404) {
+            usePinnedContainersStore.getState().removePin(containerId);
+          }
+        });
     }
     return () => {
       cancelled = true;
     };
-  }, [canViewContainerDetails, pinnedContainerMeta, sidebarPinnedContainerIds]);
+  }, [
+    canViewContainerDetails,
+    dockerNodes,
+    pinnedContainerMeta,
+    pinnedContainerRefreshTick,
+    sidebarPinnedContainerIds,
+  ]);
 
-  useRealtime(sidebarPinnedDatabaseIds.length > 0 ? "database.changed" : null, () => {});
-  useRealtime(sidebarPinnedContainerIds.length > 0 ? "docker.container.changed" : null, () => {});
-  useRealtime(sidebarPinnedContainerIds.length > 0 ? "docker.deployment.changed" : null, () => {});
+  useRealtime(sidebarPinnedIds.length > 0 ? "node.changed" : null, () => {
+    usePinnedNodesStore.getState().invalidate();
+  });
+  useRealtime(sidebarPinnedProxyIds.length > 0 ? "proxy.host.changed" : null, () => {
+    usePinnedProxiesStore.getState().invalidate();
+  });
+  useRealtime(sidebarPinnedDatabaseIds.length > 0 ? "database.changed" : null, () => {
+    usePinnedDatabasesStore.getState().invalidate();
+  });
+  useRealtime(sidebarPinnedContainerIds.length > 0 ? "docker.container.changed" : null, () => {
+    usePinnedContainersStore.getState().invalidate();
+  });
+  useRealtime(sidebarPinnedContainerIds.length > 0 ? "docker.deployment.changed" : null, () => {
+    usePinnedContainersStore.getState().invalidate();
+  });
+  useRealtime(
+    sidebarPinnedIds.length > 0 || sidebarPinnedContainerIds.length > 0
+      ? "node.slug.changed"
+      : null,
+    (payload) => {
+      const event = payload as { id?: string; slug?: string };
+      if (!event.id || !event.slug) return;
+      usePinnedNodesStore.getState().invalidate();
+      const pinned = usePinnedContainersStore.getState();
+      for (const [containerId, meta] of Object.entries(pinned.containerMeta)) {
+        if (meta.nodeId === event.id && meta.nodeSlug !== event.slug) {
+          pinned.updateMeta(containerId, { ...meta, nodeSlug: event.slug });
+        }
+      }
+    }
+  );
 
   const handleLogout = async () => {
     try {
@@ -393,7 +490,6 @@ export function SidebarContent({
 
   const isExpanded = alwaysExpanded || sidebarOpen;
 
-  const dockerNodes = useDockerStore((s) => s.dockerNodes);
   const hasDockerNodes = dockerNodes.length > 0;
   const canAccessProxyHosts = hasScopedAccess("proxy:view") || hasScope("proxy:folders:manage");
   const canAccessDocker =
@@ -720,13 +816,13 @@ export function SidebarContent({
                           </p>
                           {pinnedProxies.map((proxy) => {
                             const isActive =
-                              location.pathname === `/proxy-hosts/${proxy.id}` ||
-                              location.pathname.startsWith(`/proxy-hosts/${proxy.id}/`);
+                              location.pathname === proxyHostRoute(proxy.slug) ||
+                              location.pathname.startsWith(`${proxyHostRoute(proxy.slug)}/`);
                             const hs = (proxy as any).effectiveHealthStatus ?? proxy.healthStatus;
                             return (
                               <Link
                                 key={proxy.id}
-                                to={`/proxy-hosts/${proxy.id}`}
+                                to={proxyHostRoute(proxy.slug)}
                                 onClick={onNavigate}
                                 className={cn(
                                   "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
@@ -752,13 +848,13 @@ export function SidebarContent({
                           })}
                           {pinnedNodes.map((node) => {
                             const isActive =
-                              location.pathname === `/nodes/${node.id}` ||
-                              location.pathname.startsWith(`/nodes/${node.id}/`);
+                              location.pathname === nodeRoute(node.slug) ||
+                              location.pathname.startsWith(`${nodeRoute(node.slug)}/`);
                             const status = effectiveNodeStatus(node);
                             return (
                               <Link
                                 key={node.id}
-                                to={`/nodes/${node.id}`}
+                                to={nodeRoute(node.slug)}
                                 onClick={onNavigate}
                                 className={cn(
                                   "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
@@ -788,14 +884,14 @@ export function SidebarContent({
                           })}
                           {sidebarPinnedDatabaseIds.map((databaseId) => {
                             const meta = pinnedDatabaseMeta[databaseId];
-                            if (!meta || !canViewDatabaseDetails(databaseId)) return null;
+                            if (!meta?.slug || !canViewDatabaseDetails(databaseId)) return null;
                             const isActive =
-                              location.pathname === `/databases/${databaseId}` ||
-                              location.pathname.startsWith(`/databases/${databaseId}/`);
+                              location.pathname === databaseRoute(meta.slug) ||
+                              location.pathname.startsWith(`${databaseRoute(meta.slug)}/`);
                             return (
                               <Link
                                 key={databaseId}
-                                to={`/databases/${databaseId}/overview`}
+                                to={databaseRoute(meta.slug, "overview")}
                                 onClick={onNavigate}
                                 className={cn(
                                   "flex items-center gap-3 px-3 py-2 text-sm transition-colors whitespace-nowrap overflow-hidden",
@@ -823,11 +919,12 @@ export function SidebarContent({
                           })}
                           {sidebarPinnedContainerIds.map((cid) => {
                             const meta = pinnedContainerMeta[cid];
-                            if (!meta || !canViewContainerDetails(meta.nodeId)) return null;
+                            if (!meta?.nodeSlug || !canViewContainerDetails(meta.nodeId))
+                              return null;
                             const isDeployment = meta.kind === "deployment";
                             const containerPath = isDeployment
-                              ? `/docker/deployments/${meta.nodeId}/${cid}`
-                              : `/docker/containers/${meta.nodeId}/${cid}`;
+                              ? dockerDeploymentRoute(meta.nodeSlug, meta.name)
+                              : dockerContainerRoute(meta.nodeSlug, meta.name);
                             const isActive =
                               location.pathname === containerPath ||
                               location.pathname.startsWith(`${containerPath}/`);

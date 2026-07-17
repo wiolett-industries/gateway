@@ -32,6 +32,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { nodeIconClassNames } from "@/lib/node-appearance";
+import { nodeRoute } from "@/lib/resource-routes";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -468,7 +469,7 @@ export function AdminNodes() {
           canViewItem={(node) => hasScope("nodes:details") || hasScope(`nodes:details:${node.id}`)}
           canReorganizeItem={() => canManageFolders}
           getResourceLabel={(node) => node.displayName || node.hostname}
-          onItemClick={(node) => navigate(`/nodes/${node.id}`)}
+          onItemClick={(node) => navigate(nodeRoute(node.slug))}
           onRefresh={() => fetchNodes()}
           onCreateFolderRef={(fn) => setCreateFolderAction(() => fn)}
         />

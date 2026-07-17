@@ -60,6 +60,8 @@ export const nodeParams = pathParamSchema('nodeId');
 export const containerParams = pathParamSchema('nodeId', 'containerId');
 export const containerNameParams = pathParamSchema('nodeId', 'containerName');
 export const deploymentParams = pathParamSchema('nodeId', 'deploymentId');
+const dockerNodeSlugParams = pathParamSchema('nodeSlug');
+const deploymentNameParams = pathParamSchema('nodeId', 'deploymentName');
 const containerUploadParams = pathParamSchema('nodeId', 'containerId', 'uploadId');
 
 const imageParams = pathParamSchema('nodeId', 'imageId');
@@ -71,6 +73,26 @@ const taskParams = pathParamSchema('id');
 const containerSecretParams = pathParamSchema('nodeId', 'containerId', 'secretId');
 const deploymentSecretParams = pathParamSchema('nodeId', 'deploymentId', 'secretId');
 const dockerListQuery = z.object({ search: z.string().trim().optional() });
+
+export const getDockerNodeBySlugRoute = appRoute({
+  method: 'get',
+  path: '/nodes/by-slug/{nodeSlug}',
+  tags: ['Docker Nodes'],
+  summary: 'Resolve compact Docker node route context by slug',
+  request: { params: dockerNodeSlugParams },
+  responses: okJson(
+    z.object({
+      data: z.object({
+        id: z.string().uuid(),
+        slug: z.string(),
+        type: z.literal('docker'),
+        hostname: z.string(),
+        displayName: z.string().nullable(),
+        appearanceColor: z.string().nullable(),
+      }),
+    })
+  ),
+});
 
 export const listContainersRoute = appRoute({
   method: 'get',
@@ -94,6 +116,14 @@ export const inspectContainerRoute = appRoute({
   tags: ['Docker Containers'],
   summary: 'Inspect a container',
   request: { params: containerParams },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const inspectContainerByNameRoute = appRoute({
+  method: 'get',
+  path: '/nodes/{nodeId}/containers/by-name/{containerName}',
+  tags: ['Docker Containers'],
+  summary: 'Inspect a container by exact name',
+  request: { params: containerNameParams },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const startContainerRoute = appRoute({
@@ -394,6 +424,14 @@ export const getDeploymentRoute = appRoute({
   tags: ['Docker Deployments'],
   summary: 'Get a deployment',
   request: { params: deploymentParams },
+  responses: okJson(UnknownDataResponseSchema),
+});
+export const getDeploymentByNameRoute = appRoute({
+  method: 'get',
+  path: '/nodes/{nodeId}/deployments/by-name/{deploymentName}',
+  tags: ['Docker Deployments'],
+  summary: 'Get a deployment by exact name',
+  request: { params: deploymentNameParams },
   responses: okJson(UnknownDataResponseSchema),
 });
 export const updateDeploymentRoute = appRoute({

@@ -574,7 +574,9 @@ export class DockerDeploymentService {
       }
     });
     await this.healthCheckService?.alignDeploymentHealthCheck(nodeId, deploymentId);
-    this.emit('updated', deploymentId, nodeId);
+    this.emit('updated', deploymentId, nodeId, {
+      ...(input.name && input.name !== current.name ? { oldName: current.name, name: input.name } : {}),
+    });
     return this.loadDeployment(nodeId, deploymentId);
   }
 

@@ -15,6 +15,7 @@ import type { AppEnv } from '@/types.js';
 import {
   createProxyHostRoute,
   deleteProxyHostRoute,
+  getProxyHostBySlugRoute,
   getProxyHostHealthHistoryRoute,
   getProxyHostRoute,
   listProxyHostsRoute,
@@ -74,6 +75,17 @@ proxyRoutes.openapi({ ...listProxyHostsRoute, middleware: requireScopeBase('prox
     return c.json({ ...result, data: stripRawProxyConfigArrayForProgrammatic(result.data as any[]) });
   }
   return c.json(result);
+});
+
+proxyRoutes.openapi(getProxyHostBySlugRoute, async (c) => {
+  const proxyService = container.resolve(ProxyService);
+  const host = await proxyService.getProxyHostBySlug(c.req.param('slug')!);
+  const scopes = c.get('effectiveScopes') || [];
+  if (!hasScope(scopes, `proxy:view:${host.id}`)) {
+    throw new AppError(403, 'FORBIDDEN', `Missing required scope: proxy:view:${host.id}`);
+  }
+  if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfigForProgrammatic(host as any) });
+  return c.json({ data: serializeProxyHostForBrowser(host as any, scopes, host.id) });
 });
 
 proxyRoutes.openapi({ ...getProxyHostRoute, middleware: requireScopeForResource('proxy:view', 'id') }, async (c) => {

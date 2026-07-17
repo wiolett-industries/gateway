@@ -25,12 +25,13 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { loggingEnvironmentRoute } from "@/lib/resource-routes";
 import { cn } from "@/lib/utils";
 import type { LoggingEnvironment, LoggingSchema, LoggingSchemaMode } from "@/types";
 import { LoggingExplorer } from "./LoggingExplorer";
 import { LoggingSchemaEditor } from "./LoggingSchemaEditor";
 import { LoggingTokenPanel } from "./LoggingTokenPanel";
-import { isLoggingEnvironmentSettingsDirty, isLoggingSchemaDirty, slugify } from "./logging-state";
+import { isLoggingEnvironmentSettingsDirty, isLoggingSchemaDirty } from "./logging-state";
 
 export type LoggingEnvironmentTab = "logs" | "tokens" | "settings";
 
@@ -57,7 +58,6 @@ export function LoggingSchemaDetail({
     if (!schema) return;
     setDraft({
       name: schema.name,
-      slug: schema.slug,
       description: schema.description,
       schemaMode: schema.schemaMode,
       fieldSchema: schema.fieldSchema,
@@ -141,13 +141,6 @@ export function LoggingSchemaDetail({
               value={draft.name ?? ""}
               disabled={!canEdit}
               onChange={(name) => setDraft({ ...draft, name })}
-            />
-            <SettingsTextRow
-              label="Slug"
-              description="Stable lowercase identifier"
-              value={draft.slug ?? ""}
-              disabled={!canEdit}
-              onChange={(slug) => setDraft({ ...draft, slug: slugify(slug) })}
             />
             <SettingsTextRow
               label="Description"
@@ -329,7 +322,7 @@ export function LoggingEnvironmentDetail({
 
         <Tabs
           value={activeTab}
-          onValueChange={(value) => navigate(`/logging/environments/${environment.id}/${value}`)}
+          onValueChange={(value) => navigate(loggingEnvironmentRoute(environment.slug, value))}
           className={cn("flex flex-col", isFullHeightTab && "flex-1 min-h-0")}
         >
           <TabsList className="shrink-0">

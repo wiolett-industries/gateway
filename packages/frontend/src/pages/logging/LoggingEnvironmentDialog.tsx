@@ -9,7 +9,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { LoggingEnvironment } from "@/types";
-import { slugify } from "./logging-state";
 
 export function LoggingEnvironmentDialog({
   open,
@@ -23,14 +22,12 @@ export function LoggingEnvironmentDialog({
   onSave: (data: Partial<LoggingEnvironment>) => Promise<void>;
 }) {
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setName(environment?.name ?? "");
-    setSlug(environment?.slug ?? "");
     setDescription(environment?.description ?? "");
   }, [environment, open]);
 
@@ -39,7 +36,6 @@ export function LoggingEnvironmentDialog({
     try {
       await onSave({
         name,
-        slug: slug || slugify(name),
         description: description || null,
         schemaMode: environment?.schemaMode ?? "loose",
         retentionDays: environment?.retentionDays ?? 30,
@@ -60,18 +56,13 @@ export function LoggingEnvironmentDialog({
         <div className="space-y-4">
           <label className="block space-y-1">
             <span className="text-sm font-medium">Name</span>
-            <Input
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-                if (!environment) setSlug(slugify(event.target.value));
-              }}
-            />
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
-          <label className="block space-y-1">
-            <span className="text-sm font-medium">Slug</span>
-            <Input value={slug} onChange={(event) => setSlug(slugify(event.target.value))} />
-          </label>
+          {environment && (
+            <p className="text-xs text-muted-foreground">
+              Slug: <span className="font-mono">{environment.slug}</span>
+            </p>
+          )}
           <label className="block space-y-1">
             <span className="text-sm font-medium">Description</span>
             <Input value={description} onChange={(event) => setDescription(event.target.value)} />
@@ -81,7 +72,7 @@ export function LoggingEnvironmentDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button disabled={!name.trim() || !slug.trim() || saving} onClick={() => void save()}>
+          <Button disabled={!name.trim() || saving} onClick={() => void save()}>
             Save
           </Button>
         </DialogFooter>

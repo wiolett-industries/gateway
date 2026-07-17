@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
+import { nodeRoute } from "@/lib/resource-routes";
 import type { Node } from "@/types";
 import { effectiveNodeStatus } from "@/types";
 
@@ -35,7 +36,7 @@ export function NodesCard({ nodesList, hasScope, loading = false }: NodesCardPro
           {nodesList.slice(0, 8).map((node) => (
             <Link
               key={node.id}
-              to={`/nodes/${node.id}`}
+              to={nodeRoute(node.slug)}
               className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
             >
               <span className="text-sm font-medium truncate flex-1">
