@@ -601,7 +601,7 @@ nodesRoutes.openapi({ ...testNodeConfigRoute, middleware: sessionOnly }, async (
   return c.json({ data: { valid: result.success, error: result.error || undefined } });
 });
 
-// Node monitoring SSE stream — real-time health + stats at 5s intervals
+// Node monitoring SSE stream — 5s for generic consumers, 2s for a focused Monitoring tab
 nodesRoutes.openapi(
   { ...nodeMonitoringStreamRoute, middleware: requireScopeForResource('nodes:details', 'id') },
   async (c) => {
@@ -611,9 +611,10 @@ nodesRoutes.openapi(
     }
 
     const monitoringService = container.resolve(NodeMonitoringService);
+    const focused = c.req.query('focused') === 'true';
 
     return streamSSE(c, async (stream) => {
-      monitoringService.registerClient(nodeId);
+      monitoringService.registerClient(nodeId, { focused });
 
       const history = monitoringService.getHistory(nodeId);
       await stream.writeSSE({
@@ -639,7 +640,7 @@ nodesRoutes.openapi(
         _running = false;
         clearInterval(keepalive);
         monitoringService.off('snapshot', onSnapshot);
-        monitoringService.unregisterClient(nodeId);
+        monitoringService.unregisterClient(nodeId, { focused });
       });
 
       await new Promise(() => {});

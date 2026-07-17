@@ -117,6 +117,7 @@ export interface HealthReport {
     rxErrors: string;
     txErrors: string;
   }>;
+  localIpAddresses: string[];
   nginxRssBytes: string;
   errorRate4xx: number;
   errorRate5xx: number;

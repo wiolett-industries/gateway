@@ -11,6 +11,8 @@ vi.mock('@/container.js', () => ({
     resolve: vi.fn(() => ({
       clearNodeUpdateInProgressOnReconnect: vi.fn(),
       resyncAllHostsOnNode: vi.fn(),
+      evaluateHealthReport: vi.fn().mockResolvedValue(undefined),
+      observeStatefulEvent: vi.fn().mockResolvedValue(undefined),
     })),
   },
 }));
@@ -227,6 +229,7 @@ function makeDeps(db: any) {
       getNode: vi.fn(() => connectedNode),
       handleCommandResult: vi.fn(),
       handleLogStream: vi.fn(),
+      updateHealthReport: vi.fn(),
     },
     dispatch: {},
     auditService: { log: vi.fn(async () => undefined) },
@@ -343,6 +346,30 @@ describe('CommandStream daemon certificate identity', () => {
       expect.anything(),
       expect.objectContaining({ isCurrentRegistration: expect.any(Function) })
     );
+  });
+
+  it('preserves local IP addresses from daemon health reports', async () => {
+    const db = makeDbNode({ certificateSerial: 'AA:01' });
+    const deps = makeDeps(db);
+    const stream = makeStream({ serialNumber: 'aa01' });
+
+    createControlHandlers(deps).CommandStream(stream);
+    await emitRegister(stream);
+    stream.emit('data', {
+      healthReport: {
+        timestamp: '1',
+        diskMounts: [],
+        networkInterfaces: [],
+        localIpAddresses: ['10.0.0.8', 'fd00::10'],
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(deps.registry.updateHealthReport).toHaveBeenCalledWith(
+        nodeId,
+        expect.objectContaining({ localIpAddresses: ['10.0.0.8', 'fd00::10'] })
+      );
+    });
   });
 
   it('does not register a command stream that ends during async authentication', async () => {

@@ -70,6 +70,14 @@ const STATUS_BADGE: Record<
   updating: "warning",
 };
 
+const OFFLINE_DISABLED_TABS = new Set([
+  "monitoring",
+  "files",
+  "console",
+  "nginx-logs",
+  "daemon-logs",
+]);
+
 export function AdminNodeDetail({
   resolvedNodeId,
   resolvedNodeSlug,
@@ -121,6 +129,7 @@ export function AdminNodeDetail({
   const { isPinnedDashboard, isPinnedSidebar, toggleDashboard, toggleSidebar } =
     usePinnedNodesStore();
   const nodeUpdating = node ? isNodeUpdating(node) : false;
+  const nodeOffline = node?.status === "offline";
   const nonInteractiveWhileUpdating =
     nodeUpdating && activeTab !== "details" && activeTab !== "daemon-logs";
   const canUseNodeConsole = !!(id && hasScope(`nodes:console:${id}`)) || hasScope("nodes:console");
@@ -134,6 +143,11 @@ export function AdminNodeDetail({
   const canWriteNodeFiles =
     !!id && (hasScope("nodes:files:write") || hasScope(`nodes:files:write:${id}`));
   const isCompatibleNode = !!node && !isNodeIncompatible(node);
+  const canShowNodeConsole =
+    isCompatibleNode &&
+    !nodeUpdating &&
+    (node.status === "online" || node.status === "offline") &&
+    canUseNodeConsole;
   const canManageServiceCreationLock =
     !!node &&
     (node.type === "nginx" || node.type === "docker") &&
@@ -160,19 +174,16 @@ export function AdminNodeDetail({
       ...(isCompatibleNode && node.type === "docker"
         ? ["containers", "images", "volumes", "networks"]
         : []),
-      ...(isCompatibleNode && !nodeUpdating && node.status === "online" && canUseNodeConsole
-        ? ["console"]
-        : []),
+      ...(canShowNodeConsole ? ["console"] : []),
       ...(canViewNodeLogs ? ["daemon-logs"] : []),
     ],
     [
       canReadNodeFiles,
-      canUseNodeConsole,
+      canShowNodeConsole,
       canViewNodeConfig,
       canViewNodeLogs,
       isCompatibleNode,
       node,
-      nodeUpdating,
     ]
   );
 
@@ -245,10 +256,10 @@ export function AdminNodeDetail({
 
   useEffect(() => {
     if (!node) return;
-    if (!visibleTabs.includes(activeTab)) {
+    if (!visibleTabs.includes(activeTab) || (nodeOffline && OFFLINE_DISABLED_TABS.has(activeTab))) {
       setActiveTab("details");
     }
-  }, [activeTab, node, setActiveTab, visibleTabs]);
+  }, [activeTab, node, nodeOffline, setActiveTab, visibleTabs]);
 
   useEffect(() => {
     loadNode();
@@ -549,12 +560,12 @@ export function AdminNodeDetail({
           <TabsList className="shrink-0">
             <TabsTrigger value="details">Details</TabsTrigger>
             {!isNodeIncompatible(node) && (
-              <TabsTrigger value="monitoring" disabled={nodeUpdating}>
+              <TabsTrigger value="monitoring" disabled={nodeUpdating || nodeOffline}>
                 Monitoring
               </TabsTrigger>
             )}
             {!isNodeIncompatible(node) && canReadNodeFiles && (
-              <TabsTrigger value="files" disabled={nodeUpdating}>
+              <TabsTrigger value="files" disabled={nodeUpdating || nodeOffline}>
                 Files
               </TabsTrigger>
             )}
@@ -564,7 +575,7 @@ export function AdminNodeDetail({
               </TabsTrigger>
             )}
             {!isNodeIncompatible(node) && node.type === "nginx" && canViewNodeLogs && (
-              <TabsTrigger value="nginx-logs" disabled={nodeUpdating}>
+              <TabsTrigger value="nginx-logs" disabled={nodeUpdating || nodeOffline}>
                 Nginx Logs
               </TabsTrigger>
             )}
@@ -584,11 +595,16 @@ export function AdminNodeDetail({
                 </TabsTrigger>
               </>
             )}
-            {!isNodeIncompatible(node) &&
-              !nodeUpdating &&
-              node.status === "online" &&
-              canUseNodeConsole && <TabsTrigger value="console">Console</TabsTrigger>}
-            {canViewNodeLogs && <TabsTrigger value="daemon-logs">Logs</TabsTrigger>}
+            {canShowNodeConsole && (
+              <TabsTrigger value="console" disabled={nodeOffline}>
+                Console
+              </TabsTrigger>
+            )}
+            {canViewNodeLogs && (
+              <TabsTrigger value="daemon-logs" disabled={nodeOffline}>
+                Logs
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {isNodeIncompatible(node) && (
@@ -621,7 +637,7 @@ export function AdminNodeDetail({
             </TabsContent>
             {!isNodeIncompatible(node) && (
               <TabsContent value="monitoring">
-                {activeTab === "monitoring" && (
+                {activeTab === "monitoring" && !nodeOffline && (
                   <NodeMonitoringTab
                     nodeId={node.id}
                     nodeStatus={node.status}
@@ -645,14 +661,14 @@ export function AdminNodeDetail({
             )}
             {!isNodeIncompatible(node) && node.type === "nginx" && canViewNodeLogs && (
               <TabsContent value="nginx-logs" className="flex flex-col flex-1 min-h-0">
-                {activeTab === "nginx-logs" && (
+                {activeTab === "nginx-logs" && !nodeOffline && (
                   <NodeNginxLogsTab nodeId={node.id} nodeStatus={node.status} />
                 )}
               </TabsContent>
             )}
             {!isNodeIncompatible(node) && canReadNodeFiles && nodeFileOperations && (
               <TabsContent value="files">
-                {activeTab === "files" && (
+                {activeTab === "files" && !nodeOffline && (
                   <FilesTab
                     nodeId={node.id}
                     canBrowse={canReadNodeFiles}
@@ -683,14 +699,14 @@ export function AdminNodeDetail({
                 </TabsContent>
               </>
             )}
-            {!isNodeIncompatible(node) && node.status === "online" && canUseNodeConsole && (
+            {canShowNodeConsole && !nodeOffline && (
               <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
                 {activeTab === "console" && <NodeConsoleTab nodeId={node.id} />}
               </TabsContent>
             )}
             {canViewNodeLogs && (
               <TabsContent value="daemon-logs" className="flex flex-col flex-1 min-h-0">
-                {activeTab === "daemon-logs" && (
+                {activeTab === "daemon-logs" && !nodeOffline && (
                   <NodeLogsTab nodeId={node.id} nodeStatus={node.status} />
                 )}
               </TabsContent>

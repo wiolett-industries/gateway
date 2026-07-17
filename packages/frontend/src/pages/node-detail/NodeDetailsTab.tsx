@@ -52,6 +52,7 @@ export function NodeDetailsTab({
   const canTriggerDaemonUpdate =
     node.status === "online" && node.isConnected && caps.versionMismatch !== true;
   const updateTargetVersion = getNodeUpdateTargetVersion(node);
+  const localIpAddresses = Array.from(new Set(h?.localIpAddresses ?? [])).sort();
   const resourcesRef = useRef<HTMLDivElement>(null);
   const [resourcesHeight, setResourcesHeight] = useState(0);
 
@@ -197,7 +198,7 @@ export function NodeDetailsTab({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Identity */}
         <PanelShell title="Identity" bodyClassName="divide-y divide-border">
-          <DetailRow label="Node ID" value={<span className="font-mono text-xs">{node.id}</span>} />
+          <DetailRow label="Node ID" value={<span className="break-all">{node.id}</span>} />
           <DetailRow label="Hostname" value={node.hostname} />
           <DetailRow
             label="Type"
@@ -211,7 +212,10 @@ export function NodeDetailsTab({
         </PanelShell>
 
         {/* Runtime */}
-        <PanelShell title="Runtime" bodyClassName="divide-y divide-border">
+        <PanelShell
+          title="Runtime"
+          bodyClassName="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border"
+        >
           <DetailRow
             label="Daemon Version"
             value={
@@ -269,6 +273,18 @@ export function NodeDetailsTab({
                 label="File Descriptors"
                 value={`${h.openFileDescriptors.toLocaleString()} / ${h.maxFileDescriptors.toLocaleString()}`}
               />
+              {localIpAddresses.length > 0 && (
+                <DetailRow
+                  label="Local IPs"
+                  value={
+                    <span className="flex flex-col items-end gap-1">
+                      {localIpAddresses.map((address) => (
+                        <span key={address}>{address}</span>
+                      ))}
+                    </span>
+                  }
+                />
+              )}
             </PanelShell>
           </div>
 

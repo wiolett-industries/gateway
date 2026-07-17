@@ -70,6 +70,7 @@ func (r *SystemReporter) CollectSystemHealth(report *pb.HealthReport) *pb.Health
 
 	// Network interfaces
 	report.NetworkInterfaces = GetNetworkInterfaces()
+	report.LocalIpAddresses = GetLocalIPAddresses()
 
 	return report
 }

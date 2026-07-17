@@ -18,10 +18,14 @@ interface MonitoringSnapshot {
 export class NodeMonitoringService extends EventEmitter {
   private history = new Map<string, MonitoringSnapshot[]>();
   private clientCounts = new Map<string, number>();
+  private focusedClientCounts = new Map<string, number>();
   private pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+  private pollCadences = new Map<string, number>();
   private backgroundInterval: ReturnType<typeof setInterval> | null = null;
   private readonly MAX_HISTORY = 60;
-  private readonly BACKGROUND_POLL_INTERVAL = 10_000; // 10s background, 5s when client connected
+  private readonly BACKGROUND_POLL_INTERVAL = 10_000;
+  private readonly STREAM_POLL_INTERVAL = 5_000;
+  private readonly ACTIVE_POLL_INTERVAL = 2_000;
 
   constructor(
     private registry: NodeRegistryService,
@@ -35,7 +39,7 @@ export class NodeMonitoringService extends EventEmitter {
   /**
    * Background polling: collect health/stats for ALL connected nodes every 10s.
    * This ensures history is pre-populated before a user opens the monitoring page.
-   * When a client connects, their node switches to 5s polling via registerClient.
+   * Stream consumers use 5s polling; an actively viewed Monitoring tab uses 2s.
    */
   private startBackgroundPolling(): void {
     // Delay start to let nodes connect first
@@ -43,7 +47,7 @@ export class NodeMonitoringService extends EventEmitter {
       this.backgroundInterval = setInterval(() => {
         const connectedNodes = this.registry.getConnectedNodeIds();
         for (const nodeId of connectedNodes) {
-          // Skip nodes that already have active client polling (5s)
+          // Skip nodes that already have stream-driven polling (2s or 5s)
           if (this.pollIntervals.has(nodeId)) continue;
           this.pollOnce(nodeId);
         }
@@ -115,16 +119,26 @@ export class NodeMonitoringService extends EventEmitter {
     );
   }
 
-  registerClient(nodeId: string): void {
+  registerClient(nodeId: string, options: { focused?: boolean } = {}): void {
     const count = (this.clientCounts.get(nodeId) ?? 0) + 1;
     this.clientCounts.set(nodeId, count);
-    if (count === 1) this.startPolling(nodeId);
+    if (options.focused) {
+      this.focusedClientCounts.set(nodeId, (this.focusedClientCounts.get(nodeId) ?? 0) + 1);
+    }
+    this.syncPolling(nodeId);
   }
 
-  unregisterClient(nodeId: string): void {
+  unregisterClient(nodeId: string, options: { focused?: boolean } = {}): void {
     const count = Math.max(0, (this.clientCounts.get(nodeId) ?? 0) - 1);
-    this.clientCounts.set(nodeId, count);
-    if (count === 0) this.stopPolling(nodeId);
+    if (count === 0) this.clientCounts.delete(nodeId);
+    else this.clientCounts.set(nodeId, count);
+
+    if (options.focused) {
+      const focusedCount = Math.max(0, (this.focusedClientCounts.get(nodeId) ?? 0) - 1);
+      if (focusedCount === 0) this.focusedClientCounts.delete(nodeId);
+      else this.focusedClientCounts.set(nodeId, focusedCount);
+    }
+    this.syncPolling(nodeId);
   }
 
   private async pollOnce(nodeId: string): Promise<void> {
@@ -170,14 +184,30 @@ export class NodeMonitoringService extends EventEmitter {
     }
   }
 
-  private startPolling(nodeId: string): void {
+  private syncPolling(nodeId: string): void {
+    const clientCount = this.clientCounts.get(nodeId) ?? 0;
+    if (clientCount === 0) {
+      this.stopPolling(nodeId);
+      return;
+    }
+
+    const cadence =
+      (this.focusedClientCounts.get(nodeId) ?? 0) > 0 ? this.ACTIVE_POLL_INTERVAL : this.STREAM_POLL_INTERVAL;
+    if (this.pollCadences.get(nodeId) === cadence) return;
+
+    this.stopPolling(nodeId);
+    this.startPolling(nodeId, cadence);
+  }
+
+  private startPolling(nodeId: string, cadence: number): void {
     if (this.pollIntervals.has(nodeId)) return;
-    logger.debug('Starting 5s polling for node', { nodeId });
+    logger.debug('Starting stream-driven polling for node', { nodeId, cadence });
 
     this.pollOnce(nodeId);
+    this.pollCadences.set(nodeId, cadence);
     this.pollIntervals.set(
       nodeId,
-      setInterval(() => this.pollOnce(nodeId), 5000)
+      setInterval(() => this.pollOnce(nodeId), cadence)
     );
   }
 
@@ -186,6 +216,7 @@ export class NodeMonitoringService extends EventEmitter {
     if (interval) {
       clearInterval(interval);
       this.pollIntervals.delete(nodeId);
+      this.pollCadences.delete(nodeId);
       logger.debug('Stopped polling for node', { nodeId });
     }
   }
@@ -199,5 +230,8 @@ export class NodeMonitoringService extends EventEmitter {
       clearInterval(interval);
     }
     this.pollIntervals.clear();
+    this.pollCadences.clear();
+    this.clientCounts.clear();
+    this.focusedClientCounts.clear();
   }
 }

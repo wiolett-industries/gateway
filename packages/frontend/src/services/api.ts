@@ -568,8 +568,9 @@ class ApiClient extends withIntegrationsApi(
     });
   }
 
-  createNodeMonitoringStream(nodeId: string): EventSource {
-    return new EventSource(`${API_BASE}/nodes/${nodeId}/monitoring/stream`, {
+  createNodeMonitoringStream(nodeId: string, options: { focused?: boolean } = {}): EventSource {
+    const query = options.focused ? "?focused=true" : "";
+    return new EventSource(`${API_BASE}/nodes/${nodeId}/monitoring/stream${query}`, {
       withCredentials: true,
     });
   }

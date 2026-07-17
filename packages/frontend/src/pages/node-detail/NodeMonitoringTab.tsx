@@ -107,7 +107,7 @@ export function NodeMonitoringTab({
     setLatest(seededSnapshot);
 
     if (nodeStatus !== "online") return;
-    const es = api.createNodeMonitoringStream(nodeId);
+    const es = api.createNodeMonitoringStream(nodeId, { focused: true });
 
     es.addEventListener("connected", (e: MessageEvent) => {
       const data = JSON.parse(e.data);

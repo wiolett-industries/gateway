@@ -102,6 +102,46 @@ describe("AdminNodeDetail", () => {
     await waitFor(() => expect(api.getNode).toHaveBeenCalledTimes(1));
   });
 
+  it("disables live tabs and returns to details while the node is offline", async () => {
+    useAuthStore.setState({
+      user: makeUser({
+        scopes: ["nodes:details", "nodes:files:read", "nodes:console", "nodes:logs"],
+      }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    vi.mocked(api.getNode).mockResolvedValue({
+      ...makeNode({
+        id: "node-1",
+        type: "nginx",
+        hostname: "edge-1",
+        status: "offline",
+        isConnected: false,
+      }),
+      lastHealthReport: null,
+      lastStatsReport: null,
+      liveHealthReport: null,
+      liveStatsReport: null,
+    });
+    vi.mocked(api.getNodeHealthHistory).mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/nodes/node-1/daemon-logs"]}>
+        <Routes>
+          <Route path="/nodes/:id/:tab?" element={<AdminNodeDetail />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Node details content")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Monitoring" })).toBeDisabled();
+    expect(screen.getByRole("tab", { name: "Files" })).toBeDisabled();
+    expect(screen.getByRole("tab", { name: "Console" })).toBeDisabled();
+    expect(screen.getByRole("tab", { name: "Nginx Logs" })).toBeDisabled();
+    expect(screen.getByRole("tab", { name: "Logs" })).toBeDisabled();
+    expect(screen.queryByText("Node logs content")).not.toBeInTheDocument();
+  });
+
   it("saves node appearance name and predefined color", async () => {
     useAuthStore.setState({
       user: makeUser({ scopes: ["nodes:details", "nodes:rename"] }),

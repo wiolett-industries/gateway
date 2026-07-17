@@ -87,6 +87,10 @@ const LogQuerySchema = z.object({
   search: z.string().optional(),
 });
 
+const MonitoringStreamQuerySchema = z.object({
+  focused: z.enum(['true']).optional(),
+});
+
 const UploadIdParamSchema = z.object({
   uploadId: z.string().min(1),
 });
@@ -365,7 +369,7 @@ export const nodeMonitoringStreamRoute = appRoute({
   path: '/{id}/monitoring/stream',
   tags: ['Nodes'],
   summary: 'Stream node monitoring snapshots over SSE',
-  request: { params: IdParamSchema },
+  request: { params: IdParamSchema, query: MonitoringStreamQuerySchema },
   responses: { 200: { description: 'Server-sent event stream' } },
 });
 

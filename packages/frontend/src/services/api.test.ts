@@ -22,6 +22,26 @@ describe("api client contract", () => {
   afterEach(() => {
     api.resetSessionState();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("marks only focused node monitoring streams as focused", () => {
+    const eventSource = vi.fn(function EventSourceMock() {
+      return { close: vi.fn() };
+    });
+    vi.stubGlobal("EventSource", eventSource);
+
+    api.createNodeMonitoringStream("node-1");
+    api.createNodeMonitoringStream("node-1", { focused: true });
+
+    expect(eventSource).toHaveBeenNthCalledWith(1, "/api/nodes/node-1/monitoring/stream", {
+      withCredentials: true,
+    });
+    expect(eventSource).toHaveBeenNthCalledWith(
+      2,
+      "/api/nodes/node-1/monitoring/stream?focused=true",
+      { withCredentials: true }
+    );
   });
 
   it("serializes proxy host list filters and unwraps proxy host mutations", async () => {

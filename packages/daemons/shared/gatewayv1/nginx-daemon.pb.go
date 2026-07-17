@@ -765,6 +765,7 @@ type HealthReport struct {
 	ContainersRunning int32             `protobuf:"varint,30,opt,name=containers_running,json=containersRunning,proto3" json:"containers_running,omitempty"`
 	ContainersStopped int32             `protobuf:"varint,31,opt,name=containers_stopped,json=containersStopped,proto3" json:"containers_stopped,omitempty"`
 	ContainersTotal   int32             `protobuf:"varint,32,opt,name=containers_total,json=containersTotal,proto3" json:"containers_total,omitempty"`
+	LocalIpAddresses  []string          `protobuf:"bytes,33,rep,name=local_ip_addresses,json=localIpAddresses,proto3" json:"local_ip_addresses,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1021,6 +1022,13 @@ func (x *HealthReport) GetContainersTotal() int32 {
 		return x.ContainersTotal
 	}
 	return 0
+}
+
+func (x *HealthReport) GetLocalIpAddresses() []string {
+	if x != nil {
+		return x.LocalIpAddresses
+	}
+	return nil
 }
 
 type StatsReport struct {
@@ -4594,7 +4602,7 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error\x12\x16\n" +
 	"\x06detail\x18\x04 \x01(\tR\x06detail\x12\x12\n" +
-	"\x04data\x18\x05 \x01(\fR\x04data\"\xb7\v\n" +
+	"\x04data\x18\x05 \x01(\fR\x04data\"\xe5\v\n" +
 	"\fHealthReport\x12#\n" +
 	"\rnginx_running\x18\x01 \x01(\bR\fnginxRunning\x12!\n" +
 	"\fconfig_valid\x18\x02 \x01(\bR\vconfigValid\x120\n" +
@@ -4630,7 +4638,8 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x0edocker_version\x18\x1d \x01(\tR\rdockerVersion\x12-\n" +
 	"\x12containers_running\x18\x1e \x01(\x05R\x11containersRunning\x12-\n" +
 	"\x12containers_stopped\x18\x1f \x01(\x05R\x11containersStopped\x12)\n" +
-	"\x10containers_total\x18  \x01(\x05R\x0fcontainersTotal\"\xf8\x01\n" +
+	"\x10containers_total\x18  \x01(\x05R\x0fcontainersTotal\x12,\n" +
+	"\x12local_ip_addresses\x18! \x03(\tR\x10localIpAddresses\"\xf8\x01\n" +
 	"\vStatsReport\x12-\n" +
 	"\x12active_connections\x18\x01 \x01(\x03R\x11activeConnections\x12\x18\n" +
 	"\aaccepts\x18\x02 \x01(\x03R\aaccepts\x12\x18\n" +

@@ -2,7 +2,9 @@ package sysmetrics
 
 import (
 	"bufio"
+	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -62,4 +64,60 @@ func GetNetworkInterfaces() []*pb.NetworkInterface {
 	}
 
 	return ifaces
+}
+
+// GetLocalIPAddresses returns the usable addresses assigned to active,
+// non-loopback interfaces. CIDR prefixes are intentionally omitted because
+// the Gateway displays these as node identities rather than route definitions.
+func GetLocalIPAddresses() []string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+
+	var addresses []net.Addr
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		interfaceAddresses, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		addresses = append(addresses, interfaceAddresses...)
+	}
+
+	return normalizeLocalIPAddresses(addresses)
+}
+
+func normalizeLocalIPAddresses(addresses []net.Addr) []string {
+	unique := make(map[string]struct{}, len(addresses))
+	for _, address := range addresses {
+		var ip net.IP
+		switch value := address.(type) {
+		case *net.IPNet:
+			ip = value.IP
+		case *net.IPAddr:
+			ip = value.IP
+		default:
+			parsedIP, _, err := net.ParseCIDR(address.String())
+			if err == nil {
+				ip = parsedIP
+			} else {
+				ip = net.ParseIP(address.String())
+			}
+		}
+
+		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+			continue
+		}
+		unique[ip.String()] = struct{}{}
+	}
+
+	result := make([]string, 0, len(unique))
+	for address := range unique {
+		result = append(result, address)
+	}
+	sort.Strings(result)
+	return result
 }
