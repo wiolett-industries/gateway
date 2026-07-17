@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { api } from "@/services/api";
 import { useDockerStore } from "./docker";
 
 function dockerNode(id: string) {
@@ -91,5 +92,42 @@ describe("docker store", () => {
       _nodeName: "Blue Node",
       _nodeColor: "blue",
     });
+  });
+
+  it("uses one aggregate snapshot request and preserves unavailable rows", async () => {
+    const snapshotRequest = vi.spyOn(api, "listDockerContainerSnapshots").mockResolvedValue([
+      {
+        id: "container-a",
+        name: "app",
+        image: "busybox",
+        state: "running",
+        status: "Up",
+        created: 0,
+        ports: [],
+        nodeId: "offline-node",
+        _nodeId: "offline-node",
+        availability: "unavailable",
+      },
+    ]);
+    const perNodeRequest = vi.spyOn(api, "listDockerContainers");
+
+    await useDockerStore.getState().fetchContainers();
+
+    expect(snapshotRequest).toHaveBeenCalledTimes(1);
+    expect(snapshotRequest).toHaveBeenCalledWith({ nodeId: undefined, search: "" });
+    expect(perNodeRequest).not.toHaveBeenCalled();
+    expect(useDockerStore.getState().containers).toMatchObject([
+      { id: "container-a", availability: "unavailable" },
+    ]);
+  });
+
+  it("sends refresh hints without a follow-up list request", async () => {
+    const hint = vi.spyOn(api, "refreshDockerSnapshots").mockResolvedValue();
+    const list = vi.spyOn(api, "listDockerVolumeSnapshots");
+
+    await useDockerStore.getState().requestSnapshotRefresh("volumes", "node-a");
+
+    expect(hint).toHaveBeenCalledWith({ resource: "volumes", nodeId: "node-a" });
+    expect(list).not.toHaveBeenCalled();
   });
 });

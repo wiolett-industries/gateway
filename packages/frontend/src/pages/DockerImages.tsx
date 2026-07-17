@@ -73,6 +73,7 @@ export function DockerImages({
   const navigate = useNavigate();
   const { hasScope, hasScopedAccess, user } = useAuthStore();
   const { images, selectedNodeId, setSelectedNode, fetchImages } = useDockerStore();
+  const requestSnapshotRefresh = useDockerStore((s) => s.requestSnapshotRefresh);
   const isLoading = useDockerStore((s) => s.loading.images);
   const storeDockerNodes = useDockerStore((s) => s.dockerNodes);
   const dockerNodesLoaded = useDockerStore((s) => s.dockerNodesLoaded);
@@ -138,8 +139,8 @@ export function DockerImages({
     onPullRef?.(() => openPull());
   }, [onPullRef, openPull]);
   useEffect(() => {
-    onRefreshRef?.(() => void fetchImages(undefined, search));
-  }, [fetchImages, onRefreshRef, search]);
+    onRefreshRef?.(() => void requestSnapshotRefresh("images", fixedNodeId));
+  }, [fixedNodeId, onRefreshRef, requestSnapshotRefresh]);
   const [pullRef, setPullRef] = useState("");
   const [pullRegistryId, setPullRegistryId] = useState<string>("");
   const [pulling, setPulling] = useState(false);
@@ -190,6 +191,11 @@ export function DockerImages({
     const ev = payload as { nodeId?: string };
     if (visibleNodeId && ev?.nodeId && ev.nodeId !== visibleNodeId) return;
     fetchImages(fixedNodeId, search);
+  });
+  useRealtime("docker.snapshot.changed", (payload) => {
+    const ev = payload as { nodeId?: string; kind?: string };
+    if (ev.kind !== "images" || (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId)) return;
+    void fetchImages(fixedNodeId, search);
   });
 
   const filteredImages = useMemo(() => {
@@ -374,6 +380,13 @@ export function DockerImages({
         label: "Usage",
         width: "6.5rem",
         renderCell: (img) => {
+          if (img.availability === "unavailable") {
+            return (
+              <Badge variant="secondary" className="w-fit">
+                Unavailable
+              </Badge>
+            );
+          }
           const containerCount = img.containers ?? -1;
           const isUsed = containerCount > 0;
           return isUsed ? (
@@ -426,17 +439,19 @@ export function DockerImages({
               className="flex items-center justify-end pr-1"
               onClick={(e) => e.stopPropagation()}
             >
-              {hasScope("docker:images:delete") && canDelete && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => handleRemove(id, tag, img._nodeId)}
-                  title="Remove"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
+              {hasScope("docker:images:delete") &&
+                canDelete &&
+                img.availability !== "unavailable" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => handleRemove(id, tag, img._nodeId)}
+                    title="Remove"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
             </div>
           );
         },
@@ -466,7 +481,7 @@ export function DockerImages({
             {selectedNodeId && (
               <>
                 <RefreshButton
-                  onClick={() => fetchImages(undefined, search)}
+                  onClick={() => requestSnapshotRefresh("images", visibleNodeId)}
                   disabled={isLoading}
                 />
                 {canManageFolders && (

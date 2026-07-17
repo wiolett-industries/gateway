@@ -63,6 +63,9 @@ export interface DockerContainer {
   _nodeSlug?: string;
   _nodeName?: string;
   _nodeColor?: import("./nodes").NodeAppearanceColor | null;
+  /** Snapshot origin. A resource remains present while its node is unavailable. */
+  nodeId?: string;
+  availability?: "available" | "unavailable";
   _listTruncated?: boolean;
   _listTotal?: number;
   _listLimit?: number;
@@ -207,6 +210,10 @@ export interface DockerImage {
   folderSortOrder?: number;
   _nodeId?: string;
   _nodeSlug?: string;
+  _nodeName?: string;
+  _nodeColor?: import("./nodes").NodeAppearanceColor | null;
+  nodeId?: string;
+  availability?: "available" | "unavailable";
 }
 
 export interface DockerVolume {
@@ -227,6 +234,10 @@ export interface DockerVolume {
   folderSortOrder?: number;
   _nodeId?: string;
   _nodeSlug?: string;
+  _nodeName?: string;
+  _nodeColor?: import("./nodes").NodeAppearanceColor | null;
+  nodeId?: string;
+  availability?: "available" | "unavailable";
 }
 
 export interface DockerNetwork {
@@ -250,6 +261,10 @@ export interface DockerNetwork {
   folderSortOrder?: number;
   _nodeId?: string;
   _nodeSlug?: string;
+  _nodeName?: string;
+  _nodeColor?: import("./nodes").NodeAppearanceColor | null;
+  nodeId?: string;
+  availability?: "available" | "unavailable";
 }
 
 export interface DockerTask {

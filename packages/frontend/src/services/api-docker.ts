@@ -24,6 +24,13 @@ type DockerListEnvelope<T> = {
   total?: number;
   limit?: number;
   truncated?: boolean;
+  nodes?: Array<{
+    id: string;
+    slug?: string;
+    hostname?: string;
+    displayName?: string;
+    appearanceColor?: Node["appearanceColor"];
+  }>;
 };
 
 type DockerListQuery = {
@@ -45,6 +52,36 @@ function withDockerListMeta<T extends object>(response: DockerListEnvelope<T>): 
     _listLimit: response.limit ?? response.data.length,
     _listTruncated: response.truncated === true,
   })) as T[];
+}
+
+// Snapshot routes use the same daemon-originated list payloads as legacy per-node routes.
+// Preserve the existing tolerant casing normalization until every producer is camelCase-only.
+function normalizeDockerRow(item: unknown): unknown {
+  if (!item || typeof item !== "object") return item;
+  if (Array.isArray(item)) return item.map(normalizeDockerRow);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(item)) {
+    const normalizedKey = key.charAt(0).toLowerCase() + key.slice(1);
+    out[normalizedKey] = normalizeDockerRow(value);
+    if (normalizedKey !== key) out[key] = value;
+  }
+  return out;
+}
+
+function withSnapshotNodeMeta<T extends object>(response: DockerListEnvelope<T>): T[] {
+  const nodes = new Map((response.nodes ?? []).map((node) => [node.id, node]));
+  return withDockerListMeta(response).map((item) => {
+    const nodeId =
+      (item as { nodeId?: string; NodeId?: string }).nodeId ?? (item as { NodeId?: string }).NodeId;
+    const node = nodeId ? nodes.get(nodeId) : undefined;
+    return {
+      ...(normalizeDockerRow(item) as T),
+      _nodeId: nodeId,
+      _nodeSlug: node?.slug ?? "",
+      _nodeName: node?.displayName || node?.hostname || "",
+      _nodeColor: node?.appearanceColor ?? null,
+    };
+  }) as T[];
 }
 
 export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBase) {
@@ -186,6 +223,19 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
       const params = typeof options === "boolean" ? { noCache: options } : options;
       const url = `/docker/nodes/${nodeId}/containers${dockerListQuery(params)}`;
       return withDockerListMeta(await this.request<DockerListEnvelope<DockerContainer>>(url));
+    }
+
+    async listDockerContainerSnapshots(params?: DockerListQuery & { nodeId?: string }) {
+      const query = dockerListQuery(params);
+      const separator = query ? "&" : "?";
+      const nodeId = params?.nodeId
+        ? `${separator}nodeId=${encodeURIComponent(params.nodeId)}`
+        : "";
+      return withSnapshotNodeMeta(
+        await this.request<DockerListEnvelope<DockerContainer>>(
+          `/docker/containers${query}${nodeId}`
+        )
+      );
     }
 
     async inspectContainer(
@@ -731,6 +781,17 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
       );
     }
 
+    async listDockerImageSnapshots(params?: DockerListQuery & { nodeId?: string }) {
+      const query = dockerListQuery(params);
+      const separator = query ? "&" : "?";
+      const nodeId = params?.nodeId
+        ? `${separator}nodeId=${encodeURIComponent(params.nodeId)}`
+        : "";
+      return withSnapshotNodeMeta(
+        await this.request<DockerListEnvelope<DockerImage>>(`/docker/images${query}${nodeId}`)
+      );
+    }
+
     async pullImage(
       nodeId: string,
       imageRef: string,
@@ -765,6 +826,17 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
         await this.request<DockerListEnvelope<DockerVolume>>(
           `/docker/nodes/${nodeId}/volumes${dockerListQuery(params)}`
         )
+      );
+    }
+
+    async listDockerVolumeSnapshots(params?: DockerListQuery & { nodeId?: string }) {
+      const query = dockerListQuery(params);
+      const separator = query ? "&" : "?";
+      const nodeId = params?.nodeId
+        ? `${separator}nodeId=${encodeURIComponent(params.nodeId)}`
+        : "";
+      return withSnapshotNodeMeta(
+        await this.request<DockerListEnvelope<DockerVolume>>(`/docker/volumes${query}${nodeId}`)
       );
     }
 
@@ -982,6 +1054,34 @@ export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBas
           `/docker/nodes/${nodeId}/networks${dockerListQuery(params)}`
         )
       );
+    }
+
+    async listDockerNetworkSnapshots(params?: DockerListQuery & { nodeId?: string }) {
+      const query = dockerListQuery(params);
+      const separator = query ? "&" : "?";
+      const nodeId = params?.nodeId
+        ? `${separator}nodeId=${encodeURIComponent(params.nodeId)}`
+        : "";
+      return withSnapshotNodeMeta(
+        await this.request<DockerListEnvelope<DockerNetwork>>(`/docker/networks${query}${nodeId}`)
+      );
+    }
+
+    async refreshDockerSnapshots(input: {
+      nodeId?: string;
+      resource:
+        | "containers"
+        | "images"
+        | "volumes"
+        | "networks"
+        | "container-detail"
+        | "volume-detail";
+      key?: string;
+    }): Promise<void> {
+      await this.request<void>("/docker/snapshots/refresh", {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
     }
 
     async createNetwork(
