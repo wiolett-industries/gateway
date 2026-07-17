@@ -271,6 +271,12 @@ export function DockerDeploymentDetail({
     void load();
   });
 
+  useRealtime("docker.snapshot.changed", (payload) => {
+    const event = payload as { nodeId?: string; kind?: string };
+    if (event.nodeId !== nodeId || event.kind !== "containers") return;
+    void load();
+  });
+
   const primaryRoute = useMemo(
     () => deployment?.routes.find((route) => route.isPrimary) ?? deployment?.routes[0] ?? null,
     [deployment]
@@ -281,6 +287,7 @@ export function DockerDeploymentDetail({
     activeInspect?.State?.Status ?? (activeInspect?.State?.Running ? "running" : active?.status);
   const activeState = activeBaseState ?? "unknown";
   const serviceTransition = deployment?._transition;
+  const unavailable = deployment?.availability === "unavailable";
   const serviceBusy = !!serviceTransition || isTransitionStatus(deployment?.status);
   const serviceState =
     serviceTransition ??
@@ -320,10 +327,16 @@ export function DockerDeploymentDetail({
 
   const isTabDisabled = useCallback(
     (tabName: string) => {
+      if (
+        unavailable &&
+        ["logs", "console", "files", "stats", "environment", "settings"].includes(tabName)
+      ) {
+        return true;
+      }
       if (!activeContainerId) return ["logs", "console", "files", "stats"].includes(tabName);
       return ["console", "files", "stats"].includes(tabName) && (!isRunning || serviceBusy);
     },
-    [activeContainerId, isRunning, serviceBusy]
+    [activeContainerId, isRunning, serviceBusy, unavailable]
   );
 
   useEffect(() => {
@@ -390,7 +403,7 @@ export function DockerDeploymentDetail({
 
   if (!deployment) return null;
 
-  const actionDisabled = !!action || serviceBusy;
+  const actionDisabled = !!action || serviceBusy || unavailable;
   const headerActions = [
     {
       label: "Pin",
@@ -507,12 +520,20 @@ export function DockerDeploymentDetail({
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{deployment.name}</h1>
-                <Badge variant={statusVariant(serviceState)} className="shrink-0">
-                  {serviceState}
-                </Badge>
-                <Badge variant="outline" className="shrink-0">
-                  blue/green
-                </Badge>
+                {unavailable ? (
+                  <Badge variant="secondary" className="shrink-0">
+                    Unavailable
+                  </Badge>
+                ) : (
+                  <>
+                    <Badge variant={statusVariant(serviceState)} className="shrink-0">
+                      {serviceState}
+                    </Badge>
+                    <Badge variant="outline" className="shrink-0">
+                      blue/green
+                    </Badge>
+                  </>
+                )}
               </div>
               <p className="break-all text-sm text-muted-foreground">
                 {active?.image ?? deployment.desiredConfig.image} &middot; active{" "}
@@ -710,7 +731,7 @@ export function DockerDeploymentDetail({
               primaryRoute={primaryRoute}
             />
           </TabsContent>
-          {canViewContainer && activeContainerId && (
+          {canViewContainer && activeContainerId && !unavailable && (
             <TabsContent value="logs" className="flex flex-col flex-1 min-h-0 pb-0">
               <LogsTab
                 nodeId={nodeId}
@@ -720,22 +741,22 @@ export function DockerDeploymentDetail({
               />
             </TabsContent>
           )}
-          {canUseConsole && activeContainerId && (
+          {canUseConsole && activeContainerId && !unavailable && (
             <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
               <ConsoleTab nodeId={nodeId} containerId={activeContainerId} />
             </TabsContent>
           )}
-          {canUseFiles && activeContainerId && (
+          {canUseFiles && activeContainerId && !unavailable && (
             <TabsContent value="files" className="pb-0">
               <FilesTab nodeId={nodeId} containerId={activeContainerId} />
             </TabsContent>
           )}
-          {canViewContainer && activeContainerId && activeInspect && (
+          {canViewContainer && activeContainerId && activeInspect && !unavailable && (
             <TabsContent value="stats" className="pb-0">
               <StatsTab nodeId={nodeId} containerId={activeContainerId} data={activeInspect} />
             </TabsContent>
           )}
-          {canUseEnvironment && (
+          {canUseEnvironment && !unavailable && (
             <TabsContent value="environment" className="pb-0">
               <EnvironmentTab
                 nodeId={nodeId}
@@ -751,12 +772,12 @@ export function DockerDeploymentDetail({
               deployment={deployment}
               nodeId={nodeId}
               action={action}
-              serviceBusy={serviceBusy}
+              serviceBusy={serviceBusy || unavailable}
               runAction={runAction}
-              canManage={canManage}
+              canManage={canManage && !unavailable}
             />
           </TabsContent>
-          {canEdit && (
+          {canEdit && !unavailable && (
             <TabsContent value="settings" className="pb-0">
               <DeploymentSettings
                 deployment={deployment}

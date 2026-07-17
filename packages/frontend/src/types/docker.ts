@@ -184,6 +184,7 @@ export interface DockerDeployment {
   webhook?: DockerWebhook | null;
   healthCheck?: DockerHealthCheck | null;
   _transition?: string;
+  availability?: "available" | "unavailable";
   _listTruncated?: boolean;
   _listTotal?: number;
   _listLimit?: number;

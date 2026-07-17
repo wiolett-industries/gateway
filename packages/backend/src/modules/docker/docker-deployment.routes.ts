@@ -3,6 +3,7 @@ import { container, TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { requireScopeForResource } from '@/modules/auth/auth.middleware.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
+import { NodeRegistryService } from '@/services/node-registry.service.js';
 import type { AppEnv } from '@/types.js';
 import {
   createDeploymentRoute,
@@ -129,11 +130,13 @@ export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
     { ...listDeploymentsRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerDeploymentService);
-      const data = await service.listSummary(c.req.param('nodeId')!);
+      const nodeId = c.req.param('nodeId')!;
+      const availability = container.resolve(NodeRegistryService).getNode(nodeId) ? 'available' : 'unavailable';
+      const data = await service.listSummary(nodeId);
       const search = c.req.query('search')?.trim().toLowerCase();
       const compacted = data
         .filter((deployment) => matchesDeploymentSearch(deployment, search))
-        .map((deployment) => compactDeploymentListItem(deployment));
+        .map((deployment) => ({ ...compactDeploymentListItem(deployment), availability }));
       const truncated = compacted.length > DOCKER_RESOURCE_LIST_MAX;
       return c.json({
         data: truncated ? compacted.slice(0, DOCKER_RESOURCE_LIST_MAX) : compacted,
@@ -170,7 +173,10 @@ export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
         c.req.param('deploymentName')!
       );
       const data = await service.get(c.req.param('nodeId')!, deploymentId);
-      return c.json({ data });
+      const availability = container.resolve(NodeRegistryService).getNode(c.req.param('nodeId')!)
+        ? 'available'
+        : 'unavailable';
+      return c.json({ data: { ...data, availability } });
     }
   );
 
@@ -178,8 +184,10 @@ export function registerDockerDeploymentRoutes(router: OpenAPIHono<AppEnv>) {
     { ...getDeploymentRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
     async (c) => {
       const service = container.resolve(DockerDeploymentService);
-      const data = await service.get(c.req.param('nodeId')!, c.req.param('deploymentId')!);
-      return c.json({ data });
+      const nodeId = c.req.param('nodeId')!;
+      const data = await service.get(nodeId, c.req.param('deploymentId')!);
+      const availability = container.resolve(NodeRegistryService).getNode(nodeId) ? 'available' : 'unavailable';
+      return c.json({ data: { ...data, availability } });
     }
   );
 
