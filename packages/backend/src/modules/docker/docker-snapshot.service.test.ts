@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import { EventBusService } from '@/services/event-bus.service.js';
-import { DockerSnapshotService, sanitizeContainerInspect } from './docker-snapshot.service.js';
+import { DockerSnapshotService, sanitizeContainerInspect, sanitizeVolumeSnapshot } from './docker-snapshot.service.js';
 
 class MemoryCache {
   strings = new Map<string, string>();
@@ -88,7 +88,7 @@ describe('DockerSnapshotService', () => {
     const snapshot = await service.replaceList('node-1', 'volumes', [{ name: 'data' }]);
     registry.getNode.mockReturnValue(undefined);
     expect(service.availability('node-1', snapshot)).toBe('unavailable');
-    expect(snapshot.data).toEqual([{ name: 'data' }]);
+    expect(snapshot.data).toEqual([{ name: 'data', driver: '', mountpoint: '', scope: '', usedBy: [] }]);
   });
 
   it('removes environment values and credential-shaped fields from container inspect snapshots', () => {
@@ -103,5 +103,79 @@ describe('DockerSnapshotService', () => {
       Config: { Labels: { app: 'demo' } },
       HostConfig: { Nested: { safe: true } },
     });
+  });
+
+  it('allowlists volume DTO fields and removes Docker options, status, usage data, and secret labels', () => {
+    expect(
+      sanitizeVolumeSnapshot({
+        Name: 'data',
+        Driver: 'local',
+        Mountpoint: '/var/lib/docker/volumes/data',
+        Labels: {
+          app: 'gateway',
+          password: 'hidden',
+          'registry.auth-token': 'hidden',
+        },
+        Scope: 'local',
+        CreatedAt: '2026-07-17T10:00:00Z',
+        UsedBy: ['web', 123],
+        Options: { device: '/secret', password: 'hidden' },
+        Status: { token: 'hidden' },
+        UsageData: { Size: 1024 },
+      })
+    ).toEqual({
+      name: 'data',
+      driver: 'local',
+      mountpoint: '/var/lib/docker/volumes/data',
+      labels: { app: 'gateway' },
+      scope: 'local',
+      createdAt: '2026-07-17T10:00:00Z',
+      usedBy: ['web'],
+    });
+  });
+
+  it('sanitizes volume lists and details before writing them to Redis', async () => {
+    const { service } = createService();
+    const raw = {
+      Name: 'data',
+      Driver: 'local',
+      Mountpoint: '/mnt/data',
+      Labels: { app: 'gateway', secret_key: 'hidden' },
+      Scope: 'local',
+      UsedBy: ['web'],
+      Options: { password: 'hidden' },
+      Status: { token: 'hidden' },
+    };
+
+    await service.replaceList('node-1', 'volumes', [raw]);
+    await service.replaceDetail('node-1', 'volume-detail', 'data', raw);
+
+    expect((await service.getList<any[]>('node-1', 'volumes')).data[0]).toEqual({
+      name: 'data',
+      driver: 'local',
+      mountpoint: '/mnt/data',
+      labels: { app: 'gateway' },
+      scope: 'local',
+      usedBy: ['web'],
+    });
+    expect((await service.getDetail<any>('node-1', 'volume-detail', 'data'))?.data).toEqual({
+      name: 'data',
+      driver: 'local',
+      mountpoint: '/mnt/data',
+      labels: { app: 'gateway' },
+      scope: 'local',
+      usedBy: ['web'],
+    });
+  });
+
+  it('does not recreate snapshot keys after a node tombstone and purge', async () => {
+    const { service } = createService();
+    await service.replaceList('node-1', 'containers', [{ id: 'before-delete' }]);
+    await service.purgeNode('node-1');
+    await service.replaceList('node-1', 'containers', [{ id: 'late-result' }]);
+    await service.replaceDetail('node-1', 'container-detail', 'late-result', { Id: 'late-result' });
+
+    expect((await service.getList('node-1', 'containers')).data).toEqual([]);
+    expect(await service.getDetail('node-1', 'container-detail', 'late-result')).toBeNull();
   });
 });

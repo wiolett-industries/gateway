@@ -108,13 +108,15 @@ export function registerDockerSnapshotRoutes(router: OpenAPIHono<AppEnv>) {
       if (!TokensService.hasScope(scopes, `${VIEW_SCOPE[resource]}:${input.nodeId}`)) {
         throw new AppError(403, 'FORBIDDEN', 'Missing required Docker node access scope');
       }
-      reconciler.enqueue({ nodeId: input.nodeId, kind: resource, key: input.key });
+      reconciler.enqueue({ nodeId: input.nodeId, kind: resource, key: input.key }, { urgent: true });
       return c.json({ accepted: true, nodeCount: 1 }, 202);
     }
     const listKind: DockerSnapshotKind =
       resource === 'container-detail' ? 'containers' : resource === 'volume-detail' ? 'volumes' : resource;
     const visibleNodes = await snapshots.listVisibleNodes(listKind, scopes);
-    for (const node of visibleNodes) reconciler.enqueue({ nodeId: node.id, kind: resource, key: input.key });
+    for (const node of visibleNodes) {
+      reconciler.enqueue({ nodeId: node.id, kind: resource, key: input.key }, { urgent: true });
+    }
     return c.json({ accepted: true, nodeCount: visibleNodes.length }, 202);
   });
 }

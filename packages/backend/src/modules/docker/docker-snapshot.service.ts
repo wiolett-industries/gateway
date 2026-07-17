@@ -44,6 +44,9 @@ const VIEW_SCOPES: Record<DockerSnapshotKind, string> = {
   networks: 'docker:networks:view',
 };
 
+const SECRET_SHAPED_KEY =
+  /(?:password|passwd|secret|credential|privatekey|access[_-]?token|refresh[_-]?token|registry[_-]?auth|authorization|(?:^|[._-])auth(?:$|[._-]))/i;
+
 function emptyEnvelope<T>(data: T): DockerSnapshotEnvelope<T> {
   return {
     data,
@@ -68,7 +71,7 @@ export function sanitizeContainerInspect(value: unknown): unknown {
         normalized === 'registryauth' ||
         normalized === 'registryauthjson' ||
         normalized === 'authconfig' ||
-        /(?:password|passwd|secret|credential|privatekey|access[_-]?token|refresh[_-]?token)/i.test(key)
+        SECRET_SHAPED_KEY.test(key)
       ) {
         continue;
       }
@@ -79,7 +82,42 @@ export function sanitizeContainerInspect(value: unknown): unknown {
   return visit(value);
 }
 
+function readString(record: Record<string, unknown>, camel: string, docker: string): string | undefined {
+  const value = record[camel] ?? record[docker];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function sanitizeVolumeLabels(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const labels: Record<string, string> = {};
+  for (const [key, labelValue] of Object.entries(value as Record<string, unknown>)) {
+    if (!SECRET_SHAPED_KEY.test(key) && typeof labelValue === 'string') labels[key] = labelValue;
+  }
+  return labels;
+}
+
+/** Persist only fields consumed by the volume list/detail API. Docker Options/Status never enter Redis. */
+export function sanitizeVolumeSnapshot(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const record = value as Record<string, unknown>;
+  const usedBy = record.usedBy ?? record.UsedBy;
+  const labels = sanitizeVolumeLabels(record.labels ?? record.Labels);
+  return {
+    name: readString(record, 'name', 'Name') ?? '',
+    driver: readString(record, 'driver', 'Driver') ?? '',
+    mountpoint: readString(record, 'mountpoint', 'Mountpoint') ?? '',
+    ...(Object.keys(labels).length > 0 ? { labels } : {}),
+    scope: readString(record, 'scope', 'Scope') ?? '',
+    ...(readString(record, 'createdAt', 'CreatedAt')
+      ? { createdAt: readString(record, 'createdAt', 'CreatedAt') }
+      : {}),
+    usedBy: Array.isArray(usedBy) ? usedBy.filter((item): item is string => typeof item === 'string') : [],
+  };
+}
+
 export class DockerSnapshotService {
+  private readonly deletedNodes = new Set<string>();
+
   constructor(
     private readonly db: DrizzleClient,
     private readonly cache: CacheService,
@@ -96,7 +134,20 @@ export class DockerSnapshotService {
   }
 
   private async trackNode(nodeId: string) {
+    if (this.deletedNodes.has(nodeId)) return;
     await this.cache.sadd(NODE_INDEX_KEY, nodeId);
+  }
+
+  markNodeDeleted(nodeId: string): void {
+    this.deletedNodes.add(nodeId);
+  }
+
+  reviveNode(nodeId: string): void {
+    this.deletedNodes.delete(nodeId);
+  }
+
+  isNodeDeleted(nodeId: string): boolean {
+    return this.deletedNodes.has(nodeId);
   }
 
   async assertDockerNode(nodeId: string) {
@@ -114,8 +165,11 @@ export class DockerSnapshotService {
   }
 
   async markListRefreshing(nodeId: string, kind: DockerSnapshotKind): Promise<void> {
+    if (this.isNodeDeleted(nodeId)) return;
     const current = await this.getList(nodeId, kind);
+    if (this.isNodeDeleted(nodeId)) return;
     await this.trackNode(nodeId);
+    if (this.isNodeDeleted(nodeId)) return;
     await this.cache.set(this.listKey(nodeId, kind), {
       ...current,
       lastAttemptAt: new Date().toISOString(),
@@ -125,9 +179,10 @@ export class DockerSnapshotService {
 
   async replaceList(nodeId: string, kind: DockerSnapshotKind, data: unknown[]): Promise<DockerSnapshotEnvelope> {
     const current = await this.getList(nodeId, kind);
+    if (this.isNodeDeleted(nodeId)) return current;
     const now = new Date().toISOString();
     const next: DockerSnapshotEnvelope = {
-      data,
+      data: kind === 'volumes' ? data.map(sanitizeVolumeSnapshot) : data,
       revision: current.revision + 1,
       observedAt: now,
       lastAttemptAt: now,
@@ -135,14 +190,19 @@ export class DockerSnapshotService {
       refreshStatus: 'success',
     };
     await this.trackNode(nodeId);
+    if (this.isNodeDeleted(nodeId)) return current;
     await this.cache.set(this.listKey(nodeId, kind), next);
+    if (this.isNodeDeleted(nodeId)) return current;
     this.eventBus.publish('docker.snapshot.changed', { nodeId, kind, revision: next.revision });
     return next;
   }
 
   async markListError(nodeId: string, kind: DockerSnapshotKind, error: unknown): Promise<void> {
+    if (this.isNodeDeleted(nodeId)) return;
     const current = await this.getList(nodeId, kind);
+    if (this.isNodeDeleted(nodeId)) return;
     await this.trackNode(nodeId);
+    if (this.isNodeDeleted(nodeId)) return;
     await this.cache.set(this.listKey(nodeId, kind), {
       ...current,
       lastAttemptAt: new Date().toISOString(),
@@ -189,9 +249,10 @@ export class DockerSnapshotService {
 
   async replaceDetail(nodeId: string, kind: DockerDetailKind, key: string, data: unknown) {
     const current = await this.getDetail(nodeId, kind, key);
+    if (this.isNodeDeleted(nodeId)) return current;
     const now = new Date().toISOString();
     const next: DockerSnapshotEnvelope<unknown> = {
-      data: kind === 'container-detail' ? sanitizeContainerInspect(data) : data,
+      data: kind === 'container-detail' ? sanitizeContainerInspect(data) : sanitizeVolumeSnapshot(data),
       revision: (current?.revision ?? 0) + 1,
       observedAt: now,
       lastAttemptAt: now,
@@ -199,13 +260,17 @@ export class DockerSnapshotService {
       refreshStatus: 'success',
     };
     await this.trackNode(nodeId);
+    if (this.isNodeDeleted(nodeId)) return current;
     await this.cache.getClient().hset(this.detailKey(nodeId, kind), key, JSON.stringify(next));
+    if (this.isNodeDeleted(nodeId)) return current;
     this.eventBus.publish('docker.snapshot.changed', { nodeId, kind, key, revision: next.revision });
     return next;
   }
 
   async markDetailError(nodeId: string, kind: DockerDetailKind, key: string, error: unknown) {
+    if (this.isNodeDeleted(nodeId)) return;
     const current = (await this.getDetail(nodeId, kind, key)) ?? emptyEnvelope(null);
+    if (this.isNodeDeleted(nodeId)) return;
     const next = {
       ...current,
       lastAttemptAt: new Date().toISOString(),
@@ -213,6 +278,7 @@ export class DockerSnapshotService {
       refreshStatus: 'error' as const,
     };
     await this.trackNode(nodeId);
+    if (this.isNodeDeleted(nodeId)) return;
     await this.cache.getClient().hset(this.detailKey(nodeId, kind), key, JSON.stringify(next));
   }
 
@@ -269,6 +335,7 @@ export class DockerSnapshotService {
   }
 
   async purgeNode(nodeId: string): Promise<void> {
+    this.markNodeDeleted(nodeId);
     const keys = [
       ...DOCKER_SNAPSHOT_KINDS.map((kind) => this.listKey(nodeId, kind)),
       this.detailKey(nodeId, 'container-detail'),

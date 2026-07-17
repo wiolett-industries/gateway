@@ -9,6 +9,7 @@ import { DockerManagementService } from './docker.service.js';
 import { registerContainerRoutes } from './docker-container.routes.js';
 import { registerDockerSnapshotRoutes } from './docker-snapshot.routes.js';
 import { DockerSnapshotService } from './docker-snapshot.service.js';
+import { DockerSnapshotReconciler } from './docker-snapshot-reconciler.service.js';
 
 const NODE_1 = '11111111-1111-4111-8111-111111111111';
 const NODE_2 = '22222222-2222-4222-8222-222222222222';
@@ -70,10 +71,12 @@ async function setup() {
     sendDockerVolumeCommand: vi.fn(),
     sendDockerNetworkCommand: vi.fn(),
   };
+  const reconciler = { enqueue: vi.fn() };
   container.registerInstance(DockerSnapshotService, snapshots);
   container.registerInstance(DockerManagementService, docker as never);
   container.registerInstance(NodeDispatchService, dispatch as never);
-  return { snapshots, docker, dispatch };
+  container.registerInstance(DockerSnapshotReconciler, reconciler as never);
+  return { snapshots, docker, dispatch, reconciler };
 }
 
 function appWithScopes(scopes: string[]) {
@@ -115,5 +118,23 @@ describe('Docker snapshot routes', () => {
     expect(body.data[0]).toMatchObject({ nodeId: NODE_1, name: 'one', availability: 'available' });
     expect(docker.listContainers).not.toHaveBeenCalled();
     expect(dispatch.sendDockerContainerCommand).not.toHaveBeenCalled();
+  });
+
+  it('manual refresh submits an urgent deduplicated hint', async () => {
+    const { reconciler } = await setup();
+    const app = appWithScopes([`docker:containers:view:${NODE_1}`]);
+    registerDockerSnapshotRoutes(app);
+
+    const response = await app.request('/snapshots/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nodeId: NODE_1, resource: 'containers' }),
+    });
+
+    expect(response.status).toBe(202);
+    expect(reconciler.enqueue).toHaveBeenCalledWith(
+      { nodeId: NODE_1, kind: 'containers', key: undefined },
+      { urgent: true }
+    );
   });
 });

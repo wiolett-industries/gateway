@@ -14,6 +14,9 @@ const logger = createChildLogger('DockerSnapshotReconciler');
 const DAEMON_TIMEOUT_MS = 10_000;
 const MAX_GLOBAL_REFRESHES = 4;
 const BACKOFF_MS = [10_000, 30_000, 60_000] as const;
+const DETAIL_BATCH_PER_KIND_PER_NODE = 2;
+
+type JobPriority = 0 | 1 | 2;
 
 interface RefreshJob {
   nodeId: string;
@@ -24,6 +27,8 @@ interface RefreshJob {
 interface JobState {
   status: 'queued' | 'inflight';
   dirty: boolean;
+  dirtyPriority?: JobPriority;
+  priority: JobPriority;
   job: RefreshJob;
 }
 
@@ -34,6 +39,11 @@ interface FailureState {
 
 function jobId(job: RefreshJob) {
   return `${job.nodeId}:${job.kind}:${job.key ?? ''}`;
+}
+
+function jobPriority(job: RefreshJob, urgent: boolean): JobPriority {
+  if (urgent) return 0;
+  return DOCKER_SNAPSHOT_KINDS.includes(job.kind as DockerSnapshotKind) ? 1 : 2;
 }
 
 function resultData(result: { success: boolean; detail?: string; error?: string }) {
@@ -59,6 +69,8 @@ export class DockerSnapshotReconciler {
   private readonly queue: string[] = [];
   private readonly states = new Map<string, JobState>();
   private readonly failures = new Map<string, FailureState>();
+  private readonly cancelledJobs = new Set<string>();
+  private readonly detailCursors = new Map<string, number>();
   private readonly activeNodes = new Set<string>();
   private activeCount = 0;
   private retryTimer?: ReturnType<typeof setTimeout>;
@@ -89,7 +101,7 @@ export class DockerSnapshotReconciler {
       )
     );
     for (const nodeId of this.registry.getNodesByType('docker').map((node) => node.nodeId)) {
-      this.enqueueNode(nodeId);
+      this.enqueueNode(nodeId, { urgent: true });
     }
   }
 
@@ -98,21 +110,38 @@ export class DockerSnapshotReconciler {
     if (this.retryTimer) clearTimeout(this.retryTimer);
   }
 
-  enqueue(job: RefreshJob): void {
+  enqueue(job: RefreshJob, options: { urgent?: boolean } = {}): boolean {
+    if (this.snapshots.isNodeDeleted(job.nodeId)) return false;
     const id = jobId(job);
+    this.cancelledJobs.delete(id);
+    const priority = jobPriority(job, options.urgent === true);
     const current = this.states.get(id);
     if (current?.status === 'inflight') {
       current.dirty = true;
-      return;
+      current.dirtyPriority = Math.min(current.dirtyPriority ?? priority, priority) as JobPriority;
+      if (options.urgent) this.bypassBackoff(id);
+      return false;
     }
-    if (current?.status === 'queued') return;
-    this.states.set(id, { status: 'queued', dirty: false, job });
+    if (current?.status === 'queued') {
+      current.priority = Math.min(current.priority, priority) as JobPriority;
+      if (options.urgent) this.bypassBackoff(id);
+      this.drain();
+      return false;
+    }
+    if (options.urgent) this.bypassBackoff(id);
+    this.states.set(id, { status: 'queued', dirty: false, priority, job });
     this.queue.push(id);
     this.drain();
+    return true;
   }
 
-  enqueueNode(nodeId: string): void {
-    for (const kind of DOCKER_SNAPSHOT_KINDS) this.enqueue({ nodeId, kind });
+  private bypassBackoff(id: string): void {
+    const failure = this.failures.get(id);
+    if (failure) failure.retryAt = 0;
+  }
+
+  enqueueNode(nodeId: string, options: { urgent?: boolean } = {}): void {
+    for (const kind of DOCKER_SNAPSHOT_KINDS) this.enqueue({ nodeId, kind }, options);
   }
 
   enqueueConnected(kind: DockerSnapshotKind): void {
@@ -129,19 +158,65 @@ export class DockerSnapshotReconciler {
   private async enqueueStaleDetails(nodeId: string, detailKind: DockerDetailKind, listKind: DockerSnapshotKind) {
     const list = await this.snapshots.getList<Record<string, unknown>[]>(nodeId, listKind);
     if (!Array.isArray(list.data)) return;
+    const liveKeys = new Set(
+      list.data.map((item) => listItemKey(detailKind, item)).filter((key): key is string => key !== null)
+    );
+    this.reconcileDetailStates(nodeId, detailKind, liveKeys);
     const details = await this.snapshots.getDetails(nodeId, detailKind);
+    const pending = [...this.states.values()].filter(
+      (state) => state.job.nodeId === nodeId && state.job.kind === detailKind
+    );
+    const batchBudget = Math.max(0, DETAIL_BATCH_PER_KIND_PER_NODE - pending.length);
+    if (batchBudget === 0) return;
     const now = Date.now();
-    for (const item of list.data) {
+    const cursorKey = `${nodeId}:${detailKind}`;
+    const start = Math.min(this.detailCursors.get(cursorKey) ?? 0, Math.max(0, list.data.length - 1));
+    let scanned = 0;
+    let enqueued = 0;
+    while (scanned < list.data.length && enqueued < batchBudget) {
+      const index = (start + scanned) % list.data.length;
+      const item = list.data[index]!;
+      scanned += 1;
       const key = listItemKey(detailKind, item);
       if (!key) continue;
       const detail = details[key];
+      const failure = this.failures.get(jobId({ nodeId, kind: detailKind, key }));
+      if (failure && failure.retryAt > now) continue;
       const observedAt = detail?.observedAt
         ? Date.parse(detail.observedAt)
         : detail?.lastAttemptAt
           ? Date.parse(detail.lastAttemptAt)
           : 0;
-      if (now - observedAt >= 5 * 60_000) this.enqueue({ nodeId, kind: detailKind, key });
+      if (now - observedAt >= 5 * 60_000 && this.enqueue({ nodeId, kind: detailKind, key })) enqueued += 1;
     }
+    if (list.data.length > 0) this.detailCursors.set(cursorKey, (start + scanned) % list.data.length);
+  }
+
+  private reconcileDetailStates(nodeId: string, detailKind: DockerDetailKind, liveKeys: Set<string>): void {
+    for (const [id, state] of this.states) {
+      if (state.job.nodeId !== nodeId || state.job.kind !== detailKind || !state.job.key) continue;
+      if (!liveKeys.has(state.job.key)) this.cancelJob(id);
+    }
+    const prefix = `${nodeId}:${detailKind}:`;
+    for (const id of this.failures.keys()) {
+      if (id.startsWith(prefix) && !liveKeys.has(id.slice(prefix.length))) this.failures.delete(id);
+    }
+  }
+
+  private cancelJob(id: string): void {
+    const state = this.states.get(id);
+    if (!state) return;
+    this.failures.delete(id);
+    state.dirty = false;
+    state.dirtyPriority = undefined;
+    if (state.status === 'inflight') {
+      this.cancelledJobs.add(id);
+      return;
+    }
+    const queueIndex = this.queue.indexOf(id);
+    if (queueIndex >= 0) this.queue.splice(queueIndex, 1);
+    this.states.delete(id);
+    this.cancelledJobs.delete(id);
   }
 
   private onNodeChanged(payload: unknown) {
@@ -150,11 +225,13 @@ export class DockerSnapshotReconciler {
     const nodeId = typeof event.id === 'string' ? event.id : null;
     if (!nodeId) return;
     if (event.action === 'deleted') {
+      this.cancelNode(nodeId);
       void this.snapshots
         .purgeNode(nodeId)
         .catch((error) => logger.warn('Failed to purge node snapshots', { nodeId, error }));
     } else if (event.status === 'online' && this.registry.getNode(nodeId)?.type === 'docker') {
-      this.enqueueNode(nodeId);
+      this.snapshots.reviveNode(nodeId);
+      this.enqueueNode(nodeId, { urgent: true });
     } else if (event.status === 'offline') {
       void this.snapshots.publishNodeAvailability(nodeId).catch(() => {
         // Non-Docker nodes share node.changed; they have no Docker snapshots to announce.
@@ -167,10 +244,33 @@ export class DockerSnapshotReconciler {
     const event = payload as Record<string, unknown>;
     const nodeId = typeof event.nodeId === 'string' ? event.nodeId : null;
     if (!nodeId) return;
-    this.enqueue({ nodeId, kind });
+    this.enqueue({ nodeId, kind }, { urgent: true });
     if (!detailKind || event.action === 'removed' || event.action === 'deleted') return;
     const key = [event.name, event.id, event.ref].find((value): value is string => typeof value === 'string');
-    if (key) this.enqueue({ nodeId, kind: detailKind, key });
+    if (key) this.enqueue({ nodeId, kind: detailKind, key }, { urgent: true });
+  }
+
+  private cancelNode(nodeId: string): void {
+    this.snapshots.markNodeDeleted(nodeId);
+    for (let index = this.queue.length - 1; index >= 0; index -= 1) {
+      const id = this.queue[index]!;
+      const state = this.states.get(id);
+      if (state?.job.nodeId !== nodeId) continue;
+      this.queue.splice(index, 1);
+      if (state.status === 'queued') this.states.delete(id);
+      this.failures.delete(id);
+      this.cancelledJobs.delete(id);
+    }
+    for (const [id, state] of this.states) {
+      if (state.job.nodeId === nodeId) {
+        state.dirty = false;
+        state.dirtyPriority = undefined;
+        this.failures.delete(id);
+      }
+    }
+    for (const key of this.detailCursors.keys()) {
+      if (key.startsWith(`${nodeId}:`)) this.detailCursors.delete(key);
+    }
   }
 
   private drain(): void {
@@ -180,11 +280,18 @@ export class DockerSnapshotReconciler {
     }
     while (this.activeCount < MAX_GLOBAL_REFRESHES) {
       const now = Date.now();
-      const index = this.queue.findIndex((id) => {
+      let index = -1;
+      let bestPriority = Number.POSITIVE_INFINITY;
+      for (let candidateIndex = 0; candidateIndex < this.queue.length; candidateIndex += 1) {
+        const id = this.queue[candidateIndex]!;
         const state = this.states.get(id);
-        if (!state || state.status !== 'queued' || this.activeNodes.has(state.job.nodeId)) return false;
-        return (this.failures.get(id)?.retryAt ?? 0) <= now;
-      });
+        if (!state || state.status !== 'queued' || this.activeNodes.has(state.job.nodeId)) continue;
+        if ((this.failures.get(id)?.retryAt ?? 0) > now) continue;
+        if (state.priority < bestPriority) {
+          index = candidateIndex;
+          bestPriority = state.priority;
+        }
+      }
       if (index < 0) break;
       const [id] = this.queue.splice(index, 1);
       if (!id) break;
@@ -221,9 +328,36 @@ export class DockerSnapshotReconciler {
     if (!state) return;
     this.activeCount -= 1;
     this.activeNodes.delete(state.job.nodeId);
+    if (this.snapshots.isNodeDeleted(state.job.nodeId)) {
+      this.states.delete(id);
+      this.failures.delete(id);
+      this.cancelledJobs.delete(id);
+      this.drain();
+      return;
+    }
+    if (this.cancelledJobs.has(id)) {
+      this.states.delete(id);
+      this.failures.delete(id);
+      this.cancelledJobs.delete(id);
+      this.drain();
+      return;
+    }
+    const isDetail = !DOCKER_SNAPSHOT_KINDS.includes(state.job.kind as DockerSnapshotKind);
+    if (isDetail && this.failures.has(id) && !state.dirty) {
+      // Keep only FailureState during detail backoff. The round-robin scheduler
+      // will admit this key again after retryAt without consuming queue capacity.
+      this.states.delete(id);
+      this.drain();
+      return;
+    }
     if (state.dirty || this.failures.has(id)) {
       state.status = 'queued';
+      if (state.dirtyPriority !== undefined) {
+        state.priority = state.dirtyPriority;
+        if (state.dirtyPriority === 0) this.bypassBackoff(id);
+      }
       state.dirty = false;
+      state.dirtyPriority = undefined;
       if (!this.queue.includes(id)) this.queue.push(id);
     } else {
       this.states.delete(id);
@@ -233,6 +367,7 @@ export class DockerSnapshotReconciler {
 
   private async run(job: RefreshJob): Promise<void> {
     const id = jobId(job);
+    if (this.snapshots.isNodeDeleted(job.nodeId) || this.cancelledJobs.has(id)) return;
     try {
       if (DOCKER_SNAPSHOT_KINDS.includes(job.kind as DockerSnapshotKind)) {
         await this.refreshList(job.nodeId, job.kind as DockerSnapshotKind);
@@ -241,6 +376,10 @@ export class DockerSnapshotReconciler {
       }
       this.failures.delete(id);
     } catch (error) {
+      if (this.snapshots.isNodeDeleted(job.nodeId) || this.cancelledJobs.has(id)) {
+        this.failures.delete(id);
+        return;
+      }
       const previous = this.failures.get(id)?.failures ?? 0;
       const failures = previous + 1;
       const delay = BACKOFF_MS[Math.min(failures - 1, BACKOFF_MS.length - 1)]!;
@@ -261,6 +400,7 @@ export class DockerSnapshotReconciler {
   }
 
   private async refreshList(nodeId: string, kind: DockerSnapshotKind) {
+    if (this.snapshots.isNodeDeleted(nodeId)) return;
     await this.snapshots.markListRefreshing(nodeId, kind);
     let result: { success: boolean; detail?: string; error?: string };
     switch (kind) {
@@ -277,16 +417,20 @@ export class DockerSnapshotReconciler {
         result = await this.dispatch.sendDockerNetworkCommand(nodeId, 'list', {}, DAEMON_TIMEOUT_MS);
         break;
     }
+    if (this.snapshots.isNodeDeleted(nodeId)) return;
     const data = resultData(result);
     if (!Array.isArray(data)) throw new Error(`Docker ${kind} list returned an invalid payload`);
     await this.snapshots.replaceList(nodeId, kind, data);
   }
 
   private async refreshDetail(nodeId: string, kind: DockerDetailKind, key: string) {
+    const id = jobId({ nodeId, kind, key });
+    if (this.snapshots.isNodeDeleted(nodeId) || this.cancelledJobs.has(id)) return;
     const result =
       kind === 'container-detail'
         ? await this.dispatch.sendDockerContainerCommand(nodeId, 'inspect', { containerId: key }, DAEMON_TIMEOUT_MS)
         : await this.dispatch.sendDockerVolumeCommand(nodeId, 'inspect', { name: key }, DAEMON_TIMEOUT_MS);
+    if (this.snapshots.isNodeDeleted(nodeId) || this.cancelledJobs.has(id)) return;
     await this.snapshots.replaceDetail(nodeId, kind, key, resultData(result));
   }
 }
