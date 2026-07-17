@@ -173,11 +173,13 @@ export class DockerDeploymentService {
     }
   }
 
-  private async validateDockerNode(nodeId: string, requireCapability = true) {
+  private async validateDockerNode(nodeId: string, requireCapability = true, requireConnected = true) {
     const [node] = await this.db.select().from(nodes).where(eq(nodes.id, nodeId)).limit(1);
     if (!node) throw new AppError(404, 'NOT_FOUND', 'Node not found');
     if (node.type !== 'docker') throw new AppError(400, 'NOT_DOCKER', 'Node is not a Docker node');
-    if (!this.nodeRegistry.getNode(nodeId)) throw new AppError(502, 'NODE_OFFLINE', 'Node is offline');
+    if (requireConnected && !this.nodeRegistry.getNode(nodeId)) {
+      throw new AppError(502, 'NODE_OFFLINE', 'Node is offline');
+    }
 
     const capabilities = (node.capabilities ?? {}) as Record<string, unknown>;
     const advertised = Array.isArray(capabilities.capabilities) ? capabilities.capabilities : [];
@@ -294,7 +296,7 @@ export class DockerDeploymentService {
   }
 
   async list(nodeId: string) {
-    await this.validateDockerNode(nodeId, false);
+    await this.validateDockerNode(nodeId, false, false);
     const deployments = await this.db
       .select()
       .from(dockerDeployments)
@@ -304,7 +306,7 @@ export class DockerDeploymentService {
   }
 
   async listSummary(nodeId: string) {
-    await this.validateDockerNode(nodeId, false);
+    await this.validateDockerNode(nodeId, false, false);
     const deployments = await this.db
       .select()
       .from(dockerDeployments)
@@ -319,7 +321,7 @@ export class DockerDeploymentService {
   }
 
   async get(nodeId: string, deploymentId: string) {
-    await this.validateDockerNode(nodeId, false);
+    await this.validateDockerNode(nodeId, false, false);
     return this.loadDeployment(nodeId, deploymentId);
   }
 

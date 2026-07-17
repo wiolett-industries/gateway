@@ -16,6 +16,35 @@ function dbWithLockedDockerNode() {
   return { select };
 }
 
+function dbWithOfflineDockerNode() {
+  let call = 0;
+  return {
+    select: vi.fn(() => {
+      call += 1;
+      if (call === 1) {
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  id: 'node-1',
+                  type: 'docker',
+                  capabilities: { dockerDeploymentsV1: true },
+                },
+              ]),
+            })),
+          })),
+        };
+      }
+      return {
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({ orderBy: vi.fn().mockResolvedValue([]) })),
+        })),
+      };
+    }),
+  };
+}
+
 describe('DockerDeploymentService service creation lock', () => {
   it('rejects deployment creation on a locked Docker node before dispatching', async () => {
     const dispatch = { sendDockerContainerCommand: vi.fn(), sendDockerDeploymentCommand: vi.fn() };
@@ -53,5 +82,20 @@ describe('DockerDeploymentService service creation lock', () => {
       )
     ).rejects.toMatchObject({ statusCode: 409, code: 'NODE_SERVICE_CREATION_LOCKED' });
     expect(dispatch.sendDockerDeploymentCommand).not.toHaveBeenCalled();
+  });
+
+  it('keeps DB-backed deployment reads available while the Docker node is offline', async () => {
+    const nodeRegistry = { getNode: vi.fn().mockReturnValue(undefined) };
+    const service = new DockerDeploymentService(
+      dbWithOfflineDockerNode() as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      nodeRegistry as never
+    );
+
+    await expect(service.listSummary('node-1')).resolves.toEqual([]);
+    expect(nodeRegistry.getNode).not.toHaveBeenCalled();
   });
 });
