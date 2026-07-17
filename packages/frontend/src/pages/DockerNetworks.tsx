@@ -70,6 +70,7 @@ export function DockerNetworks({
   const navigate = useNavigate();
   const { hasScope, hasScopedAccess, user } = useAuthStore();
   const { networks, selectedNodeId, setSelectedNode, fetchNetworks } = useDockerStore();
+  const requestSnapshotRefresh = useDockerStore((s) => s.requestSnapshotRefresh);
   const isLoading = useDockerStore((s) => s.loading.networks);
   const storeDockerNodes = useDockerStore((s) => s.dockerNodes);
   const dockerNodesLoaded = useDockerStore((s) => s.dockerNodesLoaded);
@@ -92,8 +93,8 @@ export function DockerNetworks({
     onCreateRef?.(() => openCreate());
   }, [onCreateRef, openCreate]);
   useEffect(() => {
-    onRefreshRef?.(() => void fetchNetworks(undefined, search));
-  }, [fetchNetworks, onRefreshRef, search]);
+    onRefreshRef?.(() => void requestSnapshotRefresh("networks", fixedNodeId));
+  }, [fixedNodeId, onRefreshRef, requestSnapshotRefresh]);
   const [createName, setCreateName] = useState("");
   const [createDriver, setCreateDriver] = useState("bridge");
   const [createSubnet, setCreateSubnet] = useState("");
@@ -197,6 +198,12 @@ export function DockerNetworks({
     const ev = payload as { nodeId?: string };
     if (visibleNodeId && ev?.nodeId && ev.nodeId !== visibleNodeId) return;
     fetchNetworks(fixedNodeId, search);
+  });
+  useRealtime("docker.snapshot.changed", (payload) => {
+    const ev = payload as { nodeId?: string; kind?: string };
+    if (ev.kind !== "networks" || (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId))
+      return;
+    void fetchNetworks(fixedNodeId, search);
   });
 
   const filteredNetworks = useMemo(() => {
@@ -340,6 +347,13 @@ export function DockerNetworks({
         label: "Usage",
         width: "6.5rem",
         renderCell: (net) => {
+          if (net.availability === "unavailable") {
+            return (
+              <Badge variant="secondary" className="w-fit">
+                Unavailable
+              </Badge>
+            );
+          }
           const count = containerCount(net);
           return count > 0 ? (
             <Badge variant="success" className="w-fit">
@@ -364,17 +378,19 @@ export function DockerNetworks({
               className="flex items-center justify-end pr-1"
               onClick={(e) => e.stopPropagation()}
             >
-              {hasScope("docker:networks:delete") && count === 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => handleRemove(net)}
-                  title="Remove"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
+              {hasScope("docker:networks:delete") &&
+                count === 0 &&
+                net.availability !== "unavailable" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => handleRemove(net)}
+                    title="Remove"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
             </div>
           );
         },
@@ -436,7 +452,7 @@ export function DockerNetworks({
             {selectedNodeId && (
               <>
                 <RefreshButton
-                  onClick={() => fetchNetworks(undefined, search)}
+                  onClick={() => requestSnapshotRefresh("networks", visibleNodeId)}
                   disabled={isLoading}
                 />
                 {canManageFolders && (

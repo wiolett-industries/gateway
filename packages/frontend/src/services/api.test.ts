@@ -295,6 +295,37 @@ describe("api client contract", () => {
     );
   });
 
+  it("reads Docker inventory through aggregate snapshots and sends refresh hints", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [{ Id: "container-1", Name: "api", NodeId: "node-1", Availability: "unavailable" }],
+          nodes: [{ id: "node-1", displayName: "Offline node", slug: "offline" }],
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(jsonResponse({ accepted: true }, { status: 202 }));
+
+    await expect(api.listDockerContainerSnapshots({ search: "api" })).resolves.toMatchObject([
+      {
+        id: "container-1",
+        name: "api",
+        nodeId: "node-1",
+        availability: "unavailable",
+        _nodeName: "Offline node",
+      },
+    ]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/docker/containers?search=api");
+
+    await api.refreshDockerSnapshots({ resource: "containers", nodeId: "node-1" });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/docker/snapshots/refresh");
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ resource: "containers", nodeId: "node-1" }),
+    });
+  });
+
   it("serializes docker webhook, image cleanup, and sync pull requests", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")

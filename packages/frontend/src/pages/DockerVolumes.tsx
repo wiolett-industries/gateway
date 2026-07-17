@@ -59,6 +59,7 @@ export function DockerVolumes({
   const navigate = useNavigate();
   const { hasScope, hasScopedAccess, user } = useAuthStore();
   const { volumes, selectedNodeId, setSelectedNode, fetchVolumes } = useDockerStore();
+  const requestSnapshotRefresh = useDockerStore((s) => s.requestSnapshotRefresh);
   const isLoading = useDockerStore((s) => s.loading.volumes);
   const storeDockerNodes = useDockerStore((s) => s.dockerNodes);
   const dockerNodesLoaded = useDockerStore((s) => s.dockerNodesLoaded);
@@ -81,8 +82,8 @@ export function DockerVolumes({
     onCreateRef?.(() => openCreate());
   }, [onCreateRef, openCreate]);
   useEffect(() => {
-    onRefreshRef?.(() => void fetchVolumes(undefined, search));
-  }, [fetchVolumes, onRefreshRef, search]);
+    onRefreshRef?.(() => void requestSnapshotRefresh("volumes", fixedNodeId));
+  }, [fixedNodeId, onRefreshRef, requestSnapshotRefresh]);
   const [createName, setCreateName] = useState("");
   const [createDriver, setCreateDriver] = useState("local");
   const [creating, setCreating] = useState(false);
@@ -127,6 +128,12 @@ export function DockerVolumes({
     const ev = payload as { nodeId?: string };
     if (visibleNodeId && ev?.nodeId && ev.nodeId !== visibleNodeId) return;
     fetchVolumes(fixedNodeId, search);
+  });
+  useRealtime("docker.snapshot.changed", (payload) => {
+    const ev = payload as { nodeId?: string; kind?: string };
+    if (ev.kind !== "volumes" || (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId))
+      return;
+    void fetchVolumes(fixedNodeId, search);
   });
 
   const filteredVolumes = useMemo(() => {
@@ -227,6 +234,13 @@ export function DockerVolumes({
         label: "Usage",
         width: "6.5rem",
         renderCell: (v) => {
+          if (v.availability === "unavailable") {
+            return (
+              <Badge variant="secondary" className="w-fit">
+                Unavailable
+              </Badge>
+            );
+          }
           const usedBy: string[] = (v as any).usedBy ?? (v as any).UsedBy ?? [];
           const usedByCount = (v as any).usedByCount ?? usedBy.length;
           const isUsed = usedByCount > 0;
@@ -266,7 +280,7 @@ export function DockerVolumes({
               className="flex items-center justify-end pr-1"
               onClick={(e) => e.stopPropagation()}
             >
-              {hasScope("docker:volumes:delete") && !isUsed && (
+              {hasScope("docker:volumes:delete") && !isUsed && v.availability !== "unavailable" && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -306,7 +320,7 @@ export function DockerVolumes({
             {selectedNodeId && (
               <>
                 <RefreshButton
-                  onClick={() => fetchVolumes(undefined, search)}
+                  onClick={() => requestSnapshotRefresh("volumes", visibleNodeId)}
                   disabled={isLoading}
                 />
                 {canManageFolders && (

@@ -131,6 +131,7 @@ export function DockerContainers({
   const resetFilters = useDockerStore((s) => s.resetFilters);
   const fetchContainers = useDockerStore((s) => s.fetchContainers);
   const forceFetchContainers = useDockerStore((s) => s.forceFetchContainers);
+  const requestSnapshotRefresh = useDockerStore((s) => s.requestSnapshotRefresh);
   const visibleNodeId = fixedNodeId ?? selectedNodeId;
   const canViewContainers = hasScopedAccess("docker:containers:view");
 
@@ -246,8 +247,8 @@ export function DockerContainers({
   );
 
   useEffect(() => {
-    onRefreshRef?.(() => void refreshData(true));
-  }, [onRefreshRef, refreshData]);
+    onRefreshRef?.(() => void requestSnapshotRefresh("containers", fixedNodeId));
+  }, [fixedNodeId, onRefreshRef, requestSnapshotRefresh]);
 
   useEffect(() => {
     if (embedded && !fixedNodeId && !dockerNodesLoaded) {
@@ -264,6 +265,12 @@ export function DockerContainers({
     const ev = payload as { nodeId?: string };
     if (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId) return;
     void refreshData(true);
+  });
+  useRealtime("docker.snapshot.changed", (payload) => {
+    const ev = payload as { nodeId?: string; kind?: string };
+    if (ev.kind !== "containers" || (visibleNodeId && ev.nodeId && ev.nodeId !== visibleNodeId))
+      return;
+    void refreshData();
   });
   useRealtime("docker.task.changed", (payload) => {
     const ev = payload as { nodeId?: string };
@@ -692,6 +699,9 @@ export function DockerContainers({
       label: "Status",
       width: "14%",
       renderCell: (container) => {
+        if (container.availability === "unavailable") {
+          return <Badge variant="secondary">Unavailable</Badge>;
+        }
         const status = container._transition ?? container.state;
         return <Badge variant={STATUS_BADGE[status] ?? "secondary"}>{status}</Badge>;
       },
@@ -718,6 +728,7 @@ export function DockerContainers({
             renderCell: (container: DockerContainerListItem) => {
               const loadingAction = actionLoading[container.id];
               const transitioning = !!container._transition;
+              const unavailable = container.availability === "unavailable";
               const manage = canManageContainer(container);
               const reorganize = canReorganizeContainer(container);
               if (!manage && !reorganize) return null;
@@ -733,7 +744,7 @@ export function DockerContainers({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        disabled={!!loadingAction || transitioning}
+                        disabled={!!loadingAction || transitioning || unavailable}
                         onClick={() => handleStop(container)}
                         title="Stop"
                       >
@@ -743,7 +754,7 @@ export function DockerContainers({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        disabled={!!loadingAction || transitioning}
+                        disabled={!!loadingAction || transitioning || unavailable}
                         onClick={() => handleRestart(container)}
                         title="Restart"
                       >
@@ -755,7 +766,7 @@ export function DockerContainers({
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      disabled={!!loadingAction || transitioning}
+                      disabled={!!loadingAction || transitioning || unavailable}
                       onClick={() => handleStart(container)}
                       title="Start"
                     >
@@ -818,7 +829,7 @@ export function DockerContainers({
           <div className="flex items-center gap-2">
             {visibleNodeId && (
               <RefreshButton
-                onClick={() => void refreshData(true)}
+                onClick={() => void requestSnapshotRefresh("containers", visibleNodeId)}
                 disabled={isLoading || foldersLoading}
               />
             )}
