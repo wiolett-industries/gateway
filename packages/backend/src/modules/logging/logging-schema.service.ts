@@ -1,6 +1,7 @@
 import { asc, eq, ilike, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { type LoggingFieldDefinition, loggingSchemas } from '@/db/schema/index.js';
+import { writeWithAllocatedSlug } from '@/lib/resource-slugs.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
@@ -37,15 +38,31 @@ export class LoggingSchemaService {
     return toView(row);
   }
 
+  async getBySlug(slug: string): Promise<LoggingSchemaView> {
+    const rows = await this.db.select().from(loggingSchemas).where(eq(loggingSchemas.slug, slug)).limit(1);
+    const row = rows[0];
+    if (!row) throw new AppError(404, 'LOGGING_SCHEMA_NOT_FOUND', 'Logging schema not found');
+    return toView(row);
+  }
+
   async create(input: CreateLoggingSchemaInput, userId: string): Promise<LoggingSchemaView> {
-    const [row] = await this.db
-      .insert(loggingSchemas)
-      .values({
-        ...input,
-        description: input.description ?? null,
-        createdById: userId,
-      })
-      .returning();
+    const row = await writeWithAllocatedSlug({
+      source: input.name,
+      fallback: 'logging-schema',
+      constraint: 'logging_schemas_slug_unique',
+      write: async (slug) => {
+        const [created] = await this.db
+          .insert(loggingSchemas)
+          .values({
+            ...input,
+            slug,
+            description: input.description ?? null,
+            createdById: userId,
+          })
+          .returning();
+        return created;
+      },
+    });
     await this.auditService.log({
       userId,
       action: 'logging.schema.create',
@@ -60,15 +77,28 @@ export class LoggingSchemaService {
   async update(id: string, input: UpdateLoggingSchemaInput, userId: string): Promise<LoggingSchemaView> {
     const existing = await this.findRaw(id);
     if (!existing) throw new AppError(404, 'LOGGING_SCHEMA_NOT_FOUND', 'Logging schema not found');
-    const [row] = await this.db
-      .update(loggingSchemas)
-      .set({
-        ...input,
-        description: input.description === undefined ? undefined : input.description,
-        updatedAt: new Date(),
-      })
-      .where(eq(loggingSchemas.id, id))
-      .returning();
+    const updateData = {
+      ...input,
+      description: input.description === undefined ? undefined : input.description,
+      updatedAt: new Date(),
+    };
+    const updateSchema = async (slug?: string) => {
+      const [updated] = await this.db
+        .update(loggingSchemas)
+        .set({ ...updateData, ...(slug === undefined ? {} : { slug }) })
+        .where(eq(loggingSchemas.id, id))
+        .returning();
+      return updated;
+    };
+    const row =
+      input.name !== undefined && input.name !== existing.name
+        ? await writeWithAllocatedSlug({
+            source: input.name,
+            fallback: 'logging-schema',
+            constraint: 'logging_schemas_slug_unique',
+            write: updateSchema,
+          })
+        : await updateSchema();
     await this.auditService.log({
       userId,
       action: 'logging.schema.update',
@@ -76,7 +106,11 @@ export class LoggingSchemaService {
       resourceId: id,
       details: { name: row.name, slug: row.slug },
     });
-    this.eventBus?.publish('logging.schema.changed', { action: 'update', id });
+    this.eventBus?.publish('logging.schema.changed', {
+      action: 'update',
+      id,
+      ...(row.slug === existing.slug ? {} : { oldSlug: existing.slug, slug: row.slug }),
+    });
     return toView(row);
   }
 

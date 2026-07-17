@@ -231,7 +231,13 @@ async function authenticateAndStartStream(
       timestamps: true,
     });
 
-    if (result.success && result.detail) {
+    if (!result.success) {
+      send(ws, { type: 'error', message: result.error || 'Failed to fetch initial logs' });
+      ws.close(1011, 'Initial fetch failed');
+      return;
+    }
+
+    if (result.detail) {
       try {
         initialLines = JSON.parse(result.detail);
         if (!Array.isArray(initialLines)) initialLines = [];

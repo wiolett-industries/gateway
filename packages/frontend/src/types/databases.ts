@@ -29,6 +29,7 @@ export interface RedisDatabaseConfig {
 
 export interface DatabaseConnection {
   id: string;
+  slug: string;
   name: string;
   type: DatabaseType;
   description: string | null;

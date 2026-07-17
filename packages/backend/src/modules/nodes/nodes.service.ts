@@ -4,6 +4,7 @@ import { asc, count, eq, ilike, inArray, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { certificates, nodes, proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { writeWithAllocatedSlug } from '@/lib/resource-slugs.js';
 import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -65,8 +66,8 @@ export class NodesService {
     this.generalSettingsService = service;
     this.grpcPort = grpcPort;
   }
-  private emitNode(id: string, action: 'created' | 'updated' | 'deleted') {
-    this.eventBus?.publish('node.changed', { id, action });
+  private emitNode(id: string, action: 'created' | 'updated' | 'deleted', extra: Record<string, unknown> = {}) {
+    this.eventBus?.publish('node.changed', { id, action, ...extra });
   }
 
   private nodeFileOperationContext() {
@@ -137,6 +138,7 @@ export class NodesService {
         type: nodes.type,
         hostname: nodes.hostname,
         displayName: nodes.displayName,
+        slug: nodes.slug,
         appearanceColor: nodes.appearanceColor,
         status: nodes.status,
         serviceCreationLocked: nodes.serviceCreationLocked,
@@ -198,6 +200,25 @@ export class NodesService {
     };
   }
 
+  async getBySlug(slug: string) {
+    const [node] = await this.db.select().from(nodes).where(eq(nodes.slug, slug)).limit(1);
+
+    if (!node) {
+      throw new AppError(404, 'NOT_FOUND', 'Node not found');
+    }
+
+    const connectedNode = this.registry.getNode(node.id);
+    const isConnected = !!connectedNode;
+
+    return {
+      ...stripNodeHealthHistory(node),
+      status: node.status === 'online' && !isConnected ? 'offline' : node.status,
+      isConnected,
+      liveHealthReport: connectedNode?.lastHealthReport ?? null,
+      liveStatsReport: connectedNode?.lastStatsReport ?? null,
+    };
+  }
+
   async getHealthHistory(id: string) {
     const [node] = await this.db
       .select({ healthHistory: nodes.healthHistory })
@@ -217,17 +238,27 @@ export class NodesService {
     const enrollmentToken = createNodeEnrollmentToken();
     const tokenHash = await bcrypt.hash(enrollmentToken.token, 10);
 
-    const [node] = await this.db
-      .insert(nodes)
-      .values({
-        type: input.type,
-        hostname: input.hostname,
-        displayName: input.displayName,
-        enrollmentTokenSelector: enrollmentToken.selector,
-        enrollmentTokenHash: tokenHash,
-        status: 'pending',
-      })
-      .returning();
+    const node = await writeWithAllocatedSlug({
+      source: input.displayName?.trim() || input.hostname,
+      fallback: 'node',
+      reserved: ['file', 'console'],
+      constraint: 'nodes_slug_unique',
+      write: async (slug) => {
+        const [created] = await this.db
+          .insert(nodes)
+          .values({
+            type: input.type,
+            hostname: input.hostname,
+            displayName: input.displayName,
+            slug,
+            enrollmentTokenSelector: enrollmentToken.selector,
+            enrollmentTokenHash: tokenHash,
+            status: 'pending',
+          })
+          .returning();
+        return created;
+      },
+    });
 
     await this.auditService.log({
       userId,
@@ -259,15 +290,29 @@ export class NodesService {
       throw new AppError(404, 'NOT_FOUND', 'Node not found');
     }
 
-    const [updated] = await this.db
-      .update(nodes)
-      .set({
-        displayName: input.displayName === undefined ? existing.displayName : input.displayName,
-        appearanceColor: input.appearanceColor === undefined ? existing.appearanceColor : input.appearanceColor,
-        updatedAt: new Date(),
-      })
-      .where(eq(nodes.id, id))
-      .returning();
+    const updateData = {
+      displayName: input.displayName === undefined ? existing.displayName : input.displayName,
+      appearanceColor: input.appearanceColor === undefined ? existing.appearanceColor : input.appearanceColor,
+      updatedAt: new Date(),
+    };
+    const updateNode = async (slug?: string) => {
+      const [updated] = await this.db
+        .update(nodes)
+        .set({ ...updateData, ...(slug === undefined ? {} : { slug }) })
+        .where(eq(nodes.id, id))
+        .returning();
+      return updated;
+    };
+    const displayNameChanged = input.displayName !== undefined && input.displayName !== existing.displayName;
+    const updated = !displayNameChanged
+      ? await updateNode()
+      : await writeWithAllocatedSlug({
+          source: input.displayName?.trim() || existing.hostname,
+          fallback: 'node',
+          reserved: ['file', 'console'],
+          constraint: 'nodes_slug_unique',
+          write: updateNode,
+        });
 
     await this.auditService.log({
       userId,
@@ -279,7 +324,11 @@ export class NodesService {
         ...(input.appearanceColor !== undefined ? { appearanceColor: input.appearanceColor } : {}),
       },
     });
-    this.emitNode(id, 'updated');
+    const slugChange = updated.slug === existing.slug ? {} : { oldSlug: existing.slug, slug: updated.slug };
+    this.emitNode(id, 'updated', slugChange);
+    if (updated.slug !== existing.slug) {
+      this.eventBus?.publish('node.slug.changed', { id, oldSlug: existing.slug, slug: updated.slug });
+    }
 
     return updated;
   }

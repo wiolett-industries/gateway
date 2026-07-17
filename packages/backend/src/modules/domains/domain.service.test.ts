@@ -6,6 +6,7 @@ import { DomainsService } from './domain.service.js';
 vi.mock('@/db/schema/proxy-hosts.js', () => ({
   proxyHosts: {
     id: 'proxyHosts.id',
+    slug: 'proxyHosts.slug',
     domainNames: 'proxyHosts.domainNames',
     enabled: 'proxyHosts.enabled',
   },

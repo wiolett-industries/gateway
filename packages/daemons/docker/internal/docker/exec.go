@@ -14,7 +14,10 @@ import (
 	"github.com/wiolett-industries/gateway/daemon-shared/stream"
 )
 
-const maxBufferChunks = 1000
+const (
+	maxBufferChunks = 1000
+	maxBufferBytes  = 1024 * 1024
+)
 
 // ExecSession represents a persistent exec session attached to a container.
 type ExecSession struct {
@@ -25,8 +28,9 @@ type ExecSession struct {
 	lastActive  time.Time
 
 	// Ring buffer of recent output (always populated)
-	outputBuffer [][]byte
-	bufMu        sync.Mutex
+	outputBuffer      [][]byte
+	outputBufferBytes int
+	bufMu             sync.Mutex
 }
 
 func (s *ExecSession) bufferOutput(data []byte) {
@@ -35,8 +39,11 @@ func (s *ExecSession) bufferOutput(data []byte) {
 	chunk := make([]byte, len(data))
 	copy(chunk, data)
 	s.outputBuffer = append(s.outputBuffer, chunk)
-	if len(s.outputBuffer) > maxBufferChunks {
-		s.outputBuffer = s.outputBuffer[len(s.outputBuffer)-maxBufferChunks:]
+	s.outputBufferBytes += len(chunk)
+	for len(s.outputBuffer) > maxBufferChunks || s.outputBufferBytes > maxBufferBytes {
+		s.outputBufferBytes -= len(s.outputBuffer[0])
+		s.outputBuffer[0] = nil
+		s.outputBuffer = s.outputBuffer[1:]
 	}
 }
 

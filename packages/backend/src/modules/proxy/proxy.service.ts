@@ -5,6 +5,7 @@ import { certificates } from '@/db/schema/certificates.js';
 import { proxyHosts } from '@/db/schema/index.js';
 import { sslCertificates } from '@/db/schema/ssl-certificates.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { writeWithAllocatedSlug } from '@/lib/resource-slugs.js';
 import { buildWhere, escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -65,8 +66,8 @@ export class ProxyService {
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
   }
-  private emitHost(id: string, action: string, domain?: string) {
-    this.eventBus?.publish('proxy.host.changed', { id, action, domain });
+  private emitHost(id: string, action: string, domain?: string, extra: Record<string, unknown> = {}) {
+    this.eventBus?.publish('proxy.host.changed', { id, action, domain, ...extra });
   }
 
   private async applyConfigToNode(hostId: string, config: string, nodeId: string | null): Promise<void> {
@@ -134,46 +135,56 @@ export class ProxyService {
     });
 
     // 1. Insert into DB
-    const [host] = await this.db
-      .insert(proxyHosts)
-      .values({
-        type: input.type,
-        nodeId: input.nodeId,
-        domainNames: input.domainNames,
-        forwardHost: input.forwardHost ?? null,
-        forwardPort: input.forwardPort ?? null,
-        forwardScheme: input.forwardScheme,
-        sslEnabled: input.sslEnabled,
-        sslForced: input.sslForced,
-        http2Support: input.http2Support,
-        websocketSupport: input.websocketSupport,
-        sslCertificateId: input.sslCertificateId ?? null,
-        internalCertificateId: input.internalCertificateId ?? null,
-        redirectUrl: input.redirectUrl ?? null,
-        redirectStatusCode: input.redirectStatusCode ?? 301,
-        customHeaders: input.customHeaders,
-        cacheEnabled: input.cacheEnabled,
-        cacheOptions: input.cacheOptions ?? null,
-        rateLimitEnabled: input.rateLimitEnabled,
-        rateLimitOptions: input.rateLimitOptions ?? null,
-        customRewrites: input.customRewrites,
-        advancedConfig: input.advancedConfig ?? null,
-        rawConfig: (input as any).rawConfig ?? null,
-        rawConfigEnabled: (input as any).rawConfigEnabled ?? false,
-        accessListId: input.accessListId ?? null,
-        folderId: input.folderId ?? null,
-        nginxTemplateId: input.nginxTemplateId ?? null,
-        templateVariables: input.templateVariables ?? {},
-        healthCheckEnabled: input.healthCheckEnabled,
-        healthCheckUrl: input.healthCheckUrl ?? '/',
-        healthCheckInterval: input.healthCheckInterval ?? 30,
-        healthCheckExpectedStatus: input.healthCheckExpectedStatus ?? null,
-        healthCheckExpectedBody: input.healthCheckExpectedBody ?? null,
-        healthCheckBodyMatchMode: input.healthCheckBodyMatchMode ?? 'includes',
-        healthStatus: input.healthCheckEnabled ? 'unknown' : 'disabled',
-        createdById: userId,
-      })
-      .returning();
+    const host = await writeWithAllocatedSlug({
+      source: input.domainNames[0] ?? '',
+      fallback: 'proxy-host',
+      reserved: ['new'],
+      constraint: 'proxy_hosts_slug_unique',
+      write: async (slug) => {
+        const [created] = await this.db
+          .insert(proxyHosts)
+          .values({
+            type: input.type,
+            nodeId: input.nodeId,
+            domainNames: input.domainNames,
+            slug,
+            forwardHost: input.forwardHost ?? null,
+            forwardPort: input.forwardPort ?? null,
+            forwardScheme: input.forwardScheme,
+            sslEnabled: input.sslEnabled,
+            sslForced: input.sslForced,
+            http2Support: input.http2Support,
+            websocketSupport: input.websocketSupport,
+            sslCertificateId: input.sslCertificateId ?? null,
+            internalCertificateId: input.internalCertificateId ?? null,
+            redirectUrl: input.redirectUrl ?? null,
+            redirectStatusCode: input.redirectStatusCode ?? 301,
+            customHeaders: input.customHeaders,
+            cacheEnabled: input.cacheEnabled,
+            cacheOptions: input.cacheOptions ?? null,
+            rateLimitEnabled: input.rateLimitEnabled,
+            rateLimitOptions: input.rateLimitOptions ?? null,
+            customRewrites: input.customRewrites,
+            advancedConfig: input.advancedConfig ?? null,
+            rawConfig: (input as any).rawConfig ?? null,
+            rawConfigEnabled: (input as any).rawConfigEnabled ?? false,
+            accessListId: input.accessListId ?? null,
+            folderId: input.folderId ?? null,
+            nginxTemplateId: input.nginxTemplateId ?? null,
+            templateVariables: input.templateVariables ?? {},
+            healthCheckEnabled: input.healthCheckEnabled,
+            healthCheckUrl: input.healthCheckUrl ?? '/',
+            healthCheckInterval: input.healthCheckInterval ?? 30,
+            healthCheckExpectedStatus: input.healthCheckExpectedStatus ?? null,
+            healthCheckExpectedBody: input.healthCheckExpectedBody ?? null,
+            healthCheckBodyMatchMode: input.healthCheckBodyMatchMode ?? 'includes',
+            healthStatus: input.healthCheckEnabled ? 'unknown' : 'disabled',
+            createdById: userId,
+          })
+          .returning();
+        return created;
+      },
+    });
 
     // 2. Resolve SSL cert paths and build nginx config
     try {
@@ -287,7 +298,24 @@ export class ProxyService {
       }
     }
 
-    const [updated] = await this.db.update(proxyHosts).set(updateData).where(eq(proxyHosts.id, id)).returning();
+    const updateHost = async (slug?: string) => {
+      const [updated] = await this.db
+        .update(proxyHosts)
+        .set({ ...updateData, ...(slug === undefined ? {} : { slug }) })
+        .where(eq(proxyHosts.id, id))
+        .returning();
+      return updated;
+    };
+    const primaryDomainChanged = input.domainNames !== undefined && input.domainNames[0] !== existing.domainNames[0];
+    const updated = primaryDomainChanged
+      ? await writeWithAllocatedSlug({
+          source: input.domainNames?.[0] ?? '',
+          fallback: 'proxy-host',
+          reserved: ['new'],
+          constraint: 'proxy_hosts_slug_unique',
+          write: updateHost,
+        })
+      : await updateHost();
 
     // 3. Regenerate nginx config
     try {
@@ -312,6 +340,7 @@ export class ProxyService {
       for (const key of Object.keys(input)) {
         rollbackData[key] = (existing as Record<string, unknown>)[key];
       }
+      if (primaryDomainChanged) rollbackData.slug = existing.slug;
       rollbackData.updatedAt = existing.updatedAt;
       try {
         await this.db.update(proxyHosts).set(rollbackData).where(eq(proxyHosts.id, id));
@@ -338,7 +367,12 @@ export class ProxyService {
     });
 
     logger.info('Updated proxy host', { hostId: id });
-    this.emitHost(id, 'updated');
+    this.emitHost(
+      id,
+      'updated',
+      updated.domainNames?.[0],
+      updated.slug === existing.slug ? {} : { oldSlug: existing.slug, slug: updated.slug }
+    );
 
     // Fire immediate health check if healthcheck was just enabled
     if (input.healthCheckEnabled && !existing.healthCheckEnabled && updated.enabled) {
@@ -440,6 +474,15 @@ export class ProxyService {
           }
         : null,
     };
+  }
+
+  async getProxyHostBySlug(slug: string) {
+    const host = await this.db.query.proxyHosts.findFirst({
+      where: eq(proxyHosts.slug, slug),
+      columns: { id: true, isSystem: true },
+    });
+    if (!host || host.isSystem) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+    return this.getProxyHost(host.id);
   }
 
   async getProxyHostHealthHistory(id: string) {
@@ -712,15 +755,33 @@ export class ProxyService {
     };
 
     const createdNew = !existing;
-    const [host] = existing
-      ? await this.db.update(proxyHosts).set(data).where(eq(proxyHosts.id, existing.id)).returning()
-      : await this.db
-          .insert(proxyHosts)
-          .values({
-            ...data,
-            createdById: userId,
-          })
-          .returning();
+    const writeHost = async (slug?: string) => {
+      const [host] = existing
+        ? await this.db
+            .update(proxyHosts)
+            .set({ ...data, ...(slug === undefined ? {} : { slug }) })
+            .where(eq(proxyHosts.id, existing.id))
+            .returning()
+        : await this.db
+            .insert(proxyHosts)
+            .values({
+              ...data,
+              slug: slug!,
+              createdById: userId,
+            })
+            .returning();
+      return host;
+    };
+    const primaryDomainChanged = !existing || existing.domainNames[0] !== input.domain;
+    const host = primaryDomainChanged
+      ? await writeWithAllocatedSlug({
+          source: input.domain,
+          fallback: 'proxy-host',
+          reserved: ['new'],
+          constraint: 'proxy_hosts_slug_unique',
+          write: writeHost,
+        })
+      : await writeHost();
 
     try {
       const certPaths = await this.resolveCertPaths(host);
@@ -736,7 +797,7 @@ export class ProxyService {
       } else if (existing) {
         await this.db
           .update(proxyHosts)
-          .set(buildStatusPageSystemHostRollbackData(existing) as any)
+          .set({ ...buildStatusPageSystemHostRollbackData(existing), slug: existing.slug } as any)
           .where(eq(proxyHosts.id, existing.id));
       }
       throw new AppError(

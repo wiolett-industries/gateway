@@ -37,6 +37,7 @@ export function makeNode(overrides: Partial<Node> = {}): Node {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,
+    slug: overrides.slug ?? "edge-1",
   };
 }
 

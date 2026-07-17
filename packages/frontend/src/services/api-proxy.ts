@@ -43,6 +43,14 @@ export function withProxyApi<TBase extends ApiClientBaseConstructor>(Base: TBase
       return this.unwrapData(this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}`));
     }
 
+    async getProxyHostBySlug(slug: string): Promise<ProxyHost> {
+      return this.unwrapData(
+        this.requestRouteContext<{ data: ProxyHost }>(
+          `/proxy-hosts/by-slug/${encodeURIComponent(slug)}`
+        )
+      );
+    }
+
     async getProxyHostHealthHistory(
       id: string
     ): Promise<Array<{ ts: string; status: string; responseMs?: number; slow?: boolean }>> {

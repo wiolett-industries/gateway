@@ -31,6 +31,7 @@ import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { getForcedDaemonUpdateForNode } from "@/lib/dev-force-updates";
 import { getNodeAppearanceColor, NODE_APPEARANCE_COLOR_OPTIONS } from "@/lib/node-appearance";
+import { nodeRoute } from "@/lib/resource-routes";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
@@ -69,8 +70,16 @@ const STATUS_BADGE: Record<
   updating: "warning",
 };
 
-export function AdminNodeDetail() {
-  const { id } = useParams<{ id: string; tab?: string }>();
+export function AdminNodeDetail({
+  resolvedNodeId,
+  resolvedNodeSlug,
+}: {
+  resolvedNodeId?: string;
+  resolvedNodeSlug?: string;
+} = {}) {
+  const params = useParams<{ id?: string; nodeSlug?: string; tab?: string }>();
+  const id = resolvedNodeId ?? params.id;
+  const routeSlug = resolvedNodeSlug ?? params.nodeSlug ?? params.id ?? "";
   const navigate = useStableNavigate();
   const { hasScope } = useAuthStore();
 
@@ -93,7 +102,7 @@ export function AdminNodeDetail() {
       "daemon-logs",
     ],
     "details",
-    (tab) => `/nodes/${id}/${tab}`
+    (tab) => nodeRoute(routeSlug, tab)
   );
 
   // Appearance dialog
@@ -262,6 +271,12 @@ export function AdminNodeDetail() {
     void loadDaemonUpdateStatus({ force: true });
   });
 
+  useRealtime(id ? "node.slug.changed" : null, (payload) => {
+    const event = payload as { id?: string; oldSlug?: string; slug?: string };
+    if (event.id !== id || event.oldSlug !== routeSlug || !event.slug) return;
+    navigate(nodeRoute(event.slug, activeTab), { replace: true });
+  });
+
   useEffect(() => {
     if (nodeUpdating && activeTab !== "details" && activeTab !== "daemon-logs") {
       setActiveTab("details");
@@ -284,6 +299,9 @@ export function AdminNodeDetail() {
         appearanceColor,
       });
       setNode((prev) => (prev ? { ...prev, ...updated } : prev));
+      if (updated.slug && updated.slug !== routeSlug) {
+        navigate(nodeRoute(updated.slug, activeTab), { replace: true });
+      }
       useDockerStore.getState().syncNodeAppearance(updated);
       setAppearanceOpen(false);
       usePinnedNodesStore.getState().invalidate();

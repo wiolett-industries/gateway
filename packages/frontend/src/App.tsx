@@ -6,7 +6,17 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { RequireScope } from "@/components/common/RequireScope";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
-import { deriveAllowedResourceIdsByScope, scopeMatches } from "@/lib/scope-utils";
+import { Button } from "@/components/ui/button";
+import {
+  databaseRoute,
+  dockerContainerRoute,
+  dockerDeploymentRoute,
+  dockerVolumeRoute,
+  loggingEnvironmentRoute,
+  loggingSchemaRoute,
+  nodeRoute,
+  proxyHostRoute,
+} from "@/lib/resource-routes";
 import { AccessLists } from "@/pages/AccessLists";
 import { Administration } from "@/pages/Administration";
 import { AdminNodeDetail } from "@/pages/AdminNodeDetail";
@@ -48,6 +58,8 @@ import { ApiRequestError } from "@/services/api-base";
 import { eventStream } from "@/services/event-stream";
 import { APP_STATUS_STORAGE_KEY, useAppStatusStore } from "@/stores/app-status";
 import { useAuthStore } from "@/stores/auth";
+import { useDockerStore } from "@/stores/docker";
+import { useResolvedPageRoute } from "@/stores/resolved-page-context";
 import { useSystemConfigStore } from "@/stores/system-config";
 import { syncAILiteModeFromStorageValue, UI_STORAGE_KEY, useUIStore } from "@/stores/ui";
 
@@ -117,57 +129,168 @@ function PopoutAuthGate({ children }: { children: React.ReactElement }) {
   return children;
 }
 
-function DockerContainerDetailGuard() {
-  const { nodeId } = useParams<{ nodeId: string }>();
-  const hasScope = useAuthStore((s) => s.hasScope);
+function DetailRouteLoading() {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
 
-  if (
-    !hasScope("docker:containers:view") &&
-    !(nodeId && hasScope(`docker:containers:view:${nodeId}`))
-  ) {
-    return <Navigate to="/" replace />;
+function DetailRouteFailure({ error, fallbackPath }: { error: unknown; fallbackPath: string }) {
+  if (error instanceof ApiRequestError && (error.status === 403 || error.status === 404)) {
+    return <Navigate to={fallbackPath} replace />;
   }
 
-  return <DockerContainerDetail />;
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+      <p className="text-sm text-muted-foreground">Failed to load this resource.</p>
+      <Button variant="outline" onClick={() => window.location.reload()}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+function DockerContainerDetailGuard() {
+  const { nodeSlug, containerName } = useParams<{ nodeSlug: string; containerName: string }>();
+  const canAccess = useAuthStore((s) => s.hasScopedAccess("docker:containers:view"));
+  const resolved = useResolvedPageRoute(
+    canAccess && nodeSlug && containerName
+      ? dockerContainerRoute(nodeSlug, containerName)
+      : undefined,
+    async () => {
+      const node = await api.getDockerNodeBySlug(nodeSlug!);
+      const container = await api.inspectContainerByName(node.id, containerName!);
+      const containerId = String((container as any).Id ?? (container as any).id ?? "");
+      const canonicalName = String(
+        (container as any).Name ?? (container as any).name ?? ""
+      ).replace(/^\/+/, "");
+      if (!containerId || !canonicalName) throw new Error("Container identity is missing");
+      return { node, containerId, canonicalName };
+    },
+    ({ node, containerId, canonicalName }) => ({
+      resourceType: "docker-container",
+      resourceId: containerId,
+      nodeId: node.id,
+      label: canonicalName,
+    })
+  );
+
+  if (!canAccess) return <Navigate to="/" replace />;
+  if (resolved.loading) return <DetailRouteLoading />;
+  if (resolved.error) {
+    return <DetailRouteFailure error={resolved.error} fallbackPath="/docker/containers" />;
+  }
+  if (!resolved.data) return <Navigate to="/docker/containers" replace />;
+  return (
+    <DockerContainerDetail
+      resolvedNodeId={resolved.data.node.id}
+      resolvedNodeSlug={resolved.data.node.slug}
+      resolvedContainerId={resolved.data.containerId}
+      resolvedContainerName={resolved.data.canonicalName}
+      pageContextToken={resolved.ownerToken}
+    />
+  );
 }
 
 function DockerDeploymentDetailGuard() {
-  const { nodeId } = useParams<{ nodeId: string }>();
-  const hasScope = useAuthStore((s) => s.hasScope);
+  const { nodeSlug, deploymentName } = useParams<{ nodeSlug: string; deploymentName: string }>();
+  const canAccess = useAuthStore((s) => s.hasScopedAccess("docker:containers:view"));
+  const resolved = useResolvedPageRoute(
+    canAccess && nodeSlug && deploymentName
+      ? dockerDeploymentRoute(nodeSlug, deploymentName)
+      : undefined,
+    async () => {
+      const node = await api.getDockerNodeBySlug(nodeSlug!);
+      const deployment = await api.getDockerDeploymentByName(node.id, deploymentName!);
+      return { node, deployment };
+    },
+    ({ node, deployment }) => ({
+      resourceType: "docker-deployment",
+      resourceId: deployment.id,
+      nodeId: node.id,
+      label: deployment.name,
+    })
+  );
 
-  if (
-    !hasScope("docker:containers:view") &&
-    !(nodeId && hasScope(`docker:containers:view:${nodeId}`))
-  ) {
-    return <Navigate to="/" replace />;
+  if (!canAccess) return <Navigate to="/" replace />;
+  if (resolved.loading) return <DetailRouteLoading />;
+  if (resolved.error) {
+    return <DetailRouteFailure error={resolved.error} fallbackPath="/docker/deployments" />;
   }
-
-  return <DockerDeploymentDetail />;
+  if (!resolved.data) return <Navigate to="/docker/deployments" replace />;
+  return (
+    <DockerDeploymentDetail
+      resolvedNodeId={resolved.data.node.id}
+      resolvedNodeSlug={resolved.data.node.slug}
+      resolvedDeploymentId={resolved.data.deployment.id}
+      resolvedDeploymentName={resolved.data.deployment.name}
+    />
+  );
 }
 
 function DockerVolumeDetailGuard() {
-  const { nodeId } = useParams<{ nodeId: string }>();
-  const hasScope = useAuthStore((s) => s.hasScope);
+  const { nodeSlug, volumeName } = useParams<{ nodeSlug: string; volumeName: string }>();
+  const canAccess = useAuthStore((s) => s.hasScopedAccess("docker:volumes:view"));
+  const resolved = useResolvedPageRoute(
+    canAccess && nodeSlug && volumeName ? dockerVolumeRoute(nodeSlug, volumeName) : undefined,
+    async () => {
+      const node = await api.getDockerNodeBySlug(nodeSlug!);
+      const volume = await api.resolveDockerVolumeByName(node.id, volumeName!);
+      return { node, volume };
+    },
+    ({ node, volume }) => ({
+      resourceType: "docker-volume",
+      resourceId: volume.name,
+      nodeId: node.id,
+      label: volume.name,
+    })
+  );
 
-  if (!hasScope("docker:volumes:view") && !(nodeId && hasScope(`docker:volumes:view:${nodeId}`))) {
-    return <Navigate to="/" replace />;
+  if (!canAccess) return <Navigate to="/" replace />;
+  if (resolved.loading) return <DetailRouteLoading />;
+  if (resolved.error) {
+    return <DetailRouteFailure error={resolved.error} fallbackPath="/docker/volumes" />;
   }
-
-  return <DockerVolumeDetail />;
+  if (!resolved.data) return <Navigate to="/docker/volumes" replace />;
+  return (
+    <DockerVolumeDetail
+      resolvedNodeId={resolved.data.node.id}
+      resolvedNodeSlug={resolved.data.node.slug}
+      resolvedVolumeName={resolved.data.volume.name}
+    />
+  );
 }
 
 function ProxyHostDetailGuard() {
-  const { id } = useParams<{ id: string }>();
-  const hasScope = useAuthStore((s) => s.hasScope);
+  const { proxySlug } = useParams<{ proxySlug: string }>();
+  const canAccess = useAuthStore((s) => s.hasScopedAccess("proxy:view"));
+  const resolved = useResolvedPageRoute(
+    canAccess && proxySlug ? proxyHostRoute(proxySlug) : undefined,
+    () => api.getProxyHostBySlug(proxySlug!),
+    (host) => ({
+      resourceType: "proxy-host",
+      resourceId: host.id,
+      label: host.domainNames[0] || host.slug,
+    })
+  );
 
-  if (!hasScope("proxy:view") && !(id && hasScope(`proxy:view:${id}`))) {
-    return <Navigate to="/" replace />;
+  if (!canAccess) return <Navigate to="/" replace />;
+  if (resolved.loading) return <DetailRouteLoading />;
+  if (resolved.error) {
+    return <DetailRouteFailure error={resolved.error} fallbackPath="/proxy-hosts" />;
   }
-
-  return <ProxyHostDetail />;
+  if (!resolved.data) return <Navigate to="/proxy-hosts" replace />;
+  return (
+    <ProxyHostDetail
+      resolvedProxyHostId={resolved.data.id}
+      resolvedProxySlug={resolved.data.slug}
+    />
+  );
 }
 
-function ProxyHostsPageGuard() {
+function ProxyHostsPageGuard({ create = false }: { create?: boolean } = {}) {
   const hasScope = useAuthStore((s) => s.hasScope);
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
 
@@ -175,7 +298,7 @@ function ProxyHostsPageGuard() {
     return <Navigate to="/" replace />;
   }
 
-  return <ProxyHosts />;
+  return <ProxyHosts initialCreateDialogOpen={create} />;
 }
 
 function CAsPageGuard() {
@@ -249,14 +372,25 @@ function NginxTemplateEditGuard() {
 }
 
 function NodeDetailGuard() {
-  const { id } = useParams<{ id: string }>();
-  const hasScope = useAuthStore((s) => s.hasScope);
+  const { nodeSlug } = useParams<{ nodeSlug: string }>();
+  const canAccess = useAuthStore((s) => s.hasScopedAccess("nodes:details"));
+  const resolved = useResolvedPageRoute(
+    canAccess && nodeSlug ? nodeRoute(nodeSlug) : undefined,
+    () => api.getNodeBySlug(nodeSlug!),
+    (node) => ({
+      resourceType: "node",
+      resourceId: node.id,
+      label: node.displayName || node.hostname,
+    })
+  );
 
-  if (!hasScope("nodes:details") && !(id && hasScope(`nodes:details:${id}`))) {
-    return <Navigate to="/" replace />;
-  }
-
-  return <AdminNodeDetail />;
+  if (!canAccess) return <Navigate to="/" replace />;
+  if (resolved.loading) return <DetailRouteLoading />;
+  if (resolved.error) return <DetailRouteFailure error={resolved.error} fallbackPath="/nodes" />;
+  if (!resolved.data) return <Navigate to="/nodes" replace />;
+  return (
+    <AdminNodeDetail resolvedNodeId={resolved.data.id} resolvedNodeSlug={resolved.data.slug} />
+  );
 }
 
 function NodesPageGuard() {
@@ -304,14 +438,30 @@ function DatabasesPageGuard() {
 }
 
 function DatabaseDetailGuard() {
-  const { id } = useParams<{ id: string }>();
-  const hasScope = useAuthStore((s) => s.hasScope);
+  const { databaseSlug } = useParams<{ databaseSlug: string }>();
+  const canAccess = useAuthStore((s) => s.hasScopedAccess("databases:view"));
+  const resolved = useResolvedPageRoute(
+    canAccess && databaseSlug ? databaseRoute(databaseSlug) : undefined,
+    () => api.getDatabaseBySlug(databaseSlug!),
+    (database) => ({
+      resourceType: "database",
+      resourceId: database.id,
+      label: database.name,
+    })
+  );
 
-  if (!hasScope("databases:view") && !(id && hasScope(`databases:view:${id}`))) {
-    return <Navigate to="/" replace />;
+  if (!canAccess) return <Navigate to="/" replace />;
+  if (resolved.loading) return <DetailRouteLoading />;
+  if (resolved.error) {
+    return <DetailRouteFailure error={resolved.error} fallbackPath="/databases" />;
   }
-
-  return <DatabaseDetail />;
+  if (!resolved.data) return <Navigate to="/databases" replace />;
+  return (
+    <DatabaseDetail
+      resolvedDatabaseId={resolved.data.id}
+      resolvedDatabaseSlug={resolved.data.slug}
+    />
+  );
 }
 
 function NotificationsPageGuard() {
@@ -341,14 +491,22 @@ function NotificationsPageGuard() {
   return <Notifications />;
 }
 
-function LoggingPageGuard() {
-  const { section, id } = useParams<{ section?: string; id?: string }>();
+function LoggingPageGuard({ detailType }: { detailType?: "environment" | "schema" } = {}) {
+  const { environmentSlug, schemaSlug } = useParams<{
+    environmentSlug?: string;
+    schemaSlug?: string;
+  }>();
+  const id =
+    detailType === "environment"
+      ? environmentSlug
+      : detailType === "schema"
+        ? schemaSlug
+        : undefined;
   const loggingEnabled = useSystemConfigStore((s) => s.config.features.loggingEnabled);
   const systemConfigLoaded = useSystemConfigStore((s) => s.loaded);
   const systemConfigLoading = useSystemConfigStore((s) => s.isLoading);
   const loadSystemConfig = useSystemConfigStore((s) => s.load);
   const [systemConfigLoadFailed, setSystemConfigLoadFailed] = useState(false);
-  const user = useAuthStore((s) => s.user);
   const hasAnyScope = useAuthStore((s) => s.hasAnyScope);
   const hasScopedAccess = useAuthStore((s) => s.hasScopedAccess);
   const canAccessLoggingEnvironments =
@@ -359,20 +517,32 @@ function LoggingPageGuard() {
     "logs:schemas:create",
     "logs:manage"
   );
-  const hasResourceScopedSchemaView = user
-    ? (deriveAllowedResourceIdsByScope(user.scopes)["logs:schemas:view"]?.length ?? 0) > 0
-    : false;
-  const hasDirectSchemaView =
-    section === "schemas" &&
-    !!id &&
-    (hasAnyScope("logs:schemas:view", "logs:manage") ||
-      (user ? scopeMatches(user.scopes, `logs:schemas:view:${id}`) : false));
+  const hasResourceScopedSchemaView = hasScopedAccess("logs:schemas:view");
   const canAccessLogging =
     canAccessLoggingEnvironments || canAccessLoggingSchemaList || hasResourceScopedSchemaView;
-  const canAccessRequestedRoute =
-    section === "schemas" && !!id
-      ? hasDirectSchemaView || hasAnyScope("logs:schemas:view", "logs:manage")
-      : canAccessLogging;
+  const isEnvironmentDetail = detailType === "environment" && !!id;
+  const isSchemaDetail = detailType === "schema" && !!id;
+  const canResolveDetail = isEnvironmentDetail
+    ? hasScopedAccess("logs:environments:view") || hasAnyScope("logs:manage")
+    : isSchemaDetail
+      ? hasScopedAccess("logs:schemas:view") || hasAnyScope("logs:manage")
+      : false;
+  const resolved = useResolvedPageRoute(
+    systemConfigLoaded && loggingEnabled && canResolveDetail && id
+      ? isEnvironmentDetail
+        ? loggingEnvironmentRoute(id)
+        : loggingSchemaRoute(id)
+      : undefined,
+    async () =>
+      isEnvironmentDetail
+        ? { kind: "environment" as const, value: await api.getLoggingEnvironmentBySlug(id!) }
+        : { kind: "schema" as const, value: await api.getLoggingSchemaBySlug(id!) },
+    (result) => ({
+      resourceType: result.kind === "environment" ? "logging-environment" : "logging-schema",
+      resourceId: result.value.id,
+      label: result.value.name,
+    })
+  );
 
   useEffect(() => {
     if (!systemConfigLoaded && !systemConfigLoading && !systemConfigLoadFailed) {
@@ -392,11 +562,38 @@ function LoggingPageGuard() {
     );
   }
 
-  if (!loggingEnabled || !canAccessRequestedRoute) {
+  if (
+    !loggingEnabled ||
+    !canAccessLogging ||
+    ((isEnvironmentDetail || isSchemaDetail) && !canResolveDetail)
+  ) {
     return <Navigate to="/" replace />;
   }
 
-  return <Logging />;
+  if ((isEnvironmentDetail || isSchemaDetail) && resolved.loading) return <DetailRouteLoading />;
+  if ((isEnvironmentDetail || isSchemaDetail) && resolved.error) {
+    return (
+      <DetailRouteFailure
+        error={resolved.error}
+        fallbackPath={isEnvironmentDetail ? "/logging/environments" : "/logging/schemas"}
+      />
+    );
+  }
+  if ((isEnvironmentDetail || isSchemaDetail) && !resolved.data) {
+    return (
+      <Navigate to={isEnvironmentDetail ? "/logging/environments" : "/logging/schemas"} replace />
+    );
+  }
+
+  return (
+    <Logging
+      resolvedResourceId={resolved.data?.value.id}
+      resolvedResourceSlug={resolved.data?.value.slug}
+      resolvedSection={
+        isEnvironmentDetail ? "environments" : isSchemaDetail ? "schemas" : undefined
+      }
+    />
+  );
 }
 
 function AdministrationPageGuard() {
@@ -415,6 +612,14 @@ function RealtimeBridge() {
   const setUser = useAuthStore((s) => s.setUser);
   const logout = useAuthStore((s) => s.logout);
   const canListNodes = useAuthStore((s) => s.hasScopedAccess("nodes:details"));
+  const canReceiveNodeSlug = useAuthStore(
+    (s) =>
+      s.hasScopedAccess("nodes:details") ||
+      s.hasScopedAccess("docker:containers:view") ||
+      s.hasScopedAccess("docker:images:view") ||
+      s.hasScopedAccess("docker:volumes:view") ||
+      s.hasScopedAccess("docker:networks:view")
+  );
   const setGatewayUpdatingActive = useAppStatusStore((s) => s.setGatewayUpdatingActive);
   const clearGatewayUpdating = useAppStatusStore((s) => s.clearGatewayUpdating);
   const hydrateAIApprovalMode = useUIStore((s) => s.hydrateAIApprovalMode);
@@ -461,6 +666,15 @@ function RealtimeBridge() {
     if (!user || !canListNodes) return;
     return eventStream.subscribe("node.changed", () => {});
   }, [user, canListNodes]);
+
+  useEffect(() => {
+    if (!user || !canReceiveNodeSlug) return;
+    return eventStream.subscribe("node.slug.changed", (payload) => {
+      const event = payload as { id?: string; slug?: string };
+      if (!event.id || !event.slug) return;
+      useDockerStore.getState().syncNodeAppearance({ id: event.id, slug: event.slug });
+    });
+  }, [canReceiveNodeSlug, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -647,7 +861,8 @@ export default function App() {
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/proxy-hosts" element={<ProxyHostsPageGuard />} />
-              <Route path="/proxy-hosts/:id/:tab?" element={<ProxyHostDetailGuard />} />
+              <Route path="/proxy-hosts/new" element={<ProxyHostsPageGuard create />} />
+              <Route path="/proxy-hosts/:proxySlug/:tab?" element={<ProxyHostDetailGuard />} />
               <Route path="/nginx-templates/new" element={<NginxTemplateEditGuard />} />
               <Route path="/nginx-templates/:id" element={<NginxTemplateEditGuard />} />
               <Route
@@ -673,8 +888,17 @@ export default function App() {
                 element={scoped("status-page:view", <StatusPage />)}
               />
               <Route path="/databases" element={<DatabasesPageGuard />} />
-              <Route path="/databases/:id/:tab?" element={<DatabaseDetailGuard />} />
-              <Route path="/logging/:section?/:id?/:tab?" element={<LoggingPageGuard />} />
+              <Route path="/databases/:databaseSlug/:tab?" element={<DatabaseDetailGuard />} />
+              <Route path="/logging" element={<LoggingPageGuard />} />
+              <Route path="/logging/:section" element={<LoggingPageGuard />} />
+              <Route
+                path="/logging/environments/:environmentSlug/:tab?"
+                element={<LoggingPageGuard detailType="environment" />}
+              />
+              <Route
+                path="/logging/schemas/:schemaSlug/:tab?"
+                element={<LoggingPageGuard detailType="schema" />}
+              />
               <Route path="/settings/:tab?" element={<Settings />} />
               <Route
                 path="/admin/users"
@@ -685,18 +909,18 @@ export default function App() {
                 element={scoped("admin:groups", <Navigate to="/administration/groups" replace />)}
               />
               <Route path="/nodes" element={<NodesPageGuard />} />
-              <Route path="/nodes/:id/:tab?" element={<NodeDetailGuard />} />
+              <Route path="/nodes/:nodeSlug/:tab?" element={<NodeDetailGuard />} />
               <Route path="/docker/:tab?" element={<DockerPageGuard />} />
               <Route
-                path="/docker/containers/:nodeId/:containerId/:tab?"
+                path="/docker/containers/:nodeSlug/:containerName/:tab?"
                 element={<DockerContainerDetailGuard />}
               />
               <Route
-                path="/docker/deployments/:nodeId/:deploymentId/:tab?"
+                path="/docker/deployments/:nodeSlug/:deploymentName/:tab?"
                 element={<DockerDeploymentDetailGuard />}
               />
               <Route
-                path="/docker/volumes/:nodeId/:volumeName/:tab?"
+                path="/docker/volumes/:nodeSlug/:volumeName/:tab?"
                 element={<DockerVolumeDetailGuard />}
               />
             </Route>

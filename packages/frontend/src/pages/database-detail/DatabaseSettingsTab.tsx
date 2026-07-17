@@ -16,7 +16,7 @@ export function DatabaseSettingsTab({
   onSaved,
 }: {
   database: DatabaseConnection;
-  onSaved: () => void;
+  onSaved: (database: DatabaseConnection) => void;
 }) {
   const [draft, setDraft] = useState<DatabaseConnectionDraft>(draftFromConnection(database));
   const [saving, setSaving] = useState(false);
@@ -28,9 +28,9 @@ export function DatabaseSettingsTab({
   const save = async () => {
     setSaving(true);
     try {
-      await api.updateDatabase(database.id, buildDatabasePayload(draft));
+      const updated = await api.updateDatabase(database.id, buildDatabasePayload(draft));
       toast.success("Database settings updated");
-      onSaved();
+      onSaved(updated);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update database");
     } finally {

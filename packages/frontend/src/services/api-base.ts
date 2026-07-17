@@ -382,6 +382,11 @@ export class ApiClientBase {
     return this.fetchRaw<T>(url, options);
   }
 
+  protected async requestRouteContext<T>(endpoint: string): Promise<T> {
+    const url = endpoint.startsWith(API_BASE) ? endpoint : `${API_BASE}${endpoint}`;
+    return this.fetchRaw<T>(url, {}, { suppressGlobalStatus: true });
+  }
+
   protected async requestBinary(endpoint: string, options: RequestInit = {}): Promise<ArrayBuffer> {
     const url =
       endpoint.startsWith("/auth") || endpoint.startsWith(API_BASE)

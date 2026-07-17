@@ -56,6 +56,7 @@ vi.mock("@/components/proxy/CreateProxyHostDialog", () => ({
         onClick={() =>
           onSuccess?.(existingHost.id, {
             ...existingHost,
+            slug: "renamed-example-com",
             domainNames: ["renamed.example.com"],
           })
         }
@@ -105,6 +106,7 @@ vi.mock("./proxy-detail/RawConfigTab", () => ({
 function makeProxyHost(overrides: Record<string, unknown> = {}) {
   return {
     id: "host-1",
+    slug: "example.test",
     type: "proxy",
     enabled: true,
     domainNames: ["example.com"],
@@ -305,11 +307,14 @@ describe("ProxyHostDetail", () => {
   it("keeps proxy host detail mounted after editing domains", async () => {
     vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
 
-    renderWithRouter(<ProxyHostDetail />, {
-      path: "/proxy-hosts/:id/:tab",
-      route: "/proxy-hosts/host-1/details",
-      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
-    });
+    renderWithRouter(
+      <ProxyHostDetail resolvedProxyHostId="host-1" resolvedProxySlug="example.test" />,
+      {
+        path: "/proxy-hosts/:proxySlug/:tab",
+        route: "/proxy-hosts/example.test/details",
+        extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+      }
+    );
 
     expect(await screen.findByRole("heading", { name: "example.com" })).toBeInTheDocument();
 

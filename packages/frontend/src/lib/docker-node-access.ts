@@ -12,34 +12,12 @@ export const DOCKER_VIEW_NODE_SCOPES = [
 
 export type DockerViewNodeScope = (typeof DOCKER_VIEW_NODE_SCOPES)[number];
 
-export function buildScopedDockerNodes(
+function hasScopedDockerNodes(
   scopes: readonly string[],
   scopeBases: readonly DockerViewNodeScope[]
-): Node[] {
+): boolean {
   const allowedIds = deriveAllowedResourceIdsByScope(scopes);
-  const nodeIds = new Set<string>();
-  for (const scopeBase of scopeBases) {
-    for (const nodeId of allowedIds[scopeBase] ?? []) nodeIds.add(nodeId);
-  }
-
-  return [...nodeIds].sort().map((nodeId) => ({
-    id: nodeId,
-    type: "docker",
-    hostname: nodeId,
-    displayName: null,
-    appearanceColor: null,
-    status: "online",
-    serviceCreationLocked: false,
-    daemonVersion: null,
-    osInfo: null,
-    configVersionHash: null,
-    capabilities: {},
-    lastSeenAt: null,
-    metadata: { scopedOnly: true },
-    isConnected: true,
-    createdAt: "",
-    updatedAt: "",
-  }));
+  return scopeBases.some((scopeBase) => (allowedIds[scopeBase]?.length ?? 0) > 0);
 }
 
 function hasBroadDockerNodeAccess(
@@ -54,19 +32,23 @@ export async function loadVisibleDockerNodes(
   scopeBases: readonly DockerViewNodeScope[],
   canListNodes: boolean
 ): Promise<Node[]> {
-  const scopedNodes = buildScopedDockerNodes(scopes, scopeBases);
-  const shouldListNodes = canListNodes || hasBroadDockerNodeAccess(scopes, scopeBases);
-  if (!shouldListNodes) return scopedNodes;
+  const shouldListNodes =
+    canListNodes ||
+    hasBroadDockerNodeAccess(scopes, scopeBases) ||
+    hasScopedDockerNodes(scopes, scopeBases);
+  if (!shouldListNodes) return [];
 
-  try {
-    const response = await api.listNodes({ type: "docker", limit: 100 });
-    const listedNodes = response.data.filter(
-      (node) => node.status === "online" && node.isConnected && !isNodeIncompatible(node)
-    );
-    const listedIds = new Set(listedNodes.map((node) => node.id));
-    return [...listedNodes, ...scopedNodes.filter((node) => !listedIds.has(node.id))];
-  } catch (error) {
-    if (scopedNodes.length > 0) return scopedNodes;
-    throw error;
-  }
+  const response = await api.listNodes({ type: "docker", limit: 100 });
+  const hasBroadAccess = hasBroadDockerNodeAccess(scopes, scopeBases);
+  const allowedIdsByScope = deriveAllowedResourceIdsByScope(scopes);
+  const allowedNodeIds = new Set(
+    scopeBases.flatMap((scopeBase) => allowedIdsByScope[scopeBase] ?? [])
+  );
+  return response.data.filter(
+    (node) =>
+      node.status === "online" &&
+      node.isConnected &&
+      !isNodeIncompatible(node) &&
+      (hasBroadAccess || allowedNodeIds.has(node.id))
+  );
 }

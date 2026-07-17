@@ -57,4 +57,27 @@ describe('drizzle migration metadata', () => {
     expect(migration).toContain('"role" = \'tool\'');
     expect(migration).not.toMatch(/DELETE FROM "ai_conversation_search_documents"\s*;$/m);
   });
+
+  it('backfills resource slugs deterministically before enforcing constraints', () => {
+    const migration = readFileSync(join(process.cwd(), 'src/db/migrations/0056_strange_yellowjacket.sql'), 'utf8');
+
+    expect(migration.match(/ORDER BY "created_at", "id"/g)).toHaveLength(3);
+    expect(migration).toContain('"gateway_slug_transliterate"');
+    expect(migration).toContain('"gateway_slug_base"');
+    expect(migration).toContain('"gateway_slug_candidate"');
+    expect(migration).toContain("WHEN \"base_value\" IN ('file', 'console') THEN 1");
+    expect(migration).toContain('WHEN "base_value" = \'new\' THEN 1');
+
+    for (const [table, constraint] of [
+      ['nodes', 'nodes_slug_unique'],
+      ['database_connections', 'database_connections_slug_unique'],
+      ['proxy_hosts', 'proxy_hosts_slug_unique'],
+    ]) {
+      expect(migration).toContain(`ALTER TABLE "${table}" ALTER COLUMN "slug" SET NOT NULL`);
+      expect(migration).toContain(`ADD CONSTRAINT "${constraint}" UNIQUE("slug")`);
+    }
+
+    expect(migration).not.toContain('ALTER TABLE "logging_environments"');
+    expect(migration).not.toContain('ALTER TABLE "logging_schemas"');
+  });
 });

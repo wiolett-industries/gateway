@@ -34,6 +34,7 @@ import {
 } from "@/lib/ai-user-preferences";
 import { api } from "@/services/api";
 import { getConversationBlock, useAIStore } from "@/stores/ai";
+import { useResolvedPageContext } from "@/stores/resolved-page-context";
 import { useUIStore } from "@/stores/ui";
 import type {
   AIComposerAttachment,
@@ -121,19 +122,31 @@ function readPanelWidth(): number {
 function usePageContext(): PageContext {
   const location = useLocation();
   const params = useParams();
-
+  const resolvedStatus = useResolvedPageContext((s) => s.status);
+  const resolvedRouteKey = useResolvedPageContext((s) => s.routeKey);
+  const resolvedResource = useResolvedPageContext((s) => s.resource);
   const route = location.pathname;
-  let resourceType: string | undefined;
-  let resourceId: string | undefined;
+  const ownsRoute =
+    resolvedStatus === "ready" &&
+    resolvedRouteKey &&
+    (route === resolvedRouteKey || route.startsWith(`${resolvedRouteKey}/`));
 
-  if (params.id) {
-    resourceId = params.id;
-    if (route.startsWith("/cas/")) resourceType = "ca";
-    else if (route.startsWith("/certificates/")) resourceType = "certificate";
-    else if (route.startsWith("/proxy-hosts/")) resourceType = "proxy-host";
+  if (ownsRoute && resolvedResource) {
+    return {
+      route,
+      resourceType: resolvedResource.resourceType,
+      resourceId: resolvedResource.resourceId,
+    };
   }
 
-  return { route, resourceType, resourceId };
+  if (params.id && route.startsWith("/cas/")) {
+    return { route, resourceType: "ca", resourceId: params.id };
+  }
+  if (params.id && route.startsWith("/certificates/")) {
+    return { route, resourceType: "certificate", resourceId: params.id };
+  }
+
+  return { route };
 }
 
 const SLASH_COMMANDS = [

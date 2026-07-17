@@ -36,6 +36,7 @@ import {
   VolumeRenameSchema,
 } from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
+import { resolveDockerVolumeByName } from './docker-route-resolvers.js';
 
 const DOCKER_RESOURCE_LIST_MAX = 1000;
 const DOCKER_VOLUME_USED_BY_PREVIEW_MAX = 100;
@@ -124,7 +125,7 @@ export function registerVolumeRoutes(router: OpenAPIHono<AppEnv>) {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId')!;
       const name = c.req.param('name')!;
-      const data = await service.inspectVolume(nodeId, name);
+      const data = await resolveDockerVolumeByName(service, nodeId, name);
       return c.json({ data: normalizeVolumeDetailItem(data) });
     }
   );

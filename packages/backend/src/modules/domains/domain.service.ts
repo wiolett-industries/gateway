@@ -25,7 +25,7 @@ import type {
 const logger = createChildLogger('DomainsService');
 
 export interface DomainUsage {
-  proxyHosts: Array<{ id: string; domainNames: string[]; enabled: boolean }>;
+  proxyHosts: Array<{ id: string; slug: string; domainNames: string[]; enabled: boolean }>;
   sslCertificates: Array<{ id: string; domainNames: string[]; status: string; notAfter: Date | null }>;
 }
 
@@ -427,6 +427,7 @@ export class DomainsService {
       this.db
         .select({
           id: proxyHosts.id,
+          slug: proxyHosts.slug,
           domainNames: proxyHosts.domainNames,
           enabled: proxyHosts.enabled,
         })

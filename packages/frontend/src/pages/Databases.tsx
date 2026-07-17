@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { databaseRoute } from "@/lib/resource-routes";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -264,7 +265,7 @@ export function Databases() {
       toast.success("Database connection created");
       setCreateOpen(false);
       setDraft(draftFromConnection(null));
-      navigate(`/databases/${created.id}/overview`);
+      navigate(databaseRoute(created.slug, "overview"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create database connection");
     } finally {
@@ -452,7 +453,7 @@ export function Databases() {
           canViewItem={(row) => hasScope("databases:view") || hasScope(`databases:view:${row.id}`)}
           canReorganizeItem={() => canManageFolders}
           getResourceLabel={(row) => row.name}
-          onItemClick={(row) => navigate(`/databases/${row.id}/overview`)}
+          onItemClick={(row) => navigate(databaseRoute(row.slug, "overview"))}
           onRefresh={() => load()}
           onCreateFolderRef={(fn) => setCreateFolderAction(() => fn)}
         />

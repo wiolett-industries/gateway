@@ -38,8 +38,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { dockerContainerRoute, dockerVolumeRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
+import { useDockerStore } from "@/stores/docker";
+import { useUIStore } from "@/stores/ui";
 import type { DockerVolume } from "@/types";
 import { type FileManagerOperations, FilesTab } from "./docker-detail/FilesTab";
 import { LabelsSection } from "./docker-detail/LabelsSection";
@@ -72,20 +75,29 @@ function labelsSignature(labels: LabelEntry[]) {
   );
 }
 
-export function DockerVolumeDetail() {
-  const { nodeId, volumeName } = useParams<{
-    nodeId: string;
-    volumeName: string;
+export function DockerVolumeDetail({
+  resolvedNodeId,
+  resolvedNodeSlug,
+  resolvedVolumeName,
+}: {
+  resolvedNodeId?: string;
+  resolvedNodeSlug?: string;
+  resolvedVolumeName?: string;
+} = {}) {
+  const params = useParams<{
+    nodeId?: string;
+    nodeSlug?: string;
+    volumeName?: string;
     tab?: string;
   }>();
+  const nodeId = resolvedNodeId ?? params.nodeId;
+  const nodeSlug = resolvedNodeSlug ?? params.nodeSlug ?? params.nodeId ?? "";
+  const volumeName = resolvedVolumeName ?? params.volumeName;
   const navigate = useStableNavigate();
   const { hasScope } = useAuthStore();
   const decodedVolumeName = volumeName ?? "";
-  const encodedVolumeName = encodeURIComponent(decodedVolumeName);
-  const [activeTab, setActiveTab] = useUrlTab(
-    ["files", "settings"],
-    "files",
-    (tab) => `/docker/volumes/${nodeId}/${encodedVolumeName}/${tab}`
+  const [activeTab, setActiveTab] = useUrlTab(["files", "settings"], "files", (tab) =>
+    dockerVolumeRoute(nodeSlug, decodedVolumeName, tab)
   );
   const [volume, setVolume] = useState<DockerVolume | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -231,10 +243,23 @@ export function DockerVolumeDetail() {
   }, [nodeId, usedBy]);
 
   useRealtime("docker.volume.changed", (payload) => {
-    const event = payload as { nodeId?: string; name?: string };
+    const event = payload as { nodeId?: string; oldName?: string; name?: string };
     if (event.nodeId && event.nodeId !== nodeId) return;
+    if (event.oldName === decodedVolumeName && event.name) {
+      useUIStore
+        .getState()
+        .removeRecentPagesByPrefix(dockerVolumeRoute(nodeSlug, decodedVolumeName));
+      navigate(dockerVolumeRoute(nodeSlug, event.name, activeTab), { replace: true });
+      return;
+    }
     if (event.name && event.name !== decodedVolumeName) return;
     void fetchVolume(true);
+  });
+
+  useRealtime("node.slug.changed", (payload) => {
+    const event = payload as { id?: string; oldSlug?: string; slug?: string };
+    if (event.id !== nodeId || event.oldSlug !== nodeSlug || !event.slug) return;
+    navigate(dockerVolumeRoute(event.slug, decodedVolumeName, activeTab), { replace: true });
   });
 
   const fetchDirectory = useCallback(
@@ -325,13 +350,18 @@ export function DockerVolumeDetail() {
       await api.renameVolume(nodeId, decodedVolumeName, nextName);
       toast.success("Volume renamed");
       setRenameOpen(false);
-      navigate(`/docker/volumes/${nodeId}/${encodeURIComponent(nextName)}`);
+      const currentNodeSlug =
+        useDockerStore.getState().dockerNodes.find((node) => node.id === nodeId)?.slug || nodeSlug;
+      useUIStore
+        .getState()
+        .removeRecentPagesByPrefix(dockerVolumeRoute(currentNodeSlug, decodedVolumeName));
+      navigate(dockerVolumeRoute(currentNodeSlug, nextName, activeTab), { replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to rename volume");
     } finally {
       setActionLoading(false);
     }
-  }, [decodedVolumeName, navigate, nodeId, renameValue]);
+  }, [activeTab, decodedVolumeName, navigate, nodeId, nodeSlug, renameValue]);
 
   const handleRemove = useCallback(async () => {
     if (!nodeId || !decodedVolumeName) return;
@@ -539,7 +569,7 @@ export function DockerVolumeDetail() {
                     emptyMessage="No containers"
                     isRowClickable={(container) => container.canOpen}
                     onRowClick={(container) => {
-                      navigate(`/docker/containers/${nodeId}/${container.id}`);
+                      navigate(dockerContainerRoute(nodeSlug, container.name));
                     }}
                   />
                 </PanelShell>

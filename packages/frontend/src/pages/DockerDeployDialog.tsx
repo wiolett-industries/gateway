@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { dockerContainerRoute, dockerDeploymentRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -66,11 +67,14 @@ export function DockerDeployDialog({
   const [routeContainerPort, setRouteContainerPort] = useState("80");
   const [healthPath, setHealthPath] = useState("/");
   const [drainSeconds, setDrainSeconds] = useState("30");
+  const storeDockerNodes = useDockerStore((state) => state.dockerNodes);
   const allNodes = useMemo(() => {
-    const storeNodes = useDockerStore.getState().dockerNodes;
-    return storeNodes.length > 0 ? storeNodes : dockerNodes;
-  }, [dockerNodes]);
+    return storeDockerNodes.length > 0 ? storeDockerNodes : dockerNodes;
+  }, [dockerNodes, storeDockerNodes]);
   const availableNodes = useMemo(() => allNodes.filter((n) => !isNodeIncompatible(n)), [allNodes]);
+  const initialNodeLocked = !!(
+    nodeId && allNodes.find((candidate) => candidate.id === nodeId)?.serviceCreationLocked
+  );
   const availableRegistries = useMemo(
     () =>
       registries.filter(
@@ -82,8 +86,7 @@ export function DockerDeployDialog({
   // Reset form state when dialog opens
   useEffect(() => {
     if (open) {
-      const initialNode = nodeId ? allNodes.find((n) => n.id === nodeId) : null;
-      setDeployNodeId(initialNode?.serviceCreationLocked ? "" : nodeId || "");
+      setDeployNodeId(initialNodeLocked ? "" : nodeId || "");
       setDeployImage("");
       setDeployRegistryId("");
       setDeployName("");
@@ -94,7 +97,7 @@ export function DockerDeployDialog({
       setHealthPath("/");
       setDrainSeconds("30");
     }
-  }, [allNodes, open, nodeId]);
+  }, [initialNodeLocked, open, nodeId]);
 
   useEffect(() => {
     if (!open || !hasScope("docker:registries:view")) {
@@ -142,7 +145,7 @@ export function DockerDeployDialog({
       setDeployPullableImages([]);
       return;
     }
-    const otherNodes = useDockerStore.getState().dockerNodes.filter((n) => n.id !== deployNodeId);
+    const otherNodes = allNodes.filter((n) => n.id !== deployNodeId);
     if (otherNodes.length > 0) {
       Promise.all(
         otherNodes.map((n) =>
@@ -170,7 +173,7 @@ export function DockerDeployDialog({
     } else {
       setDeployPullableImages([]);
     }
-  }, [deployNodeId, hasScope]);
+  }, [allNodes, deployNodeId, hasScope]);
 
   const closeDeploy = () => {
     onOpenChange(false);
@@ -229,7 +232,10 @@ export function DockerDeployDialog({
         toast.success("Deployment created");
         closeDeploy();
         onDeployed?.(deployment.id);
-        navigate(`/docker/deployments/${deployNodeId}/${deployment.id}`);
+        const nodeSlug =
+          useDockerStore.getState().dockerNodes.find((node) => node.id === deployNodeId)?.slug ||
+          availableNodes.find((node) => node.id === deployNodeId)?.slug;
+        if (nodeSlug) navigate(dockerDeploymentRoute(nodeSlug, deployment.name));
       } else {
         const config: ContainerCreateConfig = {
           image: imageRef,
@@ -242,7 +248,20 @@ export function DockerDeployDialog({
         closeDeploy();
         const newId = (result as any)?.id ?? (result as any)?.Id;
         onDeployed?.(newId);
-        if (newId) navigate(`/docker/containers/${deployNodeId}/${newId}`);
+        if (newId) {
+          const inspect = await api.inspectContainer(deployNodeId, newId).catch(() => null);
+          const canonicalName = String(
+            (inspect as any)?.Name ??
+              (inspect as any)?.name ??
+              (result as any)?.Name ??
+              (result as any)?.name ??
+              ""
+          ).replace(/^\/+/, "");
+          const nodeSlug =
+            useDockerStore.getState().dockerNodes.find((node) => node.id === deployNodeId)?.slug ||
+            availableNodes.find((node) => node.id === deployNodeId)?.slug;
+          if (canonicalName && nodeSlug) navigate(dockerContainerRoute(nodeSlug, canonicalName));
+        }
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to deploy");

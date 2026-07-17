@@ -328,6 +328,87 @@ describe('events websocket authentication', () => {
     handlers.onClose(new Event('close'), ws as any);
   });
 
+  it('filters node slug changes for Docker-scoped users without exposing general node events', async () => {
+    const eventBus = new EventBusService();
+    container.registerInstance(EventBusService, eventBus);
+    mocks.resolveLiveSessionUser.mockResolvedValue({
+      user: { ...USER, scopes: ['docker:volumes:files:write:node-1'] },
+      effectiveScopes: ['docker:volumes:files:write:node-1'],
+    });
+    const ws = createWs();
+    const handlers = createEventsWSHandlers();
+
+    handlers.onOpen(new Event('open'), ws as any);
+    await authenticateEventsConnection(ws as any, 'session-1');
+    handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'subscribe', channels: ['node.slug.changed', 'node.changed'] }),
+      }),
+      ws as any
+    );
+
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'subscribed', channels: ['node.slug.changed'], rejected: ['node.changed'] })
+    );
+
+    eventBus.publish('node.slug.changed', { id: 'node-2', oldSlug: 'old-2', slug: 'new-2' });
+    eventBus.publish('node.slug.changed', { id: 'node-1', oldSlug: 'old-1', slug: 'new-1' });
+    eventBus.publish('node.changed', { id: 'node-1', hostname: 'private-host' });
+
+    expect(ws.send).not.toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'event',
+        channel: 'node.slug.changed',
+        payload: { id: 'node-2', oldSlug: 'old-2', slug: 'new-2' },
+      })
+    );
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'event',
+        channel: 'node.slug.changed',
+        payload: { id: 'node-1', oldSlug: 'old-1', slug: 'new-1' },
+      })
+    );
+    expect(ws.send).not.toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'event',
+        channel: 'node.changed',
+        payload: { id: 'node-1', hostname: 'private-host' },
+      })
+    );
+
+    handlers.onClose(new Event('close'), ws as any);
+  });
+
+  it('allows broad Docker viewers to receive node slug changes', async () => {
+    const eventBus = new EventBusService();
+    container.registerInstance(EventBusService, eventBus);
+    mocks.resolveLiveSessionUser.mockResolvedValue({
+      user: { ...USER, scopes: ['docker:images:view'] },
+      effectiveScopes: ['docker:images:view'],
+    });
+    const ws = createWs();
+    const handlers = createEventsWSHandlers();
+
+    handlers.onOpen(new Event('open'), ws as any);
+    await authenticateEventsConnection(ws as any, 'session-1');
+    handlers.onMessage(
+      new MessageEvent('message', { data: JSON.stringify({ type: 'subscribe', channels: ['node.slug.changed'] }) }),
+      ws as any
+    );
+    eventBus.publish('node.slug.changed', { id: 'node-2', oldSlug: 'old', slug: 'new' });
+
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'event',
+        channel: 'node.slug.changed',
+        payload: { id: 'node-2', oldSlug: 'old', slug: 'new' },
+      })
+    );
+
+    handlers.onClose(new Event('close'), ws as any);
+  });
+
   it('does not treat database credential reveal as database event visibility', async () => {
     const eventBus = new EventBusService();
     container.registerInstance(EventBusService, eventBus);

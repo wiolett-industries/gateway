@@ -54,6 +54,7 @@ describe('NodesService enrollment token creation', () => {
       expect.objectContaining({
         type: 'docker',
         hostname: 'node.local',
+        slug: 'node-local',
         enrollmentTokenSelector: result.enrollmentToken.split('_')[3],
         status: 'pending',
       })
@@ -62,6 +63,51 @@ describe('NodesService enrollment token creation', () => {
     const persistedHash = insertedValues.mock.calls[0]?.[0]?.enrollmentTokenHash;
     expect(await bcrypt.compare(result.enrollmentToken, persistedHash)).toBe(true);
     expect(result.gatewayCertSha256).toBe('sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef');
+  });
+
+  it('keeps the slug when an appearance save repeats the current display name', async () => {
+    const existing = {
+      id: 'node-1',
+      type: 'docker',
+      hostname: 'node.local',
+      displayName: 'Primary node',
+      appearanceColor: null,
+      slug: 'primary-node-2',
+    };
+    const updatedValues = vi.fn();
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({ limit: vi.fn(async () => [existing]) })),
+        })),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn((values) => {
+          updatedValues(values);
+          return {
+            where: vi.fn(() => ({
+              returning: vi.fn(async () => [{ ...existing, ...values }]),
+            })),
+          };
+        }),
+      })),
+    } as any;
+    const service = new NodesService(
+      db,
+      { log: vi.fn(async () => undefined) } as any,
+      { getNode: vi.fn() } as any,
+      { getGatewayCertSha256: vi.fn() } as any,
+      {} as any
+    );
+
+    const result = await service.update(
+      existing.id,
+      { displayName: existing.displayName, appearanceColor: 'blue' },
+      'user-1'
+    );
+
+    expect(updatedValues).toHaveBeenCalledWith(expect.not.objectContaining({ slug: expect.anything() }));
+    expect(result.slug).toBe(existing.slug);
   });
 
   it('returns only the public enrollment target when local gRPC IP is not configured', async () => {

@@ -32,6 +32,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useRealtime } from "@/hooks/use-realtime";
+import { proxyHostRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useFolderStore } from "@/stores/folders";
@@ -72,7 +73,11 @@ function TypeBadge({ type }: { type: ProxyHostType }) {
   }
 }
 
-export function ProxyHosts() {
+export function ProxyHosts({
+  initialCreateDialogOpen = false,
+}: {
+  initialCreateDialogOpen?: boolean;
+} = {}) {
   const navigate = useNavigate();
   const { hasScope, hasScopedAccess } = useAuthStore();
   const {
@@ -100,7 +105,11 @@ export function ProxyHosts() {
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [moveDialogHostId, setMoveDialogHostId] = useState<string | null>(null);
   const [activeDrag, setActiveDrag] = useState<DragEndEvent["active"] | null>(null);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(initialCreateDialogOpen);
+
+  useEffect(() => {
+    if (initialCreateDialogOpen) setCreateDialogOpen(true);
+  }, [initialCreateDialogOpen]);
   const isMobile = useIsMobile();
   const canManageFolders = hasScope("proxy:folders:manage");
   const isSearchFiltering = filters.search.trim() !== "";
@@ -460,7 +469,7 @@ export function ProxyHosts() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => navigate(`/proxy-hosts/${host.id}`)}>
+                      <DropdownMenuItem onClick={() => navigate(proxyHostRoute(host.slug))}>
                         Edit
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
@@ -645,7 +654,7 @@ export function ProxyHosts() {
             getItemSortableData: (host) => ({ type: "host", host }),
             canViewItem: canViewHost,
             isItemDragDisabled: (host) => !canReorderFolders || !canEditHost(host),
-            onItemClick: (host) => navigate(`/proxy-hosts/${host.id}`),
+            onItemClick: (host) => navigate(proxyHostRoute(host.slug)),
           }}
         />
       </div>
@@ -678,10 +687,13 @@ export function ProxyHosts() {
 
       <CreateProxyHostDialog
         open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        onSuccess={(hostId) => {
+        onOpenChange={(open) => {
+          setCreateDialogOpen(open);
+          if (!open && initialCreateDialogOpen) navigate("/proxy-hosts", { replace: true });
+        }}
+        onSuccess={(_, host) => {
           fetchGroupedHosts();
-          navigate(`/proxy-hosts/${hostId}`);
+          if (host) navigate(proxyHostRoute(host.slug));
         }}
       />
     </PageTransition>

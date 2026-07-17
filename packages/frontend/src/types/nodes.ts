@@ -72,6 +72,7 @@ export interface NodeStatsReport {
 
 export interface Node {
   id: string;
+  slug: string;
   type: NodeType;
   hostname: string;
   displayName: string | null;

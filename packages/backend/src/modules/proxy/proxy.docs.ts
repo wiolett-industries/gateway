@@ -5,6 +5,7 @@ import {
   IdParamSchema,
   jsonBody,
   okJson,
+  pathParamSchema,
   UnknownDataResponseSchema,
 } from '@/lib/openapi.js';
 import {
@@ -38,6 +39,15 @@ export const getProxyHostRoute = appRoute({
   tags: ['Proxy Hosts'],
   summary: 'Get proxy host details',
   request: { params: IdParamSchema },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const getProxyHostBySlugRoute = appRoute({
+  method: 'get',
+  path: '/by-slug/{slug}',
+  tags: ['Proxy Hosts'],
+  summary: 'Resolve proxy host by slug',
+  request: { params: pathParamSchema('slug') },
   responses: okJson(UnknownDataResponseSchema),
 });
 

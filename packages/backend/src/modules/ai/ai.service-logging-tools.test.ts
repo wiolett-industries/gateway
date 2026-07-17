@@ -122,12 +122,12 @@ describe('AIService logging tool routing', () => {
 
     expect(loggingSchemaService.create).toHaveBeenNthCalledWith(
       1,
-      { name: 'App Logs', slug: 'app-logs', schemaMode: 'loose', fieldSchema: [] },
+      { name: 'App Logs', schemaMode: 'loose', fieldSchema: [] },
       'user-1'
     );
     expect(loggingSchemaService.create).toHaveBeenNthCalledWith(
       2,
-      { name: 'Audit Logs', slug: 'audit-logs', schemaMode: 'reject', fieldSchema: [] },
+      { name: 'Audit Logs', schemaMode: 'reject', fieldSchema: [] },
       'user-1'
     );
   });

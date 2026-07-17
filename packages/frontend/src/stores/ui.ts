@@ -12,6 +12,29 @@ interface ModalState {
   props?: Record<string, unknown>;
 }
 
+export interface RecentPage {
+  path: string;
+  label: string;
+  icon?: string;
+  resourceKey?: string;
+}
+
+const UUID_PATH_SEGMENT = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const LEGACY_ID_DETAIL_PATHS = [
+  new RegExp(`^/(?:nodes|databases|proxy-hosts)/${UUID_PATH_SEGMENT}(?:/|$)`, "i"),
+  new RegExp(`^/logging/(?:environments|schemas)/${UUID_PATH_SEGMENT}(?:/|$)`, "i"),
+  new RegExp(`^/docker/(?:containers|deployments|volumes)/${UUID_PATH_SEGMENT}(?:/|$)`, "i"),
+];
+
+export function filterLegacyIdRecentPages(pages: RecentPage[] | undefined): RecentPage[] {
+  if (!Array.isArray(pages)) return [];
+  return pages.filter(
+    (page) =>
+      !!page?.resourceKey ||
+      !LEGACY_ID_DETAIL_PATHS.some((pattern) => pattern.test(page?.path ?? ""))
+  );
+}
+
 interface UIState {
   // Theme
   theme: Theme;
@@ -61,8 +84,9 @@ interface UIState {
   toggleAILiteMode: () => void;
 
   // Recent pages
-  recentPages: Array<{ path: string; label: string; icon?: string }>;
-  addRecentPage: (path: string, label: string, icon?: string) => void;
+  recentPages: RecentPage[];
+  addRecentPage: (path: string, label: string, icon?: string, resourceKey?: string) => void;
+  removeRecentPagesByPrefix: (pathPrefix: string) => void;
 
   // Modal
   modal: ModalState;
@@ -132,11 +156,19 @@ export const useUIStore = create<UIState>()(
 
       // Recent pages
       recentPages: [],
-      addRecentPage: (path, label, icon) =>
+      addRecentPage: (path, label, icon, resourceKey) =>
         set((s) => {
-          const filtered = s.recentPages.filter((p) => p.path !== path);
-          return { recentPages: [{ path, label, icon }, ...filtered].slice(0, 8) };
+          const filtered = s.recentPages.filter(
+            (p) => p.path !== path && (!resourceKey || p.resourceKey !== resourceKey)
+          );
+          return { recentPages: [{ path, label, icon, resourceKey }, ...filtered].slice(0, 8) };
         }),
+      removeRecentPagesByPrefix: (pathPrefix) =>
+        set((s) => ({
+          recentPages: s.recentPages.filter(
+            (page) => page.path !== pathPrefix && !page.path.startsWith(`${pathPrefix}/`)
+          ),
+        })),
 
       // Modal
       modal: { type: null },
@@ -145,6 +177,7 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: UI_STORAGE_KEY,
+      version: 1,
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
@@ -159,7 +192,7 @@ export const useUIStore = create<UIState>()(
         aiApprovalMode: state.aiApprovalMode,
         recentPages: state.recentPages,
       }),
-      migrate: (persisted) => {
+      migrate: (persisted, persistedVersion) => {
         const state = persisted as (Partial<UIState> & Record<string, unknown>) | undefined;
         if (!state) return persisted;
         return {
@@ -174,7 +207,8 @@ export const useUIStore = create<UIState>()(
           aiLiteModeIntroAccepted: state.aiLiteModeIntroAccepted,
           pinnedAIConversationIds: state.pinnedAIConversationIds,
           aiApprovalMode: isAIApprovalMode(state.aiApprovalMode) ? state.aiApprovalMode : "normal",
-          recentPages: state.recentPages,
+          recentPages:
+            persistedVersion < 1 ? filterLegacyIdRecentPages(state.recentPages) : state.recentPages,
         };
       },
     }

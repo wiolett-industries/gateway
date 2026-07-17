@@ -6,7 +6,10 @@ import (
 	"time"
 )
 
-const maxBufferChunks = 1000
+const (
+	maxBufferChunks = 1000
+	maxBufferBytes  = 1024 * 1024
+)
 
 // Session represents a persistent exec session attached to any process.
 type Session struct {
@@ -19,8 +22,9 @@ type Session struct {
 	resizeFn   func(rows, cols int) error
 
 	// Ring buffer of recent output
-	buffer [][]byte
-	bufMu  sync.Mutex
+	buffer      [][]byte
+	bufferBytes int
+	bufMu       sync.Mutex
 }
 
 // writeCloser is a minimal interface for writing to a session's stdin.
@@ -35,8 +39,11 @@ func (s *Session) bufferOutput(data []byte) {
 	chunk := make([]byte, len(data))
 	copy(chunk, data)
 	s.buffer = append(s.buffer, chunk)
-	if len(s.buffer) > maxBufferChunks {
-		s.buffer = s.buffer[len(s.buffer)-maxBufferChunks:]
+	s.bufferBytes += len(chunk)
+	for len(s.buffer) > maxBufferChunks || s.bufferBytes > maxBufferBytes {
+		s.bufferBytes -= len(s.buffer[0])
+		s.buffer[0] = nil
+		s.buffer = s.buffer[1:]
 	}
 }
 

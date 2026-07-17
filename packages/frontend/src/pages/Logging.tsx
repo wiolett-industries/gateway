@@ -24,6 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useRealtime } from "@/hooks/use-realtime";
+import { loggingEnvironmentRoute, loggingSchemaRoute } from "@/lib/resource-routes";
 import { deriveAllowedResourceIdsByScope, scopeMatches } from "@/lib/scope-utils";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -37,7 +39,6 @@ import {
 } from "./logging/LoggingDetails";
 import { LoggingEnvironmentDialog } from "./logging/LoggingEnvironmentDialog";
 import { LoggingEnvironmentsTab, LoggingSchemasTab } from "./logging/LoggingTabs";
-import { slugify } from "./logging/logging-state";
 
 const TOP_TABS = [
   { value: "environments", label: "Environments", icon: Database },
@@ -47,8 +48,27 @@ const TOP_TABS = [
 
 const ENV_TABS = ["logs", "tokens", "settings"] as const;
 
-export function Logging() {
-  const { section, id, tab } = useParams<{ section?: string; id?: string; tab?: string }>();
+export function Logging({
+  resolvedResourceId,
+  resolvedResourceSlug,
+  resolvedSection,
+}: {
+  resolvedResourceId?: string;
+  resolvedResourceSlug?: string;
+  resolvedSection?: "environments" | "schemas";
+} = {}) {
+  const params = useParams<{
+    section?: string;
+    id?: string;
+    environmentSlug?: string;
+    schemaSlug?: string;
+    tab?: string;
+  }>();
+  const section = resolvedSection ?? params.section;
+  const id = resolvedResourceId ?? params.id;
+  const routeSlug =
+    resolvedResourceSlug ?? params.environmentSlug ?? params.schemaSlug ?? params.id ?? "";
+  const tab = params.tab;
   const navigate = useNavigate();
   const { user, hasAnyScope, hasScopedAccess } = useAuthStore();
   const isEnvironmentDetail = section === "environments" && !!id;
@@ -201,11 +221,25 @@ export function Logging() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    if (section && !TOP_TABS.some((item) => item.value === section)) {
-      navigate(`/logging/environments/${section}/${id ?? "logs"}`, { replace: true });
+  useRealtime(isEnvironmentDetail ? "logging.environment.changed" : null, (payload) => {
+    const event = payload as { id?: string; oldSlug?: string; slug?: string };
+    if (event.id !== id) return;
+    if (event.oldSlug === routeSlug && event.slug) {
+      navigate(loggingEnvironmentRoute(event.slug, activeEnvironmentTab), { replace: true });
+      return;
     }
-  }, [id, navigate, section]);
+    void load();
+  });
+
+  useRealtime(isSchemaDetail ? "logging.schema.changed" : null, (payload) => {
+    const event = payload as { id?: string; oldSlug?: string; slug?: string };
+    if (event.id !== id) return;
+    if (event.oldSlug === routeSlug && event.slug) {
+      navigate(loggingSchemaRoute(event.slug), { replace: true });
+      return;
+    }
+    void load();
+  });
 
   const filteredEnvironments = useMemo(() => {
     const needle = environmentSearch.trim().toLowerCase();
@@ -237,7 +271,7 @@ export function Logging() {
     });
     toast.success("Logging environment created");
     await load();
-    navigate(`/logging/environments/${created.id}/logs`);
+    navigate(loggingEnvironmentRoute(created.slug, "logs"));
   };
 
   const updateEnvironment = async (environmentId: string, patch: Partial<LoggingEnvironment>) => {
@@ -251,6 +285,9 @@ export function Logging() {
         (environment) => (environment.id === updated.id ? updated : environment)
       )
     );
+    if (updated.id === id && updated.slug !== routeSlug) {
+      navigate(loggingEnvironmentRoute(updated.slug, activeEnvironmentTab), { replace: true });
+    }
   };
 
   const createSchema = async (data: Partial<LoggingSchema>) => {
@@ -262,7 +299,7 @@ export function Logging() {
     });
     toast.success("Logging schema created");
     if (hasAnyScope("logs:schemas:view", `logs:schemas:view:${created.id}`, "logs:manage")) {
-      navigate(`/logging/schemas/${created.id}`);
+      navigate(loggingSchemaRoute(created.slug));
     } else {
       navigate("/logging/schemas");
     }
@@ -276,6 +313,9 @@ export function Logging() {
       return next;
     });
     toast.success("Logging schema updated");
+    if (updated.id === id && updated.slug !== routeSlug) {
+      navigate(loggingSchemaRoute(updated.slug), { replace: true });
+    }
   };
 
   const deleteSchema = async (schema: LoggingSchema) => {
@@ -443,7 +483,7 @@ export function Logging() {
               canManageFolders={canManageEnvironmentFolders}
               onSearchChange={setEnvironmentSearch}
               onCreate={() => setEnvironmentDialogOpen(true)}
-              onOpen={(environment) => navigate(`/logging/environments/${environment.id}/logs`)}
+              onOpen={(environment) => navigate(loggingEnvironmentRoute(environment.slug, "logs"))}
               onRefresh={load}
               onCreateFolderRef={(fn) => setCreateEnvironmentFolderAction(() => fn)}
             />
@@ -473,7 +513,7 @@ export function Logging() {
               onCreate={() => {
                 setSchemaDialogOpen(true);
               }}
-              onOpen={(schema) => navigate(`/logging/schemas/${schema.id}`)}
+              onOpen={(schema) => navigate(loggingSchemaRoute(schema.slug))}
               onDelete={deleteSchema}
               onRefresh={load}
               onCreateFolderRef={(fn) => setCreateSchemaFolderAction(() => fn)}
@@ -515,7 +555,6 @@ function LoggingSchemaDialog({
   onSave: (data: Partial<LoggingSchema>) => Promise<void>;
 }) {
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [schemaMode, setSchemaMode] = useState<LoggingSchemaMode>("reject");
   const [fieldSchema, setFieldSchema] = useState<LoggingSchema["fieldSchema"]>([]);
@@ -524,7 +563,6 @@ function LoggingSchemaDialog({
   useEffect(() => {
     if (!open) return;
     setName("");
-    setSlug("");
     setDescription("");
     setSchemaMode("reject");
     setFieldSchema([]);
@@ -535,7 +573,6 @@ function LoggingSchemaDialog({
     try {
       await onSave({
         name,
-        slug: slug || slugify(name),
         description: description || null,
         schemaMode,
         fieldSchema,
@@ -553,22 +590,10 @@ function LoggingSchemaDialog({
           <DialogTitle>Create Logging Schema</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block space-y-1">
-              <span className="text-sm font-medium">Name</span>
-              <Input
-                value={name}
-                onChange={(event) => {
-                  setName(event.target.value);
-                  setSlug(slugify(event.target.value));
-                }}
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-sm font-medium">Slug</span>
-              <Input value={slug} onChange={(event) => setSlug(slugify(event.target.value))} />
-            </label>
-          </div>
+          <label className="block space-y-1">
+            <span className="text-sm font-medium">Name</span>
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
           <label className="block space-y-1">
             <span className="text-sm font-medium">Description</span>
             <Input value={description} onChange={(event) => setDescription(event.target.value)} />
@@ -594,7 +619,7 @@ function LoggingSchemaDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button disabled={!name.trim() || !slug.trim() || saving} onClick={() => void save()}>
+          <Button disabled={!name.trim() || saving} onClick={() => void save()}>
             Save
           </Button>
         </DialogFooter>

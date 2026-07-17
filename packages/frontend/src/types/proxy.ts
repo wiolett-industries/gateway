@@ -28,6 +28,7 @@ export interface RewriteRule {
 
 export interface ProxyHost {
   id: string;
+  slug: string;
   type: ProxyHostType;
   domainNames: string[];
   enabled: boolean;

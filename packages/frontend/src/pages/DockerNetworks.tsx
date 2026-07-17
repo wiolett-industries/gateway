@@ -33,6 +33,7 @@ import { useDeferredDialogState } from "@/hooks/use-deferred-dialog-state";
 import { useRealtime } from "@/hooks/use-realtime";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { nodeBadgeClassName } from "@/lib/node-appearance";
+import { dockerContainerRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -40,6 +41,7 @@ import type { DockerNetwork, Node, NodeAppearanceColor } from "@/types";
 
 interface DockerNetworkListItem extends DockerNetwork {
   _nodeId: string;
+  _nodeSlug: string;
   _nodeName?: string;
   _nodeColor?: NodeAppearanceColor | null;
 }
@@ -49,6 +51,7 @@ interface NetworkContainerRow {
   name: string;
   state: string;
   nodeId: string;
+  nodeSlug: string;
 }
 
 export function DockerNetworks({
@@ -111,6 +114,7 @@ export function DockerNetworks({
   const openNetworkDetails = useCallback(
     async (net: DockerNetworkListItem) => {
       const nid = (net as any)._nodeId || selectedNodeId;
+      const nodeSlug = net._nodeSlug;
       if (!nid) return;
       setSelectedNetwork(net);
       setDetailContainersLoading(true);
@@ -122,6 +126,7 @@ export function DockerNetworks({
           name: c[id]?.name ?? c[id]?.Name ?? id.slice(0, 12),
           state: "",
           nodeId: nid,
+          nodeSlug,
         }));
         const containers = await api.listDockerContainers(nid);
         const matched = (containers ?? [])
@@ -131,6 +136,7 @@ export function DockerNetworks({
             name: (ct.name ?? "").replace(/^\//, ""),
             state: ct.state,
             nodeId: nid,
+            nodeSlug,
           }));
         setDetailContainers(matched.length > 0 ? matched : previewRows);
       } catch {
@@ -141,6 +147,7 @@ export function DockerNetworks({
             name: c[id]?.name ?? c[id]?.Name ?? id.slice(0, 12),
             state: "",
             nodeId: nid,
+            nodeSlug,
           }))
         );
       } finally {
@@ -656,7 +663,10 @@ export function DockerNetworks({
                   emptyMessage="No containers found on this network."
                   onRowClick={(container) => {
                     closeNetworkDetails();
-                    navigate(`/docker/containers/${container.nodeId}/${container.id}`);
+                    const nodeSlug =
+                      storeDockerNodes.find((node) => node.id === container.nodeId)?.slug ||
+                      container.nodeSlug;
+                    navigate(dockerContainerRoute(nodeSlug, container.name));
                   }}
                 />
               </PanelShell>

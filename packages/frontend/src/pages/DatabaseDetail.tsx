@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import { databaseRoute } from "@/lib/resource-routes";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -24,8 +25,16 @@ import { DatabaseOverviewTab } from "./database-detail/DatabaseOverviewTab";
 import { DatabaseSettingsTab } from "./database-detail/DatabaseSettingsTab";
 import { PostgresExplorer } from "./database-detail/PostgresExplorer";
 
-export function DatabaseDetail() {
-  const { id } = useParams<{ id: string; tab?: string }>();
+export function DatabaseDetail({
+  resolvedDatabaseId,
+  resolvedDatabaseSlug,
+}: {
+  resolvedDatabaseId?: string;
+  resolvedDatabaseSlug?: string;
+} = {}) {
+  const params = useParams<{ id?: string; databaseSlug?: string; tab?: string }>();
+  const id = resolvedDatabaseId ?? params.id;
+  const routeSlug = resolvedDatabaseSlug ?? params.databaseSlug ?? params.id ?? "";
   const navigate = useStableNavigate();
   const { hasScope } = useAuthStore();
   const [database, setDatabase] = useState<DatabaseConnection | null>(null);
@@ -73,7 +82,7 @@ export function DatabaseDetail() {
   const [activeTab, setActiveTab] = useUrlTab(
     ["overview", "explorer", "console"],
     "overview",
-    (tab) => `/databases/${id}/${tab}`
+    (tab) => databaseRoute(routeSlug, tab)
   );
 
   const load = useCallback(async () => {
@@ -160,8 +169,14 @@ export function DatabaseDetail() {
       action?: string;
       healthStatus?: DatabaseConnection["healthStatus"];
       sampledAt?: string;
+      oldSlug?: string;
+      slug?: string;
     };
     if (!event || event.id !== id) return;
+    if (event.oldSlug === routeSlug && event.slug) {
+      navigate(databaseRoute(event.slug, activeTab), { replace: true });
+      return;
+    }
     if (event.action === "deleted") {
       navigate("/databases");
       return;
@@ -392,6 +407,7 @@ export function DatabaseDetail() {
                 checked={isPinnedSidebar(database.id)}
                 onChange={() => {
                   toggleSidebar(database.id, {
+                    slug: database.slug,
                     name: database.name,
                     type: database.type,
                     healthStatus: liveHealthStatus,
@@ -412,9 +428,14 @@ export function DatabaseDetail() {
             </DialogHeader>
             <DatabaseSettingsTab
               database={database}
-              onSaved={() => {
+              onSaved={(updated) => {
                 setSettingsOpen(false);
-                void load();
+                setDatabase(updated);
+                if (updated.slug !== routeSlug) {
+                  navigate(databaseRoute(updated.slug, activeTab), { replace: true });
+                } else {
+                  void load();
+                }
               }}
             />
           </DialogContent>

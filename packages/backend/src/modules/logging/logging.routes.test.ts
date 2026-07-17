@@ -122,7 +122,7 @@ describe('logging schema route permissions', () => {
     });
 
     expect(response.status).toBe(201);
-    expect(create).toHaveBeenCalledWith({ name: 'App', slug: 'app', schemaMode: 'reject', fieldSchema: [] }, USER.id);
+    expect(create).toHaveBeenCalledWith({ name: 'App', schemaMode: 'reject', fieldSchema: [] }, USER.id);
   });
 
   it('allows resource-scoped schema reads by schema id', async () => {

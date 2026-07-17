@@ -12,12 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DOCKER_VIEW_NODE_SCOPES, loadVisibleDockerNodes } from "@/lib/docker-node-access";
+import { hasScopeBase, scopeMatches } from "@/lib/scope-utils";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useDockerStore } from "@/stores/docker";
+import { useResolvedPageContext } from "@/stores/resolved-page-context";
 import { useSystemConfigStore } from "@/stores/system-config";
 import { useUIStore } from "@/stores/ui";
 import { useUpdateStore } from "@/stores/update";
@@ -114,26 +117,42 @@ export function DashboardLayout() {
 
       dashboardBootstrapPromise = (async () => {
         let hasNginxNodes = true;
+        const canListAllNodes =
+          scopeMatches(user.scopes, "nodes:details") ||
+          user.scopes.includes("nodes:folders:manage");
+        const canListScopedNodes = hasScopeBase(user.scopes, "nodes:details");
+        const canListDockerNodes = [
+          "docker:containers:view",
+          "docker:images:view",
+          "docker:volumes:view",
+          "docker:networks:view",
+        ].some((scope) => hasScopeBase(user.scopes, scope));
 
-        // Preload node types for sidebar visibility + Docker command palette.
-        if (
-          user.scopes?.some(
-            (scope: string) =>
-              scope.startsWith("nodes:") ||
-              scope.startsWith("docker:") ||
-              scope.startsWith("proxy:")
-          )
-        ) {
+        // Preload visible node types for sidebar visibility.
+        if (canListAllNodes || canListScopedNodes) {
           try {
             const r = await api.listNodes({ limit: 100 });
-            const dockerNds = r.data.filter(
-              (n) => n.type === "docker" && n.status === "online" && !isNodeIncompatible(n)
-            );
             const nginxNds = r.data.filter((n) => n.type === "nginx" && !isNodeIncompatible(n));
-            useDockerStore.getState().setDockerNodes(dockerNds);
             hasNginxNodes = nginxNds.length > 0;
           } catch {
             // Keep the default permissive sidebar state if node preload fails.
+          }
+        }
+
+        // Docker route access is filtered independently from nodes:details.
+        if (canListDockerNodes) {
+          try {
+            useDockerStore
+              .getState()
+              .setDockerNodes(
+                await loadVisibleDockerNodes(
+                  user.scopes,
+                  DOCKER_VIEW_NODE_SCOPES,
+                  canListAllNodes || canListScopedNodes
+                )
+              );
+          } catch {
+            // Docker pages can retry their own scoped node preload.
           }
         }
 
@@ -208,88 +227,82 @@ export function DashboardLayout() {
 
   // Track recent pages for command palette
   const location = useLocation();
+  const resolvedPageStatus = useResolvedPageContext((s) => s.status);
+  const resolvedPageRouteKey = useResolvedPageContext((s) => s.routeKey);
+  const resolvedPageResource = useResolvedPageContext((s) => s.resource);
   useEffect(() => {
     const path = location.pathname;
     if (path === "/" || path === "/login" || path === "/callback" || path === "/blocked") return;
 
-    // Build a human-readable label, resolving entity IDs to names
+    const resolvedDetailPath =
+      /^\/(?:nodes|databases|proxy-hosts)\/[^/]+/.test(path) ||
+      /^\/logging\/(?:environments|schemas)\/[^/]+/.test(path) ||
+      /^\/docker\/(?:containers|deployments|volumes)\/[^/]+\/[^/]+/.test(path);
+    if (resolvedDetailPath) {
+      const ownsRoute =
+        resolvedPageStatus === "ready" &&
+        resolvedPageRouteKey &&
+        (path === resolvedPageRouteKey || path.startsWith(`${resolvedPageRouteKey}/`));
+      if (!ownsRoute || !resolvedPageResource) return;
+
+      const segments = path.split("/");
+      const decode = (value: string | undefined) => {
+        if (!value) return "";
+        try {
+          return decodeURIComponent(value);
+        } catch {
+          return value;
+        }
+      };
+      const tab = resolvedPageResource.resourceType.startsWith("docker-")
+        ? decode(segments[5])
+        : resolvedPageResource.resourceType.startsWith("logging-")
+          ? decode(segments[4])
+          : decode(segments[3]);
+      const identity = resolvedPageResource.resourceType.startsWith("docker-")
+        ? decode(segments[4])
+        : resolvedPageResource.resourceType.startsWith("logging-")
+          ? decode(segments[3])
+          : decode(segments[2]);
+      const prefix =
+        resolvedPageResource.resourceType === "node"
+          ? "Node"
+          : resolvedPageResource.resourceType === "database"
+            ? "Database"
+            : resolvedPageResource.resourceType === "proxy-host"
+              ? "Proxy"
+              : resolvedPageResource.resourceType === "logging-environment"
+                ? "Log environment"
+                : resolvedPageResource.resourceType === "logging-schema"
+                  ? "Log schema"
+                  : resolvedPageResource.resourceType === "docker-container"
+                    ? "Container"
+                    : resolvedPageResource.resourceType === "docker-deployment"
+                      ? "Deployment"
+                      : "Volume";
+      const formattedTab = tab
+        ? ` / ${tab.charAt(0).toUpperCase() + tab.slice(1).replace(/-/g, " ")}`
+        : "";
+      const resourceKey = [
+        resolvedPageResource.resourceType,
+        resolvedPageResource.nodeId,
+        resolvedPageResource.resourceId,
+      ]
+        .filter(Boolean)
+        .join(":");
+      useUIStore
+        .getState()
+        .addRecentPage(
+          path,
+          `${prefix}: ${resolvedPageResource.label || identity}${formattedTab}`,
+          undefined,
+          resourceKey
+        );
+      return;
+    }
+
+    // Build a human-readable label for ID-based and section routes.
     const label = (() => {
-      // Node detail: /nodes/:id or /nodes/:id/:tab
-      const nodeMatch = path.match(/^\/nodes\/([0-9a-f-]{36})/);
-      if (nodeMatch) {
-        api
-          .getNode(nodeMatch[1])
-          .then((n) => {
-            const resolvedName = n.displayName || n.hostname;
-            const tab2 = path.split("/")[3];
-            const resolvedLabel = tab2
-              ? `Node: ${resolvedName} / ${tab2.charAt(0).toUpperCase() + tab2.slice(1).replace(/-/g, " ")}`
-              : `Node: ${resolvedName}`;
-            useUIStore.getState().addRecentPage(path, resolvedLabel);
-          })
-          .catch(() => {});
-        const name = nodeMatch[1].slice(0, 8);
-        const tab = path.split("/")[3];
-        return tab
-          ? `Node: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1).replace(/-/g, " ")}`
-          : `Node: ${name}`;
-      }
-      // Container detail: /docker/containers/:nodeId/:containerId
-      const containerMatch = path.match(/^\/docker\/containers\/[^/]+\/([0-9a-f]+)/);
-      if (containerMatch) {
-        const c = useDockerStore.getState().containers.find((ct) => ct.id === containerMatch[1]);
-        const name = c?.name || containerMatch[1].slice(0, 12);
-        const tab = path.split("/")[5];
-        return tab
-          ? `Container: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}`
-          : `Container: ${name}`;
-      }
-      // Deployment detail: /docker/deployments/:nodeId/:deploymentId
-      const deploymentMatch = path.match(/^\/docker\/deployments\/([^/]+)\/([^/]+)/);
-      if (deploymentMatch) {
-        const [, nodeId, deploymentId] = deploymentMatch;
-        const tab = path.split("/")[5];
-        const formatLabel = (name: string) =>
-          tab
-            ? `Deployment: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}`
-            : `Deployment: ${name}`;
-        const cached = useDockerStore
-          .getState()
-          .containers.find(
-            (item) =>
-              item.kind === "deployment" &&
-              (item.deploymentId === deploymentId || item.id === deploymentId)
-          );
-
-        api
-          .getDockerDeployment(nodeId, deploymentId)
-          .then((deployment) => {
-            useUIStore.getState().addRecentPage(path, formatLabel(deployment.name));
-          })
-          .catch(() => {});
-
-        return formatLabel(cached?.name || deploymentId.slice(0, 8));
-      }
-      // Proxy host detail: /proxy-hosts/:id
-      const proxyMatch = path.match(/^\/proxy-hosts\/([0-9a-f-]{36})/);
-      if (proxyMatch) {
-        api
-          .getProxyHost(proxyMatch[1])
-          .then((p) => {
-            const resolvedName = p.domainNames?.[0] || proxyMatch![1].slice(0, 8);
-            const tab2 = path.split("/")[3];
-            const resolvedLabel = tab2
-              ? `Proxy: ${resolvedName} / ${tab2.charAt(0).toUpperCase() + tab2.slice(1)}`
-              : `Proxy: ${resolvedName}`;
-            useUIStore.getState().addRecentPage(path, resolvedLabel);
-          })
-          .catch(() => {});
-        const name = proxyMatch[1].slice(0, 8);
-        const tab = path.split("/")[3];
-        return tab
-          ? `Proxy: ${name} / ${tab.charAt(0).toUpperCase() + tab.slice(1)}`
-          : `Proxy: ${name}`;
-      }
       // CA detail: /cas/:id
       const caMatch = path.match(/^\/cas\/([0-9a-f-]{36})/);
       if (caMatch) {
@@ -317,7 +330,7 @@ export function DashboardLayout() {
     })();
 
     useUIStore.getState().addRecentPage(path, label);
-  }, [location.pathname]);
+  }, [location.pathname, resolvedPageResource, resolvedPageRouteKey, resolvedPageStatus]);
 
   // Keyboard shortcuts
   useEffect(() => {

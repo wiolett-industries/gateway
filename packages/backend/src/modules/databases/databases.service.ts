@@ -4,6 +4,7 @@ import pg from 'pg';
 import type { DrizzleClient } from '@/db/client.js';
 import { type DatabaseHealthEntry, databaseConnections } from '@/db/schema/index.js';
 import { compactHealthHistory } from '@/lib/health-history.js';
+import { writeWithAllocatedSlug } from '@/lib/resource-slugs.js';
 import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -184,6 +185,14 @@ export class DatabaseConnectionService {
     return toDatabaseConnectionView(row, this.decryptConfig(row.encryptedConfig), revealCredentials, false);
   }
 
+  async getBySlug(slug: string): Promise<DatabaseConnectionView> {
+    const row = await this.db.query.databaseConnections.findFirst({
+      where: eq(databaseConnections.slug, slug),
+    });
+    if (!row) throw new AppError(404, 'DATABASE_NOT_FOUND', 'Database connection not found');
+    return toDatabaseConnectionView(row, this.decryptConfig(row.encryptedConfig), false, false);
+  }
+
   async getHealthHistory(id: string): Promise<DatabaseHealthEntry[]> {
     const row = await this.getRow(id);
     return (row.healthHistory as DatabaseHealthEntry[] | null) ?? [];
@@ -203,35 +212,44 @@ export class DatabaseConnectionService {
       input.type === 'postgres' ? this.normalizePostgres(input.config) : this.normalizeRedis(input.config);
     const testResult = await this.testNormalizedConnection(normalized);
     const encryptedConfig = this.encryptConfig(normalized);
-    const [row] = await this.db
-      .insert(databaseConnections)
-      .values({
-        name: input.name,
-        type: input.type,
-        description: input.description ?? null,
-        tags: input.tags ?? [],
-        manualSizeLimitMb: input.type === 'postgres' ? (input.manualSizeLimitMb ?? null) : null,
-        host: normalized.host,
-        port: normalized.port,
-        databaseName: normalized.type === 'postgres' ? normalized.database : `db${normalized.db}`,
-        username: normalized.username ?? null,
-        tlsEnabled: normalized.type === 'postgres' ? normalized.sslEnabled : normalized.tlsEnabled,
-        encryptedConfig,
-        healthStatus: testResult.status,
-        lastHealthCheckAt: new Date(),
-        lastError: null,
-        healthHistory: [
-          {
-            ts: new Date().toISOString(),
-            status: testResult.status,
-            responseMs: testResult.responseMs,
-            slow: testResult.status === 'degraded',
-          },
-        ],
-        createdById: userId,
-        updatedById: userId,
-      })
-      .returning();
+    const row = await writeWithAllocatedSlug({
+      source: input.name,
+      fallback: 'database',
+      constraint: 'database_connections_slug_unique',
+      write: async (slug) => {
+        const [created] = await this.db
+          .insert(databaseConnections)
+          .values({
+            name: input.name,
+            slug,
+            type: input.type,
+            description: input.description ?? null,
+            tags: input.tags ?? [],
+            manualSizeLimitMb: input.type === 'postgres' ? (input.manualSizeLimitMb ?? null) : null,
+            host: normalized.host,
+            port: normalized.port,
+            databaseName: normalized.type === 'postgres' ? normalized.database : `db${normalized.db}`,
+            username: normalized.username ?? null,
+            tlsEnabled: normalized.type === 'postgres' ? normalized.sslEnabled : normalized.tlsEnabled,
+            encryptedConfig,
+            healthStatus: testResult.status,
+            lastHealthCheckAt: new Date(),
+            lastError: null,
+            healthHistory: [
+              {
+                ts: new Date().toISOString(),
+                status: testResult.status,
+                responseMs: testResult.responseMs,
+                slow: testResult.status === 'degraded',
+              },
+            ],
+            createdById: userId,
+            updatedById: userId,
+          })
+          .returning();
+        return created;
+      },
+    });
 
     await this.auditService.log({
       userId,
@@ -298,30 +316,43 @@ export class DatabaseConnectionService {
       };
     }
 
-    const [row] = await this.db
-      .update(databaseConnections)
-      .set({
-        name: input.name ?? existing.name,
-        description: input.description === undefined ? existing.description : (input.description ?? null),
-        tags: input.tags ?? (existing.tags as string[]),
-        manualSizeLimitMb:
-          existing.type === 'postgres'
-            ? input.manualSizeLimitMb === undefined
-              ? existing.manualSizeLimitMb
-              : (input.manualSizeLimitMb ?? null)
-            : null,
-        host: mergedConfig.host,
-        port: mergedConfig.port,
-        databaseName: mergedConfig.type === 'postgres' ? mergedConfig.database : `db${mergedConfig.db}`,
-        username: mergedConfig.username ?? null,
-        tlsEnabled: mergedConfig.type === 'postgres' ? mergedConfig.sslEnabled : mergedConfig.tlsEnabled,
-        encryptedConfig: this.encryptConfig(mergedConfig),
-        updatedById: userId,
-        updatedAt: new Date(),
-        ...statusUpdate,
-      })
-      .where(eq(databaseConnections.id, id))
-      .returning();
+    const updateData = {
+      name: input.name ?? existing.name,
+      description: input.description === undefined ? existing.description : (input.description ?? null),
+      tags: input.tags ?? (existing.tags as string[]),
+      manualSizeLimitMb:
+        existing.type === 'postgres'
+          ? input.manualSizeLimitMb === undefined
+            ? existing.manualSizeLimitMb
+            : (input.manualSizeLimitMb ?? null)
+          : null,
+      host: mergedConfig.host,
+      port: mergedConfig.port,
+      databaseName: mergedConfig.type === 'postgres' ? mergedConfig.database : `db${mergedConfig.db}`,
+      username: mergedConfig.username ?? null,
+      tlsEnabled: mergedConfig.type === 'postgres' ? mergedConfig.sslEnabled : mergedConfig.tlsEnabled,
+      encryptedConfig: this.encryptConfig(mergedConfig),
+      updatedById: userId,
+      updatedAt: new Date(),
+      ...statusUpdate,
+    };
+    const updateConnection = async (slug?: string) => {
+      const [updated] = await this.db
+        .update(databaseConnections)
+        .set({ ...updateData, ...(slug === undefined ? {} : { slug }) })
+        .where(eq(databaseConnections.id, id))
+        .returning();
+      return updated;
+    };
+    const row =
+      input.name !== undefined && input.name !== existing.name
+        ? await writeWithAllocatedSlug({
+            source: input.name,
+            fallback: 'database',
+            constraint: 'database_connections_slug_unique',
+            write: updateConnection,
+          })
+        : await updateConnection();
 
     this.disposeClient(id).catch(() => {});
 
@@ -337,7 +368,12 @@ export class DatabaseConnectionService {
         fields: Object.keys(input),
       },
     });
-    this.emitChange(id, 'updated', { name: row.name, type: row.type, healthStatus: row.healthStatus });
+    this.emitChange(id, 'updated', {
+      name: row.name,
+      type: row.type,
+      healthStatus: row.healthStatus,
+      ...(row.slug === existing.slug ? {} : { oldSlug: existing.slug, slug: row.slug }),
+    });
     return toDatabaseConnectionView(row, mergedConfig, false, false);
   }
 

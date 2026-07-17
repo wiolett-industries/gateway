@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { DetailRow } from "@/components/common/DetailRow";
 import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
+import { nodeRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import type { ProxyHost } from "@/types";
 import { effectiveHealthStatus, HEALTH_BADGE, HEALTH_LABEL } from "./helpers";
@@ -20,6 +21,7 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
   const nodeId = (host as any).nodeId as string | null;
   const [nodeInfo, setNodeInfo] = useState<{
     id: string;
+    slug: string;
     name: string;
     status: string;
     type: string;
@@ -30,7 +32,13 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
     api
       .getNode(nodeId)
       .then((n) =>
-        setNodeInfo({ id: n.id, name: n.displayName || n.hostname, status: n.status, type: n.type })
+        setNodeInfo({
+          id: n.id,
+          slug: n.slug,
+          name: n.displayName || n.hostname,
+          status: n.status,
+          type: n.type,
+        })
       )
       .catch(() => {});
   }, [nodeId]);
@@ -42,7 +50,7 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
         <PanelShell
           className="cursor-pointer transition-colors hover:bg-accent"
           bodyClassName="flex items-center justify-between p-4"
-          onClick={() => navigate(`/nodes/${nodeInfo.id}`)}
+          onClick={() => navigate(nodeRoute(nodeInfo.slug))}
         >
           <div className="flex items-center gap-3">
             <Server className="h-5 w-5 text-muted-foreground" />

@@ -15,6 +15,8 @@ import (
 	"google.golang.org/grpc"
 )
 
+const maxAsyncCommandHandlers = 4
+
 // runSession connects to the gateway, registers, and runs the command loop.
 func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error {
 	// Enable log streaming by default — backend can disable via SetDaemonLogStream command
@@ -59,6 +61,42 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 
 	if logStreamer, ok := d.plugin.(LogStreamPlugin); ok {
 		go logStreamer.RunLogStream(sessionCtx, conn)
+	}
+
+	asyncCommandSlots := make(chan struct{}, maxAsyncCommandHandlers)
+	sendAsyncCommandResult := func(c *pb.GatewayCommand, handle func(*pb.GatewayCommand) *pb.CommandResult) {
+		select {
+		case asyncCommandSlots <- struct{}{}:
+		default:
+			go func() {
+				result := &pb.CommandResult{
+					CommandId: c.CommandId,
+					Success:   false,
+					Error:     "daemon is busy handling long-running commands; retry shortly",
+				}
+				if err := writer.Send(&pb.DaemonMessage{
+					Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
+				}); err != nil {
+					d.logger.Warn("failed to send async command overload result", "command_id", c.CommandId, "error", err)
+					sessionCancel()
+					_ = cmdStream.CloseSend()
+				}
+			}()
+			return
+		}
+
+		go func() {
+			defer func() { <-asyncCommandSlots }()
+
+			result := handle(c)
+			if err := writer.Send(&pb.DaemonMessage{
+				Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
+			}); err != nil {
+				d.logger.Warn("failed to send async command result", "command_id", c.CommandId, "error", err)
+				sessionCancel()
+				_ = cmdStream.CloseSend()
+			}
+		}()
 	}
 
 	// Start health reporter in background
@@ -108,30 +146,24 @@ func runSession(ctx context.Context, conn *grpc.ClientConn, d *DaemonBase) error
 			continue
 		case *pb.GatewayCommand_NodeExec:
 			// Handle node-level console exec (create/resize)
-			result := handleNodeExec(sessionCtx, nodeExecMgr, cmd, d.cfg.Console.User)
-			if err := writer.Send(&pb.DaemonMessage{
-				Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
-			}); err != nil {
-				return err
-			}
+			sendAsyncCommandResult(cmd, func(c *pb.GatewayCommand) *pb.CommandResult {
+				return handleNodeExec(sessionCtx, nodeExecMgr, c, d.cfg.Console.User)
+			})
 			continue
 		case *pb.GatewayCommand_NodeFile:
 			// Handle node-level filesystem operations in shared lifecycle so all daemon types support them.
-			result := handleNodeFile(sessionCtx, cmd)
-			if err := writer.Send(&pb.DaemonMessage{
-				Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
-			}); err != nil {
-				return err
-			}
+			sendAsyncCommandResult(cmd, func(c *pb.GatewayCommand) *pb.CommandResult {
+				return handleNodeFile(sessionCtx, c)
+			})
 			continue
-		case *pb.GatewayCommand_DockerImage:
-			// Image commands (especially pull) can take minutes — run async
-			go func(c *pb.GatewayCommand) {
-				result := d.plugin.HandleCommand(c)
-				writer.Send(&pb.DaemonMessage{
-					Payload: &pb.DaemonMessage_CommandResult{CommandResult: result},
-				})
-			}(cmd)
+		case *pb.GatewayCommand_DockerImage,
+			*pb.GatewayCommand_DockerLogs,
+			*pb.GatewayCommand_DockerDeployment,
+			*pb.GatewayCommand_DockerVolume,
+			*pb.GatewayCommand_DockerFile,
+			*pb.GatewayCommand_DockerExec:
+			// Long-running Docker I/O must not block the command receive loop.
+			sendAsyncCommandResult(cmd, d.plugin.HandleCommand)
 			continue
 		case *pb.GatewayCommand_UpdateDaemon:
 			// Self-update: download new binary, replace it on disk, acknowledge the

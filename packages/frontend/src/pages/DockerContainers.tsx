@@ -33,6 +33,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { formatDisplayImageRef } from "@/lib/docker-image-ref";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { nodeBadgeClassName } from "@/lib/node-appearance";
+import { dockerContainerRoute, dockerDeploymentRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -43,6 +44,7 @@ import { containerDisplayName, STATUS_BADGE } from "./docker-detail/helpers";
 
 interface DockerContainerListItem extends DockerContainer {
   _nodeId: string;
+  _nodeSlug: string;
   _nodeName?: string;
   _nodeColor?: NodeAppearanceColor | null;
 }
@@ -773,8 +775,8 @@ export function DockerContainers({
                           onClick={() =>
                             navigate(
                               container.kind === "deployment"
-                                ? `/docker/deployments/${container._nodeId}/${container.deploymentId ?? container.id}`
-                                : `/docker/containers/${container._nodeId}/${container.id}`
+                                ? dockerDeploymentRoute(container._nodeSlug, container.name)
+                                : dockerContainerRoute(container._nodeSlug, container.name)
                             )
                           }
                         >
@@ -985,12 +987,10 @@ export function DockerContainers({
             !canDragFolders || !canReorganizeContainer(container) || !!container.folderIsSystem,
           onItemClick: (container) => {
             if (container.kind === "deployment") {
-              navigate(
-                `/docker/deployments/${container._nodeId}/${container.deploymentId ?? container.id}`
-              );
+              navigate(dockerDeploymentRoute(container._nodeSlug, container.name));
               return;
             }
-            navigate(`/docker/containers/${container._nodeId}/${container.id}`);
+            navigate(dockerContainerRoute(container._nodeSlug, container.name));
           },
         }}
       />

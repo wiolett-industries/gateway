@@ -20,6 +20,7 @@ import {
   deleteContainerSecretRoute,
   duplicateContainerRoute,
   initContainerFileUploadRoute,
+  inspectContainerByNameRoute,
   inspectContainerRoute,
   killContainerRoute,
   listContainerFilesRoute,
@@ -61,6 +62,7 @@ import {
 } from './docker.schemas.js';
 import { DockerManagementService } from './docker.service.js';
 import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment-labels.js';
+import { resolveDockerContainerByName } from './docker-route-resolvers.js';
 import { DockerSecretService } from './docker-secret.service.js';
 
 const DOCKER_RESOURCE_LIST_MAX = 1000;
@@ -180,6 +182,15 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
   );
 
   // Inspect container
+  router.openapi(
+    { ...inspectContainerByNameRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
+    async (c) => {
+      const service = container.resolve(DockerManagementService);
+      const data = await resolveDockerContainerByName(service, c.req.param('nodeId')!, c.req.param('containerName')!);
+      return c.json({ data });
+    }
+  );
+
   router.openapi(
     { ...inspectContainerRoute, middleware: requireScopeForResource('docker:containers:view', 'nodeId') },
     async (c) => {

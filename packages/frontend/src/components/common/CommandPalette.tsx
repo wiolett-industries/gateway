@@ -36,12 +36,19 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
+import {
+  dockerContainerRoute,
+  dockerDeploymentRoute,
+  nodeRoute,
+  proxyHostRoute,
+} from "@/lib/resource-routes";
 import { deriveAllowedResourceIdsByScope } from "@/lib/scope-utils";
 import { api } from "@/services/api";
 import { useAIStore } from "@/stores/ai";
 import { useAuthStore } from "@/stores/auth";
 import { useCAStore } from "@/stores/ca";
 import { useDockerStore } from "@/stores/docker";
+import { useResolvedPageContext } from "@/stores/resolved-page-context";
 import { useSystemConfigStore } from "@/stores/system-config";
 import { useUIStore } from "@/stores/ui";
 import type { Node, ProxyHost } from "@/types";
@@ -78,6 +85,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const loggingEnabled = useSystemConfigStore((s) => s.config.features.loggingEnabled);
   const recentPages = useUIStore((s) => s.recentPages);
   const containers = useDockerStore((s) => s.containers);
+  const resolvedPageStatus = useResolvedPageContext((s) => s.status);
+  const resolvedPageRouteKey = useResolvedPageContext((s) => s.routeKey);
+  const resolvedPageResource = useResolvedPageContext((s) => s.resource);
 
   // Lazy-loaded entities
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -208,11 +218,17 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     const path = location.pathname;
     type CtxItem = { label: string; icon: React.ElementType; action: () => void };
     const items: CtxItem[] = [];
+    const resource =
+      resolvedPageStatus === "ready" &&
+      resolvedPageRouteKey &&
+      (path === resolvedPageRouteKey || path.startsWith(`${resolvedPageRouteKey}/`))
+        ? resolvedPageResource
+        : null;
 
     // Container detail page
-    const containerMatch = path.match(/\/docker\/containers\/([^/]+)\/([^/]+)/);
-    if (containerMatch) {
-      const [, nodeId, containerId] = containerMatch;
+    if (resource?.resourceType === "docker-container" && resource.nodeId) {
+      const nodeId = resource.nodeId;
+      const containerId = resource.resourceId;
       if (
         hasScope("docker:containers:console") ||
         hasScope(`docker:containers:console:${nodeId}`)
@@ -243,9 +259,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }
 
     // Node detail page
-    const nodeMatch = path.match(/\/nodes\/([^/]+)/);
-    if (nodeMatch && !path.includes("/console")) {
-      const nodeId = nodeMatch[1];
+    if (resource?.resourceType === "node") {
+      const nodeId = resource.resourceId;
       if (hasScope("nodes:console") || hasScope(`nodes:console:${nodeId}`)) {
         items.push({
           label: "Open node console",
@@ -261,7 +276,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }
 
     return items;
-  }, [location.pathname, hasScope]);
+  }, [location.pathname, hasScope, resolvedPageResource, resolvedPageRouteKey, resolvedPageStatus]);
 
   // Build flat nav/action items and filter through fuzzyMatch
   type NavEntry = {
@@ -459,7 +474,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   // Filtered entities for search mode
   const filteredContainers =
     searchQuery && hasScopedAccess("docker:containers:view")
-      ? containers.filter((c) => fuzzyMatch(`${c.name} ${c.image}`, searchQuery) > 0).slice(0, 5)
+      ? containers
+          .filter((c) => c._nodeSlug && fuzzyMatch(`${c.name} ${c.image}`, searchQuery) > 0)
+          .slice(0, 5)
       : [];
   const filteredProxies =
     searchQuery && hasScopedAccess("proxy:view")
@@ -574,7 +591,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                       value={`container ${c.name}`}
                       onSelect={() =>
                         handleSelect(() =>
-                          navigate(`/docker/containers/${(c as any)._nodeId}/${c.id}`)
+                          navigate(
+                            c.kind === "deployment"
+                              ? dockerDeploymentRoute(c._nodeSlug!, c.name)
+                              : dockerContainerRoute(c._nodeSlug!, c.name)
+                          )
                         )
                       }
                     >
@@ -594,7 +615,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     <CommandItem
                       key={p.id}
                       value={`proxy ${p.domainNames[0]}`}
-                      onSelect={() => handleSelect(() => navigate(`/proxy-hosts/${p.id}`))}
+                      onSelect={() => handleSelect(() => navigate(proxyHostRoute(p.slug)))}
                     >
                       <Globe className="mr-2 h-4 w-4" />
                       <span className="truncate">{p.domainNames[0]}</span>
@@ -611,7 +632,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     <CommandItem
                       key={n.id}
                       value={`node ${n.displayName || n.hostname}`}
-                      onSelect={() => handleSelect(() => navigate(`/nodes/${n.id}`))}
+                      onSelect={() => handleSelect(() => navigate(nodeRoute(n.slug)))}
                     >
                       <Server className="mr-2 h-4 w-4" />
                       <span className="truncate">{n.displayName || n.hostname}</span>

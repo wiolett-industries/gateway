@@ -5,6 +5,7 @@ import type { DockerContainer } from "@/types";
 
 type PinnedContainerMeta = {
   nodeId: string;
+  nodeSlug: string;
   name: string;
   state?: string;
   kind?: "container" | "deployment";
@@ -151,10 +152,12 @@ useDockerStore.subscribe((state) => {
       existing &&
       (existing.state !== effectiveState ||
         existing.name !== c.name ||
-        existing.kind !== effectiveKind)
+        existing.kind !== effectiveKind ||
+        existing.nodeSlug !== c._nodeSlug)
     ) {
       usePinnedContainersStore.getState().updateMeta(c.id, {
         ...existing,
+        nodeSlug: c._nodeSlug || existing.nodeSlug,
         name: c.name || existing.name,
         state: effectiveState,
         kind: effectiveKind,

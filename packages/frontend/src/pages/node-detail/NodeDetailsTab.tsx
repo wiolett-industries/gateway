@@ -8,6 +8,7 @@ import { PanelShell } from "@/components/common/PanelShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { isDevForceUpdatesEnabled } from "@/lib/dev-force-updates";
+import { proxyHostRoute } from "@/lib/resource-routes";
 import { formatBytes, formatUptime } from "@/lib/utils";
 import { api } from "@/services/api";
 import {
@@ -333,7 +334,7 @@ export function NodeDetailsTab({
                     <tr
                       key={host.id}
                       className="hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() => navigate(`/proxy-hosts/${host.id}`)}
+                      onClick={() => navigate(proxyHostRoute(host.slug))}
                     >
                       <td className="p-3 text-sm font-medium">{host.domainNames.join(", ")}</td>
                       <td className="p-3 text-sm text-muted-foreground capitalize">{host.type}</td>
