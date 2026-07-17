@@ -124,6 +124,7 @@ export function DockerVolumeDetail({
   const canWriteVolumeFiles =
     hasScope("docker:volumes:files:write") ||
     !!(nodeId && hasScope(`docker:volumes:files:write:${nodeId}`));
+  const unavailable = volume?.availability === "unavailable";
   const usedBy = useMemo<string[]>(() => {
     const raw = volume?.usedBy ?? (volume as any)?.UsedBy;
     return Array.isArray(raw) ? raw.filter((name): name is string => typeof name === "string") : [];
@@ -256,6 +257,17 @@ export function DockerVolumeDetail({
     void fetchVolume(true);
   });
 
+  useRealtime("docker.snapshot.changed", (payload) => {
+    const event = payload as { nodeId?: string; kind?: string; key?: string };
+    if (event.kind !== "volume-detail" || event.nodeId !== nodeId) return;
+    if (event.key && event.key !== decodedVolumeName) return;
+    void fetchVolume(true);
+  });
+
+  useEffect(() => {
+    if (unavailable && activeTab === "files") setActiveTab("settings");
+  }, [activeTab, setActiveTab, unavailable]);
+
   useRealtime("node.slug.changed", (payload) => {
     const event = payload as { id?: string; oldSlug?: string; slug?: string };
     if (event.id !== nodeId || event.oldSlug !== nodeSlug || !event.slug) return;
@@ -269,7 +281,7 @@ export function DockerVolumeDetail({
     },
     [decodedVolumeName, nodeId]
   );
-  const canMutateVolumeFiles = canWriteVolumeFiles;
+  const canMutateVolumeFiles = canWriteVolumeFiles && !unavailable;
   const fileOperations = useMemo<FileManagerOperations>(
     () => ({
       listDirectory: fetchDirectory,
@@ -439,7 +451,7 @@ export function DockerVolumeDetail({
             label: "Rename",
             icon: <Type className="h-4 w-4" />,
             onClick: openRename,
-            disabled: actionLoading || isUsed,
+            disabled: actionLoading || isUsed || unavailable,
           },
         ]
       : []),
@@ -453,7 +465,7 @@ export function DockerVolumeDetail({
               <ShieldCheck className="h-4 w-4" />
             ),
             onClick: handleToggleCleanupProtection,
-            disabled: actionLoading || isUsed,
+            disabled: actionLoading || isUsed || unavailable,
             separatorBefore: true,
           },
         ]
@@ -464,7 +476,7 @@ export function DockerVolumeDetail({
             label: "Remove",
             icon: <Trash2 className="h-4 w-4" />,
             onClick: handleRemove,
-            disabled: actionLoading || isUsed,
+            disabled: actionLoading || isUsed || unavailable,
             destructive: true,
             separatorBefore: true,
           },
@@ -482,7 +494,11 @@ export function DockerVolumeDetail({
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h1 className="text-2xl font-bold truncate">{decodedVolumeName}</h1>
-                  {volume?.driver && <Badge variant="secondary">{volume.driver}</Badge>}
+                  {unavailable ? (
+                    <Badge variant="secondary">Unavailable</Badge>
+                  ) : (
+                    volume?.driver && <Badge variant="secondary">{volume.driver}</Badge>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground truncate">
                   {volume?.mountpoint ?? (isLoading ? "Loading volume..." : "Docker volume")}
@@ -495,7 +511,7 @@ export function DockerVolumeDetail({
                   variant="outline"
                   size="default"
                   onClick={openRename}
-                  disabled={actionLoading || isUsed}
+                  disabled={actionLoading || isUsed || unavailable}
                 >
                   <Type className="h-3.5 w-3.5" />
                   Rename
@@ -504,13 +520,16 @@ export function DockerVolumeDetail({
               {canDeleteVolume && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon" disabled={actionLoading}>
+                    <Button variant="outline" size="icon" disabled={actionLoading || unavailable}>
                       <EllipsisVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     {canRenameVolume && isAnonymousVolume && (
-                      <DropdownMenuItem onClick={handleToggleCleanupProtection} disabled={isUsed}>
+                      <DropdownMenuItem
+                        onClick={handleToggleCleanupProtection}
+                        disabled={isUsed || unavailable}
+                      >
                         {isCleanupProtected ? (
                           <ShieldOff className="h-3.5 w-3.5 mr-2" />
                         ) : (
@@ -521,7 +540,7 @@ export function DockerVolumeDetail({
                     )}
                     <DropdownMenuItem
                       onClick={handleRemove}
-                      disabled={isUsed}
+                      disabled={isUsed || unavailable}
                       className="text-destructive"
                     >
                       <Trash2 className="h-3.5 w-3.5 mr-2" />
@@ -535,7 +554,7 @@ export function DockerVolumeDetail({
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col min-h-0">
             <TabsList className="shrink-0">
-              <TabsTrigger value="files" className="gap-1.5">
+              <TabsTrigger value="files" className="gap-1.5" disabled={!volume || unavailable}>
                 <Folder className="h-3.5 w-3.5" />
                 Files
               </TabsTrigger>
@@ -545,15 +564,17 @@ export function DockerVolumeDetail({
               </TabsTrigger>
             </TabsList>
             <TabsContent value="files" className="pb-0">
-              <FilesTab
-                nodeId={nodeId!}
-                canBrowse={canReadVolumeFiles}
-                operations={fileOperations}
-                realtimeEvent="docker.volume.file.changed"
-                realtimeMatches={(payload) =>
-                  payload.nodeId === nodeId && payload.volumeName === decodedVolumeName
-                }
-              />
+              {volume && !unavailable && (
+                <FilesTab
+                  nodeId={nodeId!}
+                  canBrowse={canReadVolumeFiles}
+                  operations={fileOperations}
+                  realtimeEvent="docker.volume.file.changed"
+                  realtimeMatches={(payload) =>
+                    payload.nodeId === nodeId && payload.volumeName === decodedVolumeName
+                  }
+                />
+              )}
             </TabsContent>
             <TabsContent value="settings" className="pb-0">
               <div className="space-y-6">
@@ -575,7 +596,7 @@ export function DockerVolumeDetail({
                 </PanelShell>
 
                 <LabelsSection
-                  canEdit={canRenameVolume && !isUsed}
+                  canEdit={canRenameVolume && !isUsed && !unavailable}
                   labels={labels}
                   setLabels={setLabels}
                   labelsChanged={labelsChanged}
@@ -592,7 +613,7 @@ export function DockerVolumeDetail({
                         size="icon"
                         className="h-8 w-8"
                         onClick={handleSaveLabels}
-                        disabled={!labelsChanged || labelsSaving || isUsed}
+                        disabled={!labelsChanged || labelsSaving || isUsed || unavailable}
                         aria-label="Save labels"
                         title="Save labels"
                       >
@@ -607,7 +628,7 @@ export function DockerVolumeDetail({
                   description="Download a tar.gz archive with the current volume contents."
                   headerBorder={false}
                   actions={
-                    <Button onClick={handleExport} disabled={exporting}>
+                    <Button onClick={handleExport} disabled={exporting || unavailable}>
                       <Download className="h-3.5 w-3.5" />
                       {exporting ? "Exporting..." : "Export"}
                     </Button>
@@ -625,7 +646,7 @@ export function DockerVolumeDetail({
           </DialogHeader>
           <Input
             value={renameValue}
-            disabled={actionLoading}
+            disabled={actionLoading || unavailable}
             onChange={(e) => setRenameValue(e.target.value)}
             placeholder="New volume name"
             onKeyDown={(e) => {
@@ -637,7 +658,10 @@ export function DockerVolumeDetail({
             <Button variant="outline" onClick={() => setRenameOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleRename} disabled={actionLoading || !renameValue.trim()}>
+            <Button
+              onClick={handleRename}
+              disabled={actionLoading || unavailable || !renameValue.trim()}
+            >
               Rename
             </Button>
           </DialogFooter>

@@ -281,6 +281,20 @@ export function DockerContainerDetail({
     pageContextToken,
   });
 
+  useRealtime("docker.snapshot.changed", (payload) => {
+    const event = payload as { nodeId?: string; kind?: string; key?: string };
+    if (event.kind !== "container-detail" || event.nodeId !== nodeId) return;
+    if (
+      event.key &&
+      event.key !== containerId &&
+      event.key !== containerName &&
+      event.key !== routeContainerName
+    ) {
+      return;
+    }
+    void fetchContainer(true);
+  });
+
   useRealtime("docker.health.changed", (payload) => {
     const ev = payload as {
       nodeId?: string;
@@ -384,15 +398,18 @@ export function DockerContainerDetail({
   const baseState = container?.State?.Status ?? (container?.State?.Running ? "running" : "stopped");
   const state = effectiveTransition ?? baseState;
   const image = container?.Config?.Image ?? "";
-  const actionDisabled = actionLoading || !!effectiveTransition;
+  const unavailable = container?.availability === "unavailable";
+  const actionDisabled = actionLoading || !!effectiveTransition || unavailable;
   const currentTransition = effectiveTransition;
   const currentBaseState = baseState;
 
   // Auto-navigate to overview and close popouts when container stops or enters transition
   useEffect(() => {
     if (isLoading || !container) return;
-    const needsRunning = new Set(["console", "files", "stats"]);
-    const shouldDisable = currentBaseState !== "running" || !!currentTransition;
+    const needsRunning = unavailable
+      ? new Set(["logs", "console", "files", "stats", "environment", "settings"])
+      : new Set(["console", "files", "stats"]);
+    const shouldDisable = unavailable || currentBaseState !== "running" || !!currentTransition;
     if (!shouldDisable) return;
 
     if (needsRunning.has(activeTab)) {
@@ -419,6 +436,7 @@ export function DockerContainerDetail({
     currentTransition,
     isLoading,
     setActiveTab,
+    unavailable,
   ]);
 
   if (isLoading || !container) {
@@ -514,6 +532,12 @@ export function DockerContainerDetail({
   const isTerminalTab = activeTab === "console" || activeTab === "logs";
   const isStopped = baseState !== "running";
   const isTabDisabled = (tab: string) => {
+    if (
+      unavailable &&
+      new Set(["logs", "console", "files", "stats", "environment", "settings"]).has(tab)
+    ) {
+      return true;
+    }
     const needsRunning = new Set(["console", "files", "stats"]);
     if (tab === "environment" || tab === "settings") {
       return !!effectiveTransition;
@@ -535,8 +559,11 @@ export function DockerContainerDetail({
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{name}</h1>
-                <Badge variant={STATUS_BADGE[state] ?? "secondary"} className="shrink-0">
-                  {state}
+                <Badge
+                  variant={unavailable ? "secondary" : (STATUS_BADGE[state] ?? "secondary")}
+                  className="shrink-0"
+                >
+                  {unavailable ? "Unavailable" : state}
                 </Badge>
               </div>
               <p className="break-all text-sm text-muted-foreground">
@@ -694,7 +721,7 @@ export function DockerContainerDetail({
           <TabsContent value="overview" className="pb-0">
             <OverviewTab nodeId={nodeId!} containerId={containerId!} data={container} />
           </TabsContent>
-          {canViewContainer && (
+          {canViewContainer && !unavailable && (
             <TabsContent value="logs" className="flex flex-col flex-1 min-h-0 pb-0">
               <LogsTab
                 nodeId={nodeId!}
@@ -704,22 +731,22 @@ export function DockerContainerDetail({
               />
             </TabsContent>
           )}
-          {canUseConsole && (
+          {canUseConsole && !unavailable && (
             <TabsContent value="console" className="flex flex-col flex-1 min-h-0">
               <ConsoleTab nodeId={nodeId!} containerId={containerId!} />
             </TabsContent>
           )}
-          {canUseFiles && (
+          {canUseFiles && !unavailable && (
             <TabsContent value="files" className="pb-0">
               <FilesTab nodeId={nodeId!} containerId={containerId!} />
             </TabsContent>
           )}
-          {canViewContainer && (
+          {canViewContainer && !unavailable && (
             <TabsContent value="stats" className="pb-0">
               <StatsTab nodeId={nodeId!} containerId={containerId!} data={container} />
             </TabsContent>
           )}
-          {(canUseEnvironment || canUseSecrets) && (
+          {(canUseEnvironment || canUseSecrets) && !unavailable && (
             <TabsContent value="environment" className="flex flex-col flex-1 min-h-0 pb-0">
               <EnvironmentTab
                 nodeId={nodeId!}
@@ -732,7 +759,7 @@ export function DockerContainerDetail({
               />
             </TabsContent>
           )}
-          {canEdit && (
+          {canEdit && !unavailable && (
             <TabsContent value="settings" className="pb-0">
               <SettingsTab
                 nodeId={nodeId!}

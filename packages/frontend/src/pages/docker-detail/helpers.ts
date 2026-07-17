@@ -45,4 +45,7 @@ export function copyToClipboard(text: string) {
   );
 }
 
-export type InspectData = Record<string, any>;
+export type InspectData = Record<string, any> & {
+  nodeId?: string;
+  availability?: "available" | "unavailable";
+};
