@@ -2,6 +2,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { Combobox, type ComboboxOption } from "@/components/common/Combobox";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,9 +17,7 @@ import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -81,6 +81,44 @@ export function DockerDeployDialog({
         (registry) => registry.scope === "global" || registry.nodeId === deployNodeId
       ),
     [deployNodeId, registries]
+  );
+  const nodeOptions = useMemo<ComboboxOption[]>(
+    () =>
+      availableNodes.map((node) => ({
+        value: node.id,
+        label: node.displayName || node.hostname,
+        keywords: [node.hostname, node.slug].filter(Boolean).join(" "),
+        disabled: node.serviceCreationLocked,
+      })),
+    [availableNodes]
+  );
+  const registryOptions = useMemo<ComboboxOption[]>(
+    () => [
+      { value: "__default__", label: "Docker Hub" },
+      ...availableRegistries.map((registry) => ({
+        value: registry.id,
+        label: registry.name,
+        keywords: [registry.url, registry.scope === "node" ? "this node" : "global"]
+          .filter(Boolean)
+          .join(" "),
+      })),
+    ],
+    [availableRegistries]
+  );
+  const imageOptions = useMemo<ComboboxOption[]>(
+    () => [
+      ...deployLocalImages.map((image) => ({
+        value: image,
+        label: image,
+        keywords: "local on this node",
+      })),
+      ...deployPullableImages.map((image) => ({
+        value: image,
+        label: image,
+        keywords: "remote available to pull",
+      })),
+    ],
+    [deployLocalImages, deployPullableImages]
   );
 
   // Reset form state when dialog opens
@@ -294,48 +332,49 @@ export function DockerDeployDialog({
             <label className="text-sm font-medium">
               Node <span className="text-destructive">*</span>
             </label>
-            <Select
+            <Combobox
               value={deployNodeId}
-              onValueChange={(v) => {
-                setDeployNodeId(v);
+              options={nodeOptions}
+              onValueChange={(value) => {
+                setDeployNodeId(value);
                 setDeployImage("");
                 setDeployRegistryId("");
               }}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Select a node" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableNodes.map((n) => (
-                  <SelectItem key={n.id} value={n.id} disabled={n.serviceCreationLocked}>
-                    {n.displayName || n.hostname}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              placeholder="Select a node"
+              searchPlaceholder="Search nodes..."
+              emptyMessage="No nodes found."
+              className="mt-1"
+            />
           </div>
 
           {/* Registry */}
           <div>
             <label className="text-sm font-medium">Registry</label>
-            <Select
+            <Combobox
               value={deployRegistryId || "__default__"}
-              onValueChange={(v) => setDeployRegistryId(v === "__default__" ? "" : v)}
+              options={registryOptions}
+              onValueChange={(value) =>
+                setDeployRegistryId(value === "__default__" ? "" : value)
+              }
+              placeholder={!deployNodeId ? "Select a node first" : "Docker Hub"}
+              searchPlaceholder="Search registries..."
+              emptyMessage="No registries found."
               disabled={!deployNodeId}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder={!deployNodeId ? "Select a node first" : "Docker Hub"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__default__">Docker Hub</SelectItem>
-                {availableRegistries.map((registry) => (
-                  <SelectItem key={registry.id} value={registry.id}>
-                    {registry.name} ({registry.url})
-                    {registry.scope === "node" ? " · this node" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              className="mt-1"
+              renderOption={(option) => {
+                const registry = availableRegistries.find(
+                  (candidate) => candidate.id === option.value
+                );
+                if (!registry) return option.label;
+                return (
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 truncate">{registry.name}</span>
+                    <span className="text-muted-foreground">{registry.url}</span>
+                    {registry.scope === "node" && <Badge variant="secondary">This node</Badge>}
+                  </span>
+                );
+              }}
+            />
           </div>
 
           {/* Image */}
@@ -343,46 +382,23 @@ export function DockerDeployDialog({
             <label className="text-sm font-medium">
               Image <span className="text-destructive">*</span>
             </label>
-            <Select value={deployImage} onValueChange={setDeployImage} disabled={!deployNodeId}>
-              <SelectTrigger className="mt-1">
-                <SelectValue
-                  placeholder={!deployNodeId ? "Select a node first" : "Select an image"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {deployLocalImages.length > 0 && (
-                  <SelectGroup>
-                    <SelectLabel>On this node</SelectLabel>
-                    {deployLocalImages.map((tag) => (
-                      <SelectItem key={tag} value={tag}>
-                        {tag}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                )}
-                {deployPullableImages.length > 0 && (
-                  <SelectGroup>
-                    <SelectLabel>Available to pull</SelectLabel>
-                    {deployPullableImages.map((tag) => (
-                      <SelectItem key={`pull:${tag}`} value={tag}>
-                        {tag}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                )}
-                {deployLocalImages.length === 0 && deployPullableImages.length === 0 && (
-                  <SelectItem value="__none__" disabled>
-                    No images available
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-            <Input
-              className="mt-2"
+            <Combobox
+              freeText
               value={deployImage}
-              onChange={(e) => setDeployImage(e.target.value)}
+              options={imageOptions}
+              onValueChange={setDeployImage}
+              placeholder={!deployNodeId ? "Select a node first" : "Select or enter an image"}
+              searchPlaceholder="Search or enter an image..."
               disabled={!deployNodeId}
-              placeholder={!deployNodeId ? "Select a node first" : "Type any image reference"}
+              className="mt-1"
+              renderOption={(option) => (
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 truncate">{option.label}</span>
+                  <Badge variant="secondary">
+                    {deployLocalImages.includes(option.value) ? "On this node" : "Pull"}
+                  </Badge>
+                </span>
+              )}
             />
             {deployImage && !deployLocalImages.includes(deployImage) && deployNodeId && (
               <p className="text-xs text-muted-foreground mt-1">
