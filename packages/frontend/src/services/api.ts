@@ -487,6 +487,7 @@ class ApiClient extends withIntegrationsApi(
     data: {
       displayName?: string | null;
       appearanceColor?: import("@/types").NodeAppearanceColor | null;
+      serviceAddress?: string | null;
     }
   ): Promise<import("@/types").Node> {
     return this.unwrapData(

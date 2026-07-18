@@ -132,6 +132,7 @@ proxyRoutes.openapi({ ...createProxyHostRoute, middleware: requireScope('proxy:c
   const host = await proxyService.createProxyHost(input, user.id, {
     bypassAdvancedValidation,
     bypassRawValidation,
+    actorScopes: scopes,
   });
   if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfigForProgrammatic(host as any) }, 201);
   return c.json({ data: serializeProxyHostForBrowser(host as any, scopes, (host as any).id) }, 201);
@@ -171,6 +172,7 @@ proxyRoutes.openapi(updateProxyHostRoute, async (c) => {
   const host = await proxyService.updateProxyHost(id, input, user.id, {
     bypassAdvancedValidation,
     bypassRawValidation,
+    actorScopes: scopes,
   });
   if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfigForProgrammatic(host as any) });
   return c.json({ data: serializeProxyHostForBrowser(host as any, scopes, id) });

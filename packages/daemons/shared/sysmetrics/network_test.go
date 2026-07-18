@@ -17,7 +17,7 @@ func TestNormalizeLocalIPAddresses(t *testing.T) {
 	}
 
 	got := normalizeLocalIPAddresses(addresses)
-	want := []string{"10.0.0.8", "192.168.1.20", "fd00::10"}
+	want := []string{"192.168.1.20", "10.0.0.8", "fd00::10"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected %v, got %v", want, got)
 	}

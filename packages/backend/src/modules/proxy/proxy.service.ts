@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, ne, or, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { accessLists } from '@/db/schema/access-lists.js';
 import { certificates } from '@/db/schema/certificates.js';
@@ -27,8 +27,15 @@ import {
   type ProxyValidationInput,
   rawConfigAuditDetails,
   stripProxyHealthHistory,
+  updateUsesRawMode,
 } from './proxy.service-helpers.js';
+import {
+  clearDockerUpstreamFields,
+  type DockerUpstreamReference,
+  type ProxyDockerUpstreamService,
+} from './proxy-docker-upstream.service.js';
 import { runImmediateProxyHealthCheck } from './proxy-health-check.js';
+import { attachDockerUpstreamDisplay, type WithDockerUpstreamDisplay } from './proxy-upstream-display.js';
 
 export { __testOnly } from './proxy.service-helpers.js';
 
@@ -39,6 +46,7 @@ const logger = createChildLogger('ProxyService');
 // ---------------------------------------------------------------------------
 
 type ProxyHostRow = typeof proxyHosts.$inferSelect;
+type ProxyHostView = WithDockerUpstreamDisplay<ProxyHostRow>;
 
 export interface StatusPageSystemHostInput {
   domain: string;
@@ -59,12 +67,28 @@ export class ProxyService {
     private readonly auditService: AuditService,
     private readonly cryptoService: CryptoService,
     private readonly configGenerator: NginxConfigGenerator,
-    private readonly nodeDispatch: NodeDispatchService
+    private readonly nodeDispatch: NodeDispatchService,
+    private readonly dockerUpstreams?: ProxyDockerUpstreamService
   ) {}
 
   private eventBus?: EventBusService;
+  private dockerReconcileRunning = false;
+  private dockerReconcileDirty = false;
   setEventBus(bus: EventBusService) {
     this.eventBus = bus;
+    bus.subscribe('docker.snapshot.changed', (payload) => {
+      if ((payload as { kind?: string })?.kind === 'containers') this.queueDockerReconciliation();
+    });
+    bus.subscribe('docker.deployment.changed', () => this.queueDockerReconciliation());
+    bus.subscribe('node.service_address.changed', () => this.queueDockerReconciliation());
+    bus.subscribe('docker.container.changed', (payload) => {
+      const event = payload as { action?: string; nodeId?: string; name?: string; oldName?: string };
+      if (event.action === 'renamed' && event.nodeId && event.name && event.oldName) {
+        void this.updateRenamedContainerReferences(event.nodeId, event.oldName, event.name).catch((error) => {
+          logger.error('Failed to update proxy references after container rename', { error });
+        });
+      }
+    });
   }
   private emitHost(id: string, action: string, domain?: string, extra: Record<string, unknown> = {}) {
     this.eventBus?.publish('proxy.host.changed', { id, action, domain, ...extra });
@@ -91,6 +115,92 @@ export class ProxyService {
     if (!result.success) {
       throw new Error(result.error || 'Daemon config remove failed');
     }
+  }
+
+  private requireDockerUpstreams(): ProxyDockerUpstreamService {
+    if (!this.dockerUpstreams) {
+      throw new AppError(500, 'DOCKER_UPSTREAMS_UNAVAILABLE', 'Docker upstream resolution is unavailable');
+    }
+    return this.dockerUpstreams;
+  }
+
+  private async prepareCreateUpstream(input: CreateProxyHostInput, options: ProxyValidationInput) {
+    const normalized = normalizeProxyValidationOptions(options);
+    if (input.type !== 'proxy' || input.rawConfigEnabled) {
+      return { upstreamKind: 'manual' as const, forwardHost: null, forwardPort: null, ...clearDockerUpstreamFields() };
+    }
+    if (input.upstreamKind === 'manual') {
+      return { upstreamKind: 'manual' as const, ...clearDockerUpstreamFields() };
+    }
+    return this.requireDockerUpstreams().resolve(input, {
+      actorScopes: normalized.actorScopes,
+      requireAvailable: true,
+    });
+  }
+
+  private async prepareUpdateUpstream(
+    existing: ProxyHostRow,
+    input: UpdateProxyHostInput,
+    options: ProxyValidationInput
+  ): Promise<Record<string, unknown>> {
+    const normalized = normalizeProxyValidationOptions(options);
+    const effectiveType = input.type ?? existing.type;
+    // Raw mode is an alternate renderer for an existing host. Keep the dormant
+    // upstream so disabling raw mode can restore the previous target.
+    if (updateUsesRawMode(existing, input)) return {};
+    if (effectiveType !== 'proxy') {
+      return { upstreamKind: 'manual', forwardHost: null, forwardPort: null, ...clearDockerUpstreamFields() };
+    }
+
+    const effectiveKind = input.upstreamKind ?? existing.upstreamKind;
+    if (effectiveKind === 'manual') {
+      if (
+        existing.upstreamKind !== 'manual' &&
+        input.upstreamKind === 'manual' &&
+        (input.forwardHost === undefined || input.forwardPort === undefined)
+      ) {
+        throw new AppError(400, 'MANUAL_UPSTREAM_REQUIRED', 'Forward host and port are required for a manual upstream');
+      }
+      const forwardHost = input.forwardHost === undefined ? existing.forwardHost : input.forwardHost;
+      const forwardPort = input.forwardPort === undefined ? existing.forwardPort : input.forwardPort;
+      if (!forwardHost || !forwardPort) {
+        throw new AppError(400, 'MANUAL_UPSTREAM_REQUIRED', 'Forward host and port are required for a manual upstream');
+      }
+      return { upstreamKind: 'manual', forwardHost, forwardPort, ...clearDockerUpstreamFields() };
+    }
+
+    const reference: DockerUpstreamReference = {
+      upstreamKind: effectiveKind,
+      dockerNodeId: input.dockerNodeId === undefined ? existing.dockerNodeId : input.dockerNodeId,
+      dockerContainerName:
+        input.dockerContainerName === undefined ? existing.dockerContainerName : input.dockerContainerName,
+      dockerDeploymentId:
+        input.dockerDeploymentId === undefined ? existing.dockerDeploymentId : input.dockerDeploymentId,
+      dockerContainerPort:
+        input.dockerContainerPort === undefined ? existing.dockerContainerPort : input.dockerContainerPort,
+      dockerHostPort: input.dockerHostPort === undefined ? existing.dockerHostPort : input.dockerHostPort,
+      dockerProtocol: input.dockerProtocol === undefined ? existing.dockerProtocol : input.dockerProtocol,
+    };
+    const targetKeys: Array<keyof UpdateProxyHostInput> = [
+      'upstreamKind',
+      'dockerNodeId',
+      'dockerContainerName',
+      'dockerDeploymentId',
+      'dockerContainerPort',
+      'dockerHostPort',
+      'dockerProtocol',
+      'forwardHost',
+      'forwardPort',
+    ];
+    const targetChanged =
+      existing.upstreamKind !== effectiveKind || targetKeys.some((key) => Object.hasOwn(input, key));
+    if (!targetChanged) return {};
+    return {
+      ...(await this.requireDockerUpstreams().resolve(reference, {
+        actorScopes: normalized.actorScopes,
+        requireAvailable: true,
+      })),
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -134,6 +244,8 @@ export class ProxyService {
       internalCertificateId: input.internalCertificateId,
     });
 
+    const upstreamData = await this.prepareCreateUpstream(input, options);
+
     // 1. Insert into DB
     const host = await writeWithAllocatedSlug({
       source: input.domainNames[0] ?? '',
@@ -151,6 +263,7 @@ export class ProxyService {
             forwardHost: input.forwardHost ?? null,
             forwardPort: input.forwardPort ?? null,
             forwardScheme: input.forwardScheme,
+            ...upstreamData,
             sslEnabled: input.sslEnabled,
             sslForced: input.sslForced,
             http2Support: input.http2Support,
@@ -226,7 +339,7 @@ export class ProxyService {
     }
 
     // 7. Return created host
-    return host;
+    return (await attachDockerUpstreamDisplay(this.db, [host]))[0]!;
   }
 
   // -----------------------------------------------------------------------
@@ -275,9 +388,12 @@ export class ProxyService {
 
     assertSslPrerequisitesForUpdate(existing, input);
 
+    const upstreamData = await this.prepareUpdateUpstream(existing, input, options);
+
     // 2. Update DB
     const updateData: Record<string, unknown> = {
       ...input,
+      ...upstreamData,
       updatedAt: new Date(),
     };
 
@@ -331,13 +447,13 @@ export class ProxyService {
         await this.removeConfigFromNode(id, updated.nodeId);
       }
     } catch (error) {
-      // Rollback DB to previous state — only restore fields that were in the input
+      // Roll back every field changed by the request or by upstream resolution.
       logger.error('Failed to apply nginx config during update, rolling back DB', {
         hostId: id,
         error,
       });
       const rollbackData: Record<string, unknown> = {};
-      for (const key of Object.keys(input)) {
+      for (const key of new Set([...Object.keys(input), ...Object.keys(upstreamData)])) {
         rollbackData[key] = (existing as Record<string, unknown>)[key];
       }
       if (primaryDomainChanged) rollbackData.slug = existing.slug;
@@ -379,7 +495,7 @@ export class ProxyService {
       this.runImmediateHealthCheck(id);
     }
 
-    return updated;
+    return (await attachDockerUpstreamDisplay(this.db, [updated]))[0]!;
   }
 
   // -----------------------------------------------------------------------
@@ -447,8 +563,9 @@ export class ProxyService {
         })
       : null;
 
+    const [displayHost] = await attachDockerUpstreamDisplay(this.db, [host]);
     return {
-      ...stripProxyHealthHistory(host),
+      ...stripProxyHealthHistory(displayHost!),
       sslCertificate: sslCert
         ? {
             id: sslCert.id,
@@ -502,7 +619,7 @@ export class ProxyService {
   async listProxyHosts(
     query: ProxyHostListQuery,
     options?: { allowedIds?: string[] }
-  ): Promise<PaginatedResponse<ProxyHostRow>> {
+  ): Promise<PaginatedResponse<ProxyHostView>> {
     const conditions = [eq(proxyHosts.isSystem, false)];
 
     if (options?.allowedIds) {
@@ -550,8 +667,9 @@ export class ProxyService {
 
     const total = Number(totalCount);
 
+    const displayEntries = await attachDockerUpstreamDisplay(this.db, entries);
     return {
-      data: entries.map(({ healthHistory, rawConfig: _rc, ...rest }) => {
+      data: displayEntries.map(({ healthHistory, rawConfig: _rc, ...rest }) => {
         let effectiveStatus = rest.rawConfigEnabled ? 'disabled' : (rest.healthStatus as string);
         if (
           !rest.rawConfigEnabled &&
@@ -652,6 +770,94 @@ export class ProxyService {
     runImmediateProxyHealthCheck({ db: this.db, hostId, logger });
   }
 
+  private queueDockerReconciliation(): void {
+    if (!this.dockerUpstreams) return;
+    this.dockerReconcileDirty = true;
+    if (this.dockerReconcileRunning) return;
+    this.dockerReconcileRunning = true;
+    void (async () => {
+      try {
+        do {
+          this.dockerReconcileDirty = false;
+          await this.reconcileDockerUpstreams();
+        } while (this.dockerReconcileDirty);
+      } catch (error) {
+        logger.error('Docker proxy upstream reconciliation failed', { error });
+      } finally {
+        this.dockerReconcileRunning = false;
+        if (this.dockerReconcileDirty) this.queueDockerReconciliation();
+      }
+    })();
+  }
+
+  private async updateRenamedContainerReferences(nodeId: string, oldName: string, newName: string): Promise<void> {
+    const updated = await this.db
+      .update(proxyHosts)
+      .set({ dockerContainerName: newName, updatedAt: new Date() })
+      .where(
+        and(
+          eq(proxyHosts.upstreamKind, 'docker_container'),
+          eq(proxyHosts.dockerNodeId, nodeId),
+          eq(proxyHosts.dockerContainerName, oldName)
+        )
+      )
+      .returning();
+    for (const host of updated) this.emitHost(host.id, 'updated', host.domainNames?.[0]);
+    this.queueDockerReconciliation();
+  }
+
+  private async resolveStoredDockerUpstream(host: ProxyHostRow): Promise<ProxyHostRow> {
+    if (host.upstreamKind === 'manual' || !this.dockerUpstreams) return host;
+    const resolved = await this.dockerUpstreams.resolve(host, { allowPortRebind: true });
+    const changed =
+      host.forwardHost !== resolved.forwardHost ||
+      host.forwardPort !== resolved.forwardPort ||
+      host.dockerHostPort !== resolved.dockerHostPort ||
+      host.dockerContainerPort !== resolved.dockerContainerPort ||
+      host.dockerNodeId !== resolved.dockerNodeId ||
+      host.dockerContainerName !== resolved.dockerContainerName ||
+      host.dockerDeploymentId !== resolved.dockerDeploymentId;
+    if (!changed) return host;
+    const [updated] = await this.db
+      .update(proxyHosts)
+      .set({ ...resolved, updatedAt: new Date() })
+      .where(eq(proxyHosts.id, host.id))
+      .returning();
+    return updated ?? host;
+  }
+
+  private async reconcileDockerUpstreams(): Promise<void> {
+    const hosts = await this.db.query.proxyHosts.findMany({
+      where: and(eq(proxyHosts.type, 'proxy'), ne(proxyHosts.upstreamKind, 'manual')),
+    });
+    for (const host of hosts) {
+      try {
+        const updated = await this.resolveStoredDockerUpstream(host);
+        if (updated === host) continue;
+        if (updated.enabled) {
+          try {
+            const certPaths = await this.resolveCertPaths(updated);
+            const accessList = await this.resolveAccessList(updated.accessListId);
+            const config = await this.buildNginxConfig(updated, certPaths, accessList);
+            await this.applyConfigToNode(updated.id, config, updated.nodeId);
+          } catch (error) {
+            // Keep the newly resolved endpoint. A disconnected Nginx node will
+            // receive it through the existing resync path after reconnecting.
+            logger.warn('Resolved Docker upstream but could not apply Nginx config yet', {
+              hostId: updated.id,
+              error,
+            });
+          }
+        }
+        this.emitHost(updated.id, 'updated', updated.domainNames?.[0]);
+      } catch (error) {
+        // External disappearance/offline state intentionally keeps the last
+        // resolved endpoint and the existing Nginx configuration intact.
+        logger.debug('Keeping last resolved Docker proxy upstream', { hostId: host.id, error });
+      }
+    }
+  }
+
   // -----------------------------------------------------------------------
   // Resync all hosts on a node (used on reconnect with hash mismatch)
   // -----------------------------------------------------------------------
@@ -669,14 +875,19 @@ export class ProxyService {
 
     logger.info('Resyncing all hosts on node', { nodeId, hostCount: hosts.length });
 
-    for (const host of hosts) {
+    for (const storedHost of hosts) {
       try {
+        const host = await this.resolveStoredDockerUpstream(storedHost).catch(() => storedHost);
         const certPaths = await this.resolveCertPaths(host);
         const accessList = await this.resolveAccessList(host.accessListId);
         const config = await this.buildNginxConfig(host, certPaths, accessList);
         await this.applyConfigToNode(host.id, config, host.nodeId ?? nodeId);
       } catch (err) {
-        logger.error('Failed to resync host config', { hostId: host.id, nodeId, error: (err as Error).message });
+        logger.error('Failed to resync host config', {
+          hostId: storedHost.id,
+          nodeId,
+          error: (err as Error).message,
+        });
       }
     }
 

@@ -399,10 +399,10 @@ describe('proxy routes programmatic raw config handling', () => {
     expect(mocks.proxyService.createProxyHost).toHaveBeenCalledWith(
       expect.objectContaining({ rawConfig: 'include /etc/nginx/conf.d/private.conf;' }),
       'user-1',
-      {
+      expect.objectContaining({
         bypassAdvancedValidation: false,
         bypassRawValidation: true,
-      }
+      })
     );
   });
 
@@ -426,10 +426,10 @@ describe('proxy routes programmatic raw config handling', () => {
       'host-1',
       expect.objectContaining({ rawConfig: 'include /etc/nginx/conf.d/private.conf;' }),
       'user-1',
-      {
+      expect.objectContaining({
         bypassAdvancedValidation: false,
         bypassRawValidation: true,
-      }
+      })
     );
   });
 
@@ -453,10 +453,10 @@ describe('proxy routes programmatic raw config handling', () => {
       'host-1',
       expect.objectContaining({ rawConfig: 'server {}' }),
       'user-1',
-      {
+      expect.objectContaining({
         bypassAdvancedValidation: false,
         bypassRawValidation: false,
-      }
+      })
     );
   });
 
@@ -484,10 +484,10 @@ describe('proxy routes programmatic raw config handling', () => {
         advancedConfig: null,
       }),
       'user-1',
-      {
+      expect.objectContaining({
         bypassAdvancedValidation: false,
         bypassRawValidation: false,
-      }
+      })
     );
   });
 

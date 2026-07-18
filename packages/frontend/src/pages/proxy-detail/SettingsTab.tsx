@@ -3,6 +3,7 @@ import { Minus, Plus, Save } from "lucide-react";
 import type { ReactNode } from "react";
 import { Combobox } from "@/components/common/Combobox";
 import { PanelShell } from "@/components/common/PanelShell";
+import { ProxyUpstreamPanel } from "@/components/proxy/ProxyUpstreamEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
@@ -58,6 +59,7 @@ function TogglePanelShell({
 
 export interface SettingsTabProps {
   host: ProxyHost;
+  onHostUpdated: (host: ProxyHost) => void;
   onToggle: (field: string, value: boolean) => void;
   customHeaders: CustomHeader[];
   setCustomHeaders: (v: CustomHeader[]) => void;
@@ -116,6 +118,7 @@ export interface SettingsTabProps {
 
 export function SettingsTab({
   host,
+  onHostUpdated,
   onToggle,
   customHeaders,
   setCustomHeaders,
@@ -176,38 +179,20 @@ export function SettingsTab({
     ...accessLists.map((accessList) => ({ value: accessList.id, label: accessList.name })),
   ];
   const editableBuiltinVariables =
-    host.type === "proxy"
+    host.type === "redirect"
       ? [
           {
-            name: "forwardScheme",
-            description: "Upstream scheme",
-            type: "select" as const,
-          },
-          {
-            name: "forwardHost",
-            description: "Upstream hostname",
+            name: "redirectUrl",
+            description: "Redirect target URL",
             type: "string" as const,
           },
           {
-            name: "forwardPort",
-            description: "Upstream port",
+            name: "redirectStatusCode",
+            description: "Redirect status code",
             type: "number" as const,
           },
         ]
-      : host.type === "redirect"
-        ? [
-            {
-              name: "redirectUrl",
-              description: "Redirect target URL",
-              type: "string" as const,
-            },
-            {
-              name: "redirectStatusCode",
-              description: "Redirect status code",
-              type: "number" as const,
-            },
-          ]
-        : [];
+      : [];
 
   const showCustomHeaders = canManage || customHeaders.length > 0;
   const showCustomRewrites = canManage || customRewrites.length > 0;
@@ -245,6 +230,10 @@ export function SettingsTab({
           wrapHeader
         />
       </div>
+
+      {host.type === "proxy" && (
+        <ProxyUpstreamPanel host={host} canManage={canManage} onUpdated={onHostUpdated} />
+      )}
 
       <PanelShell
         title="Config Template"

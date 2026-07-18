@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DetailRow } from "@/components/common/DetailRow";
 import { PanelShell } from "@/components/common/PanelShell";
+import { ProxyUpstreamTarget } from "@/components/proxy/ProxyUpstreamTarget";
 import { Badge } from "@/components/ui/badge";
 import { nodeRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
@@ -99,11 +100,8 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
               </div>
             }
           />
-          {host.type === "proxy" && host.forwardHost && (
-            <DetailRow
-              label="Forward Target"
-              value={`${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`}
-            />
+          {host.type === "proxy" && (
+            <DetailRow label="Forward Target" value={<ProxyUpstreamTarget host={host} />} />
           )}
           {host.type === "redirect" && host.redirectUrl && (
             <DetailRow

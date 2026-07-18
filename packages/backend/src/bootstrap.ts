@@ -84,6 +84,7 @@ import { TemplatesService } from '@/modules/pki/templates.service.js';
 import { FolderService } from '@/modules/proxy/folder.service.js';
 import { NginxTemplateService } from '@/modules/proxy/nginx-template.service.js';
 import { ProxyService } from '@/modules/proxy/proxy.service.js';
+import { ProxyDockerUpstreamService } from '@/modules/proxy/proxy-docker-upstream.service.js';
 import { GeneralSettingsService } from '@/modules/settings/general-settings.service.js';
 import { NetworkSettingsService } from '@/modules/settings/network-settings.service.js';
 import { OutboundWebhookPolicyService } from '@/modules/settings/outbound-webhook-policy.service.js';
@@ -401,13 +402,16 @@ export async function initializeContainer(): Promise<void> {
   databaseConnectionService.setEventBus(eventBus);
   databaseFolderService.setEventBus(eventBus);
 
+  const proxyDockerUpstreamService = new ProxyDockerUpstreamService(db, dockerSnapshotService, nodeRegistry);
+  container.registerInstance(ProxyDockerUpstreamService, proxyDockerUpstreamService);
   const proxyService = new ProxyService(
     db,
     nginxTemplateService,
     auditService,
     cryptoService,
     nginxConfigGenerator,
-    nodeDispatch
+    nodeDispatch,
+    proxyDockerUpstreamService
   );
   proxyService.setEventBus(eventBus);
   container.registerInstance(ProxyService, proxyService);

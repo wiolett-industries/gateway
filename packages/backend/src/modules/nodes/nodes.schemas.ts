@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidNodeServiceAddress } from './node-service-address.js';
 
 export const NODE_APPEARANCE_COLORS = ['blue', 'red', 'green', 'yellow', 'purple', 'pink', 'orange'] as const;
 
@@ -11,6 +12,14 @@ export const CreateNodeSchema = z.object({
 export const UpdateNodeSchema = z.object({
   displayName: z.string().max(255).nullable().optional(),
   appearanceColor: z.enum(NODE_APPEARANCE_COLORS).nullable().optional(),
+  serviceAddress: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .refine(isValidNodeServiceAddress, 'Must be a valid IP address or hostname')
+    .nullable()
+    .optional(),
 });
 
 export const UpdateNodeServiceCreationLockSchema = z.object({

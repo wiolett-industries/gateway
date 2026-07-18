@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"net"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -92,6 +91,7 @@ func GetLocalIPAddresses() []string {
 
 func normalizeLocalIPAddresses(addresses []net.Addr) []string {
 	unique := make(map[string]struct{}, len(addresses))
+	result := make([]string, 0, len(addresses))
 	for _, address := range addresses {
 		var ip net.IP
 		switch value := address.(type) {
@@ -111,13 +111,12 @@ func normalizeLocalIPAddresses(addresses []net.Addr) []string {
 		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
 			continue
 		}
-		unique[ip.String()] = struct{}{}
+		normalized := ip.String()
+		if _, exists := unique[normalized]; exists {
+			continue
+		}
+		unique[normalized] = struct{}{}
+		result = append(result, normalized)
 	}
-
-	result := make([]string, 0, len(unique))
-	for address := range unique {
-		result = append(result, address)
-	}
-	sort.Strings(result)
 	return result
 }

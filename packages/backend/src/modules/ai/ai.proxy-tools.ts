@@ -56,6 +56,7 @@ export async function executeProxyTool(
         await context.proxyService.createProxyHost(
           {
             type: a.type || 'proxy',
+            upstreamKind: 'manual',
             nodeId: a.nodeId,
             domainNames: a.domainNames,
             forwardHost: a.forwardHost,

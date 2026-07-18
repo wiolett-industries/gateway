@@ -1,8 +1,8 @@
 import { isIP } from 'node:net';
 import bcrypt from 'bcryptjs';
-import { asc, count, eq, ilike, inArray, type SQL } from 'drizzle-orm';
+import { asc, count, eq, ilike, inArray, or, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import { certificates, nodes, proxyHosts } from '@/db/schema/index.js';
+import { certificates, dockerDeployments, nodes, proxyHosts } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { writeWithAllocatedSlug } from '@/lib/resource-slugs.js';
 import { buildWhere } from '@/lib/utils.js';
@@ -28,6 +28,7 @@ import {
   readNodeFile,
   writeNodeFile,
 } from './node-file-operations.js';
+import { getEffectiveNodeServiceAddress } from './node-service-address.js';
 import type {
   CreateNodeInput,
   NodeListQuery,
@@ -140,6 +141,7 @@ export class NodesService {
         displayName: nodes.displayName,
         slug: nodes.slug,
         appearanceColor: nodes.appearanceColor,
+        serviceAddress: nodes.serviceAddress,
         status: nodes.status,
         serviceCreationLocked: nodes.serviceCreationLocked,
         daemonVersion: nodes.daemonVersion,
@@ -167,6 +169,7 @@ export class NodesService {
       const isConnected = !!this.registry.getNode(row.id);
       return {
         ...row,
+        effectiveServiceAddress: getEffectiveNodeServiceAddress(row),
         status: row.status === 'online' && !isConnected ? 'offline' : row.status,
         isConnected,
       };
@@ -193,6 +196,10 @@ export class NodesService {
 
     return {
       ...stripNodeHealthHistory(node),
+      effectiveServiceAddress: getEffectiveNodeServiceAddress({
+        ...node,
+        lastHealthReport: connectedNode?.lastHealthReport ?? node.lastHealthReport,
+      }),
       status: node.status === 'online' && !isConnected ? 'offline' : node.status,
       isConnected,
       liveHealthReport: connectedNode?.lastHealthReport ?? null,
@@ -212,6 +219,10 @@ export class NodesService {
 
     return {
       ...stripNodeHealthHistory(node),
+      effectiveServiceAddress: getEffectiveNodeServiceAddress({
+        ...node,
+        lastHealthReport: connectedNode?.lastHealthReport ?? node.lastHealthReport,
+      }),
       status: node.status === 'online' && !isConnected ? 'offline' : node.status,
       isConnected,
       liveHealthReport: connectedNode?.lastHealthReport ?? null,
@@ -293,6 +304,7 @@ export class NodesService {
     const updateData = {
       displayName: input.displayName === undefined ? existing.displayName : input.displayName,
       appearanceColor: input.appearanceColor === undefined ? existing.appearanceColor : input.appearanceColor,
+      serviceAddress: input.serviceAddress === undefined ? existing.serviceAddress : input.serviceAddress,
       updatedAt: new Date(),
     };
     const updateNode = async (slug?: string) => {
@@ -322,12 +334,20 @@ export class NodesService {
       details: {
         ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
         ...(input.appearanceColor !== undefined ? { appearanceColor: input.appearanceColor } : {}),
+        ...(input.serviceAddress !== undefined ? { serviceAddress: input.serviceAddress } : {}),
       },
     });
     const slugChange = updated.slug === existing.slug ? {} : { oldSlug: existing.slug, slug: updated.slug };
     this.emitNode(id, 'updated', slugChange);
     if (updated.slug !== existing.slug) {
       this.eventBus?.publish('node.slug.changed', { id, oldSlug: existing.slug, slug: updated.slug });
+    }
+    if (input.serviceAddress !== undefined && input.serviceAddress !== existing.serviceAddress) {
+      this.eventBus?.publish('node.service_address.changed', {
+        id,
+        serviceAddress: updated.serviceAddress,
+        effectiveServiceAddress: getEffectiveNodeServiceAddress(updated),
+      });
     }
 
     return updated;
@@ -386,6 +406,19 @@ export class NodesService {
         400,
         'NODE_HAS_HOSTS',
         `Cannot delete node with ${hostCount.count} assigned proxy host(s). Reassign or delete them first.`
+      );
+    }
+
+    const [upstreamCount] = await this.db
+      .select({ count: count() })
+      .from(proxyHosts)
+      .leftJoin(dockerDeployments, eq(proxyHosts.dockerDeploymentId, dockerDeployments.id))
+      .where(or(eq(proxyHosts.dockerNodeId, id), eq(dockerDeployments.nodeId, id)));
+    if (upstreamCount && upstreamCount.count > 0) {
+      throw new AppError(
+        409,
+        'NODE_HAS_PROXY_UPSTREAMS',
+        `Cannot delete node with ${upstreamCount.count} linked proxy upstream(s). Change or delete them first.`
       );
     }
 

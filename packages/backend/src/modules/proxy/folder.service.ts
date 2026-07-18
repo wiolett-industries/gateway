@@ -16,6 +16,7 @@ import type {
   ReorderHostsInput,
   UpdateFolderInput,
 } from './folder.schemas.js';
+import { attachDockerUpstreamDisplay } from './proxy-upstream-display.js';
 
 const logger = createChildLogger('FolderService');
 
@@ -29,13 +30,20 @@ type FolderRow = typeof proxyHostFolders.$inferSelect;
 type ProxyHostRow = typeof proxyHosts.$inferSelect;
 
 /** Compute effective health status and return a plain object (Drizzle rows are class instances) */
-function toPlainHost(host: ProxyHostRow): Record<string, unknown> {
+function toPlainHost(
+  host: ProxyHostRow & {
+    dockerDeploymentName?: string | null;
+    dockerNodeAppearanceColor?: string | null;
+  }
+): Record<string, unknown> {
   const plain: Record<string, unknown> = {};
   for (const key of Object.keys(proxyHosts) as Array<keyof typeof proxyHosts>) {
     if (key in host) plain[key] = (host as any)[key];
   }
 
   delete plain.healthHistory;
+  plain.dockerDeploymentName = host.dockerDeploymentName;
+  plain.dockerNodeAppearanceColor = host.dockerNodeAppearanceColor;
   let effectiveStatus = host.rawConfigEnabled ? 'disabled' : (host.healthStatus as string);
   if (
     !host.rawConfigEnabled &&
@@ -385,11 +393,12 @@ export class FolderService {
 
     const where = buildWhere(conditions);
 
-    const allHosts = await this.db
+    const hostRows = await this.db
       .select()
       .from(proxyHosts)
       .where(where)
       .orderBy(asc(proxyHosts.sortOrder), desc(proxyHosts.createdAt));
+    const allHosts = await attachDockerUpstreamDisplay(this.db, hostRows);
 
     // 3. Group hosts by folderId
     const hostsByFolder = new Map<string | null, ProxyHostRow[]>();

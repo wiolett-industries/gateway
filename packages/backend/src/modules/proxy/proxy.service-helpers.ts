@@ -6,6 +6,7 @@ export type HealthCheckBodyMatchMode = 'includes' | 'exact' | 'starts_with' | 'e
 export type ProxyValidationOptions = {
   bypassAdvancedValidation?: boolean;
   bypassRawValidation?: boolean;
+  actorScopes?: string[];
 };
 
 export type ProxyValidationInput = boolean | ProxyValidationOptions;
@@ -108,6 +109,13 @@ export function rawConfigAuditDetails(input: { rawConfig?: unknown }, options: P
   };
 }
 
+export function updateUsesRawMode(
+  existing: { type: string; rawConfigEnabled: boolean },
+  input: { type?: string; rawConfigEnabled?: boolean }
+): boolean {
+  return (input.type ?? existing.type) === 'raw' || (input.rawConfigEnabled ?? existing.rawConfigEnabled);
+}
+
 export function assertSslPrerequisites(input: SslPrerequisiteState) {
   if (input.sslEnabled && !input.sslCertificateId && !input.internalCertificateId) {
     throw new AppError(400, 'SSL_CERTIFICATE_REQUIRED', 'An SSL certificate must be selected before enabling HTTPS');
@@ -167,4 +175,5 @@ export const __testOnly = {
   normalizeProxyValidationOptions,
   rawConfigAuditDetails,
   stripProxyHealthHistory,
+  updateUsesRawMode,
 };

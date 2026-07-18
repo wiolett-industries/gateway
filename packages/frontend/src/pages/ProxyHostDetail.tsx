@@ -17,6 +17,7 @@ import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
+import { ProxyUpstreamTarget } from "@/components/proxy/ProxyUpstreamTarget";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -698,17 +699,18 @@ export function ProxyHostDetail({
                   );
                 })()}
               </div>
-              <p className="text-sm text-muted-foreground">
-                {host.domainNames.length > 1
-                  ? `+${host.domainNames.length - 1} more domain${host.domainNames.length > 2 ? "s" : ""}`
-                  : null}
-                {host.type === "proxy" && host.forwardHost
-                  ? ` \u2192 ${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
-                  : null}
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                {host.domainNames.length > 1 ? (
+                  <span>
+                    +{host.domainNames.length - 1} more domain
+                    {host.domainNames.length > 2 ? "s" : ""}
+                  </span>
+                ) : null}
+                {host.type === "proxy" ? <ProxyUpstreamTarget host={host} /> : null}
                 {host.type === "redirect" && host.redirectUrl
                   ? ` \u2192 ${host.redirectUrl}`
                   : null}
-              </p>
+              </div>
             </div>
           </div>
 
@@ -826,6 +828,7 @@ export function ProxyHostDetail({
             <TabsContent value="settings" className="pb-6">
               <SettingsTab
                 host={host}
+                onHostUpdated={syncHostState}
                 onToggle={handleToggle}
                 customHeaders={customHeaders}
                 setCustomHeaders={setCustomHeaders}

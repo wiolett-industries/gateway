@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { proxyHosts } from '@/db/schema/index.js';
+import { formatHostPort } from '@/lib/network-endpoint.js';
 import type { HealthCheckBodyMatchMode } from './proxy.service-helpers.js';
 import { matchesExpectedBody } from './proxy.service-helpers.js';
 
@@ -27,7 +28,7 @@ export function runImmediateProxyHealthCheck({
 
       const scheme = host.forwardScheme || 'http';
       const path = host.healthCheckUrl || '/';
-      const url = `${scheme}://${host.forwardHost}:${host.forwardPort}${path}`;
+      const url = `${scheme}://${formatHostPort(host.forwardHost, host.forwardPort)}${path}`;
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10_000);

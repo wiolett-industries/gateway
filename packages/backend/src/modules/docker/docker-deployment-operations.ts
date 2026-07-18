@@ -12,6 +12,7 @@ import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import type { DockerDeploymentDetail } from './docker-deployment.service.js';
+import { assertDeploymentNotUsedByProxy } from './docker-proxy-link.guard.js';
 
 export interface DockerDeploymentOperationContext {
   db: DrizzleClient;
@@ -303,6 +304,7 @@ export async function remove(
   userId: string
 ) {
   await ctx.validateDockerNode(nodeId);
+  await assertDeploymentNotUsedByProxy(ctx.db, deploymentId);
   const deployment = await ctx.loadDeployment(nodeId, deploymentId);
   ctx.requireDeploymentIdle(deployment);
   ctx.setTransition(deployment, 'removing');

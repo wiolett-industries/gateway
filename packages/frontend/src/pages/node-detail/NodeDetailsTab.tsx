@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { DetailRow } from "@/components/common/DetailRow";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PanelShell } from "@/components/common/PanelShell";
+import { ProxyUpstreamTarget } from "@/components/proxy/ProxyUpstreamTarget";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { isDevForceUpdatesEnabled } from "@/lib/dev-force-updates";
@@ -355,9 +356,7 @@ export function NodeDetailsTab({
                       <td className="p-3 text-sm font-medium">{host.domainNames.join(", ")}</td>
                       <td className="p-3 text-sm text-muted-foreground capitalize">{host.type}</td>
                       <td className="p-3 text-sm text-muted-foreground">
-                        {host.forwardHost
-                          ? `${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
-                          : "—"}
+                        <ProxyUpstreamTarget host={host} />
                       </td>
                       <td className="p-3 align-middle">
                         <Badge variant={host.enabled ? "success" : "secondary"}>

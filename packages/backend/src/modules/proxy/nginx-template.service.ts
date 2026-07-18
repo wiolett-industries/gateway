@@ -4,6 +4,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import { nginxTemplates } from '@/db/schema/nginx-templates.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { formatHostPort } from '@/lib/network-endpoint.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
@@ -111,7 +112,6 @@ server {
 {{/if}}
 {{/if}}
     location / {
-        set $upstream_target {{upstream}};
 {{#if rateLimitEnabled}}
         limit_req zone=ratelimit_{{id}} burst={{rateLimitBurst}} nodelay;
 {{/if}}
@@ -122,7 +122,7 @@ server {
         proxy_cache_background_update on;
         add_header X-Cache-Status $upstream_cache_status;
 {{/if}}
-        proxy_pass $upstream_target;
+        proxy_pass {{upstream}};
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -563,7 +563,7 @@ export class NginxTemplateService {
   private buildBaseContext(host: ProxyHostConfig): Record<string, unknown> {
     const serverNames = host.domainNames.map((d) => d.replace(DANGEROUS_CHARS, '')).join(' ');
     const sanitizedHost = host.forwardHost ? host.forwardHost.replace(DANGEROUS_CHARS, '') : '';
-    const upstream = `${host.forwardScheme}://${sanitizedHost}:${host.forwardPort}`;
+    const upstream = `${host.forwardScheme}://${formatHostPort(sanitizedHost, host.forwardPort ?? 0)}`;
 
     const opts = (host.rateLimitOptions ?? {}) as Record<string, unknown>;
     const cacheOpts = (host.cacheOptions ?? {}) as Record<string, unknown>;

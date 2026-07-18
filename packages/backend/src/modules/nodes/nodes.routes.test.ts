@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   scopes: [] as string[],
   nodesService: {
     list: vi.fn(),
+    update: vi.fn(),
   },
 }));
 
@@ -20,6 +21,7 @@ vi.mock('@/container.js', () => ({
 vi.mock('@/modules/auth/auth.middleware.js', () => ({
   authMiddleware: async (c: any, next: () => Promise<void>) => {
     c.set('effectiveScopes', mocks.scopes);
+    c.set('user', { id: 'user-1' });
     await next();
   },
   requireScope: () => async (_c: any, next: () => Promise<void>) => next(),
@@ -118,5 +120,40 @@ describe('nodesRoutes list access', () => {
 
     expect(response.status).toBe(403);
     expect(mocks.nodesService.list).not.toHaveBeenCalled();
+  });
+});
+
+describe('nodesRoutes service address access', () => {
+  const nodeId = '11111111-1111-4111-8111-111111111111';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.nodesService.update.mockResolvedValue({ id: nodeId, serviceAddress: 'docker.internal' });
+  });
+
+  it('rejects service address changes with rename-only access', async () => {
+    mocks.scopes = ['nodes:rename'];
+
+    const response = await createApp().request(`/${nodeId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serviceAddress: 'docker.internal' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.nodesService.update).not.toHaveBeenCalled();
+  });
+
+  it('allows service address changes with node config edit access', async () => {
+    mocks.scopes = [`nodes:rename:${nodeId}`, `docker:containers:config:${nodeId}`];
+
+    const response = await createApp().request(`/${nodeId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serviceAddress: 'docker.internal' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.nodesService.update).toHaveBeenCalledWith(nodeId, { serviceAddress: 'docker.internal' }, 'user-1');
   });
 });

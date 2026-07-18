@@ -144,7 +144,9 @@ describe("AdminNodeDetail", () => {
 
   it("saves node appearance name and predefined color", async () => {
     useAuthStore.setState({
-      user: makeUser({ scopes: ["nodes:details", "nodes:rename"] }),
+      user: makeUser({
+        scopes: ["nodes:details", "nodes:rename:node-1", "docker:containers:config:node-1"],
+      }),
       isAuthenticated: true,
       isLoading: false,
     });
@@ -177,7 +179,7 @@ describe("AdminNodeDetail", () => {
     expect(await screen.findByRole("heading", { name: "Docker 1" })).toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /appearance/i }));
+    await user.click(screen.getByRole("button", { name: /settings/i }));
     const displayNameInput = screen.getByLabelText(/display name/i);
     await user.clear(displayNameInput);
     await user.type(displayNameInput, "Docker Blue");
@@ -188,6 +190,7 @@ describe("AdminNodeDetail", () => {
       expect(api.updateNode).toHaveBeenCalledWith("node-1", {
         displayName: "Docker Blue",
         appearanceColor: "blue",
+        serviceAddress: null,
       })
     );
   });

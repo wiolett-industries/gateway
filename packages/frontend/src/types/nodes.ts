@@ -78,6 +78,8 @@ export interface Node {
   hostname: string;
   displayName: string | null;
   appearanceColor: NodeAppearanceColor | null;
+  serviceAddress?: string | null;
+  effectiveServiceAddress?: string | null;
   status: NodeStatus;
   serviceCreationLocked: boolean;
   daemonVersion: string | null;

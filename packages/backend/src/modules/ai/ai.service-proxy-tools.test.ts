@@ -103,8 +103,9 @@ describe('AIService proxy tool routing', () => {
       })
     ).resolves.toEqual({ result: COMPACT_HOST, invalidateStores: ['proxy'] });
     expect(proxyService.createProxyHost).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         type: 'proxy',
+        upstreamKind: 'manual',
         nodeId: 'node-1',
         domainNames: ['app.example.com'],
         forwardHost: 'app',
@@ -131,7 +132,7 @@ describe('AIService proxy tool routing', () => {
         healthCheckInterval: undefined,
         healthCheckExpectedStatus: undefined,
         healthCheckExpectedBody: undefined,
-      },
+      }),
       'user-1'
     );
 

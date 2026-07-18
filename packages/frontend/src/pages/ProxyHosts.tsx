@@ -13,6 +13,7 @@ import type { ResourceListColumn } from "@/components/common/ResourceListLayout"
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
 import { CreateProxyHostDialog } from "@/components/proxy/CreateProxyHostDialog";
 import { MoveToFolderDialog } from "@/components/proxy/MoveToFolderDialog";
+import { ProxyUpstreamTarget } from "@/components/proxy/ProxyUpstreamTarget";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -368,11 +369,13 @@ export function ProxyHosts({
       width: "22%",
       cellContentClassName: "text-sm text-muted-foreground",
       renderCell: (host) =>
-        host.type === "proxy" && host.forwardHost
-          ? `${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
-          : host.type === "redirect" && host.redirectUrl
-            ? host.redirectUrl
-            : "—",
+        host.type === "proxy" ? (
+          <ProxyUpstreamTarget host={host} />
+        ) : host.type === "redirect" && host.redirectUrl ? (
+          host.redirectUrl
+        ) : (
+          "—"
+        ),
     },
     {
       id: "type",

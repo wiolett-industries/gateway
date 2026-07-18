@@ -5,6 +5,7 @@ import { assertNodeAllowsServiceCreation } from '@/modules/nodes/service-creatio
 import type { NodeDispatchService } from '@/services/node-dispatch.service.js';
 import { normalizeEnvRecord } from './docker-env-operations.js';
 import type { ContainerAction } from './docker-lifecycle-watch.js';
+import { assertContainerNotUsedByProxy } from './docker-proxy-link.guard.js';
 import type { DockerRegistryAuthCandidate, DockerRegistryService } from './docker-registry.service.js';
 import {
   applyPersistedDockerRuntimeSettingsToConfig,
@@ -351,6 +352,7 @@ export async function removeContainer(
   await ctx.validateDockerNode(nodeId);
   await ctx.assertNotManagedDeploymentInternal(nodeId, containerId);
   const name = await ctx.resolveContainerName(nodeId, containerId);
+  await assertContainerNotUsedByProxy(ctx.db, nodeId, name);
   ctx.requireNoTransition(nodeId, name);
   const inspect = await ctx.inspectContainer(nodeId, containerId);
   const state = String(inspect?.State?.Status ?? inspect?.state ?? inspect?.State ?? '').toLowerCase();

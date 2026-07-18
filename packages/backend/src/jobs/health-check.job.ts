@@ -3,6 +3,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import { proxyHosts } from '@/db/schema/index.js';
 import { compactHealthHistory } from '@/lib/health-history.js';
 import { createChildLogger } from '@/lib/logger.js';
+import { formatHostPort } from '@/lib/network-endpoint.js';
 import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 
@@ -166,7 +167,7 @@ export class HealthCheckJob {
 
     const scheme = host.forwardScheme || 'http';
     const path = host.healthCheckUrl || '/';
-    const url = `${scheme}://${host.forwardHost}:${host.forwardPort}${path}`;
+    const url = `${scheme}://${formatHostPort(host.forwardHost, host.forwardPort)}${path}`;
 
     const start = performance.now();
     try {

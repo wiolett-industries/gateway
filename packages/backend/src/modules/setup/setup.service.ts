@@ -133,6 +133,7 @@ export class SetupService {
     const host = await this.proxyService.createProxyHost(
       {
         type: 'proxy',
+        upstreamKind: 'manual',
         nodeId: defaultNodeId,
         domainNames: [domain],
         forwardHost: '127.0.0.1',
@@ -249,6 +250,7 @@ export class SetupService {
     const host = await this.proxyService.createProxyHost(
       {
         type: 'proxy',
+        upstreamKind: 'manual',
         nodeId: uploadNodeId,
         domainNames: [domain],
         forwardHost: '127.0.0.1',

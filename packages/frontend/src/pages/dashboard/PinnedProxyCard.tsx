@@ -1,5 +1,6 @@
 import { Globe } from "lucide-react";
 import { Link } from "react-router-dom";
+import { ProxyUpstreamTarget } from "@/components/proxy/ProxyUpstreamTarget";
 import { Badge } from "@/components/ui/badge";
 import { proxyHostRoute } from "@/lib/resource-routes";
 import type { ProxyHost } from "@/types";
@@ -29,11 +30,11 @@ export function PinnedProxyCard({ proxy }: PinnedProxyCardProps) {
         <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
         <div className="min-w-0">
           <p className="text-sm font-medium truncate">{proxy.domainNames[0]}</p>
-          <p className="text-xs text-muted-foreground truncate">
-            {proxy.domainNames.length > 1 ? `+${proxy.domainNames.length - 1} more` : null}
-            {proxy.type === "proxy" && proxy.forwardHost
-              ? `${proxy.domainNames.length > 1 ? " · " : ""}${proxy.forwardScheme}://${proxy.forwardHost}:${proxy.forwardPort}`
-              : null}
+          <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            {proxy.domainNames.length > 1 ? (
+              <span className="truncate">+{proxy.domainNames.length - 1} more</span>
+            ) : null}
+            {proxy.type === "proxy" ? <ProxyUpstreamTarget host={proxy} /> : null}
             {proxy.type === "redirect" && proxy.redirectUrl
               ? `${proxy.domainNames.length > 1 ? " · " : ""}→ ${proxy.redirectUrl}`
               : null}

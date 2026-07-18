@@ -13,6 +13,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { accessLists } from './access-lists.js';
 import { certificates } from './certificates.js';
+import { dockerDeployments } from './docker-deployments.js';
 import { nginxTemplates } from './nginx-templates.js';
 import { nodes } from './nodes.js';
 import { proxyHostFolders } from './proxy-host-folders.js';
@@ -21,6 +22,7 @@ import { users } from './users.js';
 
 export const proxyHostTypeEnum = pgEnum('proxy_host_type', ['proxy', 'redirect', '404', 'raw']);
 export const forwardSchemeEnum = pgEnum('forward_scheme', ['http', 'https']);
+export const proxyUpstreamKindEnum = pgEnum('proxy_upstream_kind', ['manual', 'docker_container', 'docker_deployment']);
 export const healthStatusEnum = pgEnum('health_status', ['online', 'offline', 'degraded', 'unknown', 'disabled']);
 export const healthCheckBodyMatchModeEnum = pgEnum('health_check_body_match_mode', [
   'includes',
@@ -60,9 +62,18 @@ export const proxyHosts = pgTable(
     enabled: boolean('enabled').notNull().default(true),
 
     // Upstream — for proxy type
+    upstreamKind: proxyUpstreamKindEnum('upstream_kind').notNull().default('manual'),
     forwardHost: varchar('forward_host', { length: 255 }),
     forwardPort: integer('forward_port'),
     forwardScheme: forwardSchemeEnum('forward_scheme').default('http'),
+    dockerNodeId: uuid('docker_node_id').references(() => nodes.id, { onDelete: 'restrict' }),
+    dockerContainerName: varchar('docker_container_name', { length: 255 }),
+    dockerDeploymentId: uuid('docker_deployment_id').references(() => dockerDeployments.id, {
+      onDelete: 'restrict',
+    }),
+    dockerContainerPort: integer('docker_container_port'),
+    dockerHostPort: integer('docker_host_port'),
+    dockerProtocol: varchar('docker_protocol', { length: 8 }),
 
     // SSL
     sslEnabled: boolean('ssl_enabled').notNull().default(false),
@@ -140,6 +151,8 @@ export const proxyHosts = pgTable(
     folderIdx: index('proxy_host_folder_idx').on(table.folderId),
     createdByIdx: index('proxy_host_created_by_idx').on(table.createdById),
     nodeIdx: index('proxy_host_node_idx').on(table.nodeId),
+    dockerNodeIdx: index('proxy_host_docker_node_idx').on(table.dockerNodeId),
+    dockerDeploymentIdx: index('proxy_host_docker_deployment_idx').on(table.dockerDeploymentId),
     systemKindIdx: index('proxy_host_system_kind_idx').on(table.systemKind),
     slugUnique: unique('proxy_hosts_slug_unique').on(table.slug),
   })

@@ -42,6 +42,7 @@ export const CreateProxyHostSchema = z
     domainNames: z.array(DomainNameSchema).min(1, 'At least one domain name is required'),
 
     // Upstream — proxy type
+    upstreamKind: z.enum(['manual', 'docker_container', 'docker_deployment']).default('manual'),
     forwardHost: z
       .string()
       .min(1)
@@ -50,6 +51,12 @@ export const CreateProxyHostSchema = z
       .optional(),
     forwardPort: z.number().int().min(1).max(65535).optional(),
     forwardScheme: z.enum(['http', 'https']).default('http'),
+    dockerNodeId: z.string().uuid().optional(),
+    dockerContainerName: z.string().min(1).max(255).optional(),
+    dockerDeploymentId: z.string().uuid().optional(),
+    dockerContainerPort: z.number().int().min(1).max(65535).optional(),
+    dockerHostPort: z.number().int().min(1).max(65535).optional(),
+    dockerProtocol: z.literal('tcp').optional(),
 
     // SSL
     sslEnabled: z.boolean().default(false),
@@ -104,7 +111,7 @@ export const CreateProxyHostSchema = z
     healthCheckSlowThreshold: z.number().int().min(0).max(100).optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.type === 'proxy') {
+    if (data.type === 'proxy' && data.upstreamKind === 'manual') {
       if (!data.forwardHost) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -119,6 +126,41 @@ export const CreateProxyHostSchema = z
           path: ['forwardPort'],
         });
       }
+    }
+
+    if (data.type === 'proxy' && data.upstreamKind === 'docker_container') {
+      for (const [field, value, message] of [
+        ['dockerNodeId', data.dockerNodeId, 'Docker node is required'],
+        ['dockerContainerName', data.dockerContainerName, 'Container is required'],
+        ['dockerContainerPort', data.dockerContainerPort, 'Container port is required'],
+        ['dockerHostPort', data.dockerHostPort, 'Published host port is required'],
+        ['dockerProtocol', data.dockerProtocol, 'Protocol is required'],
+      ] as const) {
+        if (value === undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: [field] });
+        }
+      }
+    }
+
+    if (data.type === 'proxy' && data.upstreamKind === 'docker_deployment') {
+      for (const [field, value, message] of [
+        ['dockerDeploymentId', data.dockerDeploymentId, 'Deployment is required'],
+        ['dockerContainerPort', data.dockerContainerPort, 'Container port is required'],
+        ['dockerHostPort', data.dockerHostPort, 'Published host port is required'],
+        ['dockerProtocol', data.dockerProtocol, 'Protocol is required'],
+      ] as const) {
+        if (value === undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: [field] });
+        }
+      }
+    }
+
+    if (data.type !== 'proxy' && data.upstreamKind !== 'manual') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Docker upstreams are only available for proxy hosts',
+        path: ['upstreamKind'],
+      });
     }
 
     if (data.type === 'redirect') {
@@ -149,6 +191,8 @@ export const UpdateProxyHostSchema = z.object({
   nodeId: z.string().uuid().optional(),
   domainNames: z.array(DomainNameSchema).min(1, 'At least one domain name is required').optional(),
 
+  upstreamKind: z.enum(['manual', 'docker_container', 'docker_deployment']).optional(),
+
   forwardHost: z
     .string()
     .min(1)
@@ -158,6 +202,12 @@ export const UpdateProxyHostSchema = z.object({
     .nullable(),
   forwardPort: z.number().int().min(1).max(65535).optional().nullable(),
   forwardScheme: z.enum(['http', 'https']).optional(),
+  dockerNodeId: z.string().uuid().optional().nullable(),
+  dockerContainerName: z.string().min(1).max(255).optional().nullable(),
+  dockerDeploymentId: z.string().uuid().optional().nullable(),
+  dockerContainerPort: z.number().int().min(1).max(65535).optional().nullable(),
+  dockerHostPort: z.number().int().min(1).max(65535).optional().nullable(),
+  dockerProtocol: z.literal('tcp').optional().nullable(),
 
   sslEnabled: z.boolean().optional(),
   sslForced: z.boolean().optional(),

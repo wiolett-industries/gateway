@@ -1,4 +1,5 @@
 import { createChildLogger } from '@/lib/logger.js';
+import { formatHostPort, isValidUpstreamHost } from '@/lib/network-endpoint.js';
 import type { ConfigValidatorService } from './config-validator.service.js';
 
 const logger = createChildLogger('NginxConfigGenerator');
@@ -61,7 +62,7 @@ export class NginxConfigGenerator {
   }
 
   private validateForwardHost(host: string): string {
-    if (!/^[a-zA-Z0-9._-]+$/.test(host)) {
+    if (!isValidUpstreamHost(host)) {
       throw new Error(`Invalid forwardHost value: ${host}`);
     }
     return host;
@@ -96,7 +97,7 @@ export class NginxConfigGenerator {
   private generateProxyConfig(host: ProxyHostConfig): string {
     const serverNames = host.domainNames.map((d) => this.sanitizeNginxValue(d)).join(' ');
     const sanitizedHost = host.forwardHost ? this.validateForwardHost(host.forwardHost) : '';
-    const upstream = `${host.forwardScheme}://${sanitizedHost}:${host.forwardPort}`;
+    const upstream = `${host.forwardScheme}://${formatHostPort(sanitizedHost, host.forwardPort ?? 0)}`;
     const lines: string[] = [];
     let rateLimitBurst = 20;
 

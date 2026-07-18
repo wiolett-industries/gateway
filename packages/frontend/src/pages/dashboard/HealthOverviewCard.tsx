@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { PanelShell } from "@/components/common/PanelShell";
+import { ProxyUpstreamTarget } from "@/components/proxy/ProxyUpstreamTarget";
 import { Badge } from "@/components/ui/badge";
 import { proxyHostRoute } from "@/lib/resource-routes";
 import type { ProxyHost } from "@/types";
@@ -46,11 +47,7 @@ export function HealthOverviewCard({
               <span className="text-sm font-medium truncate flex-1">
                 {host.domainNames.join(", ")}
               </span>
-              <span className="text-xs text-muted-foreground">
-                {host.forwardHost
-                  ? `${host.forwardScheme}://${host.forwardHost}:${host.forwardPort}`
-                  : ""}
-              </span>
+              <ProxyUpstreamTarget host={host} />
               <Badge
                 variant={
                   (

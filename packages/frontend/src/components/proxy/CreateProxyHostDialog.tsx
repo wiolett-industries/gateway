@@ -2,7 +2,16 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Loader2, Minus, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { SettingsControlRow } from "@/components/common/SettingsControlRow";
 import { DomainAutocompleteInput } from "@/components/domains/DomainAutocompleteInput";
+import {
+  DEFAULT_PROXY_UPSTREAM,
+  isProxyUpstreamValid,
+  ProxyUpstreamFields,
+  type ProxyUpstreamSelection,
+  proxyUpstreamFromHost,
+  proxyUpstreamRequest,
+} from "@/components/proxy/ProxyUpstreamEditor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +23,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { NumericInput } from "@/components/ui/numeric-input";
 import {
   Select,
   SelectContent,
@@ -27,10 +35,9 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import type {
   CreateProxyHostRequest,
-  ForwardScheme,
+  DockerContainer,
   NginxTemplate,
   ProxyHost,
-  ProxyHostFolder,
   ProxyHostType,
   SSLCertificate,
 } from "@/types";
@@ -76,9 +83,7 @@ export function CreateProxyHostDialog({
   const [domainNames, setDomainNames] = useState<string[]>([""]);
 
   // Step 2 — Configuration: Proxy
-  const [forwardHost, setForwardHost] = useState("");
-  const [forwardPort, setForwardPort] = useState(80);
-  const [forwardScheme, setForwardScheme] = useState<ForwardScheme>("http");
+  const [upstream, setUpstream] = useState<ProxyUpstreamSelection>(DEFAULT_PROXY_UPSTREAM);
   const [websocketSupport, setWebsocketSupport] = useState(false);
 
   // Step 2 — Configuration: Redirect
@@ -98,21 +103,8 @@ export function CreateProxyHostDialog({
     Record<string, string | number | boolean>
   >({});
 
-  // Step 2 — Folder
-  const [folderId, setFolderId] = useState("");
-
   // Raw config mode (edit only)
   const [rawConfigEnabled, setRawConfigEnabled] = useState(false);
-
-  // Step 2 — Health check
-  const [healthCheckEnabled, setHealthCheckEnabled] = useState(true);
-  const [healthCheckUrl, setHealthCheckUrl] = useState("/");
-  const [healthCheckInterval, setHealthCheckInterval] = useState(30);
-  const [healthCheckExpectedStatus, setHealthCheckExpectedStatus] = useState<number | null>(null);
-  const [healthCheckExpectedBody, setHealthCheckExpectedBody] = useState("");
-  const [healthCheckBodyMatchMode, setHealthCheckBodyMatchMode] = useState<
-    "includes" | "exact" | "starts_with" | "ends_with"
-  >("includes");
 
   // Saving state
   const [isSaving, setIsSaving] = useState(false);
@@ -121,7 +113,7 @@ export function CreateProxyHostDialog({
   const [nodes, setNodes] = useState<NodeOption[]>([]);
   const [sslCerts, setSslCerts] = useState<SSLCertificate[]>([]);
   const [nginxTemplateList, setNginxTemplateList] = useState<NginxTemplate[]>([]);
-  const [folderList, setFolderList] = useState<ProxyHostFolder[]>([]);
+  const [dockerContainers, setDockerContainers] = useState<DockerContainer[]>([]);
 
   // Reset entire form to defaults
   const resetForm = useCallback(() => {
@@ -130,9 +122,7 @@ export function CreateProxyHostDialog({
     setType("proxy");
     setNodeId("");
     setDomainNames([""]);
-    setForwardHost("");
-    setForwardPort(80);
-    setForwardScheme("http");
+    setUpstream(DEFAULT_PROXY_UPSTREAM);
     setWebsocketSupport(false);
     setRedirectUrl("");
     setRedirectStatusCode(301);
@@ -143,14 +133,7 @@ export function CreateProxyHostDialog({
     setInternalCertificateId("");
     setNginxTemplateId("");
     setTemplateVariables({});
-    setFolderId("");
     setRawConfigEnabled(false);
-    setHealthCheckEnabled(true);
-    setHealthCheckUrl("/");
-    setHealthCheckInterval(30);
-    setHealthCheckExpectedStatus(null);
-    setHealthCheckExpectedBody("");
-    setHealthCheckBodyMatchMode("includes");
     setIsSaving(false);
   }, []);
 
@@ -160,9 +143,7 @@ export function CreateProxyHostDialog({
     setType(existingHost.type);
     setNodeId((existingHost as any).nodeId || "");
     setDomainNames(existingHost.domainNames.length > 0 ? [...existingHost.domainNames] : [""]);
-    setForwardHost(existingHost.forwardHost || "");
-    setForwardPort(existingHost.forwardPort || 80);
-    setForwardScheme(existingHost.forwardScheme || "http");
+    setUpstream(proxyUpstreamFromHost(existingHost));
     setWebsocketSupport(existingHost.websocketSupport);
     setRedirectUrl(existingHost.redirectUrl || "");
     setRedirectStatusCode(existingHost.redirectStatusCode || 301);
@@ -173,14 +154,7 @@ export function CreateProxyHostDialog({
     setInternalCertificateId(existingHost.internalCertificateId || "");
     setNginxTemplateId(existingHost.nginxTemplateId || "");
     setTemplateVariables(existingHost.templateVariables || {});
-    setFolderId(existingHost.folderId || "");
     setRawConfigEnabled(existingHost.rawConfigEnabled ?? false);
-    setHealthCheckEnabled(existingHost.healthCheckEnabled);
-    setHealthCheckUrl(existingHost.healthCheckUrl || "/");
-    setHealthCheckInterval(existingHost.healthCheckInterval || 30);
-    setHealthCheckExpectedStatus(existingHost.healthCheckExpectedStatus ?? null);
-    setHealthCheckExpectedBody(existingHost.healthCheckExpectedBody || "");
-    setHealthCheckBodyMatchMode(existingHost.healthCheckBodyMatchMode || "includes");
     setStep(1);
   }, [existingHost]);
 
@@ -190,10 +164,9 @@ export function CreateProxyHostDialog({
 
     const load = async () => {
       try {
-        const [nodeRes, sslRes, folderRes, templateRes] = await Promise.all([
+        const [nodeRes, sslRes, templateRes] = await Promise.all([
           api.listNodes({ type: "nginx" }),
           api.listSSLCertificates({ limit: 100 }),
-          api.listFolders(),
           api.listNginxTemplates(),
         ]);
 
@@ -208,35 +181,18 @@ export function CreateProxyHostDialog({
           }))
         );
         setSslCerts(sslRes.data || []);
-
-        // Flatten folder tree
-        const flat: ProxyHostFolder[] = [];
-        const flatten = (items: typeof folderRes, depth = 0) => {
-          for (const item of items) {
-            flat.push({ ...item, depth });
-            if ((item as any).children) flatten((item as any).children, depth + 1);
-          }
-        };
-        flatten(folderRes);
-        setFolderList(flat);
-
         setNginxTemplateList(templateRes || []);
       } catch {
         // non-critical
       }
     };
 
-    load();
+    void load();
+    void api
+      .listDockerContainerSnapshots()
+      .then(setDockerContainers)
+      .catch(() => setDockerContainers([]));
   }, [open]);
-
-  // Auto-toggle health check when type changes
-  useEffect(() => {
-    if (type === "404") {
-      setHealthCheckEnabled(false);
-    } else {
-      setHealthCheckEnabled(true);
-    }
-  }, [type]);
 
   // Derived: user templates matching current type
   const userTemplates = useMemo(
@@ -257,7 +213,7 @@ export function CreateProxyHostDialog({
     nodeId !== "" && !selectedLockedForCreation && domainNames.some((d) => d.trim() !== "");
 
   const isStep2Valid = (() => {
-    if (type === "proxy" && !forwardHost.trim()) return false;
+    if (type === "proxy" && !isProxyUpstreamValid(upstream)) return false;
     if (type === "redirect" && !redirectUrl.trim()) return false;
     if (sslEnabled && !sslCertificateId) return false;
     return true;
@@ -269,7 +225,6 @@ export function CreateProxyHostDialog({
 
   // Handle close
   const handleOpenChange = (value: boolean) => {
-    if (!value) resetForm();
     onOpenChange(value);
   };
 
@@ -278,6 +233,7 @@ export function CreateProxyHostDialog({
     const domains = domainNames.filter((d) => d.trim() !== "");
     const req: CreateProxyHostRequest = {
       type,
+      nodeId,
       domainNames: domains,
       websocketSupport,
       sslEnabled,
@@ -285,31 +241,14 @@ export function CreateProxyHostDialog({
       http2Support,
       sslCertificateId: sslCertificateId || undefined,
       internalCertificateId: internalCertificateId || undefined,
-      folderId: folderId || undefined,
       rawConfigEnabled: isEditing ? rawConfigEnabled : undefined,
       nginxTemplateId: nginxTemplateId || undefined,
       templateVariables: Object.keys(templateVariables).length > 0 ? templateVariables : undefined,
-      healthCheckEnabled,
-      healthCheckUrl,
-      healthCheckInterval,
-      healthCheckExpectedStatus: isEditing
-        ? healthCheckExpectedStatus
-        : (healthCheckExpectedStatus ?? undefined),
-      healthCheckExpectedBody:
-        healthCheckExpectedBody.trim() === ""
-          ? isEditing
-            ? null
-            : undefined
-          : healthCheckExpectedBody,
-      healthCheckBodyMatchMode:
-        healthCheckExpectedBody.trim() === "" ? undefined : healthCheckBodyMatchMode,
-      nodeId: nodeId || undefined,
-    } as any;
+      healthCheckEnabled: isEditing ? undefined : false,
+    };
 
-    if (type === "proxy") {
-      req.forwardHost = forwardHost;
-      req.forwardPort = forwardPort;
-      req.forwardScheme = forwardScheme;
+    if (type === "proxy" && (!isEditing || existingHost?.type !== "proxy")) {
+      Object.assign(req, proxyUpstreamRequest(upstream));
     }
     if (type === "redirect") {
       req.redirectUrl = redirectUrl;
@@ -343,7 +282,10 @@ export function CreateProxyHostDialog({
       if (isEditing && existingHost && !rawConfigEnabled && existingHost.rawConfigEnabled) {
         // Type stays as whatever user had before (stored in the data from step 1)
         // but if it's still "raw", reset to proxy
-        if (data.type === "raw") data.type = "proxy";
+        if (data.type === "raw") {
+          data.type = "proxy";
+          Object.assign(data, proxyUpstreamRequest(upstream));
+        }
       }
 
       if (isEditing && existingHost) {
@@ -355,7 +297,6 @@ export function CreateProxyHostDialog({
         toast.success("Proxy host created");
         onSuccess?.(created.id, created);
       }
-      resetForm();
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save proxy host");
@@ -373,7 +314,14 @@ export function CreateProxyHostDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent
+        className="sm:max-w-xl"
+        onAnimationEnd={(event) => {
+          if (event.target === event.currentTarget && event.currentTarget.dataset.state === "closed") {
+            resetForm();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Proxy Host" : "Create Proxy Host"}</DialogTitle>
           <DialogDescription>
@@ -542,49 +490,11 @@ export function CreateProxyHostDialog({
                   <div className="border-b border-border p-4">
                     <h2 className="font-semibold text-sm">Forwarding</h2>
                   </div>
-                  <div className="p-4 space-y-4">
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">Forward Host</label>
-                        <Input
-                          value={forwardHost}
-                          onChange={(e) => setForwardHost(e.target.value)}
-                          placeholder="192.168.1.100"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">Forward Port</label>
-                        <NumericInput
-                          value={forwardPort}
-                          onChange={(v) => setForwardPort(v)}
-                          min={1}
-                          max={65535}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">Scheme</label>
-                        <Select
-                          value={forwardScheme}
-                          onValueChange={(v) => setForwardScheme(v as ForwardScheme)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="http">HTTP</SelectItem>
-                            <SelectItem value="https">HTTPS</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between px-1">
-                      <div>
-                        <p className="text-sm font-medium">Websocket Support</p>
-                        <p className="text-xs text-muted-foreground">Enable WebSocket proxying</p>
-                      </div>
-                      <Switch checked={websocketSupport} onChange={setWebsocketSupport} />
-                    </div>
-                  </div>
+                  <ProxyUpstreamFields
+                    value={upstream}
+                    onChange={setUpstream}
+                    containers={dockerContainers}
+                  />
                 </div>
               )}
 
@@ -625,150 +535,19 @@ export function CreateProxyHostDialog({
 
               {/* SSL card — always visible, inner controls disabled when SSL off */}
               <div className="border border-border bg-card">
-                <div className="divide-y divide-border">
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium">SSL Enabled</p>
-                      <p className="text-xs text-muted-foreground">Serve this host over HTTPS</p>
-                    </div>
-                    <Switch checked={sslEnabled} onChange={setSslEnabled} />
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <div className={cn(!sslEnabled && "opacity-50")}>
-                      <p className="text-sm font-medium">Force HTTPS</p>
-                      <p className="text-xs text-muted-foreground">Redirect HTTP to HTTPS</p>
-                    </div>
-                    <Switch checked={sslForced} onChange={setSslForced} disabled={!sslEnabled} />
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <div className={cn(!sslEnabled && "opacity-50")}>
-                      <p className="text-sm font-medium">HTTP/2</p>
-                      <p className="text-xs text-muted-foreground">
-                        Enable HTTP/2 protocol support
-                      </p>
-                    </div>
-                    <Switch
-                      checked={http2Support}
-                      onChange={setHttp2Support}
-                      disabled={!sslEnabled}
-                    />
-                  </div>
-                  <div className={cn("px-4 py-3", !sslEnabled && "opacity-50 pointer-events-none")}>
-                    <label className="text-xs text-muted-foreground">SSL Certificate</label>
-                    <Select
-                      value={sslCertificateId || "__none__"}
-                      onValueChange={(v) => setSslCertificateId(v === "__none__" ? "" : v)}
-                      disabled={!sslEnabled}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Select certificate..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">None</SelectItem>
-                        {sslCerts.map((cert) => (
-                          <SelectItem key={cert.id} value={cert.id}>
-                            {cert.name} ({cert.type})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              {type !== "404" && (
-                <div className="border border-border bg-card">
-                  <div className="divide-y divide-border">
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <div>
-                        <p className="text-sm font-medium">Health Check</p>
-                        <p className="text-xs text-muted-foreground">
-                          Enable periodic health monitoring
-                        </p>
-                      </div>
-                      <Switch checked={healthCheckEnabled} onChange={setHealthCheckEnabled} />
-                    </div>
-                    <div
-                      className={cn(
-                        "grid grid-cols-1 gap-3 px-4 py-3 md:grid-cols-2",
-                        !healthCheckEnabled && "opacity-50 pointer-events-none"
-                      )}
-                    >
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">URL Path</label>
-                        <Input
-                          value={healthCheckUrl}
-                          onChange={(e) => setHealthCheckUrl(e.target.value)}
-                          placeholder="/"
-                          disabled={!healthCheckEnabled}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">Expected Status</label>
-                        <Input
-                          type="number"
-                          value={healthCheckExpectedStatus ?? ""}
-                          onChange={(e) =>
-                            setHealthCheckExpectedStatus(
-                              e.target.value ? Number(e.target.value) : null
-                            )
-                          }
-                          placeholder="Any 2xx"
-                          disabled={!healthCheckEnabled}
-                        />
-                      </div>
-                      <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs text-muted-foreground">Expected Body</label>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[11rem_minmax(0,1fr)]">
-                          <Select
-                            value={healthCheckBodyMatchMode}
-                            onValueChange={(v) =>
-                              setHealthCheckBodyMatchMode(
-                                v as "includes" | "exact" | "starts_with" | "ends_with"
-                              )
-                            }
-                            disabled={!healthCheckEnabled}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="includes">Includes</SelectItem>
-                              <SelectItem value="exact">Exact Match</SelectItem>
-                              <SelectItem value="starts_with">Starts With</SelectItem>
-                              <SelectItem value="ends_with">Ends With</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Input
-                            value={healthCheckExpectedBody}
-                            onChange={(e) => setHealthCheckExpectedBody(e.target.value)}
-                            placeholder="Optional"
-                            disabled={!healthCheckEnabled}
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">Interval (seconds)</label>
-                        <NumericInput
-                          value={healthCheckInterval}
-                          onChange={(v) => setHealthCheckInterval(v)}
-                          min={5}
-                          max={3600}
-                          disabled={!healthCheckEnabled}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Config Template card */}
-              {userTemplates.length > 0 && (
-                <div className="border border-border bg-card">
-                  <div className="border-b border-border p-4">
-                    <h2 className="font-semibold text-sm">Config Template</h2>
-                  </div>
-                  <div className="p-4 space-y-4">
+                {type === "proxy" && (
+                  <SettingsControlRow
+                    title="WebSocket Support"
+                    description="Enable WebSocket proxying"
+                  >
+                    <Switch checked={websocketSupport} onChange={setWebsocketSupport} />
+                  </SettingsControlRow>
+                )}
+                {userTemplates.length > 0 && (
+                  <SettingsControlRow
+                    title="Config Template"
+                    description="Nginx configuration template"
+                  >
                     <Select
                       value={nginxTemplateId || "__none__"}
                       onValueChange={(v) => {
@@ -798,34 +577,52 @@ export function CreateProxyHostDialog({
                         ))}
                       </SelectContent>
                     </Select>
+                  </SettingsControlRow>
+                )}
+                <SettingsControlRow title="SSL Enabled" description="Serve this host over HTTPS">
+                  <Switch checked={sslEnabled} onChange={setSslEnabled} />
+                </SettingsControlRow>
+                <SettingsControlRow title="Force HTTPS" description="Redirect HTTP to HTTPS">
+                  <div className={cn(!sslEnabled && "opacity-50")}>
+                    <Switch checked={sslForced} onChange={setSslForced} disabled={!sslEnabled} />
                   </div>
-                </div>
-              )}
-
-              {/* Folder selector */}
-              {folderList.length > 0 && (
-                <div className="border border-border bg-card">
-                  <div className="px-4 py-3">
-                    <label className="text-xs text-muted-foreground">Folder</label>
+                </SettingsControlRow>
+                <SettingsControlRow
+                  title="HTTP/2"
+                  description="Enable HTTP/2 protocol support"
+                >
+                  <div className={cn(!sslEnabled && "opacity-50")}>
+                    <Switch
+                      checked={http2Support}
+                      onChange={setHttp2Support}
+                      disabled={!sslEnabled}
+                    />
+                  </div>
+                </SettingsControlRow>
+                <SettingsControlRow title="SSL Certificate">
+                  <div
+                    className={cn("w-full", !sslEnabled && "pointer-events-none opacity-50")}
+                  >
                     <Select
-                      value={folderId || "__none__"}
-                      onValueChange={(v) => setFolderId(v === "__none__" ? "" : v)}
+                      value={sslCertificateId || "__none__"}
+                      onValueChange={(v) => setSslCertificateId(v === "__none__" ? "" : v)}
+                      disabled={!sslEnabled}
                     >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="No folder" />
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select certificate..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none__">No folder</SelectItem>
-                        {folderList.map((f) => (
-                          <SelectItem key={f.id} value={f.id}>
-                            {"  ".repeat(f.depth) + f.name}
+                        <SelectItem value="__none__">None</SelectItem>
+                        {sslCerts.map((cert) => (
+                          <SelectItem key={cert.id} value={cert.id}>
+                            {cert.name} ({cert.type})
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-              )}
+                </SettingsControlRow>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

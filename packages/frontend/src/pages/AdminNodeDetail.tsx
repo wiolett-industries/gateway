@@ -1,4 +1,4 @@
-import { ArrowUpCircle, EllipsisVertical, Pencil, Pin, Trash2 } from "lucide-react";
+import { ArrowUpCircle, EllipsisVertical, Pin, Settings, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -24,6 +24,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { HealthBars } from "@/components/ui/health-bars";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
@@ -117,6 +124,8 @@ export function AdminNodeDetail({
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [appearanceName, setAppearanceName] = useState("");
   const [appearanceColor, setAppearanceColor] = useState<NodeAppearanceColor | null>(null);
+  const [serviceAddressMode, setServiceAddressMode] = useState("__auto__");
+  const [customServiceAddress, setCustomServiceAddress] = useState("");
   const [appearanceSaving, setAppearanceSaving] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [lockSaving, setLockSaving] = useState(false);
@@ -130,6 +139,11 @@ export function AdminNodeDetail({
     usePinnedNodesStore();
   const nodeUpdating = node ? isNodeUpdating(node) : false;
   const nodeOffline = node?.status === "offline";
+  const localIpAddresses = useMemo(
+    () =>
+      node?.liveHealthReport?.localIpAddresses ?? node?.lastHealthReport?.localIpAddresses ?? [],
+    [node?.lastHealthReport?.localIpAddresses, node?.liveHealthReport?.localIpAddresses]
+  );
   const nonInteractiveWhileUpdating =
     nodeUpdating && activeTab !== "details" && activeTab !== "daemon-logs";
   const canUseNodeConsole = !!(id && hasScope(`nodes:console:${id}`)) || hasScope("nodes:console");
@@ -138,6 +152,8 @@ export function AdminNodeDetail({
     !!(id && (hasScope(`nodes:config:view:${id}`) || hasScope(`nodes:config:edit:${id}`))) ||
     hasScope("nodes:config:view") ||
     hasScope("nodes:config:edit");
+  const canEditNodeServiceAddress =
+    !!id && (hasScope("docker:containers:config") || hasScope(`docker:containers:config:${id}`));
   const canReadNodeFiles =
     !!id && (hasScope("nodes:files:read") || hasScope(`nodes:files:read:${id}`));
   const canWriteNodeFiles =
@@ -152,6 +168,7 @@ export function AdminNodeDetail({
     !!node &&
     (node.type === "nginx" || node.type === "docker") &&
     (hasScope("nodes:lock") || hasScope(`nodes:lock:${node.id}`));
+  const canRenameNode = !!id && hasScope(`nodes:rename:${id}`);
   const daemonUpdate = useMemo(() => {
     if (!id || !node) return { available: false, latestVersion: null };
     const forced = getForcedDaemonUpdateForNode(node);
@@ -298,6 +315,16 @@ export function AdminNodeDetail({
     if (!node) return;
     setAppearanceName(node.displayName ?? "");
     setAppearanceColor(node.appearanceColor ?? null);
+    if (!node.serviceAddress) {
+      setServiceAddressMode("__auto__");
+      setCustomServiceAddress("");
+    } else if (localIpAddresses.includes(node.serviceAddress)) {
+      setServiceAddressMode(node.serviceAddress);
+      setCustomServiceAddress("");
+    } else {
+      setServiceAddressMode("__custom__");
+      setCustomServiceAddress(node.serviceAddress);
+    }
     setAppearanceOpen(true);
   };
 
@@ -305,9 +332,16 @@ export function AdminNodeDetail({
     if (!id) return;
     setAppearanceSaving(true);
     try {
+      const serviceAddress =
+        serviceAddressMode === "__auto__"
+          ? null
+          : serviceAddressMode === "__custom__"
+            ? customServiceAddress.trim() || null
+            : serviceAddressMode;
       const updated = await api.updateNode(id, {
         displayName: appearanceName.trim() || null,
         appearanceColor,
+        ...(node?.type === "docker" && canEditNodeServiceAddress ? { serviceAddress } : {}),
       });
       setNode((prev) => (prev ? { ...prev, ...updated } : prev));
       if (updated.slug && updated.slug !== routeSlug) {
@@ -442,11 +476,11 @@ export function AdminNodeDetail({
                 onClick: () => setPinOpen(true),
                 disabled: nodeUpdating,
               },
-              ...(hasScope("nodes:rename")
+              ...(canRenameNode
                 ? [
                     {
-                      label: "Appearance",
-                      icon: <Pencil className="h-4 w-4" />,
+                      label: "Settings",
+                      icon: <Settings className="h-4 w-4" />,
                       onClick: openAppearanceDialog,
                       disabled: nodeUpdating,
                     },
@@ -495,10 +529,10 @@ export function AdminNodeDetail({
             >
               <Pin className="h-4 w-4" />
             </Button>
-            {hasScope("nodes:rename") && (
+            {canRenameNode && (
               <Button variant="outline" disabled={nodeUpdating} onClick={openAppearanceDialog}>
-                <Pencil className="h-4 w-4" />
-                Appearance
+                <Settings className="h-4 w-4" />
+                Settings
               </Button>
             )}
             {(hasScope("admin:update") ||
@@ -715,11 +749,11 @@ export function AdminNodeDetail({
         </Tabs>
       </div>
 
-      {/* Appearance Dialog */}
+      {/* Settings Dialog */}
       <Dialog open={appearanceOpen} onOpenChange={setAppearanceOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Node Appearance</DialogTitle>
+            <DialogTitle>Node Settings</DialogTitle>
           </DialogHeader>
           <div className="space-y-5">
             <div>
@@ -776,12 +810,58 @@ export function AdminNodeDetail({
                 </Badge>
               </div>
             </div>
+            {node.type === "docker" && (
+              <div>
+                <label className="text-sm font-medium">Service Address</label>
+                <Select
+                  value={serviceAddressMode}
+                  onValueChange={setServiceAddressMode}
+                  disabled={!canEditNodeServiceAddress}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__auto__">
+                      {localIpAddresses[0]
+                        ? `Automatic (${localIpAddresses[0]})`
+                        : "Automatic (no local IP reported)"}
+                    </SelectItem>
+                    {localIpAddresses.map((address) => (
+                      <SelectItem key={address} value={address}>
+                        {address}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__custom__">Custom address</SelectItem>
+                  </SelectContent>
+                </Select>
+                {serviceAddressMode === "__custom__" && (
+                  <Input
+                    aria-label="Custom Service Address"
+                    className="mt-2"
+                    value={customServiceAddress}
+                    onChange={(event) => setCustomServiceAddress(event.target.value)}
+                    placeholder="docker-node.internal"
+                    disabled={!canEditNodeServiceAddress}
+                  />
+                )}
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Used by proxy hosts to reach published Docker ports.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAppearanceOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAppearanceSave} disabled={appearanceSaving}>
+            <Button
+              onClick={handleAppearanceSave}
+              disabled={
+                appearanceSaving ||
+                (serviceAddressMode === "__custom__" && !customServiceAddress.trim())
+              }
+            >
               {appearanceSaving ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>

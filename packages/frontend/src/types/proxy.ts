@@ -1,8 +1,10 @@
+import type { NodeAppearanceColor } from "./nodes";
 import type { SSLCertificate } from "./ssl";
 
 // Proxy Host Types
 export type ProxyHostType = "proxy" | "redirect" | "404" | "raw";
 export type ForwardScheme = "http" | "https";
+export type ProxyUpstreamKind = "manual" | "docker_container" | "docker_deployment";
 export type HealthStatus = "online" | "offline" | "degraded" | "unknown" | "disabled";
 
 export interface CustomHeader {
@@ -32,9 +34,19 @@ export interface ProxyHost {
   type: ProxyHostType;
   domainNames: string[];
   enabled: boolean;
+  nodeId?: string | null;
+  upstreamKind?: ProxyUpstreamKind;
   forwardHost: string | null;
   forwardPort: number | null;
   forwardScheme: ForwardScheme;
+  dockerNodeId?: string | null;
+  dockerContainerName?: string | null;
+  dockerDeploymentId?: string | null;
+  dockerDeploymentName?: string | null;
+  dockerNodeAppearanceColor?: NodeAppearanceColor | null;
+  dockerContainerPort?: number | null;
+  dockerHostPort?: number | null;
+  dockerProtocol?: "tcp" | null;
   sslEnabled: boolean;
   sslForced: boolean;
   http2Support: boolean;
@@ -103,10 +115,18 @@ export interface AccessList {
 // Request types (Gateway)
 export interface CreateProxyHostRequest {
   type: ProxyHostType;
+  nodeId: string;
   domainNames: string[];
+  upstreamKind?: ProxyUpstreamKind;
   forwardHost?: string;
   forwardPort?: number;
   forwardScheme?: ForwardScheme;
+  dockerNodeId?: string | null;
+  dockerContainerName?: string | null;
+  dockerDeploymentId?: string | null;
+  dockerContainerPort?: number | null;
+  dockerHostPort?: number | null;
+  dockerProtocol?: "tcp" | null;
   sslEnabled?: boolean;
   sslForced?: boolean;
   http2Support?: boolean;

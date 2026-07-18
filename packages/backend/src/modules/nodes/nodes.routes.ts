@@ -157,6 +157,8 @@ function compactDockerNodeForDockerAccess(node: Record<string, unknown>) {
     hostname: node.hostname,
     displayName: node.displayName,
     appearanceColor: node.appearanceColor,
+    serviceAddress: node.serviceAddress,
+    effectiveServiceAddress: node.effectiveServiceAddress,
     status: node.status,
     serviceCreationLocked: node.serviceCreationLocked,
     daemonVersion: node.daemonVersion,
@@ -503,6 +505,10 @@ nodesRoutes.openapi({ ...updateNodeRoute, middleware: requireScopeForResource('n
   const user = c.get('user')!;
   const id = c.req.param('id')!;
   const input = UpdateNodeSchema.parse(await c.req.json());
+  const scopes = c.get('effectiveScopes') || [];
+  if (input.serviceAddress !== undefined && !hasScope(scopes, `docker:containers:config:${id}`)) {
+    throw new AppError(403, 'FORBIDDEN', 'Editing the Docker service address requires Docker config access');
+  }
   const node = await service.update(id, input, user.id);
   return c.json({ data: node });
 });

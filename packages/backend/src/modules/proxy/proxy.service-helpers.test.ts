@@ -57,6 +57,18 @@ describe('ProxyService helpers', () => {
     });
   });
 
+  it('keeps dormant upstream data across raw-mode transitions', () => {
+    const linkedHost = { type: 'proxy', rawConfigEnabled: false };
+
+    expect(__testOnly.updateUsesRawMode(linkedHost, { type: 'raw', rawConfigEnabled: true })).toBe(true);
+    expect(
+      __testOnly.updateUsesRawMode(
+        { ...linkedHost, type: 'raw', rawConfigEnabled: true },
+        { type: 'proxy', rawConfigEnabled: false }
+      )
+    ).toBe(false);
+  });
+
   it('does not block unrelated updates when an existing host has stale SSL state without a certificate', () => {
     expect(() =>
       __testOnly.assertSslPrerequisitesForUpdate(
