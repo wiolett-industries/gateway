@@ -106,4 +106,5 @@ export interface DomainPreview {
 
 export interface UpdateDomainRequest {
   description?: string | null;
+  proxied?: boolean;
 }

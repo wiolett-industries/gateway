@@ -191,12 +191,27 @@ domainRoutes.openapi({ ...updateDomainRoute, middleware: requireScope('domains:e
   const user = c.get('user')!;
   const body = await c.req.json();
   const input = UpdateDomainSchema.parse(body);
+  if (
+    input.proxied !== undefined &&
+    !hasScope(c.get('effectiveScopes') || [], 'integrations:cloudflare:dns:edit')
+  ) {
+    return c.json(
+      { code: 'FORBIDDEN', message: 'Missing required scope: integrations:cloudflare:dns:edit' },
+      403
+    );
+  }
   const domainsService = container.resolve(DomainsService);
   try {
     const domain = await domainsService.updateDomain(c.req.param('id')!, input, user.id);
     return c.json({ data: domain });
-  } catch {
-    return c.json({ code: 'NOT_FOUND', message: 'Domain not found' }, 404);
+  } catch (err) {
+    if (err instanceof AppError) {
+      return c.json({ code: err.code, message: err.message, details: err.details }, err.statusCode as never);
+    }
+    return c.json(
+      { code: 'ERROR', message: err instanceof Error ? err.message : 'Failed to update domain' },
+      400
+    );
   }
 });
 

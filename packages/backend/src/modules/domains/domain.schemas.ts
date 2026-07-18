@@ -19,6 +19,7 @@ export const PreviewDomainSchema = CreateDomainSchema.pick({
 
 export const UpdateDomainSchema = z.object({
   description: z.string().max(1000).optional().nullable(),
+  proxied: z.boolean().optional(),
 });
 
 export const DeleteDomainSchema = z.object({

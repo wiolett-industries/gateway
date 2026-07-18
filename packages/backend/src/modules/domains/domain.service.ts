@@ -287,20 +287,66 @@ export class DomainsService {
   }
 
   async updateDomain(id: string, input: UpdateDomainInput, userId: string) {
+    const [existing] = await this.db.select().from(domains).where(eq(domains.id, id)).limit(1);
+    if (!existing) throw new AppError(404, 'NOT_FOUND', 'Domain not found');
+
+    if (input.proxied !== undefined && input.proxied !== existing.dnsProxied) {
+      if (
+        existing.dnsProvider !== 'cloudflare' ||
+        !this.integrationsService ||
+        !existing.integrationConnectorId ||
+        !existing.providerZoneId ||
+        existing.providerRecordIds.length === 0
+      ) {
+        throw new AppError(
+          409,
+          'CLOUDFLARE_DNS_NOT_CONFIGURED',
+          'Cloudflare DNS integration is not configured for this domain'
+        );
+      }
+
+      const context = await this.integrationsService.getCloudflareDnsContextForRecord(
+        existing.integrationConnectorId,
+        existing.providerZoneId
+      );
+      const records = await context.client.listDnsRecords(context.zone.remoteId, existing.domain);
+      const recordsById = new Map(records.map((record) => [record.id, record]));
+
+      for (const recordId of existing.providerRecordIds) {
+        const record = recordsById.get(recordId);
+        if (!record || !['A', 'AAAA', 'TXT'].includes(record.type)) {
+          throw new AppError(
+            409,
+            'CLOUDFLARE_DNS_RECORD_NOT_FOUND',
+            'A managed Cloudflare DNS record could not be found'
+          );
+        }
+        await context.client.updateDnsRecord(context.zone.remoteId, record.id, {
+          type: record.type as 'A' | 'AAAA' | 'TXT',
+          name: record.name,
+          content: record.content,
+          ttl: record.ttl,
+          proxied: input.proxied,
+        });
+      }
+    }
+
     const [row] = await this.db
       .update(domains)
-      .set({ description: input.description, updatedAt: new Date() })
+      .set({
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.proxied !== undefined ? { dnsProxied: input.proxied } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(domains.id, id))
       .returning();
-
-    if (!row) throw new Error('Domain not found');
 
     await this.auditService.log({
       userId,
       action: 'domain.update',
       resourceType: 'domain',
       resourceId: id,
-      details: { domain: row.domain },
+      details: { domain: row.domain, proxied: input.proxied },
     });
 
     this.emitDomain(id, 'updated', row.domain);

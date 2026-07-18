@@ -422,7 +422,7 @@ export function CreateProxyHostDialog({
                           opacity: { duration: 0.12 },
                           y: { duration: 0.12, ease: [0.25, 0.1, 0.25, 1] },
                         }}
-                        className="flex gap-2"
+                        className="flex border border-input bg-background"
                       >
                         <DomainAutocompleteInput
                           value={domain}
@@ -432,12 +432,14 @@ export function CreateProxyHostDialog({
                             setDomainNames(next);
                           }}
                           placeholder="example.com"
+                          inputClassName="border-0 shadow-none"
                         />
                         {domainNames.length > 1 && (
                           <Button
-                            variant="outline"
+                            type="button"
+                            variant="ghost"
                             size="icon"
-                            className="h-9 w-9 shrink-0"
+                            className="h-9 w-9 shrink-0 rounded-none border-l border-input bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"
                             onClick={() => setDomainNames(domainNames.filter((_, j) => j !== i))}
                           >
                             <Minus className="h-4 w-4" />
@@ -445,9 +447,10 @@ export function CreateProxyHostDialog({
                         )}
                         {i === domainNames.length - 1 && (
                           <Button
-                            variant="outline"
+                            type="button"
+                            variant="ghost"
                             size="icon"
-                            className="h-9 w-9 shrink-0"
+                            className="h-9 w-9 shrink-0 rounded-none border-l border-input bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"
                             onClick={() => setDomainNames([...domainNames, ""])}
                           >
                             <Plus className="h-4 w-4" />

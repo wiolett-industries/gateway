@@ -2,16 +2,19 @@ import { ExternalLink, Loader2, Lock, RefreshCw, Shield } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
+import { SettingsControlRow } from "@/components/common/SettingsControlRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { useRealtime } from "@/hooks/use-realtime";
 import { proxyHostRoute } from "@/lib/resource-routes";
 import { formatRelativeDate } from "@/lib/utils";
@@ -73,12 +76,14 @@ export function DomainDetailDialog({
 }: DomainDetailDialogProps) {
   const { hasScope } = useAuthStore();
   const canEdit = hasScope("domains:edit");
+  const canEditDns = canEdit && hasScope("integrations:cloudflare:dns:edit");
   const canIssueCert = canEdit && hasScope("ssl:cert:issue");
   const [domain, setDomain] = useState<DomainWithUsage | null>(null);
   const [description, setDescription] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingDns, setIsCheckingDns] = useState(false);
   const [isIssuingCert, setIsIssuingCert] = useState(false);
+  const [isUpdatingProxied, setIsUpdatingProxied] = useState(false);
 
   const loadDomain = useCallback(async () => {
     if (!domainId || !open) return;
@@ -167,6 +172,21 @@ export function DomainDetailDialog({
     }
   };
 
+  const handleProxiedChange = async (proxied: boolean) => {
+    if (!domain || !canEditDns || proxied === domain.dnsProxied) return;
+    setIsUpdatingProxied(true);
+    try {
+      const updated = await api.updateDomain(domain.id, { proxied });
+      setDomain({ ...domain, ...updated, usage: domain.usage });
+      toast.success(proxied ? "Cloudflare proxy enabled" : "Cloudflare proxy disabled");
+      onUpdated();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update Cloudflare proxy");
+    } finally {
+      setIsUpdatingProxied(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-lg">
@@ -195,6 +215,18 @@ export function DomainDetailDialog({
             )}
             {!canEdit && domain.description && (
               <p className="text-sm text-muted-foreground">{domain.description}</p>
+            )}
+
+            {domain.dnsProvider === "cloudflare" && (
+              <div className="border border-border bg-card">
+                <SettingsControlRow title="Proxied" description="Use Cloudflare proxy">
+                  <Switch
+                    checked={!!domain.dnsProxied}
+                    onChange={handleProxiedChange}
+                    disabled={!canEditDns || isUpdatingProxied}
+                  />
+                </SettingsControlRow>
+              </div>
             )}
 
             {/* DNS */}
@@ -268,23 +300,24 @@ export function DomainDetailDialog({
               </div>
             </div>
 
-            {/* Issue cert action */}
-            {canIssueCert &&
-              domain.usage.sslCertificates.length === 0 &&
-              domain.dnsStatus === "valid" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleIssueCert}
-                  disabled={isIssuingCert}
-                  className="w-full"
-                >
-                  <Shield className="h-3.5 w-3.5" />
-                  {isIssuingCert ? "Issuing..." : "Issue Let's Encrypt Certificate"}
-                </Button>
-              )}
           </div>
         ) : null}
+        {domain && (
+          <DialogFooter>
+            <Button variant="outline" onClick={() => handleClose(false)}>
+              Close
+            </Button>
+            {canIssueCert &&
+              !domain.dnsProxied &&
+              domain.usage.sslCertificates.length === 0 &&
+              domain.dnsStatus === "valid" && (
+              <Button onClick={handleIssueCert} disabled={isIssuingCert}>
+                <Shield className="h-4 w-4" />
+                {isIssuingCert ? "Issuing..." : "Issue Let's Encrypt Certificate"}
+              </Button>
+              )}
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

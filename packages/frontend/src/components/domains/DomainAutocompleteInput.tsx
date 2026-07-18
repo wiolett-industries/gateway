@@ -78,12 +78,14 @@ interface DomainAutocompleteInputProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  inputClassName?: string;
 }
 
 export function DomainAutocompleteInput({
   value,
   onChange,
   placeholder = "example.com",
+  inputClassName,
 }: DomainAutocompleteInputProps) {
   const [domains, setDomains] = useState<DomainSearchResult[]>(cachedDomains ?? []);
 
@@ -116,6 +118,7 @@ export function DomainAutocompleteInput({
       searchPlaceholder={placeholder}
       emptyMessage="No matching domains."
       className="flex-1"
+      inputClassName={inputClassName}
       contentClassName="max-h-40"
       renderOption={(option) => {
         const domain = domains.find((candidate) => candidate.domain === option.value);

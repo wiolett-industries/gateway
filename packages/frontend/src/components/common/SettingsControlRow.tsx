@@ -5,15 +5,22 @@ export function SettingsControlRow({
   title,
   description,
   children,
+  className,
   controlsClassName = "",
 }: {
   title: string;
   description?: ReactNode;
   children: ReactNode;
+  className?: string;
   controlsClassName?: string;
 }) {
   return (
-    <div className="grid gap-3 border-b border-border px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(12rem,1fr)_auto] sm:items-center">
+    <div
+      className={cn(
+        "grid gap-3 border-b border-border px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(12rem,1fr)_auto] sm:items-center",
+        className
+      )}
+    >
       <div className="min-w-0">
         <p className="text-sm font-medium">{title}</p>
         {description ? <p className="mt-0.5 text-xs text-muted-foreground">{description}</p> : null}

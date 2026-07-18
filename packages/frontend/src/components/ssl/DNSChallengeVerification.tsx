@@ -13,6 +13,7 @@ interface DNSChallengeVerificationProps {
   title?: string;
   description?: string;
   verifyLabel?: string;
+  showAction?: boolean;
 }
 
 export function DNSChallengeVerification({
@@ -22,6 +23,7 @@ export function DNSChallengeVerification({
   title = "DNS Challenge Records",
   description = "Add the following DNS TXT records to verify domain ownership, then click Verify.",
   verifyLabel = "Verify DNS",
+  showAction = true,
 }: DNSChallengeVerificationProps) {
   return (
     <div className="space-y-4">
@@ -60,9 +62,11 @@ export function DNSChallengeVerification({
           </div>
         ))}
       </PanelShell>
-      <Button onClick={onVerify} disabled={isVerifying}>
-        {isVerifying ? "Verifying..." : verifyLabel}
-      </Button>
+      {showAction && (
+        <Button onClick={onVerify} disabled={isVerifying}>
+          {isVerifying ? "Verifying..." : verifyLabel}
+        </Button>
+      )}
     </div>
   );
 }

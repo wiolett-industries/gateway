@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -47,6 +48,7 @@ export function SSLCertificateCreateDialog({
   devPreview,
 }: SSLCertificateCreateDialogProps) {
   const resetTimerRef = useRef<number | null>(null);
+  const [activeTab, setActiveTab] = useState("acme");
   // ACME tab state
   const [acmeDomains, setAcmeDomains] = useState<string[]>([""]);
   const [challengeType, setChallengeType] = useState<ACMEChallengeType>("http-01");
@@ -112,6 +114,7 @@ export function SSLCertificateCreateDialog({
   );
 
   const resetForm = () => {
+    setActiveTab("acme");
     setAcmeDomains([""]);
     setChallengeType("http-01");
     setAcmeProvider("letsencrypt");
@@ -258,7 +261,7 @@ export function SSLCertificateCreateDialog({
           <DialogDescription>Choose a method to add an SSL certificate.</DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="acme">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="acme">Let's Encrypt</TabsTrigger>
             <TabsTrigger value="upload">Upload</TabsTrigger>
@@ -273,6 +276,7 @@ export function SSLCertificateCreateDialog({
                   challenges={dnsChallenges}
                   onVerify={handleVerifyDNS}
                   isVerifying={isVerifying}
+                  showAction={false}
                 />
               ) : (
                 <div className="space-y-4">
@@ -290,7 +294,7 @@ export function SSLCertificateCreateDialog({
                               opacity: { duration: 0.12 },
                               y: { duration: 0.12, ease: [0.25, 0.1, 0.25, 1] },
                             }}
-                            className="flex gap-2"
+                            className="flex border border-input bg-background"
                           >
                             <DomainAutocompleteInput
                               value={domain}
@@ -300,12 +304,14 @@ export function SSLCertificateCreateDialog({
                                 setAcmeDomains(next);
                               }}
                               placeholder="example.com"
+                              inputClassName="border-0 shadow-none"
                             />
                             {acmeDomains.length > 1 && (
                               <Button
-                                variant="outline"
+                                type="button"
+                                variant="ghost"
                                 size="icon"
-                                className="h-9 w-9 shrink-0"
+                                className="h-9 w-9 shrink-0 rounded-none border-l border-input bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"
                                 onClick={() =>
                                   setAcmeDomains(acmeDomains.filter((_, j) => j !== i))
                                 }
@@ -315,9 +321,10 @@ export function SSLCertificateCreateDialog({
                             )}
                             {i === acmeDomains.length - 1 && (
                               <Button
-                                variant="outline"
+                                type="button"
+                                variant="ghost"
                                 size="icon"
-                                className="h-9 w-9 shrink-0"
+                                className="h-9 w-9 shrink-0 rounded-none border-l border-input bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"
                                 onClick={() => setAcmeDomains([...acmeDomains, ""])}
                               >
                                 <Plus className="h-4 w-4" />
@@ -369,9 +376,6 @@ export function SSLCertificateCreateDialog({
                     </p>
                   )}
 
-                  <Button onClick={handleRequestACME} disabled={isRequestingACME}>
-                    {isRequestingACME ? "Requesting..." : "Request Certificate"}
-                  </Button>
                 </div>
               )}
             </div>
@@ -415,10 +419,6 @@ export function SSLCertificateCreateDialog({
                   placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
                 />
               </div>
-              <Button onClick={handleUpload} disabled={isUploading}>
-                <Upload className="h-4 w-4" />
-                {isUploading ? "Uploading..." : "Upload Certificate"}
-              </Button>
             </div>
           </TabsContent>
 
@@ -458,12 +458,32 @@ export function SSLCertificateCreateDialog({
                   placeholder="Auto-generated from certificate"
                 />
               </div>
-              <Button onClick={handleLinkInternal} disabled={isLinking || !selectedPkiCertId}>
-                {isLinking ? "Linking..." : "Link Certificate"}
-              </Button>
             </div>
           </TabsContent>
         </Tabs>
+        <DialogFooter>
+          {activeTab === "acme" &&
+            (dnsChallenges ? (
+              <Button onClick={handleVerifyDNS} disabled={isVerifying}>
+                {isVerifying ? "Verifying..." : "Verify DNS"}
+              </Button>
+            ) : (
+              <Button onClick={handleRequestACME} disabled={isRequestingACME}>
+                {isRequestingACME ? "Requesting..." : "Request Certificate"}
+              </Button>
+            ))}
+          {activeTab === "upload" && (
+            <Button onClick={handleUpload} disabled={isUploading}>
+              <Upload className="h-4 w-4" />
+              {isUploading ? "Uploading..." : "Upload Certificate"}
+            </Button>
+          )}
+          {activeTab === "internal" && (
+            <Button onClick={handleLinkInternal} disabled={isLinking || !selectedPkiCertId}>
+              {isLinking ? "Linking..." : "Link Certificate"}
+            </Button>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

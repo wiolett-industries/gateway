@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
+import { SettingsControlRow } from "@/components/common/SettingsControlRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -214,26 +216,39 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Domain</label>
+          <div className="border border-border bg-card">
+            <SettingsControlRow
+              title="Domain"
+              description="Domain name to register"
+              className="sm:grid-cols-[minmax(8rem,1fr)_minmax(0,12rem)]"
+              controlsClassName="sm:w-full sm:min-w-0 sm:max-w-none"
+            >
             <Input
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder="example.com"
               autoFocus
             />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Description</label>
+            </SettingsControlRow>
+            <SettingsControlRow
+              title="Description"
+              description="Optional description"
+              className="sm:grid-cols-[minmax(8rem,1fr)_minmax(0,12rem)]"
+              controlsClassName="sm:w-full sm:min-w-0 sm:max-w-none"
+            >
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional description"
             />
-          </div>
-          {folderList.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Folder</label>
+            </SettingsControlRow>
+            {folderList.length > 0 && (
+              <SettingsControlRow
+                title="Folder"
+                description="Optional organization folder"
+                className="sm:grid-cols-[minmax(8rem,1fr)_minmax(0,12rem)]"
+                controlsClassName="sm:w-full sm:min-w-0 sm:max-w-none"
+              >
               <Select
                 value={folderId || "__none__"}
                 onValueChange={(value) => setFolderId(value === "__none__" ? "" : value)}
@@ -250,8 +265,31 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          )}
+              </SettingsControlRow>
+            )}
+            <SettingsControlRow
+              title="TTL"
+              description="DNS record time to live"
+              className="sm:grid-cols-[minmax(8rem,1fr)_minmax(0,12rem)]"
+              controlsClassName="sm:w-full sm:min-w-0 sm:max-w-none"
+            >
+              <Input
+                type="number"
+                min={1}
+                value={ttl}
+                onChange={(e) => setTtl(e.target.value)}
+                placeholder="1"
+              />
+            </SettingsControlRow>
+            <SettingsControlRow
+              title="Proxied"
+              description="Use Cloudflare proxy"
+              className="sm:grid-cols-[minmax(8rem,1fr)_minmax(0,12rem)]"
+              controlsClassName="sm:w-full sm:min-w-0 sm:max-w-none"
+            >
+              <Switch checked={proxied} onChange={setProxied} />
+            </SettingsControlRow>
+          </div>
           <AnimatePresence initial={false}>
             {(preview || previewError || isPreviewLoading) && (
               <motion.div {...PREVIEW_ANIMATION} className="overflow-hidden">
@@ -259,8 +297,11 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
                   <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
                     <span className="text-sm font-medium">Cloudflare DNS preview</span>
                     {isPreviewLoading ? (
-                      <Badge variant="secondary">Loading</Badge>
-                    ) : preview ? (
+                      <LoaderCircle
+                        className="h-4 w-4 animate-spin text-muted-foreground"
+                        aria-label="Loading"
+                      />
+                    ) : preview && preview.status !== "ready" ? (
                       <Badge
                         variant={
                           preview.status === "mismatch" || preview.status === "blocked"
@@ -315,25 +356,6 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
               </motion.div>
             )}
           </AnimatePresence>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">TTL</label>
-              <Input
-                type="number"
-                min={1}
-                value={ttl}
-                onChange={(e) => setTtl(e.target.value)}
-                placeholder="1"
-              />
-            </div>
-            <label className="flex items-center justify-between gap-3 border border-border px-3 py-2">
-              <span>
-                <span className="block text-sm font-medium">Proxied</span>
-                <span className="block text-xs text-muted-foreground">Use Cloudflare proxy</span>
-              </span>
-              <Switch checked={proxied} onChange={setProxied} />
-            </label>
-          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => handleOpenChange(false)}>

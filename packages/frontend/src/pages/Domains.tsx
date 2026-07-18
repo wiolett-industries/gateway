@@ -255,7 +255,7 @@ export function Domains() {
       label: "Added",
       width: "8rem",
       renderCell: (d) => (
-        <span className="text-xs text-muted-foreground">{formatRelativeDate(d.createdAt)}</span>
+        <span className="text-sm text-muted-foreground">{formatRelativeDate(d.createdAt)}</span>
       ),
     },
     {
@@ -289,7 +289,10 @@ export function Domains() {
                     Check DNS
                   </DropdownMenuItem>
                 )}
-                {canIssueCert && d.dnsStatus === "valid" && !d.sslCertCount && (
+                {canIssueCert &&
+                  !d.dnsProxied &&
+                  d.dnsStatus === "valid" &&
+                  !d.sslCertCount && (
                   <DropdownMenuItem onClick={() => handleIssueCert(d)}>
                     <Shield className="h-4 w-4" />
                     Issue Cert
