@@ -74,4 +74,35 @@ describe('StatusIncidentEvaluatorService', () => {
     expect(statusPageService.autoResolveIncident).toHaveBeenCalledWith('service-1');
     expect(statusPageService.createAutomaticIncident).not.toHaveBeenCalled();
   });
+
+  it('treats maintenance as planned state without creating or resolving incidents', async () => {
+    const service = {
+      id: 'service-1',
+      enabled: true,
+      sortOrder: 0,
+      publicName: 'Website',
+      createThresholdSeconds: 0,
+      resolveThresholdSeconds: 0,
+      unhealthySince: new Date('2026-04-01T00:00:00.000Z'),
+      healthySince: new Date('2026-04-01T00:00:00.000Z'),
+    };
+    const db = createDb([service]);
+    const statusPageService = {
+      resolveSources: vi.fn().mockResolvedValue(new Map([['service-1', { status: 'maintenance' }]])),
+      createAutomaticIncident: vi.fn().mockResolvedValue(undefined),
+      autoResolveIncident: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await new StatusIncidentEvaluatorService(db as any, statusPageService as any).run(
+      new Date('2026-04-01T00:10:00.000Z')
+    );
+
+    expect(statusPageService.createAutomaticIncident).not.toHaveBeenCalled();
+    expect(statusPageService.autoResolveIncident).not.toHaveBeenCalled();
+    expect(db.updates[0]).toMatchObject({
+      lastEvaluatedStatus: 'maintenance',
+      unhealthySince: null,
+      healthySince: null,
+    });
+  });
 });

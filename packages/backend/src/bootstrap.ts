@@ -683,6 +683,7 @@ export async function initializeContainer(): Promise<void> {
   dockerHealthCheckService.setEvaluator(notifEvaluatorService);
   databaseMonitoringService.setEvaluator(notifEvaluatorService);
   nodeRegistry.setEvaluator(notifEvaluatorService);
+  proxyService.setEvaluator(notifEvaluatorService);
   notifEvaluatorService.start();
   container.registerInstance(NotificationEvaluatorService, notifEvaluatorService);
 
@@ -709,6 +710,9 @@ export async function initializeContainer(): Promise<void> {
 
   scheduler.register('acme-renewal', env.ACME_RENEWAL_CRON, () => acmeRenewalJob.run());
   scheduler.registerInterval('health-check', env.HEALTH_CHECK_INTERVAL_SECONDS * 1000, () => healthCheckJob.run());
+  scheduler.registerInterval('proxy-maintenance-alerts', env.HEALTH_CHECK_INTERVAL_SECONDS * 1000, () =>
+    notifEvaluatorService.reconcileProxyMaintenance()
+  );
   scheduler.registerInterval('docker-health-check', 10000, () => dockerHealthCheckService.runDueChecks());
   scheduler.registerInterval('docker-snapshot-containers', 10000, async () => {
     dockerSnapshotReconciler.enqueueConnected('containers');

@@ -60,6 +60,8 @@ export const proxyHosts = pgTable(
     domainNames: jsonb('domain_names').$type<string[]>().notNull().default([]),
     slug: varchar('slug', { length: 60 }).notNull(),
     enabled: boolean('enabled').notNull().default(true),
+    maintenanceEnabled: boolean('maintenance_enabled').notNull().default(false),
+    maintenanceStartedAt: timestamp('maintenance_started_at', { withTimezone: true }),
 
     // Upstream — for proxy type
     upstreamKind: proxyUpstreamKindEnum('upstream_kind').notNull().default('manual'),

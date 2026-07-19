@@ -21,6 +21,7 @@ import {
   listProxyHostsRoute,
   renderedProxyConfigRoute,
   toggleProxyHostRoute,
+  toggleProxyMaintenanceRoute,
   updateProxyHostRoute,
   validateProxyConfigRoute,
 } from './proxy.docs.js';
@@ -28,6 +29,7 @@ import {
   CreateProxyHostSchema,
   ProxyHostListQuerySchema,
   ToggleProxyHostSchema,
+  ToggleProxyMaintenanceSchema,
   UpdateProxyHostSchema,
   ValidateAdvancedConfigSchema,
 } from './proxy.schemas.js';
@@ -199,6 +201,20 @@ proxyRoutes.openapi({ ...toggleProxyHostRoute, middleware: requireScopeForResour
   const scopes = c.get('effectiveScopes') || [];
   return c.json({ data: serializeProxyHostForBrowser(host as any, scopes, id) });
 });
+
+proxyRoutes.openapi(
+  { ...toggleProxyMaintenanceRoute, middleware: requireScopeForResource('proxy:edit', 'id') },
+  async (c) => {
+    const proxyService = container.resolve(ProxyService);
+    const user = c.get('user')!;
+    const id = c.req.param('id')!;
+    const { enabled } = ToggleProxyMaintenanceSchema.parse(await c.req.json());
+    const host = await proxyService.toggleMaintenance(id, enabled, user.id);
+    if (isProgrammaticAuth(c)) return c.json({ data: stripRawProxyConfigForProgrammatic(host as any) });
+    const scopes = c.get('effectiveScopes') || [];
+    return c.json({ data: serializeProxyHostForBrowser(host as any, scopes, id) });
+  }
+);
 
 proxyRoutes.openapi({ ...renderedProxyConfigRoute, middleware: sessionOnly }, async (c) => {
   const id = c.req.param('id')!;

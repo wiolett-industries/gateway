@@ -73,6 +73,7 @@ export function CreateProxyHostDialog({
   onSuccess,
 }: CreateProxyHostDialogProps) {
   const isEditing = !!existingHost;
+  const maintenanceLocked = !!existingHost?.maintenanceEnabled;
 
   // Step navigation
   const [step, setStep] = useState(1);
@@ -317,7 +318,10 @@ export function CreateProxyHostDialog({
       <DialogContent
         className="sm:max-w-xl"
         onAnimationEnd={(event) => {
-          if (event.target === event.currentTarget && event.currentTarget.dataset.state === "closed") {
+          if (
+            event.target === event.currentTarget &&
+            event.currentTarget.dataset.state === "closed"
+          ) {
             resetForm();
           }
         }}
@@ -346,7 +350,7 @@ export function CreateProxyHostDialog({
                 <Select
                   value={rawConfigEnabled ? "raw" : type}
                   onValueChange={(v) => setType(v as ProxyHostType)}
-                  disabled={rawConfigEnabled}
+                  disabled={rawConfigEnabled || maintenanceLocked}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -472,7 +476,11 @@ export function CreateProxyHostDialog({
                         Bypass template rendering and edit nginx config directly
                       </p>
                     </div>
-                    <Switch checked={rawConfigEnabled} onChange={setRawConfigEnabled} />
+                    <Switch
+                      checked={rawConfigEnabled}
+                      onChange={setRawConfigEnabled}
+                      disabled={maintenanceLocked}
+                    />
                   </div>
                 </div>
               )}
@@ -590,10 +598,7 @@ export function CreateProxyHostDialog({
                     <Switch checked={sslForced} onChange={setSslForced} disabled={!sslEnabled} />
                   </div>
                 </SettingsControlRow>
-                <SettingsControlRow
-                  title="HTTP/2"
-                  description="Enable HTTP/2 protocol support"
-                >
+                <SettingsControlRow title="HTTP/2" description="Enable HTTP/2 protocol support">
                   <div className={cn(!sslEnabled && "opacity-50")}>
                     <Switch
                       checked={http2Support}
@@ -603,9 +608,7 @@ export function CreateProxyHostDialog({
                   </div>
                 </SettingsControlRow>
                 <SettingsControlRow title="SSL Certificate">
-                  <div
-                    className={cn("w-full", !sslEnabled && "pointer-events-none opacity-50")}
-                  >
+                  <div className={cn("w-full", !sslEnabled && "pointer-events-none opacity-50")}>
                     <Select
                       value={sslCertificateId || "__none__"}
                       onValueChange={(v) => setSslCertificateId(v === "__none__" ? "" : v)}

@@ -34,6 +34,8 @@ export interface ProxyHost {
   type: ProxyHostType;
   domainNames: string[];
   enabled: boolean;
+  maintenanceEnabled: boolean;
+  maintenanceStartedAt: string | null;
   nodeId?: string | null;
   upstreamKind?: ProxyUpstreamKind;
   forwardHost: string | null;

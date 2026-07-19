@@ -1,6 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
-import { notificationAlertStates, sslCertificates } from '@/db/schema/index.js';
+import { notificationAlertRules, notificationAlertStates, proxyHosts, sslCertificates } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import type { CacheService, RedisClient } from '@/services/cache.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
@@ -702,6 +702,59 @@ export class NotificationEvaluatorService {
         resource.name,
         this.getEventTemplateDetails(context, rule.eventPattern, currentState, resource.id)
       );
+    }
+  }
+
+  async reconcileProxyMaintenance(resourceId?: string): Promise<void> {
+    const eventRules = (await this.getEventRules()).filter(
+      (rule) => rule.category === 'proxy' && rule.eventPattern === 'maintenance.active'
+    );
+    const hosts = await this.db.query.proxyHosts.findMany({
+      where: resourceId
+        ? and(eq(proxyHosts.id, resourceId), eq(proxyHosts.isSystem, false))
+        : eq(proxyHosts.isSystem, false),
+    });
+
+    for (const host of hosts) {
+      const active = host.enabled && host.maintenanceEnabled;
+      await this.observeStatefulEvent(
+        'proxy',
+        active ? 'maintenance.active' : 'maintenance.inactive',
+        { type: 'proxy', id: host.id, name: host.domainNames?.[0] ?? host.id },
+        { maintenance_active: active },
+        ['maintenance.active']
+      );
+    }
+
+    const conditions = [
+      eq(notificationAlertStates.status, 'firing'),
+      eq(notificationAlertStates.resourceType, 'proxy'),
+      eq(notificationAlertRules.category, 'proxy'),
+    ];
+    if (resourceId) conditions.push(eq(notificationAlertStates.resourceId, resourceId));
+    const firingStates = await this.db
+      .select({ state: notificationAlertStates, rule: notificationAlertRules })
+      .from(notificationAlertStates)
+      .innerJoin(notificationAlertRules, eq(notificationAlertRules.id, notificationAlertStates.ruleId))
+      .where(and(...conditions));
+
+    const hostsById = new Map(hosts.map((host) => [host.id, host]));
+    const enabledRuleIds = new Set(eventRules.map((rule) => rule.id));
+    for (const { state, rule } of firingStates) {
+      const stateEventName = (state.context as { event?: { name?: string } } | null)?.event?.name;
+      if (stateEventName !== 'maintenance.active' && rule.eventPattern !== 'maintenance.active') continue;
+      const host = hostsById.get(state.resourceId);
+      const scopedIds = (rule.resourceIds ?? []) as string[];
+      const stale =
+        !enabledRuleIds.has(rule.id) || !host || (scopedIds.length > 0 && !scopedIds.includes(state.resourceId));
+      if (!stale) continue;
+
+      await this.resolveAlert(state.id, rule, 'proxy', state.resourceId, host?.domainNames?.[0] ?? state.resourceId, {
+        resourceId: state.resourceId,
+        state: { current: host?.maintenanceEnabled ? 'maintenance.active' : 'maintenance.inactive' },
+        event: { name: 'maintenance.active' },
+        resolution: { reason: 'resource_inactive_deleted_or_out_of_scope' },
+      });
     }
   }
 

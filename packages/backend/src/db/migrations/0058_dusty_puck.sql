@@ -1,0 +1,2 @@
+ALTER TABLE "proxy_hosts" ADD COLUMN "maintenance_enabled" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "proxy_hosts" ADD COLUMN "maintenance_started_at" timestamp with time zone;

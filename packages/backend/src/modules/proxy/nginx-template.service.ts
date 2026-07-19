@@ -3,6 +3,7 @@ import Handlebars from 'handlebars';
 import type { DrizzleClient } from '@/db/client.js';
 import { nginxTemplates } from '@/db/schema/nginx-templates.js';
 import { proxyHosts } from '@/db/schema/proxy-hosts.js';
+import { escapeNginxReturnText, GATEWAY_MAINTENANCE_HTML, GATEWAY_NOT_FOUND_HTML } from '@/lib/gateway-error-pages.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { formatHostPort } from '@/lib/network-endpoint.js';
 import { AppError } from '@/middleware/error-handler.js';
@@ -220,15 +221,14 @@ const BUILTIN_DEAD_TEMPLATE = `server {
     access_log {{logPath}}.access.log;
     error_log {{logPath}}.error.log warn;
 
-    root /usr/share/nginx/html;
-    error_page 404 /404.html;
-
-    location / {
-        return 404;
+    location /.well-known/acme-challenge/ {
+        alias /var/www/acme-challenge/;
+        auth_basic off;
     }
 
-    location = /404.html {
-        internal;
+    location / {
+        default_type text/html;
+        return 404 ${escapeNginxReturnText(GATEWAY_NOT_FOUND_HTML)};
     }
 }
 {{#if sslEnabled}}
@@ -254,18 +254,48 @@ server {
     access_log {{logPath}}.access.log;
     error_log {{logPath}}.error.log warn;
 
-    root /usr/share/nginx/html;
-    error_page 404 /404.html;
-
     location / {
-        return 404;
-    }
-
-    location = /404.html {
-        internal;
+        default_type text/html;
+        return 404 ${escapeNginxReturnText(GATEWAY_NOT_FOUND_HTML)};
     }
 }
 {{/if}}
+`;
+
+const MAINTENANCE_TEMPLATE = `server {
+    listen 80;
+    listen [::]:80;
+{{#if sslEnabled}}
+    listen 443 ssl{{#if http2Support}} http2{{/if}};
+    listen [::]:443 ssl{{#if http2Support}} http2{{/if}};
+{{/if}}
+    server_name {{serverNames}};
+
+{{#if sslEnabled}}
+    ssl_certificate {{sslCertPath}};
+    ssl_certificate_key {{sslKeyPath}};
+{{#if sslChainPath}}
+    ssl_trusted_certificate {{sslChainPath}};
+{{/if}}
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+
+{{/if}}
+    access_log {{logPath}}.access.log;
+    error_log {{logPath}}.error.log warn;
+
+    location /.well-known/acme-challenge/ {
+        alias /var/www/acme-challenge/;
+        auth_basic off;
+    }
+
+    location / {
+        default_type text/html;
+        add_header Cache-Control "no-store" always;
+        return 503 ${escapeNginxReturnText(GATEWAY_MAINTENANCE_HTML)};
+    }
+}
 `;
 
 const BUILTIN_TEMPLATES = [
@@ -533,6 +563,10 @@ export class NginxTemplateService {
       content = await this.getBuiltinTemplateContent(host.type);
     }
     return this.renderTemplate(content, host);
+  }
+
+  renderMaintenanceForHost(host: ProxyHostConfig): string {
+    return this.renderTemplate(MAINTENANCE_TEMPLATE, host);
   }
 
   previewWithSampleData(content: string): string {

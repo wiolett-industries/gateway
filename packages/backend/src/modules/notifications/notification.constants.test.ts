@@ -91,6 +91,7 @@ describe('evaluateWindowRatio', () => {
   it('marks only stateful events as threshold-capable', () => {
     expect(eventSupportsThreshold('node', 'offline')).toBe(true);
     expect(eventSupportsThreshold('proxy', 'health.degraded')).toBe(true);
+    expect(eventSupportsThreshold('proxy', 'maintenance.active')).toBe(true);
     expect(eventSupportsThreshold('database_postgres', 'health.online')).toBe(true);
     expect(eventSupportsThreshold('container', 'stopped')).toBe(true);
     expect(eventSupportsThreshold('container', 'exited')).toBe(true);

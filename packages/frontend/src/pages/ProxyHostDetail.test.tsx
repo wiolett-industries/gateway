@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { Route } from "react-router-dom";
 import { vi } from "vitest";
+import { confirm } from "@/components/common/ConfirmDialog";
 import { ProxyHostDetail } from "@/pages/ProxyHostDetail";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
@@ -10,6 +11,10 @@ import type { ProxyHost } from "@/types";
 
 vi.mock("@/hooks/use-realtime", () => ({
   useRealtime: vi.fn(),
+}));
+
+vi.mock("@/components/common/ConfirmDialog", () => ({
+  confirm: vi.fn(),
 }));
 
 vi.mock("./proxy-detail/SettingsTab", () => ({
@@ -109,6 +114,8 @@ function makeProxyHost(overrides: Record<string, unknown> = {}) {
     slug: "example.test",
     type: "proxy",
     enabled: true,
+    maintenanceEnabled: false,
+    maintenanceStartedAt: null,
     domainNames: ["example.com"],
     forwardHost: "backend",
     forwardPort: 8080,
@@ -158,6 +165,7 @@ function makeProxyHost(overrides: Record<string, unknown> = {}) {
 
 describe("ProxyHostDetail", () => {
   beforeEach(() => {
+    vi.mocked(confirm).mockReset();
     vi.spyOn(api, "getProxyHostHealthHistory").mockResolvedValue([]);
     vi.spyOn(api, "listAccessLists").mockResolvedValue({
       data: [
@@ -346,5 +354,50 @@ describe("ProxyHostDetail", () => {
 
     expect(await screen.findByText(/Raw config tab server/)).toBeInTheDocument();
     expect(api.getRenderedProxyConfig).toHaveBeenCalledWith("host-1");
+  });
+
+  it("shows maintenance as the primary state with a persistent disable action", async () => {
+    vi.spyOn(api, "getProxyHost").mockResolvedValue(
+      makeProxyHost({ maintenanceEnabled: true, maintenanceStartedAt: new Date().toISOString() })
+    );
+
+    renderWithRouter(<ProxyHostDetail />, {
+      path: "/proxy-hosts/:id/:tab",
+      route: "/proxy-hosts/host-1/details",
+      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+    });
+
+    expect((await screen.findAllByText("Maintenance")).length).toBeGreaterThan(0);
+    expect(screen.getByText(/User requests receive HTTP 503/)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Disable Maintenance/ }).length).toBeGreaterThan(
+      0
+    );
+    expect(screen.queryByText("Unknown")).not.toBeInTheDocument();
+  });
+
+  it("uses the standard confirmation before enabling maintenance", async () => {
+    vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
+    vi.mocked(confirm).mockResolvedValue(true);
+    const toggle = vi
+      .spyOn(api, "toggleProxyMaintenance")
+      .mockResolvedValue(makeProxyHost({ maintenanceEnabled: true }));
+
+    renderWithRouter(<ProxyHostDetail />, {
+      path: "/proxy-hosts/:id/:tab",
+      route: "/proxy-hosts/host-1/details",
+      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+    });
+
+    const action = (await screen.findAllByRole("button", { name: /Enable Maintenance/ }))[0]!;
+    fireEvent.click(action);
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Enable Maintenance Mode",
+        confirmLabel: "Enable Maintenance",
+      })
+    );
+    await waitFor(() => expect(toggle).toHaveBeenCalledWith("host-1", true));
   });
 });

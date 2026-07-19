@@ -5,7 +5,12 @@ export type StatusPageSourceType =
   | "database"
   | "docker_container"
   | "docker_deployment";
-export type StatusPageServiceStatus = "operational" | "degraded" | "outage" | "unknown";
+export type StatusPageServiceStatus =
+  | "operational"
+  | "degraded"
+  | "outage"
+  | "unknown"
+  | "maintenance";
 export type StatusPageIncidentSeverity = "info" | "warning" | "critical";
 export type StatusPageIncidentStatus = "active" | "resolved";
 export type StatusPageIncidentType = "automatic" | "manual";
@@ -90,7 +95,7 @@ export interface PublicStatusPageDto {
   title: string;
   description: string;
   generatedAt: string;
-  overallStatus: "operational" | "degraded" | "outage";
+  overallStatus: "operational" | "degraded" | "outage" | "maintenance";
   services: Array<{
     id: string;
     name: string;

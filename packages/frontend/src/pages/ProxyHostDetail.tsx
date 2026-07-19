@@ -7,6 +7,7 @@ import {
   Settings as SettingsIcon,
   SlidersHorizontal,
   Trash2,
+  Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -87,6 +88,7 @@ export function ProxyHostDetail({
   const [host, setHost] = useState<ProxyHost | null>(null);
   const [healthHistory, setHealthHistory] = useState<NonNullable<ProxyHost["healthHistory"]>>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMaintenanceToggling, setIsMaintenanceToggling] = useState(false);
 
   const [activeTab, setActiveTab] = useUrlTab(visibleTabs, "details", (tab) =>
     proxyHostRoute(routeSlug, tab)
@@ -574,9 +576,40 @@ export function ProxyHostDetail({
     }
   };
 
+  const handleMaintenance = async () => {
+    if (!host || !canEditProxyHost) return;
+    const entering = !host.maintenanceEnabled;
+    if (entering) {
+      const ok = await confirm({
+        title: "Enable Maintenance Mode",
+        description:
+          "All requests to this proxy host will receive HTTP 503 and managed health checks will pause until maintenance is disabled.",
+        confirmLabel: "Enable Maintenance",
+      });
+      if (!ok) return;
+    }
+
+    setIsMaintenanceToggling(true);
+    try {
+      const updated = await api.toggleProxyMaintenance(host.id, entering);
+      api.invalidateCache();
+      syncHostState(updated);
+      toast.success(entering ? "Maintenance mode enabled" : "Maintenance mode disabled");
+      if (!entering && updated.healthCheckEnabled) setHealthHistory([]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update maintenance mode");
+    } finally {
+      setIsMaintenanceToggling(false);
+    }
+  };
+
   // ── Derived values ────────────────────────────────────────────
   const isRawMode = host?.rawConfigEnabled ?? false;
   const isSystemHost = host?.isSystem ?? false;
+  const maintenanceActionAvailable =
+    !!host &&
+    (host.maintenanceEnabled ||
+      (host.enabled && host.type === "proxy" && !host.rawConfigEnabled && !host.isSystem));
 
   const handleAccessListChange = useCallback(
     async (value: string) => {
@@ -684,20 +717,30 @@ export function ProxyHostDetail({
       >
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
             <PageBackButton onClick={() => navigate("/proxy-hosts")} />
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold">{host.domainNames[0] || "Proxy Host"}</h1>
-                <Badge variant={TYPE_BADGE[host.type] ?? "default"}>{host.type}</Badge>
-                {(() => {
-                  const eff = effectiveHealthStatus(host);
-                  return (
-                    <Badge variant={HEALTH_BADGE[eff] ?? "secondary"}>
-                      {HEALTH_LABEL[eff] ?? eff}
-                    </Badge>
-                  );
-                })()}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="min-w-0 basis-full break-all text-2xl font-bold sm:basis-auto">
+                  {host.domainNames[0] || "Proxy Host"}
+                </h1>
+                <Badge className="shrink-0" variant={TYPE_BADGE[host.type] ?? "default"}>
+                  {host.type}
+                </Badge>
+                {host.maintenanceEnabled ? (
+                  <Badge className="shrink-0" variant="warning">
+                    Maintenance
+                  </Badge>
+                ) : (
+                  (() => {
+                    const eff = effectiveHealthStatus(host);
+                    return (
+                      <Badge className="shrink-0" variant={HEALTH_BADGE[eff] ?? "secondary"}>
+                        {HEALTH_LABEL[eff] ?? eff}
+                      </Badge>
+                    );
+                  })()
+                )}
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 {host.domainNames.length > 1 ? (
@@ -730,6 +773,16 @@ export function ProxyHostDetail({
                     },
                   ]
                 : []),
+              ...(canEditProxyHost
+                ? [
+                    {
+                      label: host.maintenanceEnabled ? "Disable Maintenance" : "Enable Maintenance",
+                      icon: <Wrench className="h-4 w-4" />,
+                      onClick: handleMaintenance,
+                      disabled: isMaintenanceToggling || !maintenanceActionAvailable,
+                    },
+                  ]
+                : []),
               ...(!isSystemHost && hasScope("proxy:delete")
                 ? [
                     {
@@ -752,6 +805,16 @@ export function ProxyHostDetail({
                 Edit
               </Button>
             )}
+            {canEditProxyHost && (
+              <Button
+                variant={host.maintenanceEnabled ? "default" : "outline"}
+                onClick={handleMaintenance}
+                disabled={isMaintenanceToggling || !maintenanceActionAvailable}
+              >
+                <Wrench className="h-4 w-4" />
+                {host.maintenanceEnabled ? "Disable Maintenance" : "Enable Maintenance"}
+              </Button>
+            )}
             {!isSystemHost && hasScope("proxy:delete") && (
               <Button variant="outline" onClick={handleDelete}>
                 <Trash2 className="h-4 w-4" />
@@ -764,6 +827,16 @@ export function ProxyHostDetail({
         {/* ── Health bars (only when healthCheckEnabled) ──────── */}
         {host.healthCheckEnabled && (
           <HealthBars history={healthHistory} currentStatus={host.healthStatus} />
+        )}
+
+        {host.maintenanceEnabled && (
+          <div
+            className="border bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-400"
+            style={{ borderColor: "#eab308" }}
+          >
+            Maintenance mode is active. User requests receive HTTP 503 and managed health checks are
+            paused.
+          </div>
         )}
 
         {/* ── Raw mode warning banner ────────────────────────── */}

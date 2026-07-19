@@ -1,5 +1,7 @@
 import { existsSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { resolve } from 'node:path';
+import { domainToASCII } from 'node:url';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { OpenAPIHono } from '@hono/zod-openapi';
@@ -12,6 +14,7 @@ import { requestId } from 'hono/request-id';
 
 import { getEnv, isDevelopment } from '@/config/env.js';
 import { container, TOKENS } from '@/container.js';
+import { GATEWAY_NOT_FOUND_HTML } from '@/lib/gateway-error-pages.js';
 import { tags as openApiTags, openApiValidationHook, securitySchemes } from '@/lib/openapi.js';
 import { auditContextMiddleware } from '@/middleware/audit-context.js';
 import { errorHandler } from '@/middleware/error-handler.js';
@@ -152,6 +155,47 @@ async function isStatusHostRequest(hostHeader: string | undefined): Promise<bool
   }
 }
 
+export function normalizeRequestHost(hostHeader: string | undefined): string | null {
+  const value = hostHeader?.trim();
+  if (!value || /[\s/@?#\\]/.test(value)) return null;
+
+  let hostname: string;
+  const validPort = (suffix: string) => {
+    if (!/^:\d{1,5}$/.test(suffix)) return false;
+    const port = Number(suffix.slice(1));
+    return port >= 1 && port <= 65535;
+  };
+  if (value.startsWith('[')) {
+    const closingBracket = value.indexOf(']');
+    if (closingBracket < 0) return null;
+    hostname = value.slice(1, closingBracket);
+    const suffix = value.slice(closingBracket + 1);
+    if (suffix && !validPort(suffix)) return null;
+    if (isIP(hostname) !== 6) return null;
+  } else {
+    const parts = value.split(':');
+    if (parts.length > 2) return null;
+    hostname = parts[0] ?? '';
+    if (parts.length === 2 && !validPort(`:${parts[1] ?? ''}`)) return null;
+  }
+
+  hostname = hostname.toLowerCase().replace(/\.+$/, '');
+  if (!hostname) return null;
+  if (isIP(hostname)) return hostname;
+
+  const ascii = domainToASCII(hostname).toLowerCase();
+  if (!ascii || ascii.length > 253) return null;
+  const labels = ascii.split('.');
+  if (labels.some((label) => !label || label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))) {
+    return null;
+  }
+  return ascii;
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '::1' || (isIP(hostname) === 4 && hostname.startsWith('127.'));
+}
+
 async function getRedisHealth(): Promise<'ok' | 'unavailable'> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -180,6 +224,26 @@ export function createApp() {
   app.use('*', auditContextMiddleware);
   app.use('*', loggerMiddleware);
   app.use('*', securityHeadersMiddleware);
+  app.use('*', async (c, next) => {
+    const requestHost = normalizeRequestHost(c.req.header('host'));
+    const appHost = normalizeRequestHost(new URL(env.APP_URL).host);
+    const path = new URL(c.req.url).pathname;
+    const loopbackAllowed = requestHost
+      ? isLoopbackHost(requestHost) && (isDevelopment() || path === '/health')
+      : false;
+
+    if (requestHost && (requestHost === appHost || loopbackAllowed)) {
+      await next();
+      return;
+    }
+
+    if (requestHost && (await isStatusHostRequest(requestHost))) {
+      await next();
+      return;
+    }
+
+    return c.html(GATEWAY_NOT_FOUND_HTML, 404);
+  });
   app.use(
     '*',
     cors({

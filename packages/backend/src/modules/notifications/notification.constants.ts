@@ -124,6 +124,7 @@ export const ALERT_CATEGORIES: CategoryDefinition[] = [
       { id: 'health.offline', label: 'Health Offline', defaultSeverity: 'critical', supportsThreshold: true },
       { id: 'health.degraded', label: 'Health Degraded', defaultSeverity: 'warning', supportsThreshold: true },
       { id: 'health.online', label: 'Health Online', defaultSeverity: 'info', supportsThreshold: true },
+      { id: 'maintenance.active', label: 'Maintenance Active', defaultSeverity: 'warning', supportsThreshold: true },
       { id: 'created', label: 'Proxy Created', defaultSeverity: 'info' },
       { id: 'deleted', label: 'Proxy Deleted', defaultSeverity: 'info' },
     ],

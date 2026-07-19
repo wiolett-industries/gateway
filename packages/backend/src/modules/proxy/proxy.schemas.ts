@@ -275,6 +275,10 @@ export const ToggleProxyHostSchema = z.object({
   enabled: z.boolean(),
 });
 
+export const ToggleProxyMaintenanceSchema = z.object({
+  enabled: z.boolean(),
+});
+
 // ---------------------------------------------------------------------------
 // Validate advanced config
 // ---------------------------------------------------------------------------
@@ -293,4 +297,5 @@ export type CreateProxyHostInput = z.infer<typeof CreateProxyHostSchema>;
 export type UpdateProxyHostInput = z.infer<typeof UpdateProxyHostSchema>;
 export type ProxyHostListQuery = z.infer<typeof ProxyHostListQuerySchema>;
 export type ToggleProxyHostInput = z.infer<typeof ToggleProxyHostSchema>;
+export type ToggleProxyMaintenanceInput = z.infer<typeof ToggleProxyMaintenanceSchema>;
 export type ValidateAdvancedConfigInput = z.infer<typeof ValidateAdvancedConfigSchema>;

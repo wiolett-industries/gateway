@@ -67,7 +67,7 @@ const DEFAULT_CONFIG: StatusPageConfig = {
 export function statusBadge(status: string) {
   if (status === "operational" || status === "online") return "success";
   if (status === "info") return "info";
-  if (status === "degraded" || status === "warning") return "warning";
+  if (status === "degraded" || status === "maintenance" || status === "warning") return "warning";
   if (status === "outage" || status === "offline" || status === "critical") return "destructive";
   return "secondary";
 }

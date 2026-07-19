@@ -1,0 +1,82 @@
+import 'reflect-metadata';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { GATEWAY_NOT_FOUND_HTML } from '@/lib/gateway-error-pages.js';
+import { StatusPageService } from '@/modules/status-page/status-page.service.js';
+import { createApp, normalizeRequestHost } from './app.js';
+import { container, TOKENS } from './container.js';
+
+beforeAll(() => {
+  process.env.NODE_ENV = 'test';
+  process.env.APP_URL = 'https://gateway.example.com';
+  process.env.DATABASE_URL ||= 'http://localhost/db';
+  process.env.REDIS_URL ||= 'redis://localhost:6379';
+  process.env.OIDC_ISSUER ||= 'http://localhost/oidc';
+  process.env.OIDC_CLIENT_ID ||= 'test';
+  process.env.OIDC_CLIENT_SECRET ||= 'test';
+  process.env.OIDC_REDIRECT_URI ||= 'https://gateway.example.com/auth/callback';
+  process.env.PKI_MASTER_KEY ||= '0000000000000000000000000000000000000000000000000000000000000000';
+});
+
+afterEach(() => container.reset());
+
+describe('normalizeRequestHost', () => {
+  it.each([
+    ['Gateway.Example.COM:443', 'gateway.example.com'],
+    ['gateway.example.com.', 'gateway.example.com'],
+    ['[::1]:3000', '::1'],
+    ['127.0.0.1:3000', '127.0.0.1'],
+  ])('normalizes %s', (input, expected) => {
+    expect(normalizeRequestHost(input)).toBe(expected);
+  });
+
+  it.each([
+    undefined,
+    '',
+    'bad host',
+    'example.com:99999',
+    '::1',
+    '[not-ipv6]',
+    'example.com/path',
+  ])('rejects malformed Host %s', (input) => expect(normalizeRequestHost(input)).toBeNull());
+});
+
+describe('Gateway Host guard', () => {
+  it('allows the canonical APP_URL host', async () => {
+    container.registerInstance(TOKENS.RedisClient, { ping: vi.fn().mockResolvedValue('PONG') } as any);
+    const response = await createApp().app.request('/health', { headers: { host: 'Gateway.Example.com:443' } });
+    expect(response.status).toBe(200);
+  });
+
+  it.each([
+    '/',
+    '/auth/login',
+    '/api/openapi.json',
+    '/assets/app.js',
+    '/api/events',
+    '/api/ai/ws',
+  ])('returns the branded 404 before routing %s for a legacy host', async (path) => {
+    const response = await createApp().app.request(path, {
+      headers: { host: 'legacy.example.com', 'x-forwarded-host': 'gateway.example.com' },
+    });
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe(GATEWAY_NOT_FOUND_HTML);
+  });
+
+  it('does not expose /health through a legacy host', async () => {
+    const ping = vi.fn().mockResolvedValue('PONG');
+    container.registerInstance(TOKENS.RedisClient, { ping } as any);
+    const response = await createApp().app.request('/health', { headers: { host: 'legacy.example.com' } });
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe(GATEWAY_NOT_FOUND_HTML);
+    expect(ping).not.toHaveBeenCalled();
+  });
+
+  it('allows the configured public status host through the host guard', async () => {
+    const isStatusHost = vi.fn().mockResolvedValue(true);
+    container.registerInstance(StatusPageService, { isStatusHost } as any);
+    const response = await createApp().app.request('/missing', { headers: { host: 'status.example.com' } });
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toBe(GATEWAY_NOT_FOUND_HTML);
+    expect(isStatusHost).toHaveBeenCalledWith('status.example.com');
+  });
+});

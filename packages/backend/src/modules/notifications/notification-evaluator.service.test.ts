@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sslCertificates } from '@/db/schema/index.js';
+import { notificationAlertStates, sslCertificates } from '@/db/schema/index.js';
 import { NotificationEvaluatorService } from './notification-evaluator.service.js';
 
 const BASE_RULE = {
@@ -43,7 +43,8 @@ function createEvaluator(
   certs: any[],
   thresholdRules = [BASE_RULE],
   eventRules: any[] = [],
-  nodesById: Record<string, any> = {}
+  nodesById: Record<string, any> = {},
+  proxyHostRows: any[] = []
 ) {
   const states: any[] = [];
   const db = {
@@ -51,14 +52,31 @@ function createEvaluator(
       sslCertificates: {
         findMany: async () => certs.filter((cert) => cert.status === 'active'),
       },
+      proxyHosts: {
+        findMany: async () => proxyHostRows,
+      },
     },
     select: () => ({
-      from: (table: unknown) => ({
-        where: async () =>
+      from: (table: unknown) => {
+        const activeRows = () =>
           table === sslCertificates
             ? certs.filter((cert) => cert.status === 'active')
-            : states.filter((state) => state.status === 'firing'),
-      }),
+            : states.filter((state) => state.status === 'firing');
+        return {
+          where: async () => activeRows(),
+          innerJoin: () => ({
+            where: async () =>
+              table === notificationAlertStates
+                ? states
+                    .filter((state) => state.status === 'firing')
+                    .flatMap((state) => {
+                      const rule = eventRules.find((candidate) => candidate.id === state.ruleId);
+                      return rule ? [{ state, rule }] : [];
+                    })
+                : [],
+          }),
+        };
+      },
     }),
   };
 
@@ -309,6 +327,41 @@ describe('NotificationEvaluatorService stateful event evaluation', () => {
         }),
       ])
     );
+  });
+
+  it('reconciles maintenance rules created while a proxy host is already maintained', async () => {
+    const rule = {
+      ...BASE_EVENT_RULE,
+      id: 'maintenance-rule',
+      name: 'Maintenance active',
+      category: 'proxy',
+      eventPattern: 'maintenance.active',
+      severity: 'warning',
+    };
+    const hosts = [
+      {
+        id: 'proxy-1',
+        domainNames: ['example.com'],
+        enabled: true,
+        isSystem: false,
+        maintenanceEnabled: true,
+      },
+    ];
+    const { evaluator, states } = createEvaluator([], [], [rule], {}, hosts);
+
+    await evaluator.reconcileProxyMaintenance();
+    expect(states).toMatchObject([
+      {
+        ruleId: 'maintenance-rule',
+        resourceType: 'proxy',
+        resourceId: 'proxy-1',
+        status: 'firing',
+      },
+    ]);
+
+    hosts[0]!.maintenanceEnabled = false;
+    await evaluator.reconcileProxyMaintenance();
+    expect(states[0]?.status).toBe('resolved');
   });
 });
 

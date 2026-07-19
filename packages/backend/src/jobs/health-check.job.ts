@@ -38,7 +38,11 @@ export class HealthCheckJob {
   async run(): Promise<void> {
     // Query proxy hosts with health checks enabled
     const hosts = await this.db.query.proxyHosts.findMany({
-      where: and(eq(proxyHosts.healthCheckEnabled, true), eq(proxyHosts.enabled, true)),
+      where: and(
+        eq(proxyHosts.healthCheckEnabled, true),
+        eq(proxyHosts.enabled, true),
+        eq(proxyHosts.maintenanceEnabled, false)
+      ),
     });
 
     if (hosts.length === 0) {
@@ -86,14 +90,27 @@ export class HealthCheckJob {
         const newStatus: HealthStatus = checkStatus === 'online' ? (slow ? 'degraded' : 'online') : 'offline';
 
         // Write to DB
-        await this.db
+        const persisted = await this.db
           .update(proxyHosts)
           .set({
             healthStatus: newStatus,
             lastHealthCheckAt: new Date(),
             healthHistory: history,
           })
-          .where(eq(proxyHosts.id, host.id));
+          .where(
+            and(
+              eq(proxyHosts.id, host.id),
+              eq(proxyHosts.enabled, true),
+              eq(proxyHosts.healthCheckEnabled, true),
+              eq(proxyHosts.maintenanceEnabled, false)
+            )
+          )
+          .returning({ id: proxyHosts.id });
+
+        if (persisted.length === 0) {
+          logger.debug('Discarded health result because host state changed', { hostId: host.id });
+          return { hostId: host.id, status: 'skipped' as const };
+        }
 
         await this.evaluator?.observeStatefulEvent(
           'proxy',

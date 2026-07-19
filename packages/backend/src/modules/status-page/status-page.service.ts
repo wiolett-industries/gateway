@@ -31,8 +31,8 @@ const logger = createChildLogger('StatusPageService');
 const CONFIG_KEY = 'status-page:config';
 const PUBLIC_HEALTH_HISTORY_WINDOW_MS = 192 * 5 * 60 * 1000;
 
-export type StatusPageServiceStatus = 'operational' | 'degraded' | 'outage' | 'unknown';
-export type StatusPageOverallStatus = 'operational' | 'degraded' | 'outage';
+export type StatusPageServiceStatus = 'operational' | 'degraded' | 'outage' | 'unknown' | 'maintenance';
+export type StatusPageOverallStatus = 'operational' | 'degraded' | 'outage' | 'maintenance';
 
 export interface StatusPageConfig {
   enabled: boolean;
@@ -109,10 +109,16 @@ const DEFAULT_CONFIG: StatusPageConfig = {
 };
 
 function normalizeHost(host: string | undefined): string {
-  return (host ?? '').split(':')[0]?.trim().toLowerCase() ?? '';
+  const value = (host ?? '').trim().toLowerCase();
+  if (value.startsWith('[')) {
+    const end = value.indexOf(']');
+    return end > 0 ? value.slice(1, end).replace(/\.+$/, '') : '';
+  }
+  return (value.split(':')[0] ?? '').replace(/\.+$/, '');
 }
 
 function mapStatus(status: string | null | undefined): StatusPageServiceStatus {
+  if (status === 'maintenance') return 'maintenance';
   if (status === 'online') return 'operational';
   if (status === 'degraded' || status === 'recovering') return 'degraded';
   if (status === 'offline' || status === 'error') return 'outage';
@@ -133,6 +139,7 @@ function effectiveNodeStatus(
 function computeOverall(statuses: StatusPageServiceStatus[]): StatusPageOverallStatus {
   if (statuses.some((status) => status === 'outage')) return 'outage';
   if (statuses.some((status) => status === 'degraded' || status === 'unknown')) return 'degraded';
+  if (statuses.some((status) => status === 'maintenance')) return 'maintenance';
   return 'operational';
 }
 
@@ -160,7 +167,7 @@ function sanitizeHistory(
       status: mapStatus(entry.status),
       ...(entry.slow ? { slow: true } : {}),
     }));
-  if (entries.length === 0 && currentStatus) {
+  if (entries.length === 0 && currentStatus && currentStatus !== 'maintenance') {
     entries.push({ ts: new Date().toISOString(), status: mapStatus(currentStatus) });
   }
   return entries;
@@ -192,7 +199,7 @@ export class StatusPageService {
 
   async isStatusHost(hostHeader: string | undefined): Promise<boolean> {
     const config = await this.getConfig();
-    return !!config.enabled && !!config.domain && normalizeHost(hostHeader) === config.domain.toLowerCase();
+    return !!config.enabled && !!config.domain && normalizeHost(hostHeader) === normalizeHost(config.domain);
   }
 
   async updateSettings(input: StatusPageSettingsInput, userId: string): Promise<StatusPageConfig> {
@@ -788,10 +795,11 @@ export class StatusPageService {
       } else if (row.sourceType === 'proxy_host') {
         const source = byProxy.get(row.sourceId);
         if (!source) continue;
+        const rawStatus = source.maintenanceEnabled ? 'maintenance' : (source.healthStatus ?? 'unknown');
         result.set(row.id, {
           label: source.domainNames?.[0] ?? source.id,
-          rawStatus: source.healthStatus ?? 'unknown',
-          status: mapStatus(source.healthStatus),
+          rawStatus,
+          status: mapStatus(rawStatus),
           history: source.healthHistory ?? [],
         });
       } else if (row.sourceType === 'database') {

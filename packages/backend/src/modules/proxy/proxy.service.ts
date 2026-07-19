@@ -10,6 +10,7 @@ import { buildWhere, escapeLike } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import { assertNodeAllowsServiceCreation } from '@/modules/nodes/service-creation-lock.js';
+import type { NotificationEvaluatorService } from '@/modules/notifications/notification-evaluator.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { NginxConfigGenerator, ProxyHostConfig } from '@/services/nginx-config-generator.service.js';
@@ -72,6 +73,7 @@ export class ProxyService {
   ) {}
 
   private eventBus?: EventBusService;
+  private notificationEvaluator?: NotificationEvaluatorService;
   private dockerReconcileRunning = false;
   private dockerReconcileDirty = false;
   setEventBus(bus: EventBusService) {
@@ -88,6 +90,14 @@ export class ProxyService {
           logger.error('Failed to update proxy references after container rename', { error });
         });
       }
+    });
+  }
+  setEvaluator(evaluator: NotificationEvaluatorService) {
+    this.notificationEvaluator = evaluator;
+  }
+  private reconcileMaintenanceAlerts(hostId?: string) {
+    void this.notificationEvaluator?.reconcileProxyMaintenance(hostId).catch((error) => {
+      logger.warn('Failed to reconcile proxy maintenance alerts', { hostId, error });
     });
   }
   private emitHost(id: string, action: string, domain?: string, extra: Record<string, unknown> = {}) {
@@ -107,6 +117,15 @@ export class ProxyService {
       resourceId: hostId,
       details: { nodeId: resolvedNodeId },
     });
+  }
+
+  private async restoreConfigOnNode(host: ProxyHostRow): Promise<void> {
+    const certPaths = await this.resolveCertPaths(host);
+    const accessList = await this.resolveAccessList(host.accessListId);
+    const config = await this.buildNginxConfig(host, certPaths, accessList);
+    const resolvedNodeId = await this.nodeDispatch.resolveNodeId(host.nodeId);
+    const result = await this.nodeDispatch.applyConfig(resolvedNodeId, host.id, config);
+    if (!result.success) throw new Error(result.error || 'Daemon config rollback failed');
   }
 
   private async removeConfigFromNode(hostId: string, nodeId: string | null): Promise<void> {
@@ -382,6 +401,16 @@ export class ProxyService {
     });
     if (!existing) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
     if (existing.isSystem) throw new AppError(403, 'SYSTEM_HOST', 'System proxy hosts cannot be edited');
+    if (
+      existing.maintenanceEnabled &&
+      ((input.type !== undefined && input.type !== 'proxy') || input.rawConfigEnabled === true)
+    ) {
+      throw new AppError(
+        409,
+        'MAINTENANCE_MODE_CONFLICT',
+        'Exit maintenance mode before changing the host type or enabling raw config'
+      );
+    }
     if (input.nodeId && input.nodeId !== existing.nodeId) {
       await assertNodeAllowsServiceCreation(this.db, input.nodeId, 'nginx');
     }
@@ -531,6 +560,7 @@ export class ProxyService {
 
     logger.info('Deleted proxy host', { hostId: id, domains: existing.domainNames });
     this.emitHost(id, 'deleted', existing.domainNames?.[0]);
+    this.reconcileMaintenanceAlerts(id);
   }
 
   // -----------------------------------------------------------------------
@@ -707,12 +737,24 @@ export class ProxyService {
     });
     if (!existing) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
     if (existing.isSystem) throw new AppError(403, 'SYSTEM_HOST', 'System proxy hosts cannot be toggled');
+    if (existing.enabled === enabled) return (await attachDockerUpstreamDisplay(this.db, [existing]))[0]!;
 
     const previousEnabled = existing.enabled;
+    const exitsMaintenance = !enabled && existing.maintenanceEnabled;
 
     const [updated] = await this.db
       .update(proxyHosts)
-      .set({ enabled, updatedAt: new Date() })
+      .set({
+        enabled,
+        ...(exitsMaintenance
+          ? {
+              maintenanceEnabled: false,
+              maintenanceStartedAt: null,
+              healthStatus: existing.healthCheckEnabled ? ('unknown' as const) : existing.healthStatus,
+            }
+          : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(proxyHosts.id, id))
       .returning();
 
@@ -735,7 +777,13 @@ export class ProxyService {
       });
       await this.db
         .update(proxyHosts)
-        .set({ enabled: previousEnabled, updatedAt: existing.updatedAt })
+        .set({
+          enabled: previousEnabled,
+          maintenanceEnabled: existing.maintenanceEnabled,
+          maintenanceStartedAt: existing.maintenanceStartedAt,
+          healthStatus: existing.healthStatus,
+          updatedAt: existing.updatedAt,
+        })
         .where(eq(proxyHosts.id, id));
       throw new AppError(
         500,
@@ -753,13 +801,99 @@ export class ProxyService {
 
     logger.info('Toggled proxy host', { hostId: id, enabled });
     this.emitHost(id, 'updated', existing.domainNames?.[0]);
+    if (exitsMaintenance) this.reconcileMaintenanceAlerts(id);
 
     // Fire-and-forget immediate health check when enabling
     if (enabled && updated.healthCheckEnabled) {
       this.runImmediateHealthCheck(id);
     }
 
-    return updated;
+    return (await attachDockerUpstreamDisplay(this.db, [updated]))[0]!;
+  }
+
+  async toggleMaintenance(id: string, enabled: boolean, userId: string) {
+    const existing = await this.db.query.proxyHosts.findFirst({
+      where: eq(proxyHosts.id, id),
+    });
+    if (!existing) throw new AppError(404, 'PROXY_HOST_NOT_FOUND', 'Proxy host not found');
+    if (existing.isSystem) throw new AppError(403, 'SYSTEM_HOST', 'System proxy hosts cannot enter maintenance');
+    if (existing.maintenanceEnabled === enabled) {
+      return (await attachDockerUpstreamDisplay(this.db, [existing]))[0]!;
+    }
+    if (enabled) {
+      if (!existing.enabled) {
+        throw new AppError(409, 'MAINTENANCE_HOST_DISABLED', 'Enable the proxy host before entering maintenance');
+      }
+      if (existing.type !== 'proxy' || existing.rawConfigEnabled) {
+        throw new AppError(
+          409,
+          'MAINTENANCE_UNSUPPORTED_HOST',
+          'Maintenance is available only for managed proxy hosts without raw mode'
+        );
+      }
+    }
+
+    const [updated] = await this.db
+      .update(proxyHosts)
+      .set({
+        maintenanceEnabled: enabled,
+        maintenanceStartedAt: enabled ? new Date() : null,
+        ...(!enabled && existing.healthCheckEnabled ? { healthStatus: 'unknown' as const } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(proxyHosts.id, id))
+      .returning();
+
+    try {
+      if (updated.enabled) {
+        const certPaths = await this.resolveCertPaths(updated);
+        const accessList = await this.resolveAccessList(updated.accessListId);
+        const config = await this.buildNginxConfig(updated, certPaths, accessList);
+        await this.applyConfigToNode(id, config, updated.nodeId);
+      }
+    } catch (error) {
+      logger.error('Failed to apply nginx config during maintenance transition, rolling back DB', {
+        hostId: id,
+        enabled,
+        error,
+      });
+      await this.db
+        .update(proxyHosts)
+        .set({
+          maintenanceEnabled: existing.maintenanceEnabled,
+          maintenanceStartedAt: existing.maintenanceStartedAt,
+          healthStatus: existing.healthStatus,
+          updatedAt: existing.updatedAt,
+        })
+        .where(eq(proxyHosts.id, id));
+      try {
+        await this.restoreConfigOnNode(existing);
+      } catch (rollbackError) {
+        logger.error('Failed to restore nginx config after maintenance transition failure', {
+          hostId: id,
+          rollbackError,
+        });
+      }
+      throw new AppError(
+        500,
+        'NGINX_CONFIG_FAILED',
+        `Failed to apply Nginx config: ${error instanceof Error ? error.message : 'unknown error'}`
+      );
+    }
+
+    await this.auditService.log({
+      userId,
+      action: enabled ? 'proxy_host.maintenance_enter' : 'proxy_host.maintenance_exit',
+      resourceType: 'proxy_host',
+      resourceId: id,
+      details: { domainNames: existing.domainNames },
+    });
+    logger.info('Toggled proxy host maintenance', { hostId: id, enabled });
+    this.emitHost(id, 'updated', existing.domainNames?.[0], { maintenanceEnabled: enabled });
+    this.reconcileMaintenanceAlerts(id);
+
+    if (!enabled && updated.healthCheckEnabled) this.runImmediateHealthCheck(id);
+    return (await attachDockerUpstreamDisplay(this.db, [updated]))[0]!;
   }
 
   // -----------------------------------------------------------------------
@@ -1233,11 +1367,6 @@ export class ProxyService {
     certPaths: CertPaths,
     accessList: ProxyHostConfig['accessList']
   ): Promise<string> {
-    // Raw config mode — bypass template rendering entirely
-    if ((host as any).rawConfigEnabled && (host as any).rawConfig) {
-      return (host as any).rawConfig as string;
-    }
-
     const config: ProxyHostConfig = {
       id: host.id,
       type: host.type,
@@ -1265,6 +1394,13 @@ export class ProxyService {
       sslChainPath: certPaths.sslChainPath,
       templateVariables: (host.templateVariables ?? {}) as Record<string, string | number | boolean>,
     };
+
+    if (host.maintenanceEnabled) {
+      return this.nginxTemplateService.renderMaintenanceForHost(config);
+    }
+
+    // Raw config mode — bypass template rendering entirely
+    if (host.rawConfigEnabled && host.rawConfig) return host.rawConfig;
 
     return this.nginxTemplateService.renderForHost(config, host.nginxTemplateId ?? null);
   }

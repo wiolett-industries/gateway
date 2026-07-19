@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     createProxyHost: vi.fn(),
     updateProxyHost: vi.fn(),
     toggleProxyHost: vi.fn(),
+    toggleMaintenance: vi.fn(),
     getProxyHostHealthHistory: vi.fn(),
     getRenderedConfig: vi.fn(),
     validateAdvancedConfig: vi.fn(),
@@ -92,6 +93,7 @@ describe('proxy routes programmatic raw config handling', () => {
     mocks.proxyService.createProxyHost.mockResolvedValue(rawHost);
     mocks.proxyService.updateProxyHost.mockResolvedValue(rawHost);
     mocks.proxyService.toggleProxyHost.mockResolvedValue(rawHost);
+    mocks.proxyService.toggleMaintenance.mockResolvedValue({ ...rawHost, maintenanceEnabled: true });
     mocks.proxyService.getRenderedConfig.mockResolvedValue('server {}');
     mocks.proxyService.validateAdvancedConfig.mockResolvedValue({ valid: true });
   });
@@ -228,6 +230,15 @@ describe('proxy routes programmatic raw config handling', () => {
 
     expect(toggleResponse.status).toBe(200);
     expectNoRawFields(toggleBody);
+  });
+
+  it('toggles maintenance through the resource-scoped edit endpoint', async () => {
+    const response = await jsonRequest('POST', '/host-1/maintenance', { enabled: true });
+    const body = (await response.json()) as { data: Record<string, unknown> };
+
+    expect(response.status).toBe(200);
+    expect(body.data.maintenanceEnabled).toBe(true);
+    expect(mocks.proxyService.toggleMaintenance).toHaveBeenCalledWith('host-1', true, 'user-1');
   });
 
   it('rejects raw config create and update requests from programmatic auth', async () => {

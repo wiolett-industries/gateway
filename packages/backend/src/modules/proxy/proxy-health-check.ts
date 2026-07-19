@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import { proxyHosts } from '@/db/schema/index.js';
 import { formatHostPort } from '@/lib/network-endpoint.js';
@@ -24,7 +24,14 @@ export function runImmediateProxyHealthCheck({
       const host = await db.query.proxyHosts.findFirst({
         where: eq(proxyHosts.id, hostId),
       });
-      if (!host?.healthCheckEnabled || !host.forwardHost || !host.forwardPort) return;
+      if (
+        !host?.enabled ||
+        !host.healthCheckEnabled ||
+        host.maintenanceEnabled ||
+        !host.forwardHost ||
+        !host.forwardPort
+      )
+        return;
 
       const scheme = host.forwardScheme || 'http';
       const path = host.healthCheckUrl || '/';
@@ -62,10 +69,20 @@ export function runImmediateProxyHealthCheck({
         status = 'offline';
       }
 
-      await db
+      const persisted = await db
         .update(proxyHosts)
         .set({ healthStatus: status, lastHealthCheckAt: new Date() })
-        .where(eq(proxyHosts.id, hostId));
+        .where(
+          and(
+            eq(proxyHosts.id, hostId),
+            eq(proxyHosts.enabled, true),
+            eq(proxyHosts.healthCheckEnabled, true),
+            eq(proxyHosts.maintenanceEnabled, false)
+          )
+        )
+        .returning({ id: proxyHosts.id });
+
+      if (persisted.length === 0) return;
 
       logger.debug('Immediate health check complete', { hostId, status });
     } catch (err) {

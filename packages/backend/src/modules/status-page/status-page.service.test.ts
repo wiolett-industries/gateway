@@ -313,6 +313,7 @@ describe('StatusPageService safe DTO', () => {
         domainNames: ['internal.example.test'],
         forwardHost: '10.0.0.2',
         forwardPort: 8080,
+        maintenanceEnabled: true,
         healthStatus: 'online',
         healthHistory: [{ ts: historyTs, status: 'online', responseMs: 12, slow: true }],
       },
@@ -347,9 +348,10 @@ describe('StatusPageService safe DTO', () => {
     expect(dto?.services[0]).toMatchObject({
       id: '44444444-4444-4444-8444-444444444444',
       name: 'Website',
-      status: 'operational',
+      status: 'maintenance',
       healthHistory: [{ ts: historyTs, status: 'operational', slow: true }],
     });
+    expect(dto?.overallStatus).toBe('maintenance');
     expect(serialized).not.toContain('55555555-5555-4555-8555-555555555555');
     expect(serialized).not.toContain('10.0.0.2');
     expect(serialized).not.toContain('8080');

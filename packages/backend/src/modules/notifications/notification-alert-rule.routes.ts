@@ -42,6 +42,16 @@ function triggerCertificateExpiryEvaluation(rule: { category: string; type: stri
   }
 }
 
+function triggerMaintenanceEvaluation(rule: { category: string; type: string; eventPattern: string | null }) {
+  if (rule.category !== 'proxy' || rule.type !== 'event' || rule.eventPattern !== 'maintenance.active') return;
+  try {
+    const evaluator = container.resolve(NotificationEvaluatorService);
+    void evaluator.reconcileProxyMaintenance().catch(() => {});
+  } catch {
+    /* not yet registered */
+  }
+}
+
 // GET /categories — list alert categories with their metrics, events, and variables
 alertRuleRoutes.openapi(
   {
@@ -111,6 +121,7 @@ alertRuleRoutes.openapi(
     const rule = await service.create(body, user.id);
     invalidateCache();
     triggerCertificateExpiryEvaluation(rule);
+    triggerMaintenanceEvaluation(rule);
     return c.json({ data: rule }, 201);
   }
 );
@@ -128,6 +139,7 @@ alertRuleRoutes.openapi(
     const rule = await service.update(c.req.param('id')!, body, user.id);
     invalidateCache();
     triggerCertificateExpiryEvaluation(rule);
+    triggerMaintenanceEvaluation(rule);
     return c.json({ data: rule });
   }
 );

@@ -88,6 +88,15 @@ export function withProxyApi<TBase extends ApiClientBaseConstructor>(Base: TBase
       );
     }
 
+    async toggleProxyMaintenance(id: string, enabled: boolean): Promise<ProxyHost> {
+      return this.unwrapData(
+        this.request<{ data: ProxyHost }>(`/proxy-hosts/${id}/maintenance`, {
+          method: "POST",
+          body: JSON.stringify({ enabled }),
+        })
+      );
+    }
+
     async getRenderedProxyConfig(id: string): Promise<{ rendered: string }> {
       return this.unwrapData(
         this.request<{ data: { rendered: string } }>(`/proxy-hosts/${id}/rendered-config`)

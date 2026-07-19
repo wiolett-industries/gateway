@@ -162,6 +162,35 @@ export function ProxyHosts({
     }
   };
 
+  const handleMaintenance = async (host: ProxyHost) => {
+    const entering = !host.maintenanceEnabled;
+    if (entering) {
+      const ok = await confirm({
+        title: "Enable Maintenance Mode",
+        description:
+          "All requests to this proxy host will receive HTTP 503 and managed health checks will pause until maintenance ends.",
+        confirmLabel: "Enable Maintenance",
+      });
+      if (!ok) return;
+    }
+
+    setTogglingIds((prev) => new Set(prev).add(host.id));
+    try {
+      await api.toggleProxyMaintenance(host.id, entering);
+      api.invalidateCache();
+      toast.success(entering ? "Maintenance mode enabled" : "Maintenance mode disabled");
+      await fetchGroupedHosts();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update maintenance mode");
+    } finally {
+      setTogglingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(host.id);
+        return next;
+      });
+    }
+  };
+
   const handleCreateFolder = async (name: string) => {
     try {
       await createFolder(name, createFolderParentId ?? undefined);
@@ -399,6 +428,7 @@ export function ProxyHosts({
       label: "Health",
       width: "14%",
       renderCell: (host) => {
+        if (host.maintenanceEnabled) return <Badge variant="warning">Maintenance</Badge>;
         const status = host.rawConfigEnabled
           ? "disabled"
           : host.effectiveHealthStatus || host.healthStatus;
@@ -474,6 +504,16 @@ export function ProxyHosts({
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => navigate(proxyHostRoute(host.slug))}>
                         Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={
+                          togglingIds.has(host.id) ||
+                          (!host.maintenanceEnabled &&
+                            (!host.enabled || host.type !== "proxy" || host.rawConfigEnabled))
+                        }
+                        onClick={() => handleMaintenance(host)}
+                      >
+                        {host.maintenanceEnabled ? "Disable Maintenance" : "Enable Maintenance"}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => setMoveDialogHostId(host.id)}>

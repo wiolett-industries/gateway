@@ -12,6 +12,7 @@ import {
   CreateProxyHostSchema,
   ProxyHostListQuerySchema,
   ToggleProxyHostSchema,
+  ToggleProxyMaintenanceSchema,
   UpdateProxyHostSchema,
   ValidateAdvancedConfigSchema,
 } from './proxy.schemas.js';
@@ -93,6 +94,15 @@ export const toggleProxyHostRoute = appRoute({
   tags: ['Proxy Hosts'],
   summary: 'Enable or disable a proxy host',
   request: { params: IdParamSchema, ...jsonBody(ToggleProxyHostSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const toggleProxyMaintenanceRoute = appRoute({
+  method: 'post',
+  path: '/{id}/maintenance',
+  tags: ['Proxy Hosts'],
+  summary: 'Enter or exit maintenance mode for a proxy host',
+  request: { params: IdParamSchema, ...jsonBody(ToggleProxyMaintenanceSchema) },
   responses: okJson(UnknownDataResponseSchema),
 });
 

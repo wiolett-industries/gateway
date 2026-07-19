@@ -2,8 +2,8 @@ import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type ServiceStatus = "operational" | "degraded" | "outage" | "unknown";
-type OverallStatus = "operational" | "degraded" | "outage";
+type ServiceStatus = "operational" | "degraded" | "outage" | "unknown" | "maintenance";
+type OverallStatus = "operational" | "degraded" | "outage" | "maintenance";
 type IncidentUpdateStatus = "update" | "investigating" | "identified" | "monitoring" | "resolved";
 type BarStatus = "ok" | "warn" | "error" | "none";
 
@@ -62,7 +62,8 @@ function statusLabel(status: ServiceStatus | OverallStatus) {
     operational: "Operational",
     degraded: "Degraded",
     outage: "Outage",
-    unknown: "Unknown"
+    unknown: "Unknown",
+    maintenance: "Maintenance"
   }[status];
 }
 
@@ -71,7 +72,8 @@ function statusClass(status: ServiceStatus | OverallStatus) {
     operational: "success",
     degraded: "warning",
     outage: "danger",
-    unknown: "muted"
+    unknown: "muted",
+    maintenance: "warning"
   }[status];
 }
 
@@ -88,12 +90,13 @@ function barClass(status: ServiceStatus) {
     operational: "bar-success",
     degraded: "bar-warning",
     outage: "bar-danger",
-    unknown: "bar-muted"
+    unknown: "bar-muted",
+    maintenance: "bar-warning"
   }[status];
 }
 
 function publicStatusToBarStatus(status?: ServiceStatus): BarStatus {
-  if (!status || status === "unknown") return "none";
+  if (!status || status === "unknown" || status === "maintenance") return "none";
   if (status === "operational") return "ok";
   if (status === "degraded") return "warn";
   return "error";
