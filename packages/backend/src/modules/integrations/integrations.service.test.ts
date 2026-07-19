@@ -523,4 +523,45 @@ describe('IntegrationsService', () => {
       code: 'CONNECTOR_SYNC_RUNNING',
     });
   });
+
+  it('does not audit successful scheduled GitLab connector syncs', async () => {
+    const db = createGetUpdateDb(connectorRow({ encryptedToken: JSON.stringify('encrypted-token') }));
+    const auditService = { log: vi.fn() };
+    const service = new IntegrationsService(
+      db as never,
+      auditService as never,
+      { decryptString: vi.fn(() => 'gitlab-token') } as never
+    );
+    service.registerProvider({
+      provider: 'gitlab',
+      testConnection: vi.fn().mockResolvedValue({ projectsView: true }),
+      listProjects: vi.fn().mockResolvedValue([]),
+      listRegistries: vi.fn().mockResolvedValue({ registries: [], skippedProjects: [] }),
+    } as never);
+    vi.spyOn(service as any, 'listAllowlistRows').mockResolvedValue([]);
+    vi.spyOn(service as any, 'persistProjects').mockResolvedValue(undefined);
+    vi.spyOn(service as any, 'persistRegistries').mockResolvedValue(undefined);
+
+    await service.syncGitLabConnector('11111111-1111-4111-8111-111111111111', null, { scheduled: true });
+
+    expect(auditService.log).not.toHaveBeenCalled();
+  });
+
+  it('does not audit successful scheduled Cloudflare connector syncs', async () => {
+    const db = createGetUpdateDb(
+      connectorRow({ provider: 'cloudflare', name: 'Cloudflare', encryptedToken: JSON.stringify('encrypted-token') })
+    );
+    const auditService = { log: vi.fn() };
+    const service = new IntegrationsService(
+      db as never,
+      auditService as never,
+      { decryptString: vi.fn(() => 'cloudflare-token') } as never
+    );
+    vi.spyOn(service as any, 'testCloudflareToken').mockResolvedValue({ capabilities: { dnsEdit: true }, zones: [] });
+    vi.spyOn(service as any, 'persistCloudflareZones').mockResolvedValue(undefined);
+
+    await service.syncCloudflareConnector('11111111-1111-4111-8111-111111111111', null, { scheduled: true });
+
+    expect(auditService.log).not.toHaveBeenCalled();
+  });
 });

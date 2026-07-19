@@ -11,6 +11,7 @@ import { AIService } from '@/modules/ai/ai.service.js';
 import { AI_TOOLS } from '@/modules/ai/ai.tools.js';
 import type { AIToolDefinition } from '@/modules/ai/ai.types.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
+import { setAuditMcpContext } from '@/modules/audit/audit-request-context.js';
 import type { User } from '@/types.js';
 import type { McpAuthContext } from './mcp-types.js';
 
@@ -382,10 +383,6 @@ function hasToolScopeForArgs(scopes: string[], tool: AIToolDefinition, args: Rec
     : hasScopeBase(scopes, tool.requiredScope);
 }
 
-function isMutatingTool(tool: AIToolDefinition): boolean {
-  return tool.destructive || tool.invalidateStores.length > 0;
-}
-
 function cleanupMcpDiscoveryStates(now = Date.now()): void {
   for (const [key, state] of mcpDiscoveryStates) {
     if (now - state.lastAccessAt > MCP_DISCOVERY_STATE_TTL_MS) {
@@ -508,19 +505,30 @@ function getToolAuthorizationResourceId(_toolName: string, args: Record<string, 
   return getToolResourceId(args);
 }
 
-async function auditDeniedMutatingTool(
-  tool: AIToolDefinition,
+async function auditDeniedMcpTool(
+  tool: AIToolDefinition | undefined,
+  toolName: string,
   auth: McpAuthContext,
   user: User,
   args: Record<string, unknown>,
   reason: string
 ): Promise<void> {
-  if (!isMutatingTool(tool)) return;
+  const category = tool?.category ?? 'Unknown';
+  const redactedArgs = redactToolArgs(args) as Record<string, unknown>;
+  setAuditMcpContext({
+    toolName,
+    category,
+    arguments: redactedArgs,
+    tokenId: auth.tokenId,
+    tokenPrefix: auth.tokenPrefix,
+    authType: auth.authType,
+    clientId: auth.clientId,
+  });
 
   await container.resolve(AuditService).log({
     userId: user.id,
-    action: `mcp.${tool.name}`,
-    resourceType: tool.category.toLowerCase().replace(/\s+/g, '_'),
+    action: tool ? `mcp.${toolName}` : 'mcp.tool.denied',
+    resourceType: tool ? category.toLowerCase().replace(/\s+/g, '_') : 'mcp_tool',
     resourceId: getToolResourceId(args),
     details: {
       source: 'mcp',
@@ -531,10 +539,10 @@ async function auditDeniedMutatingTool(
       tokenPrefix: auth.tokenPrefix,
       authType: auth.authType,
       clientId: auth.clientId,
-      toolName: tool.name,
-      category: tool.category,
-      requiredScope: tool.requiredScope,
-      arguments: redactToolArgs(args),
+      toolName,
+      category,
+      requiredScope: tool?.requiredScope,
+      arguments: redactedArgs,
     },
   });
 }
@@ -636,9 +644,14 @@ export function registerMcpToolHandlers(server: McpAuthContext['server'], auth: 
 
     const tool = AI_TOOLS.find((candidate) => candidate.name === toolName);
     if (!tool || !isEligibleMcpTool(tool) || !hasToolScopeForArgs(auth.scopes, tool, args)) {
-      if (tool && isEligibleMcpTool(tool)) {
-        await auditDeniedMutatingTool(tool, auth, user, args, 'missing_scope');
-      }
+      await auditDeniedMcpTool(
+        tool,
+        toolName,
+        auth,
+        user,
+        args,
+        tool && isEligibleMcpTool(tool) ? 'missing_scope' : 'unavailable_tool'
+      );
       return toolError(`Tool "${toolName}" is unavailable for this MCP token`);
     }
 

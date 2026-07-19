@@ -9,6 +9,7 @@ import { canonicalizeScopes } from '@/lib/scopes.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import { UpdateAuthProvisioningSettingsSchema } from '@/modules/admin/admin.schemas.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
+import { getAuditRequestContext, setAuditMcpContext } from '@/modules/audit/audit-request-context.js';
 import type { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import type { DatabaseConnectionService } from '@/modules/databases/databases.service.js';
@@ -554,6 +555,21 @@ export class AIService {
     const source = options.source ?? 'ai';
     const shouldAudit = isMutatingTool(toolDef);
     const redactedArgs = redactArgsForTool(toolName, args);
+    const mcpDetails =
+      source === 'mcp'
+        ? {
+            toolName,
+            category: toolDef.category,
+            arguments: redactedArgs as Record<string, unknown>,
+            tokenId: options.tokenId,
+            tokenPrefix: options.tokenPrefix,
+            authType: options.authType,
+            clientId: options.clientId,
+          }
+        : undefined;
+    if (mcpDetails) setAuditMcpContext(mcpDetails);
+    const auditWasEmitted = getAuditRequestContext()?.auditEmitted ?? false;
+    const auditEmittedDuringTool = () => !auditWasEmitted && Boolean(getAuditRequestContext()?.auditEmitted);
     const auditBase = {
       userId: user.id,
       resourceType: toolDef.category.toLowerCase().replace(/\s+/g, '_'),
@@ -568,25 +584,17 @@ export class AIService {
       const invalidateStores = TOOL_STORE_INVALIDATION_MAP[toolName] || [];
       await this.persistToolRuntimeState(user, options, toolName, result);
 
-      // Audit log for mutating tools
-      if (shouldAudit) {
+      if (source === 'mcp' && !auditEmittedDuringTool()) {
+        await this.auditService.log({
+          ...auditBase,
+          action: `mcp.${toolName}`,
+          details: { ...mcpDetails, source: 'mcp', success: true },
+        });
+      } else if (source === 'ai' && shouldAudit) {
         await this.auditService.log({
           ...auditBase,
           action: `${source}.${toolName}`,
-          details:
-            source === 'mcp'
-              ? {
-                  source: 'mcp',
-                  success: true,
-                  tokenId: options.tokenId,
-                  tokenPrefix: options.tokenPrefix,
-                  authType: options.authType,
-                  clientId: options.clientId,
-                  toolName,
-                  category: toolDef.category,
-                  arguments: redactedArgs,
-                }
-              : { ai_initiated: true, arguments: redactedArgs },
+          details: { ai_initiated: true, arguments: redactedArgs },
         });
       }
 
@@ -594,21 +602,15 @@ export class AIService {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Tool execution failed';
       logger.error(`Tool execution failed: ${toolName}`, { error: err, args: redactArgsForTool(toolName, args) });
-      if (source === 'mcp' && shouldAudit) {
+      if (source === 'mcp' && !auditEmittedDuringTool()) {
         await this.auditService.log({
           ...auditBase,
           action: `mcp.${toolName}`,
           details: {
+            ...mcpDetails,
             source: 'mcp',
             success: false,
             error: message,
-            tokenId: options.tokenId,
-            tokenPrefix: options.tokenPrefix,
-            authType: options.authType,
-            clientId: options.clientId,
-            toolName,
-            category: toolDef.category,
-            arguments: redactedArgs,
           },
         });
       }

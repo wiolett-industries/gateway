@@ -362,18 +362,20 @@ export class IntegrationsService {
         })
         .where(eq(integrationConnectors.id, id));
 
-      await this.auditService.log({
-        action: GITLAB_AUDIT_ACTIONS.connectorSync,
-        userId,
-        resourceType: 'integration-connector',
-        resourceId: id,
-        details: {
-          name: row.name,
-          projectCount: projects.length,
-          registryCount: registries.length,
-          skippedRegistryProjects: registryDiscovery.skippedProjects.length,
-        },
-      });
+      if (userId) {
+        await this.auditService.log({
+          action: GITLAB_AUDIT_ACTIONS.connectorSync,
+          userId,
+          resourceType: 'integration-connector',
+          resourceId: id,
+          details: {
+            name: row.name,
+            projectCount: projects.length,
+            registryCount: registries.length,
+            skippedRegistryProjects: registryDiscovery.skippedProjects.length,
+          },
+        });
+      }
 
       this.emitConnector(id, 'synced');
       this.emitConnector(id, 'registries-synced');
@@ -648,13 +650,15 @@ export class IntegrationsService {
         })
         .where(eq(integrationConnectors.id, id));
 
-      await this.auditService.log({
-        action: CLOUDFLARE_AUDIT_ACTIONS.connectorSync,
-        userId,
-        resourceType: 'integration-connector',
-        resourceId: id,
-        details: { name: row.name, zoneCount: zones.length },
-      });
+      if (userId) {
+        await this.auditService.log({
+          action: CLOUDFLARE_AUDIT_ACTIONS.connectorSync,
+          userId,
+          resourceType: 'integration-connector',
+          resourceId: id,
+          details: { name: row.name, zoneCount: zones.length },
+        });
+      }
 
       this.emitConnector(id, 'synced', 'cloudflare');
       return { status: 'success', zoneCount: zones.length };

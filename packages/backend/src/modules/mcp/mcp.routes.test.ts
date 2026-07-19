@@ -295,6 +295,7 @@ describe('MCP tools', () => {
     registerOAuth(['feat:ai:use']);
     const executeTool = vi.fn();
     container.registerInstance(AIService, { executeTool } as unknown as AIService);
+    container.registerInstance(AuditService, { log: vi.fn() } as unknown as AuditService);
 
     const wait = await mcpRequest('tools/call', {
       name: 'wait',

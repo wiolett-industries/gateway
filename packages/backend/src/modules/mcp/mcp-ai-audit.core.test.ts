@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { markAuditEmitted, runWithAuditRequestContext } from '@/modules/audit/audit-request-context.js';
 import {
   container,
   createService,
@@ -69,7 +70,7 @@ describe('AIService MCP audit core behavior', () => {
     );
   });
 
-  it('does not audit read-only MCP tool calls', async () => {
+  it('writes descriptive audit entries for read-only MCP tool calls', async () => {
     const auditService = { log: vi.fn().mockResolvedValue(undefined) };
     const nodesService = {
       list: vi.fn().mockResolvedValue({ data: [], total: 0, page: 1, limit: 50, totalPages: 0 }),
@@ -79,7 +80,47 @@ describe('AIService MCP audit core behavior', () => {
     const result = await service.executeTool(USER, 'list_nodes', {}, { source: 'mcp', scopes: ['nodes:details'] });
 
     expect(result.error).toBeUndefined();
-    expect(auditService.log).not.toHaveBeenCalled();
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: USER.id,
+        action: 'mcp.list_nodes',
+        resourceType: 'nodes',
+        details: expect.objectContaining({
+          source: 'mcp',
+          success: true,
+          toolName: 'list_nodes',
+          arguments: {},
+        }),
+      })
+    );
+  });
+
+  it('does not add a duplicate MCP entry when the domain service already audited the tool', async () => {
+    const auditService = {
+      log: vi.fn(async (_entry: unknown) => {
+        markAuditEmitted();
+      }),
+    };
+    const nodesService = {
+      create: vi.fn(async () => {
+        await auditService.log({ action: 'node.create' });
+        return { node: { id: 'node-1' }, enrollmentToken: 'gw_node_secret' };
+      }),
+    };
+    const service = createService({ nodesService, auditService });
+
+    const result = await runWithAuditRequestContext({ auditEmitted: false }, () =>
+      service.executeTool(
+        USER,
+        'create_node',
+        { hostname: 'node-1', type: 'docker' },
+        { source: 'mcp', scopes: ['nodes:create'] }
+      )
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(auditService.log).toHaveBeenCalledTimes(1);
+    expect(auditService.log).toHaveBeenCalledWith({ action: 'node.create' });
   });
 
   it('passes explicit Docker registry selection through MCP image pulls', async () => {

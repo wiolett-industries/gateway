@@ -43,11 +43,6 @@ describe('resolveFallbackAuditTarget', () => {
   });
 
   it('maps system update routes away from generic route audit actions', () => {
-    expect(__testOnly.resolveFallbackAuditTarget('POST', '/api/system/check-update')).toEqual({
-      action: 'system.update.check',
-      resourceType: 'system-update',
-      resourceId: undefined,
-    });
     expect(
       __testOnly.resolveFallbackAuditTarget('POST', '/api/system/daemon-updates/11111111-1111-4111-8111-111111111111')
     ).toEqual({
@@ -61,11 +56,6 @@ describe('resolveFallbackAuditTarget', () => {
     expect(__testOnly.resolveFallbackAuditTarget('PUT', '/api/ai/config')).toEqual({
       action: 'ai.config.update',
       resourceType: 'ai-config',
-      resourceId: undefined,
-    });
-    expect(__testOnly.resolveFallbackAuditTarget('POST', '/api/ai/context-estimate')).toEqual({
-      action: 'ai.context.estimate',
-      resourceType: 'ai-context',
       resourceId: undefined,
     });
     expect(__testOnly.resolveFallbackAuditTarget('DELETE', '/api/ai/conversations/chat-1')).toEqual({
@@ -93,6 +83,38 @@ describe('shouldSkipFallbackAudit', () => {
         '/api/logging/environments/11111111-1111-4111-8111-111111111111/search'
       )
     ).toBe(true);
+  });
+
+  it('skips MCP protocol traffic and non-auditable background-style requests', () => {
+    expect(__testOnly.shouldSkipFallbackAudit('POST', '/api/mcp')).toBe(true);
+    expect(__testOnly.shouldSkipFallbackAudit('POST', '/api/mcp/')).toBe(true);
+    expect(__testOnly.shouldSkipFallbackAudit('POST', '/api/ai/context-estimate')).toBe(true);
+    expect(__testOnly.shouldSkipFallbackAudit('POST', '/api/docker/snapshots/refresh')).toBe(true);
+  });
+
+  it('skips successful checks, previews, validations, and refresh-only requests', () => {
+    const paths = [
+      '/api/system/check-update',
+      '/api/system/daemon-updates/check',
+      '/api/system/license/check',
+      '/api/domains/preview',
+      '/api/domains/domain-1/check-dns',
+      '/api/proxy-hosts/validate-config',
+      '/api/nginx-templates/preview',
+      '/api/nginx-templates/test',
+      '/api/nodes/node-1/config/test',
+      '/api/integrations/gitlab/allowlist/preview-search',
+      '/api/integrations/gitlab/connectors/preview-test',
+      '/api/integrations/cloudflare/connectors/preview-test',
+      '/api/integrations/gitlab/connectors/connector-1/allowlist/options/refresh',
+      '/api/notifications/webhooks/preview',
+      '/api/docker/nodes/node-1/containers/app/health-check/test',
+      '/api/docker/nodes/node-1/deployments/app/health-check/test',
+    ];
+
+    for (const path of paths) {
+      expect(__testOnly.shouldSkipFallbackAudit('POST', path), path).toBe(true);
+    }
   });
 
   it('skips Docker folder read and ordering routes that only affect list layout', () => {

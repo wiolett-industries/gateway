@@ -5,6 +5,17 @@ export interface AuditRequestContext {
   ipAddress?: string;
   userAgent?: string;
   auditEmitted?: boolean;
+  mcp?: AuditMcpContext;
+}
+
+export interface AuditMcpContext {
+  toolName: string;
+  category: string;
+  arguments: Record<string, unknown>;
+  tokenId?: string;
+  tokenPrefix?: string;
+  authType?: string;
+  clientId?: string;
 }
 
 const storage = new AsyncLocalStorage<AuditRequestContext>();
@@ -21,5 +32,12 @@ export function markAuditEmitted(): void {
   const context = storage.getStore();
   if (context) {
     context.auditEmitted = true;
+  }
+}
+
+export function setAuditMcpContext(mcp: AuditMcpContext): void {
+  const context = storage.getStore();
+  if (context) {
+    context.mcp = mcp;
   }
 }

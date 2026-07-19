@@ -68,12 +68,24 @@ export class AuditService {
   async log(entry: AuditEntry, options: AuditLogOptions = {}): Promise<boolean> {
     try {
       const requestContext = getAuditRequestContext();
+      const mcpDetails = requestContext?.mcp
+        ? {
+            source: 'mcp',
+            toolName: requestContext.mcp.toolName,
+            category: requestContext.mcp.category,
+            arguments: requestContext.mcp.arguments,
+            tokenId: requestContext.mcp.tokenId,
+            tokenPrefix: requestContext.mcp.tokenPrefix,
+            authType: requestContext.mcp.authType,
+            clientId: requestContext.mcp.clientId,
+          }
+        : undefined;
       await this.db.insert(auditLog).values({
         userId: entry.userId,
         action: entry.action,
         resourceType: entry.resourceType,
         resourceId: entry.resourceId,
-        details: entry.details,
+        details: mcpDetails ? { ...entry.details, ...mcpDetails } : entry.details,
         ipAddress: entry.ipAddress ?? requestContext?.ipAddress,
         userAgent: entry.userAgent ?? requestContext?.userAgent,
       });
