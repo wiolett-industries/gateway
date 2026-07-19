@@ -156,7 +156,7 @@ describe("AdminNodeDetail", () => {
       lastHealthReport: {
         localIpAddresses: ["192.168.1.20"],
         publicIpAddresses: ["8.8.8.8"],
-      } as NodeHealthReport,
+      } as unknown as NodeHealthReport,
       lastStatsReport: null,
       liveHealthReport: null,
       liveStatsReport: null,
@@ -214,7 +214,7 @@ describe("AdminNodeDetail", () => {
       lastHealthReport: {
         localIpAddresses: [],
         publicIpAddresses: ["8.8.8.8"],
-      } as NodeHealthReport,
+      } as unknown as NodeHealthReport,
       lastStatsReport: null,
       liveHealthReport: null,
       liveStatsReport: null,
