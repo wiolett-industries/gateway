@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 import { vi } from "vitest";
 import { confirm } from "@/components/common/ConfirmDialog";
@@ -356,7 +357,8 @@ describe("ProxyHostDetail", () => {
     expect(api.getRenderedProxyConfig).toHaveBeenCalledWith("host-1");
   });
 
-  it("shows maintenance as the primary state with a persistent disable action", async () => {
+  it("shows maintenance as the primary state with a disable action in the overflow menu", async () => {
+    const user = userEvent.setup();
     vi.spyOn(api, "getProxyHost").mockResolvedValue(
       makeProxyHost({ maintenanceEnabled: true, maintenanceStartedAt: new Date().toISOString() })
     );
@@ -369,13 +371,15 @@ describe("ProxyHostDetail", () => {
 
     expect((await screen.findAllByText("Maintenance")).length).toBeGreaterThan(0);
     expect(screen.getByText(/User requests receive HTTP 503/)).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /Disable Maintenance/ }).length).toBeGreaterThan(
-      0
-    );
+    await user.click(screen.getByRole("button", { name: "More proxy host actions" }));
+    expect(
+      await screen.findByRole("menuitem", { name: /Disable Maintenance/ })
+    ).toBeInTheDocument();
     expect(screen.queryByText("Unknown")).not.toBeInTheDocument();
   });
 
   it("uses the standard confirmation before enabling maintenance", async () => {
+    const user = userEvent.setup();
     vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
     vi.mocked(confirm).mockResolvedValue(true);
     const toggle = vi
@@ -388,8 +392,9 @@ describe("ProxyHostDetail", () => {
       extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
     });
 
-    const action = (await screen.findAllByRole("button", { name: /Enable Maintenance/ }))[0]!;
-    fireEvent.click(action);
+    await user.click(await screen.findByRole("button", { name: "More proxy host actions" }));
+    const action = await screen.findByRole("menuitem", { name: /Enable Maintenance/ });
+    await user.click(action);
 
     await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
     expect(confirm).toHaveBeenCalledWith(
@@ -399,5 +404,29 @@ describe("ProxyHostDetail", () => {
       })
     );
     await waitFor(() => expect(toggle).toHaveBeenCalledWith("host-1", true));
+  });
+
+  it("keeps maintenance and delete actions inside the overflow menu", async () => {
+    const user = userEvent.setup();
+    useAuthStore.setState({
+      user: makeUser({ scopes: ["proxy:edit", "proxy:delete"] }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
+
+    renderWithRouter(<ProxyHostDetail />, {
+      path: "/proxy-hosts/:id/:tab",
+      route: "/proxy-hosts/host-1/details",
+      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "More proxy host actions" })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "More proxy host actions" }));
+    expect(await screen.findByRole("menuitem", { name: /Enable Maintenance/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
   });
 });

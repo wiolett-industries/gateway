@@ -57,6 +57,9 @@ describe('canonical Gateway nginx pages', () => {
     const rendered = service().renderMaintenanceForHost(host);
     expect(rendered).toContain('listen 80;');
     expect(rendered).toContain('listen 443 ssl http2;');
+    expect(rendered.match(/server \{/g)).toHaveLength(2);
+    expect(rendered).toContain('ssl_session_timeout 1d;');
+    expect(rendered).toContain('ssl_session_tickets off;');
     expect(rendered).toContain('location /.well-known/acme-challenge/');
     expect(rendered).toContain('return 503');
     expect(rendered).toContain('Cache-Control "no-store" always');
@@ -66,6 +69,21 @@ describe('canonical Gateway nginx pages', () => {
     expect(rendered).not.toContain('limit_req');
     expect(rendered).not.toContain('proxy_cache');
     expect(rendered).not.toContain('X-Advanced');
+  });
+
+  it('does not emit an HTTPS server when TLS is disabled', () => {
+    const rendered = service().renderMaintenanceForHost({
+      ...host,
+      sslEnabled: false,
+      sslForced: false,
+      sslCertPath: null,
+      sslKeyPath: null,
+      sslChainPath: null,
+    });
+
+    expect(rendered).toContain('listen 80;');
+    expect(rendered).not.toContain('listen 443');
+    expect(rendered.match(/server \{/g)).toHaveLength(1);
   });
 
   it('uses the canonical branded body for the built-in 404 template', async () => {

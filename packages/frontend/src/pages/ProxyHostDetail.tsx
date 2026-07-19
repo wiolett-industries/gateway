@@ -1,5 +1,6 @@
 import {
   Code2,
+  EllipsisVertical,
   Info,
   Pencil,
   Pin,
@@ -22,6 +23,13 @@ import { ProxyUpstreamTarget } from "@/components/proxy/ProxyUpstreamTarget";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { HealthBars } from "@/components/ui/health-bars";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -805,21 +813,34 @@ export function ProxyHostDetail({
                 Edit
               </Button>
             )}
-            {canEditProxyHost && (
-              <Button
-                variant={host.maintenanceEnabled ? "default" : "outline"}
-                onClick={handleMaintenance}
-                disabled={isMaintenanceToggling || !maintenanceActionAvailable}
-              >
-                <Wrench className="h-4 w-4" />
-                {host.maintenanceEnabled ? "Disable Maintenance" : "Enable Maintenance"}
-              </Button>
-            )}
-            {!isSystemHost && hasScope("proxy:delete") && (
-              <Button variant="outline" onClick={handleDelete}>
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </Button>
+            {(canEditProxyHost || (!isSystemHost && hasScope("proxy:delete"))) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" aria-label="More proxy host actions">
+                    <EllipsisVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {canEditProxyHost && (
+                    <DropdownMenuItem
+                      onClick={handleMaintenance}
+                      disabled={isMaintenanceToggling || !maintenanceActionAvailable}
+                    >
+                      <Wrench className="mr-2 h-4 w-4" />
+                      {host.maintenanceEnabled ? "Disable Maintenance" : "Enable Maintenance"}
+                    </DropdownMenuItem>
+                  )}
+                  {!isSystemHost && hasScope("proxy:delete") && (
+                    <>
+                      {canEditProxyHost && <DropdownMenuSeparator />}
+                      <DropdownMenuItem onClick={handleDelete} className="text-destructive">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </ResponsiveHeaderActions>
         </div>

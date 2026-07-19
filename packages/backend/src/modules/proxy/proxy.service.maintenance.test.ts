@@ -109,12 +109,19 @@ function setup(
     renderForHost: vi.fn().mockReturnValue('normal config'),
   } as any;
   const auditService = { log: vi.fn().mockResolvedValue(undefined) } as any;
+  const configGenerator = {
+    getCertPaths: vi.fn((certId: string) => ({
+      certPath: `/etc/nginx/certs/${certId}/fullchain.pem`,
+      keyPath: `/etc/nginx/certs/${certId}/privkey.pem`,
+      chainPath: `/etc/nginx/certs/${certId}/chain.pem`,
+    })),
+  } as any;
   const nodeDispatch = {
     resolveNodeId: vi.fn().mockResolvedValue(existing.nodeId),
     applyConfig: vi.fn().mockResolvedValue(applyResult),
   } as any;
-  const service = new ProxyService(db, nginxTemplateService, auditService, {} as any, {} as any, nodeDispatch);
-  return { service, existing, writes, nginxTemplateService, auditService, nodeDispatch };
+  const service = new ProxyService(db, nginxTemplateService, auditService, {} as any, configGenerator, nodeDispatch);
+  return { service, existing, writes, db, nginxTemplateService, auditService, configGenerator, nodeDispatch };
 }
 
 describe('ProxyService maintenance lifecycle', () => {
@@ -157,6 +164,35 @@ describe('ProxyService maintenance lifecycle', () => {
     );
     expect(auditService.log).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: 'proxy_host.maintenance_enter' })
+    );
+  });
+
+  it('keeps HTTPS paths for an already-deployed legacy certificate during maintenance', async () => {
+    const certificateId = '44444444-4444-4444-8444-444444444444';
+    const { service, db, configGenerator, nginxTemplateService } = setup(
+      { success: true },
+      { sslEnabled: true, sslForced: true, sslCertificateId: certificateId }
+    );
+    db.query.sslCertificates.findFirst.mockResolvedValue({
+      id: certificateId,
+      certificatePem: null,
+      privateKeyPem: null,
+      chainPem: null,
+    });
+
+    await service.toggleMaintenance(
+      '11111111-1111-4111-8111-111111111111',
+      true,
+      '33333333-3333-4333-8333-333333333333'
+    );
+
+    expect(configGenerator.getCertPaths).toHaveBeenCalledWith(certificateId);
+    expect(nginxTemplateService.renderMaintenanceForHost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sslEnabled: true,
+        sslCertPath: `/etc/nginx/certs/${certificateId}/fullchain.pem`,
+        sslKeyPath: `/etc/nginx/certs/${certificateId}/privkey.pem`,
+      })
     );
   });
 

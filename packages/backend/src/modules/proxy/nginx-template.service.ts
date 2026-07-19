@@ -265,23 +265,8 @@ server {
 const MAINTENANCE_TEMPLATE = `server {
     listen 80;
     listen [::]:80;
-{{#if sslEnabled}}
-    listen 443 ssl{{#if http2Support}} http2{{/if}};
-    listen [::]:443 ssl{{#if http2Support}} http2{{/if}};
-{{/if}}
     server_name {{serverNames}};
 
-{{#if sslEnabled}}
-    ssl_certificate {{sslCertPath}};
-    ssl_certificate_key {{sslKeyPath}};
-{{#if sslChainPath}}
-    ssl_trusted_certificate {{sslChainPath}};
-{{/if}}
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-
-{{/if}}
     access_log {{logPath}}.access.log;
     error_log {{logPath}}.error.log warn;
 
@@ -296,6 +281,39 @@ const MAINTENANCE_TEMPLATE = `server {
         return 503 ${escapeNginxReturnText(GATEWAY_MAINTENANCE_HTML)};
     }
 }
+{{#if sslEnabled}}
+
+server {
+    listen 443 ssl{{#if http2Support}} http2{{/if}};
+    listen [::]:443 ssl{{#if http2Support}} http2{{/if}};
+    server_name {{serverNames}};
+
+    ssl_certificate {{sslCertPath}};
+    ssl_certificate_key {{sslKeyPath}};
+{{#if sslChainPath}}
+    ssl_trusted_certificate {{sslChainPath}};
+{{/if}}
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    access_log {{logPath}}.access.log;
+    error_log {{logPath}}.error.log warn;
+
+    location /.well-known/acme-challenge/ {
+        alias /var/www/acme-challenge/;
+        auth_basic off;
+    }
+
+    location / {
+        default_type text/html;
+        add_header Cache-Control "no-store" always;
+        return 503 ${escapeNginxReturnText(GATEWAY_MAINTENANCE_HTML)};
+    }
+}
+{{/if}}
 `;
 
 const BUILTIN_TEMPLATES = [

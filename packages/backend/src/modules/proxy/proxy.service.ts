@@ -1294,6 +1294,16 @@ export class ProxyService {
           sslChainPath: sslCert.chainPem ? paths.chainPath : null,
         };
       }
+
+      // Older/imported certificate rows may not retain decryptable PEM data even
+      // though the certificate is already deployed on the Nginx node. Keep the
+      // stable daemon paths so config-only transitions do not silently drop TLS.
+      const paths = this.configGenerator.getCertPaths(host.sslCertificateId);
+      return {
+        sslCertPath: paths.certPath,
+        sslKeyPath: paths.keyPath,
+        sslChainPath: sslCert?.chainPem ? paths.chainPath : null,
+      };
     }
 
     // Internal certificate from PKI certificates table
@@ -1333,6 +1343,13 @@ export class ProxyService {
           sslChainPath: null,
         };
       }
+
+      const paths = this.configGenerator.getCertPaths(`internal-${host.internalCertificateId}`);
+      return {
+        sslCertPath: paths.certPath,
+        sslKeyPath: paths.keyPath,
+        sslChainPath: null,
+      };
     }
 
     return empty;
