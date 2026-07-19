@@ -88,6 +88,7 @@ function seedEnv() {
   process.env.OIDC_CLIENT_ID = 'test';
   process.env.OIDC_CLIENT_SECRET = 'test';
   process.env.OIDC_REDIRECT_URI = 'http://localhost/auth/callback';
+  process.env.APP_URL = 'http://gateway.test';
   process.env.PKI_MASTER_KEY = '0000000000000000000000000000000000000000000000000000000000000000';
 }
 
@@ -97,13 +98,19 @@ describe('OpenAPI documentation', () => {
     const { createApp } = await import('./app.js');
     const { app } = createApp();
 
-    expect((await app.request('/api/openapi.json')).status).toBe(401);
-    expect((await app.request('/docs')).status).toBe(401);
-    expect((await app.request('/api/openapi.json', { headers: { Authorization: 'Bearer gw_empty' } })).status).toBe(
-      403
-    );
+    expect((await app.request('/api/openapi.json', { headers: { host: 'gateway.test' } })).status).toBe(401);
+    expect((await app.request('/docs', { headers: { host: 'gateway.test' } })).status).toBe(401);
+    expect(
+      (
+        await app.request('/api/openapi.json', {
+          headers: { host: 'gateway.test', Authorization: 'Bearer gw_empty' },
+        })
+      ).status
+    ).toBe(403);
 
-    const docsResponse = await app.request('/docs', { headers: { Cookie: 'session_id=test' } });
+    const docsResponse = await app.request('/docs', {
+      headers: { host: 'gateway.test', Cookie: 'session_id=test' },
+    });
     expect(docsResponse.status).toBe(200);
     const docsCsp = docsResponse.headers.get('Content-Security-Policy');
     expect(docsCsp).toContain('https://cdn.jsdelivr.net');
@@ -113,7 +120,9 @@ describe('OpenAPI documentation', () => {
     expect(docsHtml).toContain('/api/openapi.json');
     expect(docsHtml).toContain('https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.62.1');
 
-    const response = await app.request('/api/openapi.json', { headers: { Authorization: 'Bearer gw_test' } });
+    const response = await app.request('/api/openapi.json', {
+      headers: { host: 'gateway.test', Authorization: 'Bearer gw_test' },
+    });
     expect(response.status).toBe(200);
     const openApiCsp = response.headers.get('Content-Security-Policy');
     expect(openApiCsp).toContain("frame-ancestors 'none'");
@@ -156,7 +165,9 @@ describe('OpenAPI documentation', () => {
       message: 'Request validation failed',
     });
 
-    const legacyResponse = await app.request('/openapi.json', { headers: { Authorization: 'Bearer gw_test' } });
+    const legacyResponse = await app.request('/openapi.json', {
+      headers: { host: 'gateway.test', Authorization: 'Bearer gw_test' },
+    });
     expect(legacyResponse.status).toBe(200);
   }, 15_000);
 });

@@ -11,6 +11,7 @@ beforeAll(() => {
   process.env.OIDC_CLIENT_ID ||= 'test';
   process.env.OIDC_CLIENT_SECRET ||= 'test';
   process.env.OIDC_REDIRECT_URI ||= 'http://localhost/auth/callback';
+  process.env.APP_URL = 'http://gateway.test';
   process.env.PKI_MASTER_KEY ||= '0000000000000000000000000000000000000000000000000000000000000000';
 });
 
@@ -24,7 +25,7 @@ describe('/health', () => {
       ping: vi.fn().mockResolvedValue('PONG'),
     } as any);
 
-    const response = await createApp().app.request('/health');
+    const response = await createApp().app.request('/health', { headers: { host: 'gateway.test' } });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
@@ -39,7 +40,7 @@ describe('/health', () => {
       ping: vi.fn().mockRejectedValue(new Error('redis down')),
     } as any);
 
-    const response = await createApp().app.request('/health');
+    const response = await createApp().app.request('/health', { headers: { host: 'gateway.test' } });
 
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({
@@ -49,7 +50,7 @@ describe('/health', () => {
   });
 
   it('returns unavailable when Redis is not registered', async () => {
-    const response = await createApp().app.request('/health');
+    const response = await createApp().app.request('/health', { headers: { host: 'gateway.test' } });
 
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({

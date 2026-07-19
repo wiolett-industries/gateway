@@ -10,6 +10,7 @@ beforeAll(() => {
   process.env.OIDC_CLIENT_ID ||= 'test';
   process.env.OIDC_CLIENT_SECRET ||= 'test';
   process.env.OIDC_REDIRECT_URI ||= 'http://localhost/auth/callback';
+  process.env.APP_URL = 'http://gateway.test';
   process.env.PKI_MASTER_KEY ||= '0000000000000000000000000000000000000000000000000000000000000000';
   process.env.DOCKER_FILE_WRITE_MAX_BODY_BYTES ||= '3000000';
 });
@@ -20,6 +21,7 @@ describe('request body limits', () => {
     const response = await app.request(path, {
       method,
       headers: {
+        host: 'gateway.test',
         'content-type': contentType,
         'content-length': String(Buffer.byteLength(body)),
       },
@@ -35,6 +37,7 @@ describe('request body limits', () => {
     const response = await app.request(path, {
       method,
       headers: {
+        host: 'gateway.test',
         'content-type': 'application/json',
         'content-length': String(Buffer.byteLength(body)),
       },
