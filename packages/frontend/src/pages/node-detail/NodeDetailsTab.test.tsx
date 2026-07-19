@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import type { NodeDetail, NodeHealthReport } from "@/types";
 import { NodeDetailsTab } from "./NodeDetailsTab";
@@ -30,6 +31,7 @@ function createHealthReport(): NodeHealthReport {
     diskWriteBytes: 0,
     networkInterfaces: [],
     localIpAddresses: ["192.168.1.20", "fd00::10"],
+    publicIpAddresses: ["8.8.8.8"],
     nginxRssBytes: 0,
     errorRate4xx: 0,
     errorRate5xx: 0,
@@ -63,7 +65,7 @@ function createNode(): NodeDetail {
 }
 
 describe("NodeDetailsTab", () => {
-  it("shows the last known local IP addresses for an offline node", () => {
+  it("shows the last known public and local IP addresses for an offline node", async () => {
     render(
       <MemoryRouter>
         <NodeDetailsTab
@@ -75,9 +77,9 @@ describe("NodeDetailsTab", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Local IPs")).toBeInTheDocument();
-    expect(screen.getByText("192.168.1.20")).toBeInTheDocument();
-    expect(screen.getByText("fd00::10")).toBeInTheDocument();
+    expect(screen.getByText("IP Addresses")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "View 3 addresses" })).toBeInTheDocument();
+    expect(screen.queryByText("192.168.1.20")).not.toBeInTheDocument();
 
     const identityPanel = screen.getByRole("heading", { name: "Identity" }).closest(".border");
     const systemPanel = screen
@@ -85,7 +87,21 @@ describe("NodeDetailsTab", () => {
       .closest(".border");
     expect(identityPanel).not.toBeNull();
     expect(systemPanel).not.toBeNull();
-    expect(within(identityPanel as HTMLElement).queryByText("Local IPs")).not.toBeInTheDocument();
-    expect(within(systemPanel as HTMLElement).getByText("Local IPs")).toBeInTheDocument();
+    expect(
+      within(identityPanel as HTMLElement).queryByText("IP Addresses")
+    ).not.toBeInTheDocument();
+    expect(within(systemPanel as HTMLElement).getByText("IP Addresses")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "View 3 addresses" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "IP Addresses" })).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("heading", { name: "Public IP Addresses" })
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("8.8.8.8")).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "Local IP Addresses" })).toBeInTheDocument();
+    expect(within(dialog).getByText("192.168.1.20")).toBeInTheDocument();
+    expect(within(dialog).getByText("fd00::10")).toBeInTheDocument();
   });
 });

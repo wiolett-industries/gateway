@@ -57,6 +57,7 @@ export interface NodeHealthReport {
     txErrors: number;
   }>;
   localIpAddresses: string[];
+  publicIpAddresses?: string[];
   // Nginx
   nginxRssBytes: number;
   errorRate4xx: number;

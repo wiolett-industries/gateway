@@ -8,6 +8,7 @@ import { PanelShell } from "@/components/common/PanelShell";
 import { ProxyUpstreamTarget } from "@/components/proxy/ProxyUpstreamTarget";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { isDevForceUpdatesEnabled } from "@/lib/dev-force-updates";
 import { proxyHostRoute } from "@/lib/resource-routes";
 import { formatBytes, formatUptime } from "@/lib/utils";
@@ -35,6 +36,22 @@ function normalizeVersion(version: string | null | undefined): string {
   return (version ?? "").replace(/^v/, "");
 }
 
+function IPAddressPanel({ title, addresses }: { title: string; addresses: string[] }) {
+  return (
+    <PanelShell title={title} bodyClassName="divide-y divide-border">
+      {addresses.length > 0 ? (
+        addresses.map((address) => (
+          <div key={address} className="px-4 py-3 text-sm">
+            {address}
+          </div>
+        ))
+      ) : (
+        <div className="px-4 py-3 text-sm text-muted-foreground">No addresses detected</div>
+      )}
+    </PanelShell>
+  );
+}
+
 export function NodeDetailsTab({
   node,
   daemonUpdate,
@@ -47,6 +64,7 @@ export function NodeDetailsTab({
   const [dockerContainersLoading, setDockerContainersLoading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [pendingUpdateTarget, setPendingUpdateTarget] = useState<string | null>(null);
+  const [ipAddressesOpen, setIpAddressesOpen] = useState(false);
   const h: NodeHealthReport | null = node.liveHealthReport ?? node.lastHealthReport;
   const caps = (node.capabilities ?? {}) as Record<string, unknown>;
   const nodeUpdating = isNodeUpdating(node);
@@ -54,6 +72,8 @@ export function NodeDetailsTab({
     node.status === "online" && node.isConnected && caps.versionMismatch !== true;
   const updateTargetVersion = getNodeUpdateTargetVersion(node);
   const localIpAddresses = Array.from(new Set(h?.localIpAddresses ?? [])).sort();
+  const publicIpAddresses = Array.from(new Set(h?.publicIpAddresses ?? [])).sort();
+  const ipAddressCount = new Set([...localIpAddresses, ...publicIpAddresses]).size;
   const resourcesRef = useRef<HTMLDivElement>(null);
   const [resourcesHeight, setResourcesHeight] = useState(0);
 
@@ -274,18 +294,18 @@ export function NodeDetailsTab({
                 label="File Descriptors"
                 value={`${h.openFileDescriptors.toLocaleString()} / ${h.maxFileDescriptors.toLocaleString()}`}
               />
-              {localIpAddresses.length > 0 && (
-                <DetailRow
-                  label="Local IPs"
-                  value={
-                    <span className="flex flex-col items-end gap-1">
-                      {localIpAddresses.map((address) => (
-                        <span key={address}>{address}</span>
-                      ))}
-                    </span>
-                  }
-                />
-              )}
+              <DetailRow
+                label="IP Addresses"
+                value={
+                  <Button
+                    variant="link"
+                    className="h-auto p-0"
+                    onClick={() => setIpAddressesOpen(true)}
+                  >
+                    View {ipAddressCount} {ipAddressCount === 1 ? "address" : "addresses"}
+                  </Button>
+                }
+              />
             </PanelShell>
           </div>
 
@@ -328,6 +348,18 @@ export function NodeDetailsTab({
           </PanelShell>
         </div>
       )}
+
+      <Dialog open={ipAddressesOpen} onOpenChange={setIpAddressesOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>IP Addresses</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <IPAddressPanel title="Public IP Addresses" addresses={publicIpAddresses} />
+            <IPAddressPanel title="Local IP Addresses" addresses={localIpAddresses} />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Assigned Proxy Hosts — nginx nodes only */}
       {node.type === "nginx" && (

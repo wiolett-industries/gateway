@@ -348,7 +348,7 @@ describe('CommandStream daemon certificate identity', () => {
     );
   });
 
-  it('preserves local IP addresses from daemon health reports', async () => {
+  it('preserves local and public IP addresses from daemon health reports', async () => {
     const db = makeDbNode({ certificateSerial: 'AA:01' });
     const deps = makeDeps(db);
     const stream = makeStream({ serialNumber: 'aa01' });
@@ -361,13 +361,17 @@ describe('CommandStream daemon certificate identity', () => {
         diskMounts: [],
         networkInterfaces: [],
         localIpAddresses: ['10.0.0.8', 'fd00::10'],
+        publicIpAddresses: ['203.0.113.10', '2001:db8::10'],
       },
     });
 
     await vi.waitFor(() => {
       expect(deps.registry.updateHealthReport).toHaveBeenCalledWith(
         nodeId,
-        expect.objectContaining({ localIpAddresses: ['10.0.0.8', 'fd00::10'] })
+        expect.objectContaining({
+          localIpAddresses: ['10.0.0.8', 'fd00::10'],
+          publicIpAddresses: ['203.0.113.10', '2001:db8::10'],
+        })
       );
     });
   });

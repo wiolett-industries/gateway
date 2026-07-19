@@ -27,7 +27,10 @@ import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -141,8 +144,23 @@ export function AdminNodeDetail({
   const nodeOffline = node?.status === "offline";
   const localIpAddresses = useMemo(
     () =>
-      node?.liveHealthReport?.localIpAddresses ?? node?.lastHealthReport?.localIpAddresses ?? [],
+      Array.from(
+        new Set(
+          node?.liveHealthReport?.localIpAddresses ?? node?.lastHealthReport?.localIpAddresses ?? []
+        )
+      ).sort(),
     [node?.lastHealthReport?.localIpAddresses, node?.liveHealthReport?.localIpAddresses]
+  );
+  const publicIpAddresses = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          node?.liveHealthReport?.publicIpAddresses ??
+            node?.lastHealthReport?.publicIpAddresses ??
+            []
+        )
+      ).sort(),
+    [node?.lastHealthReport?.publicIpAddresses, node?.liveHealthReport?.publicIpAddresses]
   );
   const nonInteractiveWhileUpdating =
     nodeUpdating && activeTab !== "details" && activeTab !== "daemon-logs";
@@ -318,7 +336,10 @@ export function AdminNodeDetail({
     if (!node.serviceAddress) {
       setServiceAddressMode("__auto__");
       setCustomServiceAddress("");
-    } else if (localIpAddresses.includes(node.serviceAddress)) {
+    } else if (
+      localIpAddresses.includes(node.serviceAddress) ||
+      publicIpAddresses.includes(node.serviceAddress)
+    ) {
       setServiceAddressMode(node.serviceAddress);
       setCustomServiceAddress("");
     } else {
@@ -823,15 +844,34 @@ export function AdminNodeDetail({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__auto__">
-                      {localIpAddresses[0]
-                        ? `Automatic (${localIpAddresses[0]})`
-                        : "Automatic (no local IP reported)"}
+                      {localIpAddresses[0] || publicIpAddresses[0]
+                        ? `Automatic (${localIpAddresses[0] ?? publicIpAddresses[0]})`
+                        : "Automatic (no IP reported)"}
                     </SelectItem>
-                    {localIpAddresses.map((address) => (
-                      <SelectItem key={address} value={address}>
-                        {address}
-                      </SelectItem>
-                    ))}
+                    {localIpAddresses.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel>Local addresses</SelectLabel>
+                        {localIpAddresses.map((address) => (
+                          <SelectItem key={address} value={address}>
+                            {address}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {publicIpAddresses.length > 0 && (
+                      <>
+                        <SelectSeparator />
+                        <SelectGroup>
+                          <SelectLabel>Detected public addresses</SelectLabel>
+                          {publicIpAddresses.map((address) => (
+                            <SelectItem key={address} value={address}>
+                              {address}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </>
+                    )}
+                    <SelectSeparator />
                     <SelectItem value="__custom__">Custom address</SelectItem>
                   </SelectContent>
                 </Select>

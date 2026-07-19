@@ -20,6 +20,15 @@ describe('node service address', () => {
     ).toBe('192.168.1.20');
   });
 
+  it('falls back to the first reported public address when no local address exists', () => {
+    expect(
+      getEffectiveNodeServiceAddress({
+        serviceAddress: null,
+        lastHealthReport: { localIpAddresses: [], publicIpAddresses: ['8.8.8.8'] } as never,
+      })
+    ).toBe('8.8.8.8');
+  });
+
   it('accepts IP addresses and hostnames but rejects URLs', () => {
     expect(isValidNodeServiceAddress('10.0.0.8')).toBe(true);
     expect(isValidNodeServiceAddress('fd00::10')).toBe(true);

@@ -3,9 +3,11 @@ package sysmetrics
 import (
 	"bufio"
 	"net"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 
 	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
 )
@@ -65,18 +67,19 @@ func GetNetworkInterfaces() []*pb.NetworkInterface {
 	return ifaces
 }
 
-// GetLocalIPAddresses returns the usable addresses assigned to active,
-// non-loopback interfaces. CIDR prefixes are intentionally omitted because
-// the Gateway displays these as node identities rather than route definitions.
-func GetLocalIPAddresses() []string {
+// GetInterfaceIPAddresses returns usable addresses assigned to active,
+// non-loopback host interfaces, split into local and publicly routable groups.
+// CIDR prefixes are intentionally omitted because Gateway displays these as
+// node identities rather than route definitions.
+func GetInterfaceIPAddresses() (local []string, public []string) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 
 	var addresses []net.Addr
 	for _, iface := range interfaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 || !isLocalAddressInterface(iface.Name) {
 			continue
 		}
 		interfaceAddresses, err := iface.Addrs()
@@ -86,7 +89,48 @@ func GetLocalIPAddresses() []string {
 		addresses = append(addresses, interfaceAddresses...)
 	}
 
-	return normalizeLocalIPAddresses(addresses)
+	return classifyInterfaceIPAddresses(normalizeLocalIPAddresses(addresses))
+}
+
+// isLocalAddressInterface excludes container-runtime interfaces whose
+// addresses identify an internal container network rather than the host.
+// Conventional host bridges such as br0 and vmbr0 remain eligible.
+func isLocalAddressInterface(name string) bool {
+	lowerName := strings.ToLower(name)
+	if lowerName == "docker0" || lowerName == "docker_gwbridge" || lowerName == "cni0" || lowerName == "podman0" {
+		return false
+	}
+
+	for _, prefix := range []string{
+		"veth",
+		"cali",
+		"flannel.",
+		"kube-",
+		"weave",
+		"virbr",
+		"lxcbr",
+		"lxdbr",
+	} {
+		if strings.HasPrefix(lowerName, prefix) {
+			return false
+		}
+	}
+
+	return !isDockerBridgeName(lowerName)
+}
+
+func isDockerBridgeName(name string) bool {
+	const prefix = "br-"
+	const networkIDLength = 12
+	if !strings.HasPrefix(name, prefix) || len(name) != len(prefix)+networkIDLength {
+		return false
+	}
+	for _, char := range name[len(prefix):] {
+		if !unicode.Is(unicode.ASCII_Hex_Digit, char) {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeLocalIPAddresses(addresses []net.Addr) []string {
@@ -108,7 +152,7 @@ func normalizeLocalIPAddresses(addresses []net.Addr) []string {
 			}
 		}
 
-		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+		if ip == nil || !ip.IsGlobalUnicast() || ip.IsLinkLocalUnicast() {
 			continue
 		}
 		normalized := ip.String()
@@ -119,4 +163,19 @@ func normalizeLocalIPAddresses(addresses []net.Addr) []string {
 		result = append(result, normalized)
 	}
 	return result
+}
+
+func classifyInterfaceIPAddresses(addresses []string) (local []string, public []string) {
+	for _, value := range addresses {
+		address, err := netip.ParseAddr(value)
+		if err != nil {
+			continue
+		}
+		if isPublicIPAddress(address.Unmap()) {
+			public = append(public, address.Unmap().String())
+		} else {
+			local = append(local, address.Unmap().String())
+		}
+	}
+	return local, public
 }

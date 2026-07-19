@@ -1,6 +1,7 @@
 package sysmetrics
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -13,11 +14,16 @@ type SystemReporter struct {
 	mu       sync.Mutex
 	cpuState CPUState
 	diskIO   DiskIOState
+	publicIP *PublicIPDetector
 }
 
 // NewSystemReporter creates a new SystemReporter.
 func NewSystemReporter() *SystemReporter {
-	return &SystemReporter{}
+	return &SystemReporter{publicIP: NewPublicIPDetector()}
+}
+
+func (r *SystemReporter) RunPublicIPDiscovery(ctx context.Context) {
+	r.publicIP.Run(ctx)
 }
 
 // CollectSystemHealth populates system-level fields in a HealthReport.
@@ -70,7 +76,9 @@ func (r *SystemReporter) CollectSystemHealth(report *pb.HealthReport) *pb.Health
 
 	// Network interfaces
 	report.NetworkInterfaces = GetNetworkInterfaces()
-	report.LocalIpAddresses = GetLocalIPAddresses()
+	localIPAddresses, publicInterfaceIPAddresses := GetInterfaceIPAddresses()
+	report.LocalIpAddresses = localIPAddresses
+	report.PublicIpAddresses = mergePublicIPAddresses(publicInterfaceIPAddresses, r.publicIP.Addresses())
 
 	return report
 }

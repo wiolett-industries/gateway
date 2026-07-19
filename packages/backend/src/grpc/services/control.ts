@@ -424,6 +424,9 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                 localIpAddresses: (msg.healthReport.localIpAddresses ?? []).filter(
                   (address: unknown): address is string => typeof address === 'string' && address.length > 0
                 ),
+                publicIpAddresses: (msg.healthReport.publicIpAddresses ?? []).filter(
+                  (address: unknown): address is string => typeof address === 'string' && address.length > 0
+                ),
                 nginxRssBytes: Number(msg.healthReport.nginxRssBytes ?? 0),
                 errorRate4xx: (msg.healthReport as any).errorRate_4xx ?? msg.healthReport.errorRate4xx ?? 0,
                 errorRate5xx: (msg.healthReport as any).errorRate_5xx ?? msg.healthReport.errorRate5xx ?? 0,

@@ -5,6 +5,7 @@ import { vi } from "vitest";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { makeNode, makeUser } from "@/test/fixtures";
+import type { NodeHealthReport } from "@/types";
 import { AdminNodeDetail } from "./AdminNodeDetail";
 
 vi.mock("sonner", () => ({
@@ -152,7 +153,10 @@ describe("AdminNodeDetail", () => {
     });
     vi.mocked(api.getNode).mockResolvedValue({
       ...makeNode({ id: "node-1", type: "docker", hostname: "docker-1", displayName: "Docker 1" }),
-      lastHealthReport: null,
+      lastHealthReport: {
+        localIpAddresses: ["192.168.1.20"],
+        publicIpAddresses: ["8.8.8.8"],
+      } as NodeHealthReport,
       lastStatsReport: null,
       liveHealthReport: null,
       liveStatsReport: null,
@@ -184,14 +188,50 @@ describe("AdminNodeDetail", () => {
     await user.clear(displayNameInput);
     await user.type(displayNameInput, "Docker Blue");
     await user.click(screen.getByRole("button", { name: "Blue color" }));
+    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByText("8.8.8.8"));
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() =>
       expect(api.updateNode).toHaveBeenCalledWith("node-1", {
         displayName: "Docker Blue",
         appearanceColor: "blue",
-        serviceAddress: null,
+        serviceAddress: "8.8.8.8",
       })
     );
+  });
+
+  it("shows the public address as the automatic fallback when no local address exists", async () => {
+    useAuthStore.setState({
+      user: makeUser({
+        scopes: ["nodes:details", "nodes:rename:node-1", "docker:containers:config:node-1"],
+      }),
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    vi.mocked(api.getNode).mockResolvedValue({
+      ...makeNode({ id: "node-1", type: "docker", hostname: "docker-1" }),
+      lastHealthReport: {
+        localIpAddresses: [],
+        publicIpAddresses: ["8.8.8.8"],
+      } as NodeHealthReport,
+      lastStatsReport: null,
+      liveHealthReport: null,
+      liveStatsReport: null,
+    });
+    vi.mocked(api.getNodeHealthHistory).mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/nodes/node-1/details"]}>
+        <Routes>
+          <Route path="/nodes/:id/:tab?" element={<AdminNodeDetail />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("heading", { name: "Edge 1" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+
+    expect(screen.getByRole("combobox")).toHaveTextContent("Automatic (8.8.8.8)");
   });
 });

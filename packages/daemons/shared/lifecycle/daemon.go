@@ -72,6 +72,7 @@ func (d *DaemonBase) Run(ctx context.Context) error {
 
 	// Step 3: Start background cert renewal
 	go runCertRenewal(ctx, d)
+	go d.sysReporter.RunPublicIPDiscovery(ctx)
 
 	// Step 4: Connect and run (with reconnection loop)
 	for {
