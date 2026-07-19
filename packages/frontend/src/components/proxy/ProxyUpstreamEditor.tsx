@@ -330,6 +330,7 @@ export function ProxyUpstreamFields({
               value={selectedTargetKey(value)}
               options={resourceOptions}
               onValueChange={chooseTarget}
+              contentClassName="right-0 left-auto max-h-64"
               placeholder="Select a resource..."
               searchPlaceholder={
                 value.kind === "docker_deployment"
@@ -491,6 +492,7 @@ export function ProxyUpstreamPanel({
     <PanelShell
       title="Upstream"
       description="Route traffic manually or to a Docker resource"
+      className="overflow-visible"
       actions={
         canManage ? (
           <Button
