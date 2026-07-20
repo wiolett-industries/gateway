@@ -403,7 +403,7 @@ export function DockerImages({
       {
         id: "size",
         label: "Size",
-        width: "5.25rem",
+        width: "6.25rem",
         renderCell: (img) => {
           const size = img.size ?? 0;
           return (
