@@ -262,58 +262,14 @@ server {
 {{/if}}
 `;
 
-const MAINTENANCE_TEMPLATE = `server {
-    listen 80;
-    listen [::]:80;
-    server_name {{serverNames}};
-
-    access_log {{logPath}}.access.log;
-    error_log {{logPath}}.error.log warn;
-
-    location /.well-known/acme-challenge/ {
-        alias /var/www/acme-challenge/;
-        auth_basic off;
-    }
-
-    location / {
-        default_type text/html;
-        add_header Cache-Control "no-store" always;
+const MAINTENANCE_SERVER_GUARD = `
+    # Gateway maintenance mode. Server-rewrite directives run before location
+    # selection, so upstream/access/cache/rewrite behavior is never reached.
+    default_type text/html;
+    add_header Cache-Control "no-store" always;
+    if ($uri !~ ^/\\.well-known/acme-challenge/) {
         return 503 ${escapeNginxReturnText(GATEWAY_MAINTENANCE_HTML)};
     }
-}
-{{#if sslEnabled}}
-
-server {
-    listen 443 ssl{{#if http2Support}} http2{{/if}};
-    listen [::]:443 ssl{{#if http2Support}} http2{{/if}};
-    server_name {{serverNames}};
-
-    ssl_certificate {{sslCertPath}};
-    ssl_certificate_key {{sslKeyPath}};
-{{#if sslChainPath}}
-    ssl_trusted_certificate {{sslChainPath}};
-{{/if}}
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-    ssl_session_timeout 1d;
-    ssl_session_tickets off;
-
-    access_log {{logPath}}.access.log;
-    error_log {{logPath}}.error.log warn;
-
-    location /.well-known/acme-challenge/ {
-        alias /var/www/acme-challenge/;
-        auth_basic off;
-    }
-
-    location / {
-        default_type text/html;
-        add_header Cache-Control "no-store" always;
-        return 503 ${escapeNginxReturnText(GATEWAY_MAINTENANCE_HTML)};
-    }
-}
-{{/if}}
 `;
 
 const BUILTIN_TEMPLATES = [
@@ -583,8 +539,18 @@ export class NginxTemplateService {
     return this.renderTemplate(content, host);
   }
 
-  renderMaintenanceForHost(host: ProxyHostConfig): string {
-    return this.renderTemplate(MAINTENANCE_TEMPLATE, host);
+  applyMaintenanceGuard(renderedConfig: string): string {
+    let serverCount = 0;
+    const guarded = renderedConfig.replace(/^[\t ]*server[\t ]*\{/gm, (match) => {
+      serverCount += 1;
+      return `${match}${MAINTENANCE_SERVER_GUARD}`;
+    });
+
+    if (serverCount === 0) {
+      throw new AppError(500, 'MAINTENANCE_CONFIG_INVALID', 'Rendered proxy config has no server block');
+    }
+
+    return guarded;
   }
 
   previewWithSampleData(content: string): string {

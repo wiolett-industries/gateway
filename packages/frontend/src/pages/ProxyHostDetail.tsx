@@ -725,7 +725,7 @@ export function ProxyHostDetail({
       >
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <PageBackButton onClick={() => navigate("/proxy-hosts")} />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">

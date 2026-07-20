@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { nodeRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import type { ProxyHost } from "@/types";
-import { effectiveHealthStatus, HEALTH_BADGE, HEALTH_LABEL } from "./helpers";
 
 const HEALTH_BODY_MATCH_LABEL: Record<ProxyHost["healthCheckBodyMatchMode"], string> = {
   includes: "Includes",
@@ -117,12 +116,6 @@ export function DetailsTab({ host }: { host: ProxyHost }) {
         {host.healthCheckEnabled && (
           <PanelShell
             title="Health Check"
-            actions={(() => {
-              const eff = effectiveHealthStatus(host);
-              return (
-                <Badge variant={HEALTH_BADGE[eff] ?? "secondary"}>{HEALTH_LABEL[eff] ?? eff}</Badge>
-              );
-            })()}
             bodyClassName="divide-y divide-border -mb-px [&>*:last-child]:border-b [&>*:last-child]:border-border"
           >
             <DetailRow label="URL Path" value={host.healthCheckUrl || "/"} />

@@ -105,8 +105,8 @@ function setup(
     })),
   } as any;
   const nginxTemplateService = {
-    renderMaintenanceForHost: vi.fn().mockReturnValue('maintenance config'),
     renderForHost: vi.fn().mockReturnValue('normal config'),
+    applyMaintenanceGuard: vi.fn().mockReturnValue('maintenance config'),
   } as any;
   const auditService = { log: vi.fn().mockResolvedValue(undefined) } as any;
   const configGenerator = {
@@ -134,7 +134,8 @@ describe('ProxyService maintenance lifecycle', () => {
     );
 
     expect(result.maintenanceEnabled).toBe(true);
-    expect(nginxTemplateService.renderMaintenanceForHost).toHaveBeenCalledOnce();
+    expect(nginxTemplateService.renderForHost).toHaveBeenCalledOnce();
+    expect(nginxTemplateService.applyMaintenanceGuard).toHaveBeenCalledWith('normal config');
     expect(nodeDispatch.applyConfig).toHaveBeenCalledWith(
       '22222222-2222-4222-8222-222222222222',
       '11111111-1111-4111-8111-111111111111',
@@ -155,7 +156,7 @@ describe('ProxyService maintenance lifecycle', () => {
 
     expect(writes).toHaveLength(2);
     expect(writes[1]).toMatchObject({ maintenanceEnabled: false, maintenanceStartedAt: null, healthStatus: 'online' });
-    expect(nginxTemplateService.renderForHost).toHaveBeenCalledOnce();
+    expect(nginxTemplateService.renderForHost).toHaveBeenCalledTimes(2);
     expect(nodeDispatch.applyConfig).toHaveBeenNthCalledWith(
       2,
       '22222222-2222-4222-8222-222222222222',
@@ -187,13 +188,15 @@ describe('ProxyService maintenance lifecycle', () => {
     );
 
     expect(configGenerator.getCertPaths).toHaveBeenCalledWith(certificateId);
-    expect(nginxTemplateService.renderMaintenanceForHost).toHaveBeenCalledWith(
+    expect(nginxTemplateService.renderForHost).toHaveBeenCalledWith(
       expect.objectContaining({
         sslEnabled: true,
         sslCertPath: `/etc/nginx/certs/${certificateId}/fullchain.pem`,
         sslKeyPath: `/etc/nginx/certs/${certificateId}/privkey.pem`,
-      })
+      }),
+      null
     );
+    expect(nginxTemplateService.applyMaintenanceGuard).toHaveBeenCalledWith('normal config');
   });
 
   it('rejects maintenance for disabled or unmanaged proxy hosts', async () => {

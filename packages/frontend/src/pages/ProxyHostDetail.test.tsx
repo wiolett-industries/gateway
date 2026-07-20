@@ -357,6 +357,20 @@ describe("ProxyHostDetail", () => {
     expect(api.getRenderedProxyConfig).toHaveBeenCalledWith("host-1");
   });
 
+  it("vertically centers the shared back button in the detail header", async () => {
+    vi.spyOn(api, "getProxyHost").mockResolvedValue(makeProxyHost());
+
+    renderWithRouter(<ProxyHostDetail />, {
+      path: "/proxy-hosts/:id/:tab",
+      route: "/proxy-hosts/host-1/details",
+      extraRoutes: <Route path="/proxy-hosts" element={<div>Proxy Hosts</div>} />,
+    });
+
+    const backButton = await screen.findByRole("button", { name: "Back" });
+    expect(backButton.parentElement).toHaveClass("items-center");
+    expect(backButton.parentElement).not.toHaveClass("items-start");
+  });
+
   it("shows maintenance as the primary state with a disable action in the overflow menu", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "getProxyHost").mockResolvedValue(

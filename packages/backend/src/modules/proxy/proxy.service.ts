@@ -1412,13 +1412,10 @@ export class ProxyService {
       templateVariables: (host.templateVariables ?? {}) as Record<string, string | number | boolean>,
     };
 
-    if (host.maintenanceEnabled) {
-      return this.nginxTemplateService.renderMaintenanceForHost(config);
-    }
-
     // Raw config mode — bypass template rendering entirely
     if (host.rawConfigEnabled && host.rawConfig) return host.rawConfig;
 
-    return this.nginxTemplateService.renderForHost(config, host.nginxTemplateId ?? null);
+    const rendered = await this.nginxTemplateService.renderForHost(config, host.nginxTemplateId ?? null);
+    return host.maintenanceEnabled ? this.nginxTemplateService.applyMaintenanceGuard(rendered) : rendered;
   }
 }

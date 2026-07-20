@@ -53,37 +53,47 @@ describe('canonical Gateway nginx pages', () => {
     }
   });
 
-  it('renders maintenance with TLS and ACME but no upstream behavior', () => {
-    const rendered = service().renderMaintenanceForHost(host);
+  it('injects maintenance before location handling without rebuilding the TLS vhost', async () => {
+    const templateService = service();
+    const normalConfig = await templateService.renderForHost(host, null);
+    const rendered = templateService.applyMaintenanceGuard(normalConfig);
+
     expect(rendered).toContain('listen 80;');
     expect(rendered).toContain('listen 443 ssl http2;');
     expect(rendered.match(/server \{/g)).toHaveLength(2);
+    expect(rendered.match(/# Gateway maintenance mode/g)).toHaveLength(2);
     expect(rendered).toContain('ssl_session_timeout 1d;');
     expect(rendered).toContain('ssl_session_tickets off;');
+    expect(rendered).toContain('ssl_certificate /etc/nginx/certs/example.crt;');
+    expect(rendered).toContain('ssl_certificate_key /etc/nginx/certs/example.key;');
     expect(rendered).toContain('location /.well-known/acme-challenge/');
+    expect(rendered).toContain('if ($uri !~ ^/\\.well-known/acme-challenge/)');
     expect(rendered).toContain('return 503');
     expect(rendered).toContain('Cache-Control "no-store" always');
     expect(rendered).toContain(GATEWAY_MAINTENANCE_HTML);
-    expect(rendered).not.toContain('proxy_pass');
-    expect(rendered).not.toContain('auth_basic "Restricted Access"');
-    expect(rendered).not.toContain('limit_req');
-    expect(rendered).not.toContain('proxy_cache');
-    expect(rendered).not.toContain('X-Advanced');
+    expect(rendered).toContain('proxy_pass http://10.0.0.2:8080;');
+    expect(rendered).toContain('X-Advanced');
+    expect(rendered.indexOf('# Gateway maintenance mode')).toBeLessThan(rendered.indexOf('location /'));
   });
 
-  it('does not emit an HTTPS server when TLS is disabled', () => {
-    const rendered = service().renderMaintenanceForHost({
-      ...host,
-      sslEnabled: false,
-      sslForced: false,
-      sslCertPath: null,
-      sslKeyPath: null,
-      sslChainPath: null,
-    });
+  it('preserves custom listen and certificate directives byte-for-byte', () => {
+    const original = `server {
+    listen 7443 ssl;
+    ssl_certificate /custom/live/fullchain.pem;
+    ssl_certificate_key /custom/live/privkey.pem;
+    location / { proxy_pass https://upstream; }
+}`;
+    const rendered = service().applyMaintenanceGuard(original);
 
-    expect(rendered).toContain('listen 80;');
-    expect(rendered).not.toContain('listen 443');
-    expect(rendered.match(/server \{/g)).toHaveLength(1);
+    expect(rendered).toContain('listen 7443 ssl;');
+    expect(rendered).toContain('ssl_certificate /custom/live/fullchain.pem;');
+    expect(rendered).toContain('ssl_certificate_key /custom/live/privkey.pem;');
+  });
+
+  it('rejects maintenance injection when a rendered config has no server block', () => {
+    expect(() => service().applyMaintenanceGuard('upstream backend { server 10.0.0.2:8080; }')).toThrow(
+      'Rendered proxy config has no server block'
+    );
   });
 
   it('uses the canonical branded body for the built-in 404 template', async () => {
