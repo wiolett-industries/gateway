@@ -370,8 +370,14 @@ const columns: DataTableColumn<AuditLogEntry>[] = [
     key: "ip",
     header: "IP Address",
     width: "minmax(160px, 0.75fr)",
+    truncate: true,
     render: (entry) => (
-      <span className="font-mono text-xs text-muted-foreground">{entry.ipAddress || "—"}</span>
+      <span
+        className="font-mono text-xs text-muted-foreground"
+        title={entry.ipAddress ?? undefined}
+      >
+        {entry.ipAddress || "—"}
+      </span>
     ),
   },
   {
