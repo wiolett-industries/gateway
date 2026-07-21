@@ -446,9 +446,9 @@ export function SettingsTab({
               <Select
                 value={host.sslCertificateId || "__none__"}
                 onValueChange={(v) => onSslCertificateChange(v === "__none__" ? "" : v)}
-                disabled={!canManage || !host.sslEnabled}
+                disabled={!canManage}
               >
-                <SelectTrigger>
+                <SelectTrigger aria-label="SSL Certificate">
                   <SelectValue placeholder="Select certificate..." />
                 </SelectTrigger>
                 <SelectContent>
