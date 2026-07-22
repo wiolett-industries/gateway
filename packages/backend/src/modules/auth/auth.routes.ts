@@ -195,6 +195,8 @@ authRoutes.openapi(currentUserRoute, async (c) => {
     avatarUrl: user.avatarUrl,
     groupId: user.groupId,
     groupName: user.groupName,
+    groupScopes: user.groupScopes ?? [],
+    additionalScopes: user.additionalScopes ?? [],
     scopes: effectiveScopes,
     isBlocked: user.isBlocked,
     aiApprovalMode: user.aiApprovalMode ?? 'normal',

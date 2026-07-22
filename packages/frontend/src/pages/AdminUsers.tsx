@@ -1,7 +1,8 @@
-import { Ban, FolderPlus, Lock, Plus, Trash2, Unlock } from "lucide-react";
+import { Ban, FolderPlus, Lock, Plus, ShieldPlus, Trash2, Unlock } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { UserAdditionalPermissionsDialog } from "@/components/admin/UserAdditionalPermissionsDialog";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { FolderedResourceList } from "@/components/common/FolderedResourceList";
@@ -29,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useRealtime } from "@/hooks/use-realtime";
+import { scopeMatches } from "@/lib/scope-utils";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import type { PermissionGroup, User } from "@/types";
@@ -44,6 +46,10 @@ function getInitials(name: string | null, email: string): string {
       .toUpperCase();
   }
   return email[0].toUpperCase();
+}
+
+function isScopeSubset(requestedScopes: string[], availableScopes: string[]): boolean {
+  return requestedScopes.every((scope) => scopeMatches(availableScopes, scope));
 }
 
 export function AdminUsers({
@@ -68,6 +74,7 @@ export function AdminUsers({
   const [createName, setCreateName] = useState("");
   const [createGroupId, setCreateGroupId] = useState("");
   const [createFolderAction, setCreateFolderAction] = useState<(() => void) | null>(null);
+  const [permissionsUser, setPermissionsUser] = useState<User | null>(null);
   const [search, setSearch] = useState("");
   const lastCreateRequest = useRef(createRequest);
 
@@ -134,9 +141,18 @@ export function AdminUsers({
     return loadUsers();
   }, [loadUsers]);
 
-  const handleGroupChange = async (userId: string, groupId: string) => {
+  const handleGroupChange = async (user: User, groupId: string) => {
+    const additionalCount = user.additionalScopes?.length ?? 0;
+    if (additionalCount > 0) {
+      const proceed = await confirm({
+        title: "Change Permission Group",
+        description: `${user.name || user.email} will retain ${additionalCount} additional permission${additionalCount === 1 ? "" : "s"}.`,
+        confirmLabel: "Change Group",
+      });
+      if (!proceed) return;
+    }
     try {
-      await api.updateUserGroup(userId, groupId);
+      await api.updateUserGroup(user.id, groupId);
       toast.success("Group updated");
       reloadUsers();
     } catch (err) {
@@ -255,6 +271,11 @@ export function AdminUsers({
                     Blocked
                   </Badge>
                 )}
+                {(user.additionalScopes?.length ?? 0) > 0 && (
+                  <Badge variant="outline" className="shrink-0">
+                    +{user.additionalScopes!.length} additional
+                  </Badge>
+                )}
               </div>
               <p className="truncate text-xs text-muted-foreground">{user.email}</p>
             </div>
@@ -277,7 +298,7 @@ export function AdminUsers({
             onClick={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            <Select value={user.groupId} onValueChange={(v) => handleGroupChange(user.id, v)}>
+            <Select value={user.groupId} onValueChange={(v) => handleGroupChange(user, v)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -296,19 +317,30 @@ export function AdminUsers({
     {
       id: "actions",
       label: "Actions",
-      width: "6rem",
+      width: "8.5rem",
       align: "right",
       renderCell: (user) => {
         const isSelf = currentUser?.id === user.id;
         const isSystemUser = user.oidcSubject?.startsWith("system:");
         const isReadOnly = isSelf || isSystemUser;
         if (isReadOnly) return null;
+        const canManagePermissions = isScopeSubset(user.scopes, currentUser?.scopes ?? []);
         return (
           <div
             className="flex items-center justify-end gap-1"
             onClick={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
           >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-primary"
+              onClick={() => setPermissionsUser(user)}
+              title="Additional permissions"
+              disabled={!canManagePermissions}
+            >
+              <ShieldPlus className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -491,6 +523,20 @@ export function AdminUsers({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <UserAdditionalPermissionsDialog
+        open={permissionsUser !== null}
+        user={permissionsUser}
+        onOpenChange={(open) => {
+          if (!open) setPermissionsUser(null);
+        }}
+        onSaved={(updatedUser) => {
+          setUsers((current) =>
+            current.map((user) => (user.id === updatedUser.id ? updatedUser : user))
+          );
+          void reloadUsers();
+        }}
+      />
     </div>
   );
 

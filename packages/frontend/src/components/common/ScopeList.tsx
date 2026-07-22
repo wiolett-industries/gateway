@@ -173,6 +173,7 @@ export function ScopeList({
             key={scope.value}
             scope={scope}
             isSelected={selected.includes(scope.value) || inheritedBaseSet.has(scope.value)}
+            isOwnSelected={selected.includes(scope.value)}
             onToggle={onToggle}
             muted={false}
             disabled={readOnly}
@@ -196,6 +197,7 @@ export function ScopeList({
             key={scope.value}
             scope={scope}
             isSelected={selected.includes(scope.value) || inheritedBaseSet.has(scope.value)}
+            isOwnSelected={selected.includes(scope.value)}
             onToggle={onToggle}
             muted
             disabled={readOnly}
@@ -235,6 +237,7 @@ export function ScopeList({
                 key={scope.value}
                 scope={scope}
                 isSelected={selected.includes(scope.value) || inheritedBaseSet.has(scope.value)}
+                isOwnSelected={selected.includes(scope.value)}
                 onToggle={onToggle}
                 muted={false}
                 disabled={readOnly}
@@ -262,6 +265,7 @@ export function ScopeList({
 function ScopeRow({
   scope,
   isSelected,
+  isOwnSelected,
   onToggle,
   muted,
   disabled,
@@ -280,6 +284,7 @@ function ScopeRow({
 }: {
   scope: ScopeItem;
   isSelected: boolean;
+  isOwnSelected: boolean;
   onToggle: (scope: string) => void;
   muted: boolean;
   disabled?: boolean;
@@ -323,7 +328,7 @@ function ScopeRow({
     resourceOptions.length > 0 &&
     (isSelected || combinedSelectedIds.length > 0) &&
     (!disabled || combinedSelectedIds.length > 0);
-  const baseLocked = !!inheritedExactBase || inheritedSelectedIds.length > 0;
+  const baseLocked = (!!inheritedExactBase || inheritedSelectedIds.length > 0) && !isOwnSelected;
   const rowDisabled = disabled || baseLocked;
 
   return (

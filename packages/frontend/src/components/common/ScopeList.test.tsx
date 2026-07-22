@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Node } from "@/types";
 import { ScopeList } from "./ScopeList";
@@ -67,5 +67,33 @@ describe("ScopeList", () => {
 
     expect(screen.getByText("Docker Node")).toBeInTheDocument();
     expect(screen.getByText("Nginx Node")).toBeInTheDocument();
+  });
+
+  it("allows removing an additional broad scope even when the group grants resource-scoped access", () => {
+    const onToggle = vi.fn();
+    render(
+      <ScopeList
+        scopes={[
+          {
+            value: "nodes:console",
+            label: "Node Console",
+            desc: "Open node consoles",
+            group: "Nodes",
+          },
+        ]}
+        search=""
+        selected={["nodes:console"]}
+        onToggle={onToggle}
+        inheritedScopes={["nodes:console:nginx-node"]}
+        inheritedFromName="viewer"
+        nodes={nodes}
+        restrictableScopes={["nodes:console"]}
+      />
+    );
+
+    const baseCheckbox = screen.getAllByRole("checkbox")[0]!;
+    expect(baseCheckbox).toBeEnabled();
+    fireEvent.click(baseCheckbox);
+    expect(onToggle).toHaveBeenCalledWith("nodes:console");
   });
 });

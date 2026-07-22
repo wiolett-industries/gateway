@@ -5,6 +5,7 @@ import { container, TOKENS } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import { errorHandler } from '@/middleware/error-handler.js';
 import { AuditService } from '@/modules/audit/audit.service.js';
+import { AuthService } from '@/modules/auth/auth.service.js';
 import { AuthSettingsService } from '@/modules/auth/auth.settings.service.js';
 import { GroupService } from '@/modules/groups/group.service.js';
 import { McpSettingsService } from '@/modules/mcp/mcp-settings.service.js';
@@ -60,6 +61,7 @@ function registerSession(scopes: string[]) {
           name: USER.name,
           avatarUrl: USER.avatarUrl,
           groupId: USER.groupId,
+          additionalScopes: [],
           isBlocked: USER.isBlocked,
         }),
       },
@@ -320,5 +322,70 @@ describe('admin Gateway settings route permissions', () => {
     expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ oauthExtendedCallbackCompatibility: true }));
     expect(body.oauthExtendedCallbackCompatibility).toBe(true);
     expect(body.oidcRequireVerifiedEmail).toBe(true);
+  });
+});
+
+describe('admin user additional permissions', () => {
+  it('updates exact additional scopes and records the effective permission change', async () => {
+    registerSession(['admin:users', 'nodes:details:node-1', 'nodes:console:node-1']);
+    const targetUser: User = {
+      ...USER,
+      id: '22222222-2222-4222-8222-222222222222',
+      oidcSubject: 'target-user',
+      email: 'target@example.com',
+      groupName: 'viewer',
+      groupScopes: ['nodes:details:node-1'],
+      additionalScopes: [],
+      scopes: ['nodes:details:node-1'],
+    };
+    const updatedUser: User = {
+      ...targetUser,
+      additionalScopes: ['nodes:console:node-1'],
+      scopes: ['nodes:console:node-1', 'nodes:details:node-1'],
+    };
+    const assertCanUpdateUserAdditionalScopes = vi.fn().mockResolvedValue({
+      targetUser,
+      additionalScopes: ['nodes:console:node-1'],
+    });
+    const updateUserAdditionalScopes = vi.fn().mockResolvedValue(updatedUser);
+    const auditLog = vi.fn().mockResolvedValue(undefined);
+    container.registerInstance(AuthService, {
+      assertCanUpdateUserAdditionalScopes,
+      updateUserAdditionalScopes,
+    } as unknown as AuthService);
+    container.registerInstance(AuditService, { log: auditLog } as unknown as AuditService);
+
+    const response = await createApp().request(
+      '/api/admin/users/22222222-2222-4222-8222-222222222222/additional-permissions',
+      {
+        method: 'PUT',
+        headers: sessionHeaders(),
+        body: JSON.stringify({ additionalScopes: ['nodes:console:node-1'] }),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      id: targetUser.id,
+      additionalScopes: ['nodes:console:node-1'],
+    });
+    expect(assertCanUpdateUserAdditionalScopes).toHaveBeenCalledWith(
+      USER.id,
+      ['admin:users', 'nodes:console:node-1', 'nodes:details:node-1'],
+      targetUser.id,
+      ['nodes:console:node-1']
+    );
+    expect(updateUserAdditionalScopes).toHaveBeenCalledWith(targetUser.id, ['nodes:console:node-1']);
+    expect(auditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'user.additional_permissions_change',
+        resourceType: 'user',
+        resourceId: targetUser.id,
+        details: expect.objectContaining({
+          addedScopes: ['nodes:console:node-1'],
+          removedScopes: [],
+        }),
+      })
+    );
   });
 });

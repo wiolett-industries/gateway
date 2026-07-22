@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "additional_scopes" jsonb DEFAULT '[]'::jsonb NOT NULL;

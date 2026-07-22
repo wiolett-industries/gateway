@@ -250,6 +250,13 @@ class ApiClient extends withIntegrationsApi(
     });
   }
 
+  async updateUserAdditionalPermissions(userId: string, additionalScopes: string[]): Promise<User> {
+    return this.request<User>(`/admin/users/${userId}/additional-permissions`, {
+      method: "PUT",
+      body: JSON.stringify({ additionalScopes }),
+    });
+  }
+
   async blockUser(userId: string, blocked: boolean): Promise<{ message: string }> {
     return this.request<{ message: string }>(`/admin/users/${userId}/block`, {
       method: "PATCH",

@@ -8,7 +8,11 @@ import { hasScope, isScopeSubset } from '@/lib/permissions.js';
 import { canonicalizeScopes } from '@/lib/scopes.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AISandboxService } from '@/modules/ai/ai.sandbox.service.js';
-import { computeEffectiveGroupAccess, fetchGroupScopeMap } from '@/modules/auth/live-session-user.js';
+import {
+  computeEffectiveGroupAccess,
+  computeEffectiveUserAccess,
+  fetchGroupScopeMap,
+} from '@/modules/auth/live-session-user.js';
 import type { CreateGroupInput, UpdateGroupInput } from './group.schemas.js';
 
 const logger = createChildLogger('GroupService');
@@ -64,12 +68,17 @@ export class GroupService {
     const affectedGroupIds = [groupId, ...this.collectDescendantGroupIds(groupId, groupMap)];
 
     const affected = await this.db
-      .select({ id: users.id, groupId: users.groupId, isBlocked: users.isBlocked })
+      .select({
+        id: users.id,
+        groupId: users.groupId,
+        additionalScopes: users.additionalScopes,
+        isBlocked: users.isBlocked,
+      })
       .from(users)
       .where(inArray(users.groupId, affectedGroupIds));
 
     for (const u of affected) {
-      const scopes = u.isBlocked ? [] : computeEffectiveGroupAccess(u.groupId, groupMap).scopes;
+      const scopes = u.isBlocked ? [] : computeEffectiveUserAccess(u.groupId, groupMap, u.additionalScopes).scopes;
       this.eventBus?.publish(`permissions.changed.${u.id}`, { scopes, groupId: u.groupId });
       await this.sandboxService?.revokeUserAccess(u.id, scopes, 'permissions_changed').catch((error) => {
         logger.warn('Failed to revoke sandbox jobs after group permission cascade', { userId: u.id, groupId, error });

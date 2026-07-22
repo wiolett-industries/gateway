@@ -42,6 +42,12 @@ const IMPLIED_SCOPES_BY_REQUIRED_SCOPE: Record<string, readonly string[]> = {
   "logs:schemas:view": ["logs:schemas:edit"],
   "logs:read": ["logs:manage"],
   "status-page:view": ["status-page:manage"],
+  "integrations:cloudflare:view": ["integrations:cloudflare:manage"],
+  "integrations:cloudflare:dns:view": [
+    "integrations:cloudflare:manage",
+    "integrations:cloudflare:dns:edit",
+    "integrations:cloudflare:dns:delete",
+  ],
 };
 
 export function extractBaseScope(scope: string): string {
@@ -171,6 +177,28 @@ export function buildFinalScopes(
   }
 
   return [...finalScopes].sort();
+}
+
+export function canonicalizeScopeSelection(scopes: readonly string[]): string[] {
+  const exactScopes = new Set<string>();
+  const resourceScopes = new Map<string, Set<string>>();
+
+  for (const scope of scopes) {
+    const base = extractBaseScope(scope);
+    if (scope === base) {
+      exactScopes.add(scope);
+      continue;
+    }
+    if (!resourceScopes.has(base)) resourceScopes.set(base, new Set());
+    resourceScopes.get(base)!.add(scope);
+  }
+
+  const result = new Set(exactScopes);
+  for (const [base, values] of resourceScopes.entries()) {
+    if (exactScopes.has(base)) continue;
+    for (const value of values) result.add(value);
+  }
+  return [...result].sort();
 }
 
 export function requiresResourceSelection(

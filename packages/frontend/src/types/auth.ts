@@ -9,6 +9,8 @@ export interface User {
   avatarUrl: string | null;
   groupId: string;
   groupName: string;
+  groupScopes?: string[];
+  additionalScopes?: string[];
   scopes: string[];
   isBlocked: boolean;
   aiApprovalMode?: AIApprovalMode;

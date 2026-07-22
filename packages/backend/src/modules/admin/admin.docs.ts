@@ -12,6 +12,7 @@ import {
   CreateUserSchema,
   UpdateAuthProvisioningSettingsSchema,
   UpdateBlockSchema,
+  UpdateUserAdditionalPermissionsSchema,
   UpdateUserGroupSchema,
 } from './admin.schemas.js';
 
@@ -126,6 +127,15 @@ export const updateUserGroupRoute = appRoute({
   tags: ['Admin'],
   summary: 'Update a user permission group',
   request: { params: IdParamSchema, ...jsonBody(UpdateUserGroupSchema) },
+  responses: okJson(UnknownDataResponseSchema),
+});
+
+export const updateUserAdditionalPermissionsRoute = appRoute({
+  method: 'put',
+  path: '/users/{id}/additional-permissions',
+  tags: ['Admin'],
+  summary: "Replace a user's additional permissions",
+  request: { params: IdParamSchema, ...jsonBody(UpdateUserAdditionalPermissionsSchema) },
   responses: okJson(UnknownDataResponseSchema),
 });
 

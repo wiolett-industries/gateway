@@ -21,6 +21,10 @@ export const UpdateUserGroupSchema = z.object({
   groupId: z.string().uuid(),
 });
 
+export const UpdateUserAdditionalPermissionsSchema = z.object({
+  additionalScopes: z.array(z.string().trim().min(1).max(512)).max(512),
+});
+
 export const UpdateBlockSchema = z.object({
   blocked: z.boolean(),
 });
@@ -83,6 +87,7 @@ export const UpdateAuthProvisioningSettingsSchema = z.object({
 });
 
 export type UpdateUserGroupInput = z.infer<typeof UpdateUserGroupSchema>;
+export type UpdateUserAdditionalPermissionsInput = z.infer<typeof UpdateUserAdditionalPermissionsSchema>;
 export type UpdateBlockInput = z.infer<typeof UpdateBlockSchema>;
 export type CreateUserInput = z.infer<typeof CreateUserSchema>;
 export type UpdateAuthProvisioningSettingsInput = z.infer<typeof UpdateAuthProvisioningSettingsSchema>;

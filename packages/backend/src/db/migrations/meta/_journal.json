@@ -414,6 +414,13 @@
       "when": 1784487549311,
       "tag": "0058_dusty_puck",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784722271847,
+      "tag": "0059_fine_hawkeye",
+      "breakpoints": true
     }
   ]
 }

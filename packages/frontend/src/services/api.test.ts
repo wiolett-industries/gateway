@@ -107,6 +107,30 @@ describe("api client contract", () => {
     });
   });
 
+  it("replaces a user's exact additional permissions", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: "csrf-token" }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "user-1",
+          additionalScopes: ["nodes:console:node-1"],
+        })
+      );
+
+    await expect(
+      api.updateUserAdditionalPermissions("user-1", ["nodes:console:node-1"])
+    ).resolves.toMatchObject({
+      id: "user-1",
+      additionalScopes: ["nodes:console:node-1"],
+    });
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/admin/users/user-1/additional-permissions");
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "PUT" });
+    expect(lastJsonBody(fetchMock)).toEqual({
+      additionalScopes: ["nodes:console:node-1"],
+    });
+  });
+
   it("serializes oauth consent and authorization requests", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")

@@ -35,6 +35,26 @@ export function computeEffectiveGroupAccess(groupId: string, groupMap: Map<strin
   };
 }
 
+export function computeEffectiveUserAccess(
+  groupId: string,
+  groupMap: Map<string, GroupScopeRecord>,
+  additionalScopes: unknown
+) {
+  const groupAccess = computeEffectiveGroupAccess(groupId, groupMap);
+  const normalizedAdditionalScopes = canonicalizeScopes(
+    Array.isArray(additionalScopes)
+      ? additionalScopes.filter((scope): scope is string => typeof scope === 'string')
+      : []
+  );
+
+  return {
+    groupName: groupAccess.groupName,
+    groupScopes: groupAccess.scopes,
+    additionalScopes: normalizedAdditionalScopes,
+    scopes: canonicalizeScopes([...groupAccess.scopes, ...normalizedAdditionalScopes]),
+  };
+}
+
 export async function fetchGroupScopeMap(db: DrizzleClient): Promise<Map<string, GroupScopeRecord>> {
   const allGroups = await db.query.permissionGroups.findMany({
     columns: { id: true, parentId: true, scopes: true, name: true },
@@ -47,13 +67,22 @@ export async function resolveEffectiveGroupAccess(db: DrizzleClient, groupId: st
   return computeEffectiveGroupAccess(groupId, groupMap);
 }
 
+export async function resolveEffectiveUserAccess(db: DrizzleClient, groupId: string, additionalScopes: unknown) {
+  const groupMap = await fetchGroupScopeMap(db);
+  return computeEffectiveUserAccess(groupId, groupMap, additionalScopes);
+}
+
 export async function resolveLiveUser(db: DrizzleClient, userId: string): Promise<User | null> {
   const dbUser = await db.query.users.findFirst({
     where: eq(users.id, userId),
   });
   if (!dbUser) return null;
 
-  const { groupName, scopes } = await resolveEffectiveGroupAccess(db, dbUser.groupId);
+  const { groupName, groupScopes, additionalScopes, scopes } = await resolveEffectiveUserAccess(
+    db,
+    dbUser.groupId,
+    dbUser.additionalScopes
+  );
   return {
     id: dbUser.id,
     oidcSubject: dbUser.oidcSubject,
@@ -62,6 +91,8 @@ export async function resolveLiveUser(db: DrizzleClient, userId: string): Promis
     avatarUrl: dbUser.avatarUrl,
     groupId: dbUser.groupId,
     groupName,
+    groupScopes,
+    additionalScopes,
     scopes,
     isBlocked: dbUser.isBlocked,
     aiApprovalMode: dbUser.aiApprovalMode,

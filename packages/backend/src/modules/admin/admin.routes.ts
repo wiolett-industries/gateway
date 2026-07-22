@@ -9,6 +9,7 @@ import {
   CreateUserSchema,
   UpdateAuthProvisioningSettingsSchema,
   UpdateBlockSchema,
+  UpdateUserAdditionalPermissionsSchema,
   UpdateUserGroupSchema,
 } from '@/modules/admin/admin.schemas.js';
 import { AdminUserFolderService } from '@/modules/admin/admin-user-folders.service.js';
@@ -46,6 +47,7 @@ import {
   reorderAdminUsersRoute,
   updateAdminUserFolderRoute,
   updateAuthSettingsRoute,
+  updateUserAdditionalPermissionsRoute,
   updateUserBlockRoute,
   updateUserGroupRoute,
 } from './admin.docs.js';
@@ -373,6 +375,49 @@ adminRoutes.openapi({ ...updateUserGroupRoute, middleware: requireScope('admin:u
       previousGroupName: targetUser.groupName,
       newGroupId: updatedUser.groupId,
       newGroupName: updatedUser.groupName,
+    },
+    userAgent: c.req.header('user-agent'),
+  });
+
+  return c.json(updatedUser);
+});
+
+// Replace user-specific additive permissions.
+adminRoutes.openapi({ ...updateUserAdditionalPermissionsRoute, middleware: requireScope('admin:users') }, async (c) => {
+  const authService = container.resolve(AuthService);
+  const auditService = container.resolve(AuditService);
+  const currentUser = c.get('user')!;
+  const actorScopes = c.get('effectiveScopes') || [];
+  const userId = c.req.param('id')!;
+  const body = await c.req.json();
+  const { additionalScopes: requestedScopes } = UpdateUserAdditionalPermissionsSchema.parse(body);
+
+  const { targetUser, additionalScopes } = await authService.assertCanUpdateUserAdditionalScopes(
+    currentUser.id,
+    actorScopes,
+    userId,
+    requestedScopes
+  );
+  const previousAdditionalScopes = targetUser.additionalScopes ?? [];
+  const updatedUser = await authService.updateUserAdditionalScopes(userId, additionalScopes);
+  const previousSet = new Set(previousAdditionalScopes);
+  const nextSet = new Set(additionalScopes);
+
+  await auditService.log({
+    userId: currentUser.id,
+    action: 'user.additional_permissions_change',
+    resourceType: 'user',
+    resourceId: userId,
+    details: {
+      targetUserId: updatedUser.id,
+      targetUserEmail: updatedUser.email,
+      targetUserName: updatedUser.name,
+      addedScopes: additionalScopes.filter((scope) => !previousSet.has(scope)),
+      removedScopes: previousAdditionalScopes.filter((scope) => !nextSet.has(scope)),
+      previousAdditionalScopes,
+      additionalScopes,
+      previousEffectiveScopes: targetUser.scopes,
+      effectiveScopes: updatedUser.scopes,
     },
     userAgent: c.req.header('user-agent'),
   });

@@ -3,6 +3,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -24,6 +25,7 @@ export const users = pgTable(
     groupId: uuid('group_id')
       .notNull()
       .references((): AnyPgColumn => permissionGroups.id),
+    additionalScopes: jsonb('additional_scopes').$type<string[]>().notNull().default([]),
     isBlocked: boolean('is_blocked').notNull().default(false),
     aiApprovalMode: varchar('ai_approval_mode', { length: 32 })
       .$type<'always-ask' | 'normal' | 'bypass-non-destructive' | 'bypass-everything'>()

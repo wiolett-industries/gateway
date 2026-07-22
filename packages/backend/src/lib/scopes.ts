@@ -1,5 +1,5 @@
 /**
- * Unified scope definitions for the group-based permissions system.
+ * Unified scope definitions for group and user-specific permissions.
  * Both session users (via group membership) and API tokens use these scopes.
  *
  * Naming convention: domain:resource:action[:qualifier]

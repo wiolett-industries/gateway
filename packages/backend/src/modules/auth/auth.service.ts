@@ -7,6 +7,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import { permissionGroups, users } from '@/db/schema/index.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { canManageUser, isScopeSubset } from '@/lib/permissions.js';
+import { canonicalizeScopes, isValidBaseScope } from '@/lib/scopes.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AISandboxService } from '@/modules/ai/ai.sandbox.service.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -14,7 +15,12 @@ import type { CacheService } from '@/services/cache.service.js';
 import type { SessionService } from '@/services/session.service.js';
 import type { User } from '@/types.js';
 import type { AuthSettingsService } from './auth.settings.service.js';
-import { computeEffectiveGroupAccess, fetchGroupScopeMap, resolveEffectiveGroupAccess } from './live-session-user.js';
+import {
+  computeEffectiveGroupAccess,
+  computeEffectiveUserAccess,
+  fetchGroupScopeMap,
+  resolveEffectiveUserAccess,
+} from './live-session-user.js';
 
 const logger = createChildLogger('AuthService');
 
@@ -398,7 +404,7 @@ export class AuthService {
   }
 
   private async mapDbUserToUser(dbUser: typeof users.$inferSelect): Promise<User> {
-    const effective = await resolveEffectiveGroupAccess(this.db, dbUser.groupId);
+    const effective = await resolveEffectiveUserAccess(this.db, dbUser.groupId, dbUser.additionalScopes);
 
     return {
       id: dbUser.id,
@@ -408,6 +414,8 @@ export class AuthService {
       avatarUrl: dbUser.avatarUrl,
       groupId: dbUser.groupId,
       groupName: effective.groupName,
+      groupScopes: effective.groupScopes,
+      additionalScopes: effective.additionalScopes,
       scopes: effective.scopes,
       isBlocked: dbUser.isBlocked,
       aiApprovalMode: dbUser.aiApprovalMode,
@@ -480,7 +488,7 @@ export class AuthService {
     const groupMap = await fetchGroupScopeMap(this.db);
 
     return allUsers.map((u) => {
-      const effective = computeEffectiveGroupAccess(u.groupId, groupMap);
+      const effective = computeEffectiveUserAccess(u.groupId, groupMap, u.additionalScopes);
       return {
         id: u.id,
         oidcSubject: u.oidcSubject,
@@ -489,6 +497,8 @@ export class AuthService {
         avatarUrl: u.avatarUrl,
         groupId: u.groupId,
         groupName: effective.groupName,
+        groupScopes: effective.groupScopes,
+        additionalScopes: effective.additionalScopes,
         scopes: effective.scopes,
         isBlocked: u.isBlocked,
         aiApprovalMode: u.aiApprovalMode,
@@ -519,7 +529,74 @@ export class AuthService {
 
     const mapped = await this.mapDbUserToUser(updatedUser);
     this.emitUser(userId, 'updated');
-    this.emitPermissions(userId, mapped.scopes, groupId);
+    this.emitPermissions(userId, mapped.isBlocked ? [] : mapped.scopes, groupId);
+    return mapped;
+  }
+
+  async assertCanUpdateUserAdditionalScopes(
+    actorUserId: string,
+    actorScopes: string[],
+    userId: string,
+    requestedScopes: string[]
+  ): Promise<{ targetUser: User; additionalScopes: string[] }> {
+    if (userId === actorUserId) {
+      throw new AppError(400, 'SELF_PERMISSION_CHANGE', 'Cannot change your own additional permissions');
+    }
+
+    const targetUser = await this.getUserById(userId);
+    if (!targetUser) {
+      throw new AppError(404, 'NOT_FOUND', 'User not found');
+    }
+    if (targetUser.oidcSubject.startsWith(SYSTEM_SUBJECT_PREFIX)) {
+      throw new AppError(403, 'SYSTEM_USER', 'Cannot modify the system user');
+    }
+
+    const denyReason = canManageUser(actorScopes, targetUser.scopes);
+    if (denyReason) {
+      throw new AppError(403, 'PRIVILEGE_BOUNDARY', denyReason);
+    }
+
+    const trimmedScopes = requestedScopes.map((scope) => scope.trim());
+    const invalidScopes = trimmedScopes.filter((scope) => !isValidBaseScope(scope));
+    if (invalidScopes.length > 0) {
+      throw new AppError(400, 'INVALID_SCOPE', `Invalid permission scopes: ${[...new Set(invalidScopes)].join(', ')}`);
+    }
+
+    const additionalScopes = canonicalizeScopes(trimmedScopes);
+    if (additionalScopes.includes('admin:system')) {
+      throw new AppError(403, 'SCOPE_NOT_ALLOWED', 'admin:system cannot be assigned as an additional permission');
+    }
+    if (!isScopeSubset(additionalScopes, actorScopes)) {
+      const disallowedScopes = additionalScopes.filter((scope) => !isScopeSubset([scope], actorScopes));
+      throw new AppError(
+        403,
+        'PRIVILEGE_BOUNDARY',
+        `Cannot grant permissions you do not possess: ${disallowedScopes.join(', ')}`
+      );
+    }
+
+    const effectiveScopes = canonicalizeScopes([...(targetUser.groupScopes ?? []), ...additionalScopes]);
+    if (!isScopeSubset(effectiveScopes, actorScopes)) {
+      throw new AppError(403, 'PRIVILEGE_BOUNDARY', 'Cannot manage the resulting user permissions');
+    }
+
+    return { targetUser, additionalScopes };
+  }
+
+  async updateUserAdditionalScopes(userId: string, additionalScopes: string[]): Promise<User> {
+    const [updatedUser] = await this.db
+      .update(users)
+      .set({ additionalScopes: canonicalizeScopes(additionalScopes), updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+
+    if (!updatedUser) {
+      throw new AppError(404, 'NOT_FOUND', 'User not found');
+    }
+
+    const mapped = await this.mapDbUserToUser(updatedUser);
+    this.emitUser(userId, 'updated');
+    this.emitPermissions(userId, mapped.isBlocked ? [] : mapped.scopes, mapped.groupId);
     return mapped;
   }
 

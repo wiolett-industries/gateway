@@ -299,7 +299,7 @@ Users authenticate via OIDC (OpenID Connect). Gateway acts as a relying party â€
 - Users cannot be deleted (they're linked to audit logs), only blocked
 
 ## User Fields
-- id, email, name, avatarUrl, groupId, groupName, scopes, isBlocked
+- id, email, name, avatarUrl, groupId, groupName, groupScopes, additionalScopes, scopes, isBlocked
 - lastLoginAt, loginCount, createdAt`,
 
   audit: `# Audit Log

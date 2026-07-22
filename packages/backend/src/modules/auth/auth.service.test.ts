@@ -13,7 +13,16 @@ vi.mock('./live-session-user.js', () => ({
     groupName: 'admin',
     scopes: ['nodes:details'],
   }),
+  resolveEffectiveUserAccess: vi.fn().mockImplementation((_db, _groupId, additionalScopes = []) =>
+    Promise.resolve({
+      groupName: 'admin',
+      groupScopes: ['nodes:details'],
+      additionalScopes,
+      scopes: ['nodes:details', ...additionalScopes],
+    })
+  ),
   computeEffectiveGroupAccess: vi.fn(),
+  computeEffectiveUserAccess: vi.fn(),
   fetchGroupScopeMap: vi.fn(),
 }));
 
@@ -105,6 +114,106 @@ describe('AuthService user preferences', () => {
     expect(eventBus.publish).toHaveBeenCalledWith('user.changed', {
       id: 'user-1',
       action: 'updated',
+    });
+  });
+});
+
+describe('AuthService additional permissions', () => {
+  const targetUser = {
+    id: '22222222-2222-4222-8222-222222222222',
+    oidcSubject: 'target-user',
+    email: 'target@example.com',
+    name: 'Target',
+    avatarUrl: null,
+    groupId: 'group-1',
+    groupName: 'viewer',
+    groupScopes: ['nodes:details:node-1'],
+    additionalScopes: [],
+    scopes: ['nodes:details:node-1'],
+    isBlocked: false,
+  };
+
+  function serviceWithTarget() {
+    const service = new AuthService({} as any, {} as any, {} as any, {} as any, {} as any);
+    vi.spyOn(service, 'getUserById').mockResolvedValue(targetUser);
+    return service;
+  }
+
+  it('allows only valid additional scopes possessed by the actor', async () => {
+    const service = serviceWithTarget();
+
+    await expect(
+      service.assertCanUpdateUserAdditionalScopes(
+        'actor-1',
+        ['nodes:details:node-1', 'nodes:console:node-1'],
+        targetUser.id,
+        ['nodes:console:node-1']
+      )
+    ).resolves.toEqual({ targetUser, additionalScopes: ['nodes:console:node-1'] });
+  });
+
+  it('rejects self-assignment and protected system scope grants', async () => {
+    const service = serviceWithTarget();
+
+    await expect(
+      service.assertCanUpdateUserAdditionalScopes(targetUser.id, ['admin:system'], targetUser.id, [])
+    ).rejects.toMatchObject({ code: 'SELF_PERMISSION_CHANGE' });
+    await expect(
+      service.assertCanUpdateUserAdditionalScopes('actor-1', ['admin:system', 'nodes:details:node-1'], targetUser.id, [
+        'admin:system',
+      ])
+    ).rejects.toMatchObject({ code: 'SCOPE_NOT_ALLOWED' });
+  });
+
+  it('rejects invalid or unowned additional scopes', async () => {
+    const service = serviceWithTarget();
+
+    await expect(
+      service.assertCanUpdateUserAdditionalScopes('actor-1', ['nodes:details:node-1'], targetUser.id, [
+        'not:a:real:scope',
+      ])
+    ).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
+    await expect(
+      service.assertCanUpdateUserAdditionalScopes('actor-1', ['nodes:details:node-1'], targetUser.id, [
+        'nodes:console:node-1',
+      ])
+    ).rejects.toMatchObject({ code: 'PRIVILEGE_BOUNDARY' });
+  });
+
+  it('persists additional permissions across a group change and emits effective scopes', async () => {
+    const updatedDbUser = {
+      ...targetUser,
+      groupId: 'group-2',
+      additionalScopes: ['nodes:console:node-1'],
+      aiApprovalMode: 'normal',
+      folderId: null,
+      sortOrder: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const returning = vi.fn().mockResolvedValue([updatedDbUser]);
+    const where = vi.fn(() => ({ returning }));
+    const set = vi.fn(() => ({ where }));
+    const eventBus = { publish: vi.fn() };
+    const service = new AuthService(
+      {
+        query: { permissionGroups: { findFirst: vi.fn().mockResolvedValue({ id: 'group-2' }) } },
+        update: vi.fn(() => ({ set })),
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any
+    );
+    service.setEventBus(eventBus as any);
+
+    const updated = await service.updateUserGroup(targetUser.id, 'group-2');
+
+    expect(updated.additionalScopes).toEqual(['nodes:console:node-1']);
+    expect(updated.scopes).toEqual(['nodes:details', 'nodes:console:node-1']);
+    expect(eventBus.publish).toHaveBeenCalledWith(`permissions.changed.${targetUser.id}`, {
+      scopes: ['nodes:details', 'nodes:console:node-1'],
+      groupId: 'group-2',
     });
   });
 });

@@ -3,7 +3,7 @@ import type { DrizzleClient } from '@/db/client.js';
 import type { NewSandboxJob, SandboxJob } from '@/db/schema/index.js';
 import { sandboxJobs, users } from '@/db/schema/index.js';
 import { AppError } from '@/middleware/error-handler.js';
-import { computeEffectiveGroupAccess, fetchGroupScopeMap } from '@/modules/auth/live-session-user.js';
+import { computeEffectiveUserAccess, fetchGroupScopeMap } from '@/modules/auth/live-session-user.js';
 import type { SandboxJobKind, SandboxJobStatus, SandboxResourceTier, SandboxRuntime } from './ai.sandbox-policy.js';
 
 const ACTIVE_SANDBOX_STATUSES: SandboxJobStatus[] = ['queued', 'running'];
@@ -189,6 +189,7 @@ export class AISandboxJobsService {
         user: {
           id: users.id,
           groupId: users.groupId,
+          additionalScopes: users.additionalScopes,
           isBlocked: users.isBlocked,
         },
       })
@@ -199,7 +200,9 @@ export class AISandboxJobsService {
     return rows.map((row) => ({
       job: row.job,
       userId: row.user.id,
-      currentScopes: row.user.isBlocked ? [] : computeEffectiveGroupAccess(row.user.groupId, groupMap).scopes,
+      currentScopes: row.user.isBlocked
+        ? []
+        : computeEffectiveUserAccess(row.user.groupId, groupMap, row.user.additionalScopes).scopes,
     }));
   }
 }

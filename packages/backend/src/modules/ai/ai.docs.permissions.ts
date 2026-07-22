@@ -1,6 +1,6 @@
 export const PERMISSIONS_DOC = `# Permissions & Scopes
 
-Gateway uses a group-based permission system with nested group inheritance. Each user belongs to a permission group that defines their scopes. Groups can inherit from parent groups, forming a hierarchy.
+Gateway uses a scope-based permission system with nested group inheritance. Each user belongs to a permission group and may also have additional user-specific scopes. Effective permissions are the union of inherited group scopes and these additive user scopes. Groups can inherit from parent groups, forming a hierarchy.
 
 ## All Scopes
 
