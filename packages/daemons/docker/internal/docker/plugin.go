@@ -1143,10 +1143,7 @@ func (p *DockerPlugin) handleExecCommand(cmd *pb.DockerExecCommand, result *pb.C
 		resp := map[string]interface{}{
 			"exec_id": execID,
 			"is_new":  isNew,
-		}
-		// For reused sessions, include the buffer so the new client gets history
-		if !isNew {
-			resp["buffer"] = p.execMgr.GetBuffer(cmd.ContainerId)
+			"buffer":  p.execMgr.GetBuffer(cmd.ContainerId),
 		}
 		data, _ := json.Marshal(resp)
 		result.Detail = string(data)

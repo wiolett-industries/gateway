@@ -2,8 +2,10 @@ package docker
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"testing"
+	"time"
 )
 
 func TestExecSessionBufferOutputCapsBytes(t *testing.T) {
@@ -46,5 +48,16 @@ func TestExecSessionBufferOutputCapsChunks(t *testing.T) {
 	}
 	if session.outputBufferBytes != maxBufferChunks {
 		t.Fatalf("buffer bytes = %d, want %d", session.outputBufferBytes, maxBufferChunks)
+	}
+}
+
+func TestExecSessionWaitForFirstOutputReturnsAfterBufferedData(t *testing.T) {
+	session := &ExecSession{firstOutput: make(chan struct{})}
+	session.bufferOutput([]byte("/ # "))
+
+	started := time.Now()
+	session.waitForFirstOutput(context.Background())
+	if elapsed := time.Since(started); elapsed >= initialOutputWait {
+		t.Fatalf("waitForFirstOutput took %s after output was already buffered", elapsed)
 	}
 }

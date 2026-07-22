@@ -216,3 +216,13 @@ textarea::-webkit-resizer {
 @import "./css/animations.css";
 @import "./css/base.css";
 @import "./css/scrollbars.css";
+
+/* xterm reserves a scrollbar gutter in the fitted column count, while the
+ * attached PTY can still render through the container's full width. Keep the
+ * visible screen, row container, and individually clipped rows aligned with
+ * that container width. */
+.terminal-console .xterm-screen,
+.terminal-console .xterm-rows,
+.terminal-console .xterm-rows > div {
+  width: 100% !important;
+}

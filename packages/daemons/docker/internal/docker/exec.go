@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	maxBufferChunks = 1000
-	maxBufferBytes  = 1024 * 1024
+	maxBufferChunks   = 1000
+	maxBufferBytes    = 1024 * 1024
+	initialOutputWait = 250 * time.Millisecond
 )
 
 // ExecSession represents a persistent exec session attached to a container.
@@ -31,6 +32,8 @@ type ExecSession struct {
 	outputBuffer      [][]byte
 	outputBufferBytes int
 	bufMu             sync.Mutex
+	firstOutput       chan struct{}
+	firstOutputOnce   sync.Once
 }
 
 func (s *ExecSession) bufferOutput(data []byte) {
@@ -40,10 +43,24 @@ func (s *ExecSession) bufferOutput(data []byte) {
 	copy(chunk, data)
 	s.outputBuffer = append(s.outputBuffer, chunk)
 	s.outputBufferBytes += len(chunk)
+	if s.firstOutput != nil {
+		s.firstOutputOnce.Do(func() { close(s.firstOutput) })
+	}
 	for len(s.outputBuffer) > maxBufferChunks || s.outputBufferBytes > maxBufferBytes {
 		s.outputBufferBytes -= len(s.outputBuffer[0])
 		s.outputBuffer[0] = nil
 		s.outputBuffer = s.outputBuffer[1:]
+	}
+}
+
+func (s *ExecSession) waitForFirstOutput(ctx context.Context) {
+	if s.firstOutput == nil {
+		return
+	}
+	select {
+	case <-s.firstOutput:
+	case <-time.After(initialOutputWait):
+	case <-ctx.Done():
 	}
 }
 
@@ -112,6 +129,7 @@ func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cm
 		AttachStderr: true,
 		ConsoleSize:  consoleSize,
 		User:         user,
+		Env:          []string{"TERM=xterm-256color"},
 	})
 	if err != nil {
 		return "", false, err
@@ -132,6 +150,7 @@ func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cm
 		conn:        attachResult.HijackedResponse,
 		cancel:      sessionCancel,
 		lastActive:  time.Now(),
+		firstOutput: make(chan struct{}),
 	}
 
 	em.mu.Lock()
@@ -139,6 +158,9 @@ func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cm
 	em.mu.Unlock()
 
 	go em.readOutput(sessionCtx, session)
+	if tty {
+		session.waitForFirstOutput(ctx)
+	}
 
 	em.logger.Info("exec session created", "exec_id", createResult.ID, "container", containerID)
 	return createResult.ID, true, nil

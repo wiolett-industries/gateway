@@ -45,10 +45,41 @@ interface ExecWSState {
   user: User | null;
   authenticated: boolean;
   execId: string | null;
+  terminalSize: DockerExecTerminalSize | null;
   outputHandler: ((data: any) => void) | null;
   keepaliveInterval: ReturnType<typeof setInterval> | null;
   outputQueue: Promise<void>;
   credential: WebSocketCredential | null;
+}
+
+export interface DockerExecTerminalSize {
+  rows: number;
+  cols: number;
+}
+
+export function parseDockerExecTerminalSize(rows: unknown, cols: unknown): DockerExecTerminalSize | null {
+  if (typeof rows !== 'number' || typeof cols !== 'number') return null;
+  if (!Number.isInteger(rows) || !Number.isInteger(cols)) return null;
+  if (rows < 1 || rows > 65_535) return null;
+  if (cols < 1 || cols > 65_535) return null;
+  return { rows, cols };
+}
+
+export async function resizeDockerExec(
+  dispatch: Pick<NodeDispatchService, 'sendDockerExecCommand'>,
+  nodeId: string,
+  execId: string,
+  size: DockerExecTerminalSize
+): Promise<void> {
+  const result = await dispatch.sendDockerExecCommand(nodeId, 'resize', {
+    // DockerExecCommand reuses container_id as the exec session ID for resize actions.
+    containerId: execId,
+    rows: size.rows,
+    cols: size.cols,
+  });
+  if (!result.success) {
+    throw new Error(result.error || 'Docker exec resize failed');
+  }
 }
 
 const wsStates = new WeakMap<WSContext, ExecWSState>();
@@ -81,6 +112,7 @@ export function createDockerExecWSHandlers(
         user: null,
         authenticated: false,
         execId: null,
+        terminalSize: null,
         outputHandler: null,
         keepaliveInterval: null,
         outputQueue: Promise.resolve(),
@@ -111,11 +143,6 @@ export function createDockerExecWSHandlers(
 
       const raw = typeof event.data === 'string' ? event.data : String(event.data);
 
-      if (!state.authenticated) {
-        send(ws, { type: 'error', message: 'Not authenticated' });
-        return;
-      }
-
       let msg: Record<string, unknown>;
       try {
         const parsed = JSON.parse(raw);
@@ -126,6 +153,29 @@ export function createDockerExecWSHandlers(
         msg = parsed;
       } catch {
         send(ws, { type: 'error', message: 'Invalid JSON' });
+        return;
+      }
+
+      if (msg.type === 'resize') {
+        const terminalSize = parseDockerExecTerminalSize(msg.rows, msg.cols);
+        if (!terminalSize) {
+          send(ws, { type: 'error', message: 'Invalid terminal size' });
+          return;
+        }
+
+        state.terminalSize = terminalSize;
+        if (!state.execId) return;
+        if (!(await revalidateExecAccess(ws, state, nodeId))) return;
+        try {
+          await resizeDockerExec(dispatch, nodeId, state.execId, terminalSize);
+        } catch (err) {
+          logger.error('Error sending resize', { error: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
+      if (!state.authenticated) {
+        send(ws, { type: 'error', message: 'Not authenticated' });
         return;
       }
 
@@ -141,20 +191,6 @@ export function createDockerExecWSHandlers(
           dispatch.sendExecInput(nodeId, state.execId, inputData);
         } catch (err) {
           logger.error('Error forwarding exec input', { error: err instanceof Error ? err.message : String(err) });
-        }
-        return;
-      }
-
-      if (msg.type === 'resize' && state.execId) {
-        if (!(await revalidateExecAccess(ws, state, nodeId))) return;
-        try {
-          await dispatch.sendDockerExecCommand(nodeId, 'resize', {
-            containerId,
-            rows: msg.rows as number,
-            cols: msg.cols as number,
-          });
-        } catch (err) {
-          logger.error('Error sending resize', { error: err instanceof Error ? err.message : String(err) });
         }
         return;
       }
@@ -254,12 +290,15 @@ async function authenticateAndCreateExec(
   let result: import('@/grpc/generated/types.js').CommandResult;
   try {
     const execUser = await resolveDockerExecUser(docker, nodeId, containerId);
+    const initialSize = state.terminalSize;
     result = await dispatch.sendDockerExecCommand(nodeId, 'create', {
       containerId,
       command: [usedShell],
       tty: true,
       stdin: true,
       user: execUser,
+      rows: initialSize?.rows,
+      cols: initialSize?.cols,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create exec session';
@@ -299,6 +338,16 @@ async function authenticateAndCreateExec(
 
   state.execId = execId;
 
+  if (state.terminalSize) {
+    try {
+      await resizeDockerExec(dispatch, nodeId, execId, state.terminalSize);
+    } catch (err) {
+      logger.error('Error applying initial terminal size', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // Register handler for live ExecOutput from daemon -> forward to this WS
   const outputHandler = (output: any) => {
     state.outputQueue = state.outputQueue
@@ -326,14 +375,14 @@ async function authenticateAndCreateExec(
   state.outputHandler = outputHandler;
   registry.registerExecHandler(execId, outputHandler);
 
-  // Send buffered history to THIS client only (from the create response)
-  if (!isNew && buffer.length > 0) {
+  send(ws, { type: 'connected', execId, shell: usedShell, isNew });
+
+  // Replay output captured while the daemon was creating the exec session.
+  if (buffer.length > 0) {
     for (const b64chunk of buffer) {
       send(ws, { type: 'output', data: b64chunk });
     }
   }
-
-  send(ws, { type: 'connected', execId, shell: usedShell, isNew });
 }
 
 async function revalidateExecAccess(

@@ -2,6 +2,9 @@ import { ExternalLink, Terminal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useUIStore } from "@/stores/ui";
+import { encodeTerminalInput } from "./terminal-encoding";
+import { TerminalOutputNormalizer } from "./terminal-output";
+import { sendTerminalResize } from "./terminal-resize";
 
 interface TerminalConsoleProps {
   /** Factory that creates the WebSocket connection */
@@ -162,22 +165,24 @@ export function TerminalConsole({
         } catch {
           /* */
         }
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(
-            JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols })
-          );
-        }
       });
       resizeObserver.observe(termRef.current);
 
+      const resizeDisposable = terminal.onResize(
+        ({ rows, cols }: { rows: number; cols: number }) => {
+          sendTerminalResize(wsRef.current, rows, cols);
+        }
+      );
+
       const dataDisposable = terminal.onData((data: string) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "input", data: btoa(data) }));
+          wsRef.current.send(JSON.stringify({ type: "input", data: encodeTerminalInput(data) }));
         }
       });
 
       cleanupRef.current = () => {
         resizeObserver.disconnect();
+        resizeDisposable.dispose();
         dataDisposable.dispose();
         terminal.dispose();
         wsRef.current?.close();
@@ -198,17 +203,14 @@ export function TerminalConsole({
     }
 
     const ws = wsFactory();
+    const outputNormalizer = new TerminalOutputNormalizer();
     wsRef.current = ws;
     authFailedRef.current = false;
 
     ws.onopen = () => {
       if (!mountedRef.current) return;
       terminal.focus();
-      setTimeout(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols }));
-        }
-      }, 100);
+      sendTerminalResize(ws, terminal.rows, terminal.cols);
     };
 
     let cleared = false;
@@ -225,13 +227,15 @@ export function TerminalConsole({
             const shellName = (msg.shell ?? "/bin/sh").split("/").pop();
             terminal.write(`Using ${shellName}...\r\n`);
           }
+          sendTerminalResize(ws, terminal.rows, terminal.cols);
         } else if (msg.type === "output") {
           if (!cleared) {
             terminal.clear();
             cleared = true;
           }
           const bytes = Uint8Array.from(atob(msg.data), (c) => c.charCodeAt(0));
-          terminal.write(bytes);
+          const normalized = outputNormalizer.push(bytes);
+          if (normalized.length > 0) terminal.write(normalized);
         } else if (msg.type === "exit") {
           terminal.write(`\r\nProcess exited (code ${msg.exitCode}). Reconnecting...\r\n`);
           isReconnect.current = false;
@@ -332,7 +336,7 @@ export function TerminalConsole({
 
   return (
     <div className="relative flex-1 min-h-0">
-      <div ref={termRef} className="absolute inset-0 bg-card overflow-hidden" />
+      <div ref={termRef} className="terminal-console absolute inset-0 bg-card overflow-hidden" />
       {popoutUrl && (
         <div className="absolute right-2.5 bottom-2.5 z-10">
           <Button variant="outline" size="sm" onClick={openPopout}>

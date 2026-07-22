@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useUIStore } from "@/stores/ui";
+import { encodeTerminalInput } from "./terminal-encoding";
+import { TerminalOutputNormalizer } from "./terminal-output";
+import { sendTerminalResize } from "./terminal-resize";
 
 interface PopoutTerminalProps {
   /** Factory that creates the WebSocket connection */
@@ -122,22 +125,24 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
         } catch {
           /* */
         }
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(
-            JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols })
-          );
-        }
       });
       resizeObserver.observe(termRef.current);
 
+      const resizeDisposable = terminal.onResize(
+        ({ rows, cols }: { rows: number; cols: number }) => {
+          sendTerminalResize(wsRef.current, rows, cols);
+        }
+      );
+
       const dataDisposable = terminal.onData((data: string) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "input", data: btoa(data) }));
+          wsRef.current.send(JSON.stringify({ type: "input", data: encodeTerminalInput(data) }));
         }
       });
 
       cleanupRef.current = () => {
         resizeObserver.disconnect();
+        resizeDisposable.dispose();
         dataDisposable.dispose();
         terminal.dispose();
         wsRef.current?.close();
@@ -157,17 +162,14 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
     }
 
     const ws = wsFactory();
+    const outputNormalizer = new TerminalOutputNormalizer();
     wsRef.current = ws;
     authFailedRef.current = false;
 
     ws.onopen = () => {
       if (!mountedRef.current) return;
       terminal.focus();
-      setTimeout(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols }));
-        }
-      }, 100);
+      sendTerminalResize(ws, terminal.rows, terminal.cols);
     };
 
     ws.onmessage = (evt) => {
@@ -177,18 +179,20 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
           if (msg.isNew) {
             const shellName = (msg.shell ?? "/bin/sh").split("/").pop();
             terminal.write(`Using ${shellName}...\r\n`);
-            gotFirstOutput.current = false;
+            gotFirstOutput.current = true;
           } else {
             terminal.clear();
             gotFirstOutput.current = true;
           }
+          sendTerminalResize(ws, terminal.rows, terminal.cols);
         } else if (msg.type === "output") {
           if (!gotFirstOutput.current) {
             gotFirstOutput.current = true;
             terminal.clear();
           }
           const bytes = Uint8Array.from(atob(msg.data), (c) => c.charCodeAt(0));
-          terminal.write(bytes);
+          const normalized = outputNormalizer.push(bytes);
+          if (normalized.length > 0) terminal.write(normalized);
         } else if (msg.type === "exit") {
           terminal.write(`\r\nProcess exited (code ${msg.exitCode}). Reconnecting...\r\n`);
           isReconnect.current = false;
@@ -251,5 +255,5 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
     }
   }, [getTerminalTheme]);
 
-  return <div ref={termRef} className="fixed inset-0 bg-card" style={{ padding: 4 }} />;
+  return <div ref={termRef} className="terminal-console fixed inset-0 bg-card" style={{ padding: 4 }} />;
 }
