@@ -47,7 +47,7 @@ export function HealthOverviewCard({
               <span className="text-sm font-medium truncate flex-1">
                 {host.domainNames.join(", ")}
               </span>
-              <ProxyUpstreamTarget host={host} />
+              <ProxyUpstreamTarget host={host} size="inline" />
               <Badge
                 variant={
                   (
@@ -61,6 +61,7 @@ export function HealthOverviewCard({
                     } as const
                   )[(host.effectiveHealthStatus ?? host.healthStatus) as string] || "secondary"
                 }
+                size="inline"
                 className="uppercase"
               >
                 {(host.effectiveHealthStatus ?? host.healthStatus) === "online"

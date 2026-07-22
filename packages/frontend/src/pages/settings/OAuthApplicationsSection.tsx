@@ -286,7 +286,9 @@ export function OAuthApplicationsSection({
                       <p className="text-sm font-medium text-foreground">
                         {authorization.clientName}
                       </p>
-                      <Badge variant="secondary">{resourceLabel(authorization.resource)}</Badge>
+                      <Badge variant="secondary" size="inline">
+                        {resourceLabel(authorization.resource)}
+                      </Badge>
                       {safeHttpUrl(authorization.clientUri) && (
                         <a
                           href={safeHttpUrl(authorization.clientUri)!}

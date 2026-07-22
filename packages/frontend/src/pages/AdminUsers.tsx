@@ -256,23 +256,23 @@ export function AdminUsers({
               <div className="flex min-w-0 items-center gap-2">
                 <p className="truncate text-sm font-medium">{user.name || user.email}</p>
                 {isSelf && (
-                  <Badge variant="secondary" className="shrink-0">
+                  <Badge variant="secondary" size="inline" className="shrink-0">
                     You
                   </Badge>
                 )}
                 {isSystemUser && (
-                  <Badge variant="outline" className="shrink-0">
+                  <Badge variant="outline" size="inline" className="shrink-0">
                     System
                   </Badge>
                 )}
                 {user.isBlocked && (
-                  <Badge variant="destructive" className="shrink-0">
+                  <Badge variant="destructive" size="inline" className="shrink-0">
                     <Ban className="mr-0.5 h-2.5 w-2.5" />
                     Blocked
                   </Badge>
                 )}
                 {(user.additionalScopes?.length ?? 0) > 0 && (
-                  <Badge variant="outline" className="shrink-0">
+                  <Badge variant="outline" size="inline" className="shrink-0">
                     +{user.additionalScopes!.length} additional
                   </Badge>
                 )}

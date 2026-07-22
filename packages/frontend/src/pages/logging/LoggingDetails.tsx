@@ -93,10 +93,10 @@ export function LoggingSchemaDetail({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{schema.name}</h1>
-                <Badge variant="secondary" className="uppercase">
+                <Badge variant="secondary" size="inline" className="uppercase">
                   {draft.schemaMode ?? schema.schemaMode}
                 </Badge>
-                <Badge variant="outline">
+                <Badge variant="outline" size="inline">
                   {(draft.fieldSchema ?? schema.fieldSchema).length} fields
                 </Badge>
               </div>
@@ -265,10 +265,12 @@ export function LoggingEnvironmentDetail({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{environment.name}</h1>
-                <Badge variant={environment.enabled ? "success" : "secondary"}>
+                <Badge variant={environment.enabled ? "success" : "secondary"} size="inline">
                   {environment.enabled ? "Enabled" : "Disabled"}
                 </Badge>
-                <Badge variant="secondary">{environment.schemaMode}</Badge>
+                <Badge variant="secondary" size="inline">
+                  {environment.schemaMode}
+                </Badge>
               </div>
               <p className="truncate text-sm text-muted-foreground">
                 {environment.slug} · {environment.schemaName ?? "No schema attached"} ·{" "}

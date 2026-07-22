@@ -184,7 +184,11 @@ export function CADetail() {
       render: (cert) => (
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{cert.commonName}</span>
-          {cert.isSystem && <Badge variant="outline">System</Badge>}
+          {cert.isSystem && (
+            <Badge variant="outline" size="inline">
+              System
+            </Badge>
+          )}
         </div>
       ),
     },
@@ -230,8 +234,12 @@ export function CADetail() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{ca.commonName}</h1>
-                <StatusBadge status={ca.status} />
-                {ca.isSystem && <Badge variant="outline">System</Badge>}
+                <StatusBadge status={ca.status} size="inline" />
+                {ca.isSystem && (
+                  <Badge variant="outline" size="inline">
+                    System
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">
                 {ca.type === "root" ? "Root CA" : "Intermediate CA"}

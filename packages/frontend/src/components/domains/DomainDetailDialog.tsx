@@ -270,7 +270,11 @@ export function DomainDetailDialog({
                       >
                         <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
                         <span className="truncate">{ph.domainNames[0]}</span>
-                        {!ph.enabled && <Badge variant="secondary">Off</Badge>}
+                        {!ph.enabled && (
+                          <Badge variant="secondary" size="inline">
+                            Off
+                          </Badge>
+                        )}
                       </Link>
                     ))}
                   </div>
@@ -284,7 +288,10 @@ export function DomainDetailDialog({
                       <div key={cert.id} className="flex items-center gap-2 py-1 text-sm">
                         <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
                         <span className="truncate">{cert.domainNames[0]}</span>
-                        <Badge variant={cert.status === "active" ? "success" : "secondary"}>
+                        <Badge
+                          variant={cert.status === "active" ? "success" : "secondary"}
+                          size="inline"
+                        >
                           {cert.status}
                         </Badge>
                       </div>
@@ -299,7 +306,6 @@ export function DomainDetailDialog({
                   )}
               </div>
             </div>
-
           </div>
         ) : null}
         {domain && (
@@ -311,10 +317,10 @@ export function DomainDetailDialog({
               !domain.dnsProxied &&
               domain.usage.sslCertificates.length === 0 &&
               domain.dnsStatus === "valid" && (
-              <Button onClick={handleIssueCert} disabled={isIssuingCert}>
-                <Shield className="h-4 w-4" />
-                {isIssuingCert ? "Issuing..." : "Issue Let's Encrypt Certificate"}
-              </Button>
+                <Button onClick={handleIssueCert} disabled={isIssuingCert}>
+                  <Shield className="h-4 w-4" />
+                  {isIssuingCert ? "Issuing..." : "Issue Let's Encrypt Certificate"}
+                </Button>
               )}
           </DialogFooter>
         )}

@@ -561,6 +561,7 @@ export function DockerContainerDetail({
                 <h1 className="truncate text-2xl font-bold">{name}</h1>
                 <Badge
                   variant={unavailable ? "secondary" : (STATUS_BADGE[state] ?? "secondary")}
+                  size="inline"
                   className="shrink-0"
                 >
                   {unavailable ? "Unavailable" : state}

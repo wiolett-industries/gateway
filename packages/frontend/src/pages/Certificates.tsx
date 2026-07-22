@@ -96,7 +96,11 @@ export function Certificates() {
         <div>
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium">{cert.commonName}</p>
-            {cert.isSystem && <Badge variant="outline">System</Badge>}
+            {cert.isSystem && (
+              <Badge variant="outline" size="inline">
+                System
+              </Badge>
+            )}
           </div>
           {(cert.sans?.length ?? 0) > 0 && (
             <p className="text-xs text-muted-foreground">+{cert.sans.length} SANs</p>

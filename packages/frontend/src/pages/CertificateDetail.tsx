@@ -160,8 +160,12 @@ export function CertificateDetail() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{cert.commonName}</h1>
-                <StatusBadge status={cert.status} />
-                {cert.isSystem && <Badge variant="outline">System</Badge>}
+                <StatusBadge status={cert.status} size="inline" />
+                {cert.isSystem && (
+                  <Badge variant="outline" size="inline">
+                    System
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">
                 {cert.type} certificate &middot; Issuer: {cert.issuerDn || cert.caId}

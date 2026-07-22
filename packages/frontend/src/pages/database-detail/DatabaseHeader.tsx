@@ -71,10 +71,14 @@ export function DatabaseHeader({
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <h1 className="truncate text-2xl font-bold">{database.name}</h1>
-            <Badge variant={HEALTH_BADGE[healthStatus] ?? "secondary"} className="shrink-0">
+            <Badge
+              variant={HEALTH_BADGE[healthStatus] ?? "secondary"}
+              size="inline"
+              className="shrink-0"
+            >
               {formatHealthStatusLabel(healthStatus)}
             </Badge>
-            <Badge variant="secondary" className="shrink-0">
+            <Badge variant="secondary" size="inline" className="shrink-0">
               {database.type}
             </Badge>
           </div>

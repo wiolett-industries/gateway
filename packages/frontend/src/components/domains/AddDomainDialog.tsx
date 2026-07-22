@@ -223,12 +223,12 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
               className="sm:grid-cols-[minmax(8rem,1fr)_minmax(0,12rem)]"
               controlsClassName="sm:w-full sm:min-w-0 sm:max-w-none"
             >
-            <Input
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              placeholder="example.com"
-              autoFocus
-            />
+              <Input
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                placeholder="example.com"
+                autoFocus
+              />
             </SettingsControlRow>
             <SettingsControlRow
               title="Description"
@@ -236,11 +236,11 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
               className="sm:grid-cols-[minmax(8rem,1fr)_minmax(0,12rem)]"
               controlsClassName="sm:w-full sm:min-w-0 sm:max-w-none"
             >
-            <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description"
-            />
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Optional description"
+              />
             </SettingsControlRow>
             {folderList.length > 0 && (
               <SettingsControlRow
@@ -249,22 +249,22 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
                 className="sm:grid-cols-[minmax(8rem,1fr)_minmax(0,12rem)]"
                 controlsClassName="sm:w-full sm:min-w-0 sm:max-w-none"
               >
-              <Select
-                value={folderId || "__none__"}
-                onValueChange={(value) => setFolderId(value === "__none__" ? "" : value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="No folder" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No folder</SelectItem>
-                  {folderList.map((folder) => (
-                    <SelectItem key={folder.id} value={folder.id}>
-                      {"  ".repeat(folder.depth) + folder.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <Select
+                  value={folderId || "__none__"}
+                  onValueChange={(value) => setFolderId(value === "__none__" ? "" : value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="No folder" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No folder</SelectItem>
+                    {folderList.map((folder) => (
+                      <SelectItem key={folder.id} value={folder.id}>
+                        {"  ".repeat(folder.depth) + folder.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </SettingsControlRow>
             )}
             <SettingsControlRow
@@ -308,6 +308,7 @@ export function AddDomainDialog({ open, onOpenChange, onCreated }: AddDomainDial
                             ? "warning"
                             : "secondary"
                         }
+                        size="inline"
                       >
                         {preview.status}
                       </Badge>

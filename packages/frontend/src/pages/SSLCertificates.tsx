@@ -354,7 +354,11 @@ export function SSLCertificates() {
       render: (cert) => (
         <div className="flex min-w-0 items-center gap-2">
           <p className="truncate text-sm font-medium">{cert.name}</p>
-          {cert.isSystem && <Badge variant="outline">System</Badge>}
+          {cert.isSystem && (
+            <Badge variant="outline" size="inline">
+              System
+            </Badge>
+          )}
         </div>
       ),
     },

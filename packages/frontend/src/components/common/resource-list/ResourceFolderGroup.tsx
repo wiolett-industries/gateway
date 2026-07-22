@@ -104,7 +104,7 @@ export function ResourceFolderGroup<TFolder, TItem>({
           </span>
         )}
 
-        <Badge variant="secondary" className="ml-1">
+        <Badge variant="secondary" size="inline" className="ml-1">
           {countFolderItems(folder, folderConfig)}
         </Badge>
         {folderConfig.renderFolderBadges?.(folder)}

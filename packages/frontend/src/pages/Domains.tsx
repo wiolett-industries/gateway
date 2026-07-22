@@ -214,7 +214,11 @@ export function Domains() {
           <div className="flex min-w-0 items-center gap-2">
             <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate text-sm font-medium">{d.domain}</span>
-            {d.isSystem && <Badge variant="outline">System</Badge>}
+            {d.isSystem && (
+              <Badge variant="outline" size="inline">
+                System
+              </Badge>
+            )}
           </div>
           {d.description && (
             <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{d.description}</p>
@@ -289,10 +293,7 @@ export function Domains() {
                     Check DNS
                   </DropdownMenuItem>
                 )}
-                {canIssueCert &&
-                  !d.dnsProxied &&
-                  d.dnsStatus === "valid" &&
-                  !d.sslCertCount && (
+                {canIssueCert && !d.dnsProxied && d.dnsStatus === "valid" && !d.sslCertCount && (
                   <DropdownMenuItem onClick={() => handleIssueCert(d)}>
                     <Shield className="h-4 w-4" />
                     Issue Cert

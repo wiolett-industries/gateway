@@ -34,7 +34,7 @@ export function PinnedProxyCard({ proxy }: PinnedProxyCardProps) {
             {proxy.domainNames.length > 1 ? (
               <span className="truncate">+{proxy.domainNames.length - 1} more</span>
             ) : null}
-            {proxy.type === "proxy" ? <ProxyUpstreamTarget host={proxy} /> : null}
+            {proxy.type === "proxy" ? <ProxyUpstreamTarget host={proxy} size="inline" /> : null}
             {proxy.type === "redirect" && proxy.redirectUrl
               ? `${proxy.domainNames.length > 1 ? " · " : ""}→ ${proxy.redirectUrl}`
               : null}
@@ -42,10 +42,10 @@ export function PinnedProxyCard({ proxy }: PinnedProxyCardProps) {
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <Badge variant="secondary" className="uppercase">
+        <Badge variant="secondary" size="inline" className="uppercase">
           {proxy.type}
         </Badge>
-        <Badge variant={statusColor} className="uppercase">
+        <Badge variant={statusColor} size="inline" className="uppercase">
           {statusLabel}
         </Badge>
       </div>

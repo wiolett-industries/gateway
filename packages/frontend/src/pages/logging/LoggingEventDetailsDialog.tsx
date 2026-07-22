@@ -19,12 +19,22 @@ export function LoggingEventDetailsDialog({
         {event && (
           <div className="min-w-0 space-y-4 pr-1">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={loggingSeverityBadgeVariant(event.severity)}>{event.severity}</Badge>
+              <Badge variant={loggingSeverityBadgeVariant(event.severity)} size="inline">
+                {event.severity}
+              </Badge>
               <span className="text-sm text-muted-foreground">
                 {new Date(event.timestamp).toLocaleString()}
               </span>
-              {event.service && <Badge variant="secondary">{event.service}</Badge>}
-              {event.source && <Badge variant="secondary">{event.source}</Badge>}
+              {event.service && (
+                <Badge variant="secondary" size="inline">
+                  {event.service}
+                </Badge>
+              )}
+              {event.source && (
+                <Badge variant="secondary" size="inline">
+                  {event.source}
+                </Badge>
+              )}
             </div>
             <pre className="max-h-32 max-w-full overflow-auto rounded-md bg-muted p-3 text-sm whitespace-pre-wrap break-words">
               {event.message}

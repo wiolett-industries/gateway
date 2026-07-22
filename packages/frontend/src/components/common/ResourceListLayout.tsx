@@ -182,7 +182,11 @@ export function ResourceListSectionHeader({
       )}
     >
       <span className="text-sm font-medium">{label}</span>
-      {count !== undefined && <Badge variant="secondary">{count}</Badge>}
+      {count !== undefined && (
+        <Badge variant="secondary" size="inline">
+          {count}
+        </Badge>
+      )}
     </div>
   );
 }

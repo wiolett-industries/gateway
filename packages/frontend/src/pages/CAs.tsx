@@ -99,7 +99,11 @@ export function CAs() {
         <div className="flex items-center gap-1.5" style={{ paddingLeft: `${depth * 24}px` }}>
           {depth > 0 && <CornerDownRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
           <span className="text-sm font-medium">{ca.commonName}</span>
-          {ca.isSystem && <Badge variant="outline">System</Badge>}
+          {ca.isSystem && (
+            <Badge variant="outline" size="inline">
+              System
+            </Badge>
+          )}
         </div>
       ),
     },

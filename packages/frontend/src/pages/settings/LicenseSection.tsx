@@ -102,7 +102,7 @@ function LicenseSummary({ status }: { status: LicenseStatusView }) {
           </p>
         </div>
       </div>
-      <Badge className="shrink-0 uppercase" variant={statusVariant(status.status)}>
+      <Badge className="shrink-0 uppercase" variant={statusVariant(status.status)} size="inline">
         {statusLabel(status.status)}
       </Badge>
     </div>

@@ -442,7 +442,11 @@ export function DockerNetworks({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Networks</h1>
-              {!isLoading && visibleNodeId && <Badge variant="secondary">{networks.length}</Badge>}
+              {!isLoading && visibleNodeId && (
+                <Badge variant="secondary" size="inline">
+                  {networks.length}
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">
               Manage Docker networks across your nodes

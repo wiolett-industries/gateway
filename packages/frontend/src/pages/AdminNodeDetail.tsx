@@ -474,9 +474,15 @@ export function AdminNodeDetail({
                 <h1 className="min-w-0 truncate text-2xl font-bold">
                   {node.displayName || node.hostname}
                 </h1>
-                <Badge variant={STATUS_BADGE[nodeState] || "secondary"}>{nodeState}</Badge>
+                <Badge variant={STATUS_BADGE[nodeState] || "secondary"} size="inline">
+                  {nodeState}
+                </Badge>
                 {(node.type === "nginx" || node.type === "docker") &&
-                  node.serviceCreationLocked && <Badge variant="warning">Locked</Badge>}
+                  node.serviceCreationLocked && (
+                    <Badge variant="warning" size="inline">
+                      Locked
+                    </Badge>
+                  )}
               </div>
               <p className="text-sm text-muted-foreground">
                 {node.hostname} &middot; {node.type} &middot;{" "}
@@ -825,6 +831,7 @@ export function AdminNodeDetail({
                 <span>Preview:</span>
                 <Badge
                   variant="secondary"
+                  size="inline"
                   className={getNodeAppearanceColor(appearanceColor)?.badgeClassName}
                 >
                   {appearanceName.trim() || node.hostname}

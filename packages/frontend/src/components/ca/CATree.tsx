@@ -91,8 +91,9 @@ function CATreeNodeComponent({
         {ca.status !== "active" && (
           <Badge
             variant="secondary"
+            size="inline"
             className={cn(
-              "text-[10px] px-1 py-0 leading-tight",
+              "text-[10px] py-0 leading-tight",
               ca.status === "revoked" && "text-destructive"
             )}
           >

@@ -655,7 +655,7 @@ export function DockerContainers({
                 className="text-sm font-medium"
               />
               {container.kind === "deployment" && (
-                <Badge variant="outline" className="shrink-0">
+                <Badge variant="outline" size="inline" className="shrink-0">
                   Deployment
                 </Badge>
               )}
@@ -819,7 +819,9 @@ export function DockerContainers({
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Containers</h1>
               {!isLoading && visibleNodeId && (
-                <Badge variant="secondary">{containers.length}</Badge>
+                <Badge variant="secondary" size="inline">
+                  {containers.length}
+                </Badge>
               )}
             </div>
             <p className="text-sm text-muted-foreground">
@@ -974,7 +976,9 @@ export function DockerContainers({
           canCreateSubfolder: (folder) => folder.depth < 2,
           renderFolderBadges: (folder) =>
             folder.isSystem && folder.composeProject ? (
-              <Badge variant="outline">COMPOSE</Badge>
+              <Badge variant="outline" size="inline">
+                COMPOSE
+              </Badge>
             ) : null,
           onToggleFolder: fixedNodeId ? () => {} : (id) => toggleFolder(id),
           onRenameFolder: handleRenameFolder,

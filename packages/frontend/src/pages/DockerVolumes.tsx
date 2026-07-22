@@ -312,7 +312,11 @@ export function DockerVolumes({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Volumes</h1>
-              {!isLoading && visibleNodeId && <Badge variant="secondary">{volumes.length}</Badge>}
+              {!isLoading && visibleNodeId && (
+                <Badge variant="secondary" size="inline">
+                  {volumes.length}
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">Manage Docker volumes across your nodes</p>
           </div>

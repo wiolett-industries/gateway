@@ -323,7 +323,11 @@ export function NodeDetailsTab({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-mono">{m.mountPoint}</span>
-                        {m.mountPoint === "/" && <Badge variant="outline">ROOT DISK</Badge>}
+                        {m.mountPoint === "/" && (
+                          <Badge variant="outline" size="inline">
+                            ROOT DISK
+                          </Badge>
+                        )}
                       </div>
                       <span className="text-sm text-muted-foreground">
                         {Math.round(m.usagePercent)}%

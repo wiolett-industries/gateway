@@ -447,10 +447,14 @@ export function NginxTemplateEdit() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{isNew ? "Create Config Template" : name}</h1>
-                <Badge variant="secondary" className="uppercase">
+                <Badge variant="secondary" size="inline" className="uppercase">
                   {type}
                 </Badge>
-                {isBuiltin && <Badge variant="outline">Built-in</Badge>}
+                {isBuiltin && (
+                  <Badge variant="outline" size="inline">
+                    Built-in
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">
                 {isNew

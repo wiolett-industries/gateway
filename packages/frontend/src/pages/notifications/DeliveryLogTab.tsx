@@ -335,7 +335,9 @@ export function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <span className="text-muted-foreground">Status:</span>{" "}
-                  <Badge variant={STATUS_BADGE[detail.status]}>{detail.status}</Badge>
+                  <Badge variant={STATUS_BADGE[detail.status]} size="inline">
+                    {detail.status}
+                  </Badge>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Event:</span> {detail.eventType}
@@ -343,7 +345,10 @@ export function DeliveryLogTab({ refreshToken }: { refreshToken: number }) {
                 <div>
                   <span className="text-muted-foreground">HTTP:</span>{" "}
                   {detail.responseStatus ? (
-                    <Badge variant={detail.responseStatus < 300 ? "success" : "destructive"}>
+                    <Badge
+                      variant={detail.responseStatus < 300 ? "success" : "destructive"}
+                      size="inline"
+                    >
                       {detail.responseStatus}
                     </Badge>
                   ) : (

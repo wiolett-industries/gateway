@@ -149,7 +149,11 @@ export function DeploymentOverview({
                 value={
                   <span className="inline-flex items-center gap-2">
                     <span className="font-mono">tcp/{route.containerPort}</span>
-                    {route.isPrimary && <Badge variant="secondary">Primary</Badge>}
+                    {route.isPrimary && (
+                      <Badge variant="secondary" size="inline">
+                        Primary
+                      </Badge>
+                    )}
                   </span>
                 }
               />
@@ -301,7 +305,9 @@ function ReleaseRow({ release }: { release: DockerDeploymentRelease }) {
         <p className="text-xs text-muted-foreground font-mono truncate">{release.image ?? "-"}</p>
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
-        <Badge variant={statusVariant(release.status)}>{release.status}</Badge>
+        <Badge variant={statusVariant(release.status)} size="inline">
+          {release.status}
+        </Badge>
         <span className="text-sm text-muted-foreground tabular-nums">
           {formatDate(release.createdAt)}
         </span>

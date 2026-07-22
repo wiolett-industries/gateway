@@ -4,7 +4,7 @@ import { Children } from "react";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "inline-flex h-6 max-w-full min-w-0 shrink items-center justify-center overflow-hidden text-ellipsis whitespace-nowrap px-2 py-0 text-[11px] font-semibold uppercase tracking-wider leading-none [&>*]:max-w-full [&>*]:min-w-0 [&>*]:overflow-hidden [&>*]:text-ellipsis [&>*]:whitespace-nowrap",
+  "inline-flex max-w-full min-w-0 shrink items-center justify-center overflow-hidden text-ellipsis whitespace-nowrap py-0 text-[11px] font-semibold uppercase tracking-wider leading-none [&>*]:max-w-full [&>*]:min-w-0 [&>*]:overflow-hidden [&>*]:text-ellipsis [&>*]:whitespace-nowrap",
   {
     variants: {
       variant: {
@@ -16,9 +16,15 @@ const badgeVariants = cva(
         warning: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
         info: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
       },
+      // AI: Use `inline` ONLY when the badge shares a row with regular text. Never use it for standalone badges.
+      size: {
+        default: "h-6 px-2",
+        inline: "h-5 px-1",
+      },
     },
     defaultVariants: {
       variant: "default",
+      size: "default",
     },
   }
 );
@@ -54,9 +60,9 @@ function renderBadgeChildren(children: React.ReactNode) {
   return output;
 }
 
-function Badge({ className, variant, children, ...props }: BadgeProps) {
+function Badge({ className, variant, size, children, ...props }: BadgeProps) {
   return (
-    <div className={cn(badgeVariants({ variant }), className)} {...props}>
+    <div className={cn(badgeVariants({ variant, size }), className)} {...props}>
       {renderBadgeChildren(children)}
     </div>
   );

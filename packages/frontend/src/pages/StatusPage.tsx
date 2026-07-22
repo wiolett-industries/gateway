@@ -479,7 +479,7 @@ export function StatusPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">Status Page</h1>
-                <Badge variant={config.enabled ? "success" : "secondary"}>
+                <Badge variant={config.enabled ? "success" : "secondary"} size="inline">
                   {config.enabled ? "Enabled" : "Disabled"}
                 </Badge>
               </div>
@@ -639,11 +639,19 @@ function ServicesTab({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-medium">{service.publicName}</p>
-                    <Badge variant={statusBadge(service.currentStatus) as never}>
+                    <Badge variant={statusBadge(service.currentStatus) as never} size="inline">
                       {service.currentStatus}
                     </Badge>
-                    {!service.enabled && <Badge variant="secondary">Hidden</Badge>}
-                    {service.broken && <Badge variant="warning">Source missing</Badge>}
+                    {!service.enabled && (
+                      <Badge variant="secondary" size="inline">
+                        Hidden
+                      </Badge>
+                    )}
+                    {service.broken && (
+                      <Badge variant="warning" size="inline">
+                        Source missing
+                      </Badge>
+                    )}
                   </div>
                   <p className="truncate text-xs text-muted-foreground">
                     {service.source?.label || "Missing source"}
@@ -745,13 +753,20 @@ function IncidentsTab({
             <div className="flex flex-wrap items-center justify-between gap-3 p-4">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <div className="flex min-h-7 flex-wrap items-center gap-2">
-                  <Badge variant={statusBadge(incident.severity) as never}>
+                  <Badge variant={statusBadge(incident.severity) as never} size="inline">
                     {incident.severity}
                   </Badge>
-                  <Badge variant={incident.status === "active" ? "warning" : "secondary"}>
+                  <Badge
+                    variant={incident.status === "active" ? "warning" : "secondary"}
+                    size="inline"
+                  >
                     {incident.status}
                   </Badge>
-                  {incident.type === "automatic" && <Badge variant="secondary">AUTO</Badge>}
+                  {incident.type === "automatic" && (
+                    <Badge variant="secondary" size="inline">
+                      AUTO
+                    </Badge>
+                  )}
                   <h2 className="m-0 translate-y-px text-base font-medium leading-none">
                     {incident.title}
                   </h2>

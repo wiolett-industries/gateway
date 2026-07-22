@@ -521,15 +521,15 @@ export function DockerDeploymentDetail({
               <div className="flex min-w-0 items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{deployment.name}</h1>
                 {unavailable ? (
-                  <Badge variant="secondary" className="shrink-0">
+                  <Badge variant="secondary" size="inline" className="shrink-0">
                     Unavailable
                   </Badge>
                 ) : (
                   <>
-                    <Badge variant={statusVariant(serviceState)} className="shrink-0">
+                    <Badge variant={statusVariant(serviceState)} size="inline" className="shrink-0">
                       {serviceState}
                     </Badge>
-                    <Badge variant="outline" className="shrink-0">
+                    <Badge variant="outline" size="inline" className="shrink-0">
                       blue/green
                     </Badge>
                   </>

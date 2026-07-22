@@ -58,7 +58,7 @@ export function LoggingEnvironmentList({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="truncate text-sm font-medium">{environment.name}</span>
-                <Badge variant={environment.enabled ? "success" : "secondary"}>
+                <Badge variant={environment.enabled ? "success" : "secondary"} size="inline">
                   {environment.enabled ? "Enabled" : "Disabled"}
                 </Badge>
               </div>

@@ -473,7 +473,11 @@ export function DockerImages({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Images</h1>
-              {!isLoading && visibleNodeId && <Badge variant="secondary">{images.length}</Badge>}
+              {!isLoading && visibleNodeId && (
+                <Badge variant="secondary" size="inline">
+                  {images.length}
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">Manage Docker images across your nodes</p>
           </div>

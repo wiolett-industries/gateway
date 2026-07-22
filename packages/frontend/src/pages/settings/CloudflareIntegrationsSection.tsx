@@ -439,7 +439,9 @@ export function CloudflareIntegrationsSection() {
                               {zone.accountName ?? "Cloudflare"} &middot; {zone.status ?? "unknown"}
                             </p>
                           </div>
-                          <Badge variant="outline">{zone.remoteId}</Badge>
+                          <Badge variant="outline" size="inline">
+                            {zone.remoteId}
+                          </Badge>
                         </div>
                       ))}
                     </div>
@@ -517,13 +519,18 @@ function CloudflareConnectorRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-medium">{connector.name}</p>
-            <Badge variant={connector.enabled ? "secondary" : "outline"}>
+            <Badge variant={connector.enabled ? "secondary" : "outline"} size="inline">
               {connector.enabled ? "enabled" : "disabled"}
             </Badge>
-            <Badge variant={connector.syncStatus === "error" ? "destructive" : "outline"}>
+            <Badge
+              variant={connector.syncStatus === "error" ? "destructive" : "outline"}
+              size="inline"
+            >
               {connector.syncStatus}
             </Badge>
-            <Badge variant="outline">{zoneCount} zones</Badge>
+            <Badge variant="outline" size="inline">
+              {zoneCount} zones
+            </Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {lastSync}
@@ -534,7 +541,7 @@ function CloudflareConnectorRow({
           {enabledCapabilities.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {enabledCapabilities.map((label) => (
-                <Badge key={label} variant="outline">
+                <Badge key={label} variant="outline" size="inline">
                   {label}
                 </Badge>
               ))}

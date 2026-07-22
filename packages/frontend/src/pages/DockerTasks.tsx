@@ -312,7 +312,9 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Tasks</h1>
-              <Badge variant="secondary">{tasks.length}</Badge>
+              <Badge variant="secondary" size="inline">
+                {tasks.length}
+              </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
               View pending and completed Docker operations (auto-refreshes every 5s)

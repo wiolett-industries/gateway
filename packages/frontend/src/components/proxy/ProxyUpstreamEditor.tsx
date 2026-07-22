@@ -352,14 +352,21 @@ export function ProxyUpstreamFields({
                     {(candidate._nodeName || candidate._nodeSlug) && (
                       <Badge
                         variant="secondary"
+                        size="inline"
                         className={nodeBadgeClassName(candidate._nodeColor)}
                       >
                         {candidate._nodeName ?? candidate._nodeSlug}
                       </Badge>
                     )}
-                    {unavailable && <Badge variant="secondary">Unavailable</Badge>}
+                    {unavailable && (
+                      <Badge variant="secondary" size="inline">
+                        Unavailable
+                      </Badge>
+                    )}
                     {!unavailable && ports.length === 0 && (
-                      <Badge variant="secondary">No TCP ports</Badge>
+                      <Badge variant="secondary" size="inline">
+                        No TCP ports
+                      </Badge>
                     )}
                   </span>
                 );

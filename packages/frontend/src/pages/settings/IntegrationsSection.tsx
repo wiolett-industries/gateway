@@ -1053,8 +1053,13 @@ function ConnectorRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-medium">{connector.name}</p>
-            <Badge variant={statusVariant}>{connector.enabled ? "enabled" : "disabled"}</Badge>
-            <Badge variant={connector.syncStatus === "error" ? "destructive" : "outline"}>
+            <Badge variant={statusVariant} size="inline">
+              {connector.enabled ? "enabled" : "disabled"}
+            </Badge>
+            <Badge
+              variant={connector.syncStatus === "error" ? "destructive" : "outline"}
+              size="inline"
+            >
               {connector.syncStatus}
             </Badge>
           </div>
@@ -1158,7 +1163,7 @@ function CapabilityBadges({
   return (
     <div className={cn("flex flex-wrap gap-1.5", className)}>
       {enabled.map((label) => (
-        <Badge key={label} variant="outline">
+        <Badge key={label} variant="outline" size="inline">
           {label}
         </Badge>
       ))}

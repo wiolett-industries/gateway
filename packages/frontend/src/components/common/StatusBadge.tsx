@@ -1,14 +1,30 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status, size }: { status: string; size?: BadgeProps["size"] }) {
   switch (status) {
     case "active":
-      return <Badge variant="success">Active</Badge>;
+      return (
+        <Badge variant="success" size={size}>
+          Active
+        </Badge>
+      );
     case "revoked":
-      return <Badge variant="destructive">Revoked</Badge>;
+      return (
+        <Badge variant="destructive" size={size}>
+          Revoked
+        </Badge>
+      );
     case "expired":
-      return <Badge variant="warning">Expired</Badge>;
+      return (
+        <Badge variant="warning" size={size}>
+          Expired
+        </Badge>
+      );
     default:
-      return <Badge variant="secondary">{status}</Badge>;
+      return (
+        <Badge variant="secondary" size={size}>
+          {status}
+        </Badge>
+      );
   }
 }

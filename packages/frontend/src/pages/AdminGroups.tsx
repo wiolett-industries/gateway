@@ -456,8 +456,16 @@ export function AdminGroups({
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <p className="truncate text-sm font-medium">{group.name}</p>
-                {group.isBuiltin && <Badge variant="secondary">Built-in</Badge>}
-                {parent && <Badge variant="outline">Inherits {parent.name}</Badge>}
+                {group.isBuiltin && (
+                  <Badge variant="secondary" size="inline">
+                    Built-in
+                  </Badge>
+                )}
+                {parent && (
+                  <Badge variant="outline" size="inline">
+                    Inherits {parent.name}
+                  </Badge>
+                )}
               </div>
               {group.description && (
                 <p className="truncate text-xs text-muted-foreground">{group.description}</p>

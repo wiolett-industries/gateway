@@ -732,18 +732,26 @@ export function ProxyHostDetail({
                 <h1 className="min-w-0 basis-full break-all text-2xl font-bold sm:basis-auto">
                   {host.domainNames[0] || "Proxy Host"}
                 </h1>
-                <Badge className="shrink-0" variant={TYPE_BADGE[host.type] ?? "default"}>
+                <Badge
+                  className="shrink-0"
+                  variant={TYPE_BADGE[host.type] ?? "default"}
+                  size="inline"
+                >
                   {host.type}
                 </Badge>
                 {host.maintenanceEnabled ? (
-                  <Badge className="shrink-0" variant="warning">
+                  <Badge className="shrink-0" variant="warning" size="inline">
                     Maintenance
                   </Badge>
                 ) : (
                   (() => {
                     const eff = effectiveHealthStatus(host);
                     return (
-                      <Badge className="shrink-0" variant={HEALTH_BADGE[eff] ?? "secondary"}>
+                      <Badge
+                        className="shrink-0"
+                        variant={HEALTH_BADGE[eff] ?? "secondary"}
+                        size="inline"
+                      >
                         {HEALTH_LABEL[eff] ?? eff}
                       </Badge>
                     );
@@ -757,7 +765,7 @@ export function ProxyHostDetail({
                     {host.domainNames.length > 2 ? "s" : ""}
                   </span>
                 ) : null}
-                {host.type === "proxy" ? <ProxyUpstreamTarget host={host} /> : null}
+                {host.type === "proxy" ? <ProxyUpstreamTarget host={host} size="inline" /> : null}
                 {host.type === "redirect" && host.redirectUrl
                   ? ` \u2192 ${host.redirectUrl}`
                   : null}

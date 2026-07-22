@@ -495,9 +495,15 @@ export function DockerVolumeDetail({
                 <div className="flex items-center gap-2">
                   <h1 className="text-2xl font-bold truncate">{decodedVolumeName}</h1>
                   {unavailable ? (
-                    <Badge variant="secondary">Unavailable</Badge>
+                    <Badge variant="secondary" size="inline">
+                      Unavailable
+                    </Badge>
                   ) : (
-                    volume?.driver && <Badge variant="secondary">{volume.driver}</Badge>
+                    volume?.driver && (
+                      <Badge variant="secondary" size="inline">
+                        {volume.driver}
+                      </Badge>
+                    )
                   )}
                 </div>
                 <p className="text-sm text-muted-foreground truncate">

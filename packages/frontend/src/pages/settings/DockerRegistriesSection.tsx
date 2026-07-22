@@ -245,11 +245,19 @@ export function DockerRegistriesSection({ nodesList }: DockerRegistriesSectionPr
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm font-medium">{r.name}</p>
-              <Badge variant={r.scope === "global" ? "default" : "secondary"}>
+              <Badge variant={r.scope === "global" ? "default" : "secondary"} size="inline">
                 {registryScopeLabel(r)}
               </Badge>
-              {r.integration && <Badge variant="secondary">GitLab</Badge>}
-              {status === "inaccessible" && <Badge variant="destructive">Inaccessible</Badge>}
+              {r.integration && (
+                <Badge variant="secondary" size="inline">
+                  GitLab
+                </Badge>
+              )}
+              {status === "inaccessible" && (
+                <Badge variant="destructive" size="inline">
+                  Inaccessible
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {r.url}

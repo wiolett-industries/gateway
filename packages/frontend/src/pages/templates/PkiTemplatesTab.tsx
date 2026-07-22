@@ -246,7 +246,7 @@ export function PkiTemplatesTab({
         <div className="flex min-w-0 items-center gap-2">
           <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="truncate text-sm font-medium">{template.name}</span>
-          {template.isBuiltin && <Badge>Built-in</Badge>}
+          {template.isBuiltin && <Badge size="inline">Built-in</Badge>}
         </div>
       ),
     },

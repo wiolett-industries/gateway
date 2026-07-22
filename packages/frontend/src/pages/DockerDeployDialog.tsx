@@ -353,9 +353,7 @@ export function DockerDeployDialog({
             <Combobox
               value={deployRegistryId || "__default__"}
               options={registryOptions}
-              onValueChange={(value) =>
-                setDeployRegistryId(value === "__default__" ? "" : value)
-              }
+              onValueChange={(value) => setDeployRegistryId(value === "__default__" ? "" : value)}
               placeholder={!deployNodeId ? "Select a node first" : "Docker Hub"}
               searchPlaceholder="Search registries..."
               emptyMessage="No registries found."
@@ -370,7 +368,11 @@ export function DockerDeployDialog({
                   <span className="flex min-w-0 items-center gap-2">
                     <span className="min-w-0 truncate">{registry.name}</span>
                     <span className="text-muted-foreground">{registry.url}</span>
-                    {registry.scope === "node" && <Badge variant="secondary">This node</Badge>}
+                    {registry.scope === "node" && (
+                      <Badge variant="secondary" size="inline">
+                        This node
+                      </Badge>
+                    )}
                   </span>
                 );
               }}
@@ -394,7 +396,7 @@ export function DockerDeployDialog({
               renderOption={(option) => (
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="min-w-0 truncate">{option.label}</span>
-                  <Badge variant="secondary">
+                  <Badge variant="secondary" size="inline">
                     {deployLocalImages.includes(option.value) ? "On this node" : "Pull"}
                   </Badge>
                 </span>
