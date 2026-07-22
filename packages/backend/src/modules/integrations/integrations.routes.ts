@@ -2,17 +2,20 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import type { MiddlewareHandler } from 'hono';
 import { container } from '@/container.js';
 import { openApiValidationHook } from '@/lib/openapi.js';
-import { authMiddleware } from '@/modules/auth/auth.middleware.js';
+import { authMiddleware, requireScope, sessionOnly } from '@/modules/auth/auth.middleware.js';
 import type { AppEnv } from '@/types.js';
 import { assertConnectorOperationAccess } from './integration-permissions.js';
 import {
+  authorizeGitLabUserCredentialRoute,
   createCloudflareConnectorRoute,
   createGitLabConnectorRoute,
   deleteCloudflareConnectorRoute,
   deleteGitLabConnectorRoute,
+  disconnectGitLabUserCredentialRoute,
   getCloudflareConnectorRoute,
   getGitLabConnectorCapabilitiesRoute,
   getGitLabConnectorRoute,
+  getGitLabUserCredentialRoute,
   listCloudflareConnectorsRoute,
   listCloudflareZonesRoute,
   listGitLabAllowlistOptionsRoute,
@@ -44,12 +47,19 @@ import {
   GitLabConnectorPreviewTestSchema,
   GitLabConnectorRotateTokenSchema,
   GitLabConnectorUpdateSchema,
+  GitLabUserCredentialAuthorizeSchema,
 } from './integrations.schemas.js';
 import { IntegrationsService } from './integrations.service.js';
 
 export const integrationsRoutes = new OpenAPIHono<AppEnv>({ defaultHook: openApiValidationHook });
 
 integrationsRoutes.use('*', authMiddleware);
+
+const requireGitLabUserCredentialAccess: MiddlewareHandler<AppEnv> = async (c, next) => {
+  await sessionOnly(c, async () => {
+    await requireScope('feat:ai:use')(c, next);
+  });
+};
 
 function requireGitLabOperation(
   operation: string,
@@ -364,11 +374,42 @@ integrationsRoutes.openapi(
 );
 
 integrationsRoutes.openapi(
-  { ...syncGitLabConnectorRoute, middleware: requireGitLabOperation('connector.sync', 'integrations:gitlab:manage') },
+  { ...syncGitLabConnectorRoute, middleware: requireGitLabOperation('connector.sync', 'integrations:gitlab:sync') },
   async (c) => {
     const service = container.resolve(IntegrationsService);
     const user = c.get('user')!;
     const data = await service.syncGitLabConnector(c.req.param('id')!, user.id);
+    return c.json({ data });
+  }
+);
+
+integrationsRoutes.openapi(
+  { ...getGitLabUserCredentialRoute, middleware: requireGitLabUserCredentialAccess },
+  async (c) => {
+    const service = container.resolve(IntegrationsService);
+    const user = c.get('user')!;
+    const data = await service.getGitLabUserCredentialStatus(c.req.param('id')!, user.id);
+    return c.json({ data });
+  }
+);
+
+integrationsRoutes.openapi(
+  { ...authorizeGitLabUserCredentialRoute, middleware: requireGitLabUserCredentialAccess },
+  async (c) => {
+    const service = container.resolve(IntegrationsService);
+    const user = c.get('user')!;
+    const input = GitLabUserCredentialAuthorizeSchema.parse(await c.req.json());
+    const data = await service.authorizeGitLabUserCredential(c.req.param('id')!, input, user.id);
+    return c.json({ data });
+  }
+);
+
+integrationsRoutes.openapi(
+  { ...disconnectGitLabUserCredentialRoute, middleware: requireGitLabUserCredentialAccess },
+  async (c) => {
+    const service = container.resolve(IntegrationsService);
+    const user = c.get('user')!;
+    const data = await service.disconnectGitLabUserCredential(c.req.param('id')!, user.id);
     return c.json({ data });
   }
 );

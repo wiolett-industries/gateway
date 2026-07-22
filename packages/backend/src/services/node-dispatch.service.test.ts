@@ -31,7 +31,7 @@ describe('NodeDispatchService', () => {
           sessionKey: 'user-1',
         },
       },
-      undefined,
+      undefined
     );
     expect(registry.sendCommand).toHaveBeenNthCalledWith(
       2,
@@ -42,7 +42,7 @@ describe('NodeDispatchService', () => {
           sessionKey: 'user-1',
         },
       },
-      undefined,
+      undefined
     );
   });
 

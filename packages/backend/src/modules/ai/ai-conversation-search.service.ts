@@ -386,7 +386,7 @@ export class AIConversationSearchService {
       ? await this.getOwnedConversation(userId, input.currentConversationId)
       : null;
     await this.auditRetrieval(userId, {
-      action: 'ai.list_projects',
+      action: 'ai.list_chat_projects',
       currentConversationId: input.currentConversationId ?? null,
       currentProjectId: currentConversation?.folderId ?? null,
       resultCount: result.projects.length,

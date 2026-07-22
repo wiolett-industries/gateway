@@ -22,6 +22,7 @@ import {
   GitLabConnectorPreviewTestSchema,
   GitLabConnectorRotateTokenSchema,
   GitLabConnectorUpdateSchema,
+  GitLabUserCredentialAuthorizeSchema,
 } from './integrations.schemas.js';
 
 const connectorParams = pathParamSchema('id');
@@ -82,6 +83,21 @@ const GitLabSyncResponseSchema = z.object({
 const GitLabPreviewTestResponseSchema = z.object({
   capabilities: z.record(z.boolean()),
   allowlistEntries: z.array(GitLabAllowlistEntryResponseSchema),
+});
+
+const GitLabUserCredentialResponseSchema = z.object({
+  connectorId: z.string().uuid(),
+  connectorName: z.string(),
+  baseUrl: z.string().url(),
+  patCreationUrl: z.string().url(),
+  authorized: z.boolean(),
+  status: z.enum(['missing', 'valid', 'invalid']),
+  tokenMasked: z.string().nullable(),
+  gitlabUserId: z.string().nullable(),
+  gitlabUsername: z.string().nullable(),
+  tokenScopes: z.array(z.string()),
+  tokenExpiresAt: z.string().nullable(),
+  lastValidatedAt: z.string().nullable(),
 });
 
 const CloudflareConnectorSettingsResponseSchema = z.object({
@@ -254,6 +270,35 @@ export const syncGitLabConnectorRoute = appRoute({
     'Synchronizes allowed GitLab projects and registries. Registry credentials remain connector-backed and are not returned.',
   request: { params: connectorParams },
   responses: okJson(dataResponseSchema(GitLabSyncResponseSchema)),
+});
+
+export const getGitLabUserCredentialRoute = appRoute({
+  method: 'get',
+  path: '/gitlab/connectors/{id}/user-credential',
+  tags: ['Integrations'],
+  summary: 'Get current user GitLab authorization status',
+  description: 'Returns only masked metadata for the authenticated browser user. The PAT is never returned.',
+  request: { params: connectorParams },
+  responses: okJson(dataResponseSchema(GitLabUserCredentialResponseSchema)),
+});
+
+export const authorizeGitLabUserCredentialRoute = appRoute({
+  method: 'put',
+  path: '/gitlab/connectors/{id}/user-credential',
+  tags: ['Integrations'],
+  summary: 'Authorize the current user for a GitLab connector',
+  description: 'Validates the submitted PAT against GitLab and stores it encrypted for this user and connector.',
+  request: { params: connectorParams, ...jsonBody(GitLabUserCredentialAuthorizeSchema) },
+  responses: okJson(dataResponseSchema(GitLabUserCredentialResponseSchema)),
+});
+
+export const disconnectGitLabUserCredentialRoute = appRoute({
+  method: 'delete',
+  path: '/gitlab/connectors/{id}/user-credential',
+  tags: ['Integrations'],
+  summary: 'Disconnect the current user from a GitLab connector',
+  request: { params: connectorParams },
+  responses: okJson(dataResponseSchema(z.object({ disconnected: z.boolean() }))),
 });
 
 export const searchGitLabAllowlistRoute = appRoute({

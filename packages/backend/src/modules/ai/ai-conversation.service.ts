@@ -19,7 +19,13 @@ import { redactOneTimeSecretToolResult } from './ai-secret-result-redaction.js';
 
 const RETAIN_FULL_TOOL_OUTPUT_COUNT = 10;
 const DEFAULT_PERSISTENT_TOOL_OUTPUT_MAX_BYTES = 16000;
-const ACTIVE_RUN_STATUSES = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'] as const;
+const ACTIVE_RUN_STATUSES = [
+  'queued',
+  'running',
+  'waiting_for_approval',
+  'waiting_for_answer',
+  'waiting_for_credential',
+] as const;
 const DEFAULT_TOOL_HISTORY_RETENTION: AIToolHistoryRetention = { mode: 'recent_full' };
 const TOOL_HISTORY_RETENTION_BY_NAME = new Map(
   AI_TOOLS.map((tool) => [tool.name, tool.historyRetention ?? DEFAULT_TOOL_HISTORY_RETENTION])

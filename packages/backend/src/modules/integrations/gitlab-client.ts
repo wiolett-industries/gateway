@@ -3,6 +3,7 @@ import https from 'node:https';
 import { AppError } from '@/middleware/error-handler.js';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+const MAX_REDIRECTS = 5;
 
 export interface GitLabRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -38,35 +39,52 @@ export class GitLabClient {
   }
 
   async requestPage<T>(path: string, options: GitLabRequestOptions = {}): Promise<GitLabPage<T>> {
-    const url = this.buildUrl(path, options.query);
+    let url = this.buildUrl(path, options.query);
+    let sendCredential = true;
+    let redirectCount = 0;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     try {
-      const response = await this.fetchImpl(url, {
-        method: options.method ?? 'GET',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'PRIVATE-TOKEN': this.token,
-          'User-Agent': 'Gateway GitLab Connector',
-        },
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
-        signal: controller.signal,
-      });
-
-      if (response.status === 404 && options.allowNotFound) {
-        return { data: null as T, nextPage: null };
-      }
-      if (!response.ok) {
-        throw new AppError(response.status, 'GITLAB_API_ERROR', `GitLab API request failed with ${response.status}`, {
-          status: response.status,
-          path,
+      while (true) {
+        const response = await this.fetchImpl(url, {
+          method: options.method ?? 'GET',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            ...(sendCredential ? { 'PRIVATE-TOKEN': this.token } : {}),
+            'User-Agent': 'Gateway GitLab Connector',
+          },
+          body: options.body === undefined ? undefined : JSON.stringify(options.body),
+          redirect: 'manual',
+          signal: controller.signal,
         });
-      }
 
-      const text = await response.text();
-      const data = (text ? JSON.parse(text) : null) as T;
-      return { data, nextPage: response.headers.get('x-next-page') || null };
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
+          if (!location) throw this.apiError(response.status, path);
+          if (redirectCount >= MAX_REDIRECTS) throw this.tooManyRedirectsError(path);
+          const redirect = this.resolveRedirect(
+            url,
+            location,
+            sendCredential,
+            path,
+            this.isSafeCrossOriginRequest(options)
+          );
+          url = redirect.url;
+          sendCredential = redirect.sendCredential;
+          redirectCount += 1;
+          continue;
+        }
+
+        if (response.status === 404 && options.allowNotFound) {
+          return { data: null as T, nextPage: null };
+        }
+        if (!response.ok) throw this.apiError(response.status, path);
+
+        const text = await response.text();
+        const data = (text ? JSON.parse(text) : null) as T;
+        return { data, nextPage: response.headers.get('x-next-page') || null };
+      }
     } catch (error) {
       if (error instanceof AppError) throw error;
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -95,7 +113,9 @@ export class GitLabClient {
   private async requestBufferWithFetch(
     url: string,
     path: string,
-    options: GitLabBufferRequestOptions
+    options: GitLabBufferRequestOptions,
+    redirectCount = 0,
+    sendCredential = true
   ): Promise<{ buffer: Buffer; contentType: string | null }> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
@@ -105,18 +125,34 @@ export class GitLabClient {
         headers: {
           Accept: '*/*',
           ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
-          'PRIVATE-TOKEN': this.token,
+          ...(sendCredential ? { 'PRIVATE-TOKEN': this.token } : {}),
           'User-Agent': 'Gateway GitLab Connector',
         },
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        redirect: 'manual',
         signal: controller.signal,
       });
 
-      if (!response.ok) {
-        throw new AppError(response.status, 'GITLAB_API_ERROR', `GitLab API request failed with ${response.status}`, {
-          status: response.status,
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          throw this.apiError(response.status, path);
+        }
+        if (redirectCount >= MAX_REDIRECTS) {
+          throw this.tooManyRedirectsError(path);
+        }
+        const redirect = this.resolveRedirect(
+          url,
+          location,
+          sendCredential,
           path,
-        });
+          this.isSafeCrossOriginRequest(options)
+        );
+        return this.requestBufferWithFetch(redirect.url, path, options, redirectCount + 1, redirect.sendCredential);
+      }
+
+      if (!response.ok) {
+        throw this.apiError(response.status, path);
       }
 
       const declaredLength = Number(response.headers.get('content-length'));
@@ -153,7 +189,8 @@ export class GitLabClient {
     url: string,
     path: string,
     options: GitLabBufferRequestOptions,
-    redirectCount = 0
+    redirectCount = 0,
+    sendCredential = true
   ): Promise<{ buffer: Buffer; contentType: string | null }> {
     return new Promise((resolve, reject) => {
       const parsed = new URL(url);
@@ -166,23 +203,38 @@ export class GitLabClient {
           headers: {
             Accept: '*/*',
             ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-            'PRIVATE-TOKEN': this.token,
+            ...(sendCredential ? { 'PRIVATE-TOKEN': this.token } : {}),
             'User-Agent': 'Gateway GitLab Connector',
           },
           timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         },
         (response) => {
           const location = response.headers.location;
-          if (
-            location &&
-            response.statusCode &&
-            response.statusCode >= 300 &&
-            response.statusCode < 400 &&
-            redirectCount < 5
-          ) {
+          if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400) {
             response.resume();
-            const redirectUrl = new URL(location, url).toString();
-            this.requestBufferNative(redirectUrl, path, options, redirectCount + 1).then(resolve, reject);
+            if (!location) {
+              reject(this.apiError(response.statusCode, path));
+              return;
+            }
+            if (redirectCount >= MAX_REDIRECTS) {
+              reject(this.tooManyRedirectsError(path));
+              return;
+            }
+            try {
+              const redirect = this.resolveRedirect(
+                url,
+                location,
+                sendCredential,
+                path,
+                this.isSafeCrossOriginRequest(options)
+              );
+              this.requestBufferNative(redirect.url, path, options, redirectCount + 1, redirect.sendCredential).then(
+                resolve,
+                reject
+              );
+            } catch (error) {
+              reject(error);
+            }
             return;
           }
 
@@ -291,6 +343,56 @@ export class GitLabClient {
     parsed.hash = '';
     parsed.search = '';
     return parsed.toString().replace(/\/+$/, '');
+  }
+
+  private resolveRedirect(
+    currentUrl: string,
+    location: string,
+    sendCredential: boolean,
+    path: string,
+    allowCrossOrigin: boolean
+  ): { url: string; sendCredential: boolean } {
+    const current = new URL(currentUrl);
+    const target = new URL(location, current);
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      throw new AppError(502, 'GITLAB_REDIRECT_UNSUPPORTED', 'GitLab returned an unsupported redirect', { path });
+    }
+    if (current.protocol === 'https:' && target.protocol === 'http:') {
+      throw new AppError(502, 'GITLAB_REDIRECT_DOWNGRADE', 'GitLab returned an insecure redirect', { path });
+    }
+
+    if (target.username || target.password) {
+      throw new AppError(502, 'GITLAB_REDIRECT_CREDENTIALS', 'GitLab returned a redirect containing credentials', {
+        path,
+      });
+    }
+
+    const crossOrigin = target.origin !== new URL(this.apiRoot).origin;
+    if (crossOrigin && !allowCrossOrigin) {
+      throw new AppError(502, 'GITLAB_REDIRECT_CROSS_ORIGIN', 'GitLab returned an unsafe cross-origin redirect', {
+        path,
+      });
+    }
+
+    return {
+      url: target.toString(),
+      sendCredential: sendCredential && !crossOrigin,
+    };
+  }
+
+  private isSafeCrossOriginRequest(options: GitLabRequestOptions): boolean {
+    return (options.method ?? 'GET') === 'GET' && options.body === undefined;
+  }
+
+  private apiError(status: number, path: string): AppError {
+    return new AppError(status, 'GITLAB_API_ERROR', `GitLab API request failed with ${status}`, {
+      status,
+      path,
+    });
+  }
+
+  private tooManyRedirectsError(path: string): AppError {
+    return new AppError(502, 'GITLAB_TOO_MANY_REDIRECTS', 'GitLab returned too many redirects', { path });
   }
 
   private headerString(value: string | string[] | undefined): string | null {

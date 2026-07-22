@@ -79,7 +79,7 @@ export const GITLAB_AI_TOOLS: AIToolDefinition[] = [
     parameters: { type: 'object', properties: { connectorId: connectorIdSchema }, required: ['connectorId'] },
     destructive: false,
     category: 'GitLab',
-    requiredScope: 'integrations:gitlab:manage',
+    requiredScope: 'integrations:gitlab:sync',
     invalidateStores: [],
     historyRetention: { mode: 'persistent_context' },
   },

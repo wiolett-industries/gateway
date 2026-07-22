@@ -49,6 +49,21 @@ export interface GitLabConnector {
   allowlistEntries?: GitLabAllowlistEntry[];
 }
 
+export interface GitLabUserCredentialStatus {
+  connectorId: string;
+  connectorName: string;
+  baseUrl: string;
+  patCreationUrl: string;
+  authorized: boolean;
+  status: "missing" | "valid" | "invalid";
+  tokenMasked: string | null;
+  gitlabUserId: string | null;
+  gitlabUsername: string | null;
+  tokenScopes: string[];
+  tokenExpiresAt: string | null;
+  lastValidatedAt: string | null;
+}
+
 export interface CloudflareConnectorSettings {
   autoSyncEnabled: boolean;
   autoSyncIntervalSeconds: number;

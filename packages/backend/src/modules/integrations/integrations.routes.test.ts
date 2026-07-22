@@ -1,10 +1,12 @@
 import 'reflect-metadata';
 import { Hono } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { container } from '@/container.js';
+import { container, TOKENS } from '@/container.js';
+import type { DrizzleClient } from '@/db/client.js';
 import { errorHandler } from '@/middleware/error-handler.js';
 import { TokensService } from '@/modules/tokens/tokens.service.js';
-import type { AppEnv, User } from '@/types.js';
+import { SessionService } from '@/services/session.service.js';
+import type { AppEnv, SessionData, User } from '@/types.js';
 import { integrationsRoutes } from './integrations.routes.js';
 import { IntegrationsService } from './integrations.service.js';
 
@@ -18,6 +20,15 @@ const USER: User = {
   groupName: 'admin',
   scopes: [],
   isBlocked: false,
+};
+
+const SESSION: SessionData = {
+  userId: USER.id,
+  user: USER,
+  accessToken: 'oidc-access-token',
+  createdAt: Date.now(),
+  expiresAt: Date.now() + 60_000,
+  csrfToken: 'csrf-token',
 };
 
 function createApp() {
@@ -42,6 +53,43 @@ function registerServices(scopes: string[], service: Partial<IntegrationsService
 function authHeaders() {
   return {
     Authorization: 'Bearer gw_valid',
+    'Content-Type': 'application/json',
+  };
+}
+
+function registerBrowserSession(service: Partial<IntegrationsService>, scopes = ['feat:ai:use']) {
+  container.registerInstance(SessionService, {
+    getSession: vi.fn().mockResolvedValue(SESSION),
+    validateCsrfToken: vi.fn().mockResolvedValue(true),
+    updateSession: vi.fn().mockResolvedValue(undefined),
+    refreshSession: vi.fn().mockResolvedValue(false),
+  } as unknown as SessionService);
+  container.registerInstance(TOKENS.DrizzleClient, {
+    query: {
+      users: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: USER.id,
+          oidcSubject: USER.oidcSubject,
+          email: USER.email,
+          name: USER.name,
+          avatarUrl: USER.avatarUrl,
+          groupId: USER.groupId,
+          additionalScopes: [],
+          isBlocked: USER.isBlocked,
+        }),
+      },
+      permissionGroups: {
+        findMany: vi.fn().mockResolvedValue([{ id: USER.groupId, parentId: null, name: USER.groupName, scopes }]),
+      },
+    },
+  } as unknown as DrizzleClient);
+  container.registerInstance(IntegrationsService, service as IntegrationsService);
+}
+
+function sessionHeaders() {
+  return {
+    Cookie: 'session_id=session-1',
+    'X-CSRF-Token': 'csrf-token',
     'Content-Type': 'application/json',
   };
 }
@@ -161,6 +209,110 @@ describe('integrations routes', () => {
     });
   });
 
+  it('rejects personal GitLab credential access through API tokens', async () => {
+    const getGitLabUserCredentialStatus = vi.fn();
+    const authorizeGitLabUserCredential = vi.fn();
+    const disconnectGitLabUserCredential = vi.fn();
+    registerServices(['integrations:gitlab:view'], {
+      getGitLabUserCredentialStatus,
+      authorizeGitLabUserCredential,
+      disconnectGitLabUserCredential,
+    });
+    const app = createApp();
+
+    const statusResponse = await app.request(
+      '/api/integrations/gitlab/connectors/11111111-1111-4111-8111-111111111111/user-credential',
+      { headers: authHeaders() }
+    );
+    const authorizeResponse = await app.request(
+      '/api/integrations/gitlab/connectors/11111111-1111-4111-8111-111111111111/user-credential',
+      {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ token: 'glpat-personal-secret' }),
+      }
+    );
+    const disconnectResponse = await app.request(
+      '/api/integrations/gitlab/connectors/11111111-1111-4111-8111-111111111111/user-credential',
+      { method: 'DELETE', headers: authHeaders() }
+    );
+
+    expect([statusResponse.status, authorizeResponse.status, disconnectResponse.status]).toEqual([403, 403, 403]);
+    expect(getGitLabUserCredentialStatus).not.toHaveBeenCalled();
+    expect(authorizeGitLabUserCredential).not.toHaveBeenCalled();
+    expect(disconnectGitLabUserCredential).not.toHaveBeenCalled();
+  });
+
+  it('allows the owning browser session to manage its personal GitLab credential', async () => {
+    const status = {
+      connectorId: '11111111-1111-4111-8111-111111111111',
+      connectorName: 'Main GitLab',
+      authorized: false,
+      status: 'missing',
+    };
+    const getGitLabUserCredentialStatus = vi.fn().mockResolvedValue(status);
+    const authorizeGitLabUserCredential = vi.fn().mockResolvedValue({
+      ...status,
+      authorized: true,
+      status: 'valid',
+      tokenMasked: '****cret',
+    });
+    const disconnectGitLabUserCredential = vi.fn().mockResolvedValue({ disconnected: true });
+    registerBrowserSession({
+      getGitLabUserCredentialStatus,
+      authorizeGitLabUserCredential,
+      disconnectGitLabUserCredential,
+    });
+    const app = createApp();
+    const path = '/api/integrations/gitlab/connectors/11111111-1111-4111-8111-111111111111/user-credential';
+
+    const statusResponse = await app.request(path, { headers: sessionHeaders() });
+    const authorizeResponse = await app.request(path, {
+      method: 'PUT',
+      headers: sessionHeaders(),
+      body: JSON.stringify({ token: 'glpat-personal-secret' }),
+    });
+    const disconnectResponse = await app.request(path, { method: 'DELETE', headers: sessionHeaders() });
+
+    expect([statusResponse.status, authorizeResponse.status, disconnectResponse.status]).toEqual([200, 200, 200]);
+    expect(getGitLabUserCredentialStatus).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', USER.id);
+    expect(authorizeGitLabUserCredential).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111',
+      { token: 'glpat-personal-secret' },
+      USER.id
+    );
+    expect(disconnectGitLabUserCredential).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', USER.id);
+  });
+
+  it('rejects personal GitLab credential access without AI use scope', async () => {
+    const getGitLabUserCredentialStatus = vi.fn();
+    const authorizeGitLabUserCredential = vi.fn();
+    const disconnectGitLabUserCredential = vi.fn();
+    registerBrowserSession(
+      {
+        getGitLabUserCredentialStatus,
+        authorizeGitLabUserCredential,
+        disconnectGitLabUserCredential,
+      },
+      []
+    );
+    const app = createApp();
+    const path = '/api/integrations/gitlab/connectors/11111111-1111-4111-8111-111111111111/user-credential';
+
+    const statusResponse = await app.request(path, { headers: sessionHeaders() });
+    const authorizeResponse = await app.request(path, {
+      method: 'PUT',
+      headers: sessionHeaders(),
+      body: JSON.stringify({ token: 'glpat-personal-secret' }),
+    });
+    const disconnectResponse = await app.request(path, { method: 'DELETE', headers: sessionHeaders() });
+
+    expect([statusResponse.status, authorizeResponse.status, disconnectResponse.status]).toEqual([403, 403, 403]);
+    expect(getGitLabUserCredentialStatus).not.toHaveBeenCalled();
+    expect(authorizeGitLabUserCredential).not.toHaveBeenCalled();
+    expect(disconnectGitLabUserCredential).not.toHaveBeenCalled();
+  });
+
   it('tests syncs deletes and searches allowlist through manage scope', async () => {
     const deleteGitLabConnector = vi.fn().mockResolvedValue(undefined);
     const testGitLabConnector = vi.fn().mockResolvedValue({ id: 'connector-1', syncStatus: 'idle' });
@@ -174,7 +326,7 @@ describe('integrations routes', () => {
     const refreshGitLabAllowlistOptions = vi
       .fn()
       .mockResolvedValue([{ entryType: 'project', remoteId: '3', fullPath: 'group/new', name: 'new' }]);
-    registerServices(['integrations:gitlab:manage'], {
+    registerServices(['integrations:gitlab:manage', 'integrations:gitlab:sync'], {
       deleteGitLabConnector,
       testGitLabConnector,
       syncGitLabConnector,

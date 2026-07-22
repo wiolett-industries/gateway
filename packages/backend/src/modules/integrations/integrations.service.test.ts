@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AppError } from '@/middleware/error-handler.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { IntegrationsService } from './integrations.service.js';
 
 const BASE_USER = {
@@ -167,6 +167,38 @@ function createProjectActionDb(input: { connector: unknown; project: unknown; al
   };
 }
 
+function projectRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'project-row-1',
+    connectorId: '11111111-1111-4111-8111-111111111111',
+    remoteId: '28',
+    fullPath: 'general/balanceify',
+    name: 'balanceify',
+    webUrl: 'https://gitlab.example.com/general/balanceify',
+    visibility: 'private',
+    defaultBranch: 'main',
+    archived: false,
+    lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+    inaccessibleAt: null,
+    metadata: {},
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
+  };
+}
+
+function vcsProvider<T extends Record<string, unknown>>(overrides: T) {
+  return {
+    provider: 'gitlab',
+    readFile: vi.fn(),
+    createBranch: vi.fn(),
+    commitFiles: vi.fn(),
+    updateProjectSettings: vi.fn(),
+    downloadRepositoryArchive: vi.fn(),
+    ...overrides,
+  };
+}
+
 describe('IntegrationsService', () => {
   it('proves Cloudflare DNS edit capability with a temporary TXT record during preview test', async () => {
     const originalFetch = globalThis.fetch;
@@ -272,7 +304,7 @@ describe('IntegrationsService', () => {
 
   it('lists only allowlisted GitLab projects for AI tools', async () => {
     const db = createToolProjectsDb({
-      connector: connectorRow(),
+      connector: connectorRow({ encryptedToken: JSON.stringify('encrypted-token') }),
       projects: [
         {
           connectorId: '11111111-1111-4111-8111-111111111111',
@@ -308,10 +340,14 @@ describe('IntegrationsService', () => {
       allowlistEntries: [{ entryType: 'project', remoteId: '11', fullPath: 'allowed/app', name: null, webUrl: null }],
     });
     const auditService = { log: vi.fn() };
-    const service = new IntegrationsService(db as never, auditService as never, {} as never);
+    const service = new IntegrationsService(
+      db as never,
+      auditService as never,
+      { decryptString: vi.fn(() => 'glpat-system-token') } as never
+    );
 
     const result = await service.listGitLabProjectsForTool(
-      { ...BASE_USER, scopes: ['integrations:gitlab:projects:view'] },
+      { ...BASE_USER, scopes: ['integrations:gitlab:projects:view', 'integrations:gitlab:system'] },
       { connectorId: '11111111-1111-4111-8111-111111111111', search: 'link', limit: 10 }
     );
 
@@ -324,6 +360,386 @@ describe('IntegrationsService', () => {
         }),
       })
     );
+  });
+
+  it('requires a personal PAT without falling back to the system credential', async () => {
+    const decryptString = vi.fn(() => 'glpat-system-token');
+    const db = createToolProjectsDb({
+      connector: connectorRow({ encryptedToken: JSON.stringify('encrypted-token') }),
+      projects: [projectRow()],
+      allowlistEntries: [],
+    });
+    const service = new IntegrationsService(db as never, { log: vi.fn() } as never, { decryptString } as never);
+    const credentials = (
+      service as unknown as { gitLabUserCredentials: { resolveAuth: (...args: unknown[]) => Promise<unknown> } }
+    ).gitLabUserCredentials;
+    vi.spyOn(credentials, 'resolveAuth').mockResolvedValue(null);
+
+    await expect(
+      service.listGitLabProjectsForTool(
+        { ...BASE_USER, scopes: ['integrations:gitlab:projects:view'] },
+        { connectorId: '11111111-1111-4111-8111-111111111111' }
+      )
+    ).rejects.toMatchObject({
+      statusCode: 428,
+      code: 'GITLAB_CREDENTIAL_REQUIRED',
+      details: expect.objectContaining({ reason: 'missing' }),
+    });
+    expect(decryptString).not.toHaveBeenCalled();
+  });
+
+  it('intersects cached allowlisted projects with projects visible to the personal PAT', async () => {
+    const cachedProjects = [projectRow(), projectRow({ remoteId: '29', fullPath: 'general/private', name: 'private' })];
+    const db = createToolProjectsDb({
+      connector: connectorRow({ allowlistMode: 'all_visible' }),
+      projects: cachedProjects,
+      allowlistEntries: [],
+    });
+    const provider = vcsProvider({
+      listProjects: vi.fn().mockResolvedValue([
+        {
+          remoteId: '28',
+          fullPath: 'general/balanceify',
+          name: 'balanceify',
+          webUrl: 'https://gitlab.example.com/general/balanceify',
+        },
+      ]),
+    });
+    const service = new IntegrationsService(db as never, { log: vi.fn() } as never, {} as never);
+    service.registerProvider(provider as never);
+    const credentials = (
+      service as unknown as { gitLabUserCredentials: { resolveAuth: (...args: unknown[]) => Promise<unknown> } }
+    ).gitLabUserCredentials;
+    vi.spyOn(credentials, 'resolveAuth').mockResolvedValue({
+      auth: { baseUrl: 'https://gitlab.example.com', token: 'glpat-personal-token' },
+      scopes: ['api'],
+      gitlabUserId: '42',
+      gitlabUsername: 'alice',
+    });
+
+    await expect(
+      service.listGitLabProjectsForTool(
+        { ...BASE_USER, scopes: ['integrations:gitlab:projects:view'] },
+        { connectorId: '11111111-1111-4111-8111-111111111111' }
+      )
+    ).resolves.toMatchObject({
+      total: 1,
+      data: [expect.objectContaining({ remoteId: '28', fullPath: 'general/balanceify' })],
+    });
+    expect(provider.listProjects).toHaveBeenCalledWith(expect.objectContaining({ token: 'glpat-personal-token' }));
+  });
+
+  it('checks personal write access but creates commits with the system PAT', async () => {
+    const connector = connectorRow({
+      allowlistMode: 'all_visible',
+      capabilities: { projectsView: true, repoWrite: true },
+      encryptedToken: JSON.stringify('encrypted-token'),
+    });
+    const db = createProjectActionDb({ connector, project: projectRow(), allowlistEntries: [] });
+    const provider = vcsProvider({
+      getProjectAccess: vi.fn().mockResolvedValue({ accessLevel: 30 }),
+      getBranchAccess: vi.fn().mockResolvedValue({ exists: true, canPush: true }),
+      commitFiles: vi.fn().mockResolvedValue({ commitSha: 'abc123', branch: 'main', webUrl: null }),
+    });
+    const service = new IntegrationsService(
+      db as never,
+      { log: vi.fn() } as never,
+      { decryptString: vi.fn(() => 'glpat-system-token') } as never
+    );
+    service.registerProvider(provider as never);
+    const credentials = (
+      service as unknown as { gitLabUserCredentials: { resolveAuth: (...args: unknown[]) => Promise<unknown> } }
+    ).gitLabUserCredentials;
+    vi.spyOn(credentials, 'resolveAuth').mockResolvedValue({
+      auth: { baseUrl: 'https://gitlab.example.com', token: 'glpat-personal-token' },
+      scopes: ['api'],
+      gitlabUserId: '42',
+      gitlabUsername: 'alice',
+    });
+
+    await service.gitLabCommitFiles(
+      { ...BASE_USER, scopes: ['integrations:gitlab:repo:write'] },
+      {
+        connectorId: '11111111-1111-4111-8111-111111111111',
+        project: 'general/balanceify',
+        branch: 'main',
+        commitMessage: 'Update file',
+        changes: [{ action: 'update', path: 'README.md', content: 'updated' }],
+      }
+    );
+
+    expect(provider.getProjectAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'glpat-personal-token' }),
+      expect.objectContaining({ fullPath: 'general/balanceify' })
+    );
+    expect(provider.getBranchAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'glpat-personal-token' }),
+      expect.objectContaining({ fullPath: 'general/balanceify' }),
+      'main'
+    );
+    expect(provider.commitFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'glpat-system-token' }),
+      expect.objectContaining({ commitMessage: 'Update file' })
+    );
+  });
+
+  it('refuses system-attributed commits without personal push access to an existing branch', async () => {
+    const branchAccess = { exists: true, canPush: false };
+    const branch = 'main';
+    const connector = connectorRow({
+      allowlistMode: 'all_visible',
+      capabilities: { projectsView: true, repoWrite: true },
+      encryptedToken: JSON.stringify('encrypted-token'),
+    });
+    const db = createProjectActionDb({ connector, project: projectRow(), allowlistEntries: [] });
+    const provider = vcsProvider({
+      getProjectAccess: vi.fn().mockResolvedValue({ accessLevel: 30 }),
+      getBranchAccess: vi.fn().mockResolvedValue(branchAccess),
+      commitFiles: vi.fn(),
+    });
+    const service = new IntegrationsService(
+      db as never,
+      { log: vi.fn() } as never,
+      { decryptString: vi.fn(() => 'glpat-system-token') } as never
+    );
+    service.registerProvider(provider as never);
+    const credentials = (
+      service as unknown as { gitLabUserCredentials: { resolveAuth: (...args: unknown[]) => Promise<unknown> } }
+    ).gitLabUserCredentials;
+    vi.spyOn(credentials, 'resolveAuth').mockResolvedValue({
+      auth: { baseUrl: 'https://gitlab.example.com', token: 'glpat-personal-token' },
+      scopes: ['api'],
+      gitlabUserId: '42',
+      gitlabUsername: 'alice',
+    });
+
+    await expect(
+      service.gitLabCommitFiles(
+        { ...BASE_USER, scopes: ['integrations:gitlab:repo:write'] },
+        {
+          connectorId: '11111111-1111-4111-8111-111111111111',
+          project: 'general/balanceify',
+          branch,
+          commitMessage: 'Update file',
+          changes: [{ action: 'update', path: 'README.md', content: 'updated' }],
+        }
+      )
+    ).rejects.toMatchObject({ statusCode: 403, code: 'GITLAB_PERSONAL_BRANCH_WRITE_ACCESS_REQUIRED' });
+    expect(provider.commitFiles).not.toHaveBeenCalled();
+  });
+
+  it('creates a missing branch with the personal PAT before committing with the system PAT', async () => {
+    const connector = connectorRow({
+      allowlistMode: 'all_visible',
+      capabilities: { projectsView: true, repoWrite: true },
+      encryptedToken: JSON.stringify('encrypted-token'),
+    });
+    const db = createProjectActionDb({ connector, project: projectRow(), allowlistEntries: [] });
+    const provider = vcsProvider({
+      getProjectAccess: vi.fn().mockResolvedValue({ accessLevel: 30 }),
+      getBranchAccess: vi.fn().mockResolvedValue({ exists: false, canPush: false }),
+      createBranch: vi.fn().mockResolvedValue(undefined),
+      commitFiles: vi.fn().mockResolvedValue({ commitSha: 'abc123', webUrl: null }),
+    });
+    const service = new IntegrationsService(
+      db as never,
+      { log: vi.fn() } as never,
+      { decryptString: vi.fn(() => 'glpat-system-token') } as never
+    );
+    service.registerProvider(provider as never);
+    const credentials = (
+      service as unknown as { gitLabUserCredentials: { resolveAuth: (...args: unknown[]) => Promise<unknown> } }
+    ).gitLabUserCredentials;
+    vi.spyOn(credentials, 'resolveAuth').mockResolvedValue({
+      auth: { baseUrl: 'https://gitlab.example.com', token: 'glpat-personal-token' },
+      scopes: ['api'],
+      gitlabUserId: '42',
+      gitlabUsername: 'alice',
+    });
+
+    await service.gitLabCommitFiles(
+      { ...BASE_USER, scopes: ['integrations:gitlab:repo:write'] },
+      {
+        connectorId: '11111111-1111-4111-8111-111111111111',
+        project: 'general/balanceify',
+        branch: 'feature/new',
+        startBranch: 'main',
+        commitMessage: 'Add feature',
+        changes: [{ action: 'create', path: 'feature.txt', content: 'new' }],
+      }
+    );
+
+    expect(provider.createBranch).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'glpat-personal-token' }),
+      expect.objectContaining({ fullPath: 'general/balanceify' }),
+      'feature/new',
+      'main'
+    );
+    expect(provider.commitFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'glpat-system-token' }),
+      expect.objectContaining({ branch: 'feature/new', startBranch: undefined })
+    );
+  });
+
+  it('requires startBranch when a personal PAT targets a missing branch', async () => {
+    const connector = connectorRow({
+      allowlistMode: 'all_visible',
+      capabilities: { projectsView: true, repoWrite: true },
+      encryptedToken: JSON.stringify('encrypted-token'),
+    });
+    const db = createProjectActionDb({ connector, project: projectRow(), allowlistEntries: [] });
+    const provider = vcsProvider({
+      getProjectAccess: vi.fn().mockResolvedValue({ accessLevel: 30 }),
+      getBranchAccess: vi.fn().mockResolvedValue({ exists: false, canPush: false }),
+      commitFiles: vi.fn(),
+    });
+    const service = new IntegrationsService(db as never, { log: vi.fn() } as never, {} as never);
+    service.registerProvider(provider as never);
+    const credentials = (
+      service as unknown as { gitLabUserCredentials: { resolveAuth: (...args: unknown[]) => Promise<unknown> } }
+    ).gitLabUserCredentials;
+    vi.spyOn(credentials, 'resolveAuth').mockResolvedValue({
+      auth: { baseUrl: 'https://gitlab.example.com', token: 'glpat-personal-token' },
+      scopes: ['api'],
+      gitlabUserId: '42',
+      gitlabUsername: 'alice',
+    });
+
+    await expect(
+      service.gitLabCommitFiles(
+        { ...BASE_USER, scopes: ['integrations:gitlab:repo:write'] },
+        {
+          connectorId: '11111111-1111-4111-8111-111111111111',
+          project: 'general/balanceify',
+          branch: 'feature/new',
+          commitMessage: 'Add feature',
+          changes: [{ action: 'create', path: 'feature.txt', content: 'new' }],
+        }
+      )
+    ).rejects.toMatchObject({ statusCode: 400, code: 'GITLAB_START_BRANCH_REQUIRED' });
+    expect(provider.createBranch).not.toHaveBeenCalled();
+    expect(provider.commitFiles).not.toHaveBeenCalled();
+  });
+
+  it('refreshes capabilities with the personal PAT without touching the system credential', async () => {
+    const connector = connectorRow({
+      allowlistMode: 'all_visible',
+      capabilities: { projectsView: true, ciLint: false },
+      encryptedToken: JSON.stringify('encrypted-token'),
+    });
+    const db = createProjectActionDb({ connector, project: projectRow(), allowlistEntries: [] });
+    const provider = vcsProvider({
+      testConnection: vi.fn().mockResolvedValue({ projectsView: true, ciLint: true }),
+      getProjectAccess: vi.fn().mockResolvedValue({ accessLevel: 20 }),
+      lintCiConfig: vi.fn().mockResolvedValue({ valid: true, errors: [], warnings: [], mergedYaml: null }),
+    });
+    const decryptString = vi.fn(() => 'glpat-system-token');
+    const service = new IntegrationsService(db as never, { log: vi.fn() } as never, { decryptString } as never);
+    service.registerProvider(provider as never);
+    const credentials = (
+      service as unknown as { gitLabUserCredentials: { resolveAuth: (...args: unknown[]) => Promise<unknown> } }
+    ).gitLabUserCredentials;
+    vi.spyOn(credentials, 'resolveAuth').mockResolvedValue({
+      auth: { baseUrl: 'https://gitlab.example.com', token: 'glpat-personal-token' },
+      scopes: ['api'],
+      gitlabUserId: '42',
+      gitlabUsername: 'alice',
+    });
+
+    await expect(
+      service.gitLabLintCiConfig(
+        { ...BASE_USER, scopes: ['integrations:gitlab:ci:view'] },
+        {
+          connectorId: '11111111-1111-4111-8111-111111111111',
+          project: 'general/balanceify',
+          content: 'stages: [test]\n',
+        }
+      )
+    ).resolves.toMatchObject({ valid: true });
+
+    expect(provider.testConnection).toHaveBeenCalledWith(expect.objectContaining({ token: 'glpat-personal-token' }));
+    expect(provider.lintCiConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'glpat-personal-token' }),
+      expect.objectContaining({ fullPath: 'general/balanceify' }),
+      'stages: [test]\n'
+    );
+    expect(decryptString).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('invalidates a personal PAT after a GitLab 401 and requests authorization again', async () => {
+    const db = createProjectActionDb({
+      connector: connectorRow({ allowlistMode: 'all_visible' }),
+      project: projectRow(),
+      allowlistEntries: [],
+    });
+    const provider = vcsProvider({
+      getProjectAccess: vi.fn().mockRejectedValue(new AppError(401, 'GITLAB_API_ERROR', 'Unauthorized')),
+    });
+    const service = new IntegrationsService(db as never, { log: vi.fn() } as never, {} as never);
+    service.registerProvider(provider as never);
+    const credentials = (
+      service as unknown as {
+        gitLabUserCredentials: {
+          resolveAuth: (...args: unknown[]) => Promise<unknown>;
+          markInvalid: (...args: unknown[]) => Promise<void>;
+        };
+      }
+    ).gitLabUserCredentials;
+    vi.spyOn(credentials, 'resolveAuth').mockResolvedValue({
+      auth: { baseUrl: 'https://gitlab.example.com', token: 'glpat-personal-token' },
+      scopes: ['api'],
+      gitlabUserId: '42',
+      gitlabUsername: 'alice',
+    });
+    const markInvalid = vi.spyOn(credentials, 'markInvalid').mockResolvedValue(undefined);
+
+    await expect(
+      service.getGitLabProjectForTool(
+        { ...BASE_USER, scopes: ['integrations:gitlab:projects:view'] },
+        { connectorId: '11111111-1111-4111-8111-111111111111', project: 'general/balanceify' }
+      )
+    ).rejects.toMatchObject({
+      statusCode: 428,
+      code: 'GITLAB_CREDENTIAL_REQUIRED',
+      details: expect.objectContaining({ reason: 'invalid' }),
+    });
+    expect(markInvalid).toHaveBeenCalledWith('user-1', '11111111-1111-4111-8111-111111111111');
+  });
+
+  it('does not invalidate a personal PAT after a GitLab 403', async () => {
+    const db = createProjectActionDb({
+      connector: connectorRow({ allowlistMode: 'all_visible' }),
+      project: projectRow(),
+      allowlistEntries: [],
+    });
+    const forbidden = new AppError(403, 'GITLAB_API_ERROR', 'Forbidden');
+    const provider = vcsProvider({ getProjectAccess: vi.fn().mockRejectedValue(forbidden) });
+    const service = new IntegrationsService(db as never, { log: vi.fn() } as never, {} as never);
+    service.registerProvider(provider as never);
+    const credentials = (
+      service as unknown as {
+        gitLabUserCredentials: {
+          resolveAuth: (...args: unknown[]) => Promise<unknown>;
+          markInvalid: (...args: unknown[]) => Promise<void>;
+        };
+      }
+    ).gitLabUserCredentials;
+    vi.spyOn(credentials, 'resolveAuth').mockResolvedValue({
+      auth: { baseUrl: 'https://gitlab.example.com', token: 'glpat-personal-token' },
+      scopes: ['api'],
+      gitlabUserId: '42',
+      gitlabUsername: 'alice',
+    });
+    const markInvalid = vi.spyOn(credentials, 'markInvalid').mockResolvedValue(undefined);
+
+    await expect(
+      service.getGitLabProjectForTool(
+        { ...BASE_USER, scopes: ['integrations:gitlab:projects:view'] },
+        { connectorId: '11111111-1111-4111-8111-111111111111', project: 'general/balanceify' }
+      )
+    ).rejects.toBe(forbidden);
+    expect(markInvalid).not.toHaveBeenCalled();
   });
 
   it('refreshes stale GitLab capabilities before denying a project tool action', async () => {
@@ -354,6 +770,7 @@ describe('IntegrationsService', () => {
       testConnection: vi.fn().mockResolvedValue({ projectsView: true, ciLint: true }),
       searchAllowlist: vi.fn(),
       listProjects: vi.fn(),
+      getProjectAccess: vi.fn().mockResolvedValue({ accessLevel: 40 }),
       listRegistries: vi.fn(),
       listTree: vi.fn(),
       readFile: vi.fn(),
@@ -381,7 +798,7 @@ describe('IntegrationsService', () => {
 
     await expect(
       service.gitLabLintCiConfig(
-        { ...BASE_USER, scopes: ['integrations:gitlab:ci:view'] },
+        { ...BASE_USER, scopes: ['integrations:gitlab:ci:view', 'integrations:gitlab:system'] },
         {
           connectorId: '11111111-1111-4111-8111-111111111111',
           project: 'general/balanceify',
@@ -430,6 +847,7 @@ describe('IntegrationsService', () => {
       testConnection: vi.fn(),
       searchAllowlist: vi.fn(),
       listProjects: vi.fn(),
+      getProjectAccess: vi.fn().mockResolvedValue({ accessLevel: 40 }),
       listRegistries: vi.fn(),
       listTree: vi.fn(),
       readFile: vi.fn(),
@@ -465,7 +883,7 @@ describe('IntegrationsService', () => {
 
     await expect(
       service.gitLabUpdateProjectSettings(
-        { ...BASE_USER, scopes: ['integrations:gitlab:registry:manage'] },
+        { ...BASE_USER, scopes: ['integrations:gitlab:registry:manage', 'integrations:gitlab:system'] },
         {
           connectorId: '11111111-1111-4111-8111-111111111111',
           project: 'general/balanceify',

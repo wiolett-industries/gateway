@@ -51,6 +51,7 @@ import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
 import { AIMessageList } from "./AIMessageList";
 import { ApprovalBlock, QuestionBlock } from "./AIToolCallBlock";
 import { confirmAILiteMode } from "./confirm-lite-mode";
+import { GitLabAuthorizationModal } from "./GitLabAuthorizationModal";
 import { QuickActionChips } from "./QuickActionChips";
 import {
   composerAttachmentToFile,
@@ -180,6 +181,7 @@ function getConversationStatusIcon(conversation: {
       return Loader2;
     case "waiting_for_approval":
     case "waiting_for_answer":
+    case "waiting_for_credential":
       return CircleAlert;
     default:
       return conversation.status === "active" ? MessageSquare : Lock;
@@ -705,7 +707,8 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
                               conversation.activeRunStatus === "running"
                                 ? "animate-spin text-primary"
                                 : conversation.activeRunStatus === "waiting_for_approval" ||
-                                    conversation.activeRunStatus === "waiting_for_answer"
+                                    conversation.activeRunStatus === "waiting_for_answer" ||
+                                    conversation.activeRunStatus === "waiting_for_credential"
                                   ? "text-yellow-600 dark:text-yellow-400"
                                   : ""
                             }`}
@@ -835,6 +838,7 @@ export function AIChatSurface({ active = true, onClose, onEnterLiteMode }: AICha
           />
         </div>
       )}
+      <GitLabAuthorizationModal />
     </div>
   );
 }

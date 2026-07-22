@@ -195,6 +195,7 @@ export type AIRunStatus =
   | "running"
   | "waiting_for_approval"
   | "waiting_for_answer"
+  | "waiting_for_credential"
   | "completed"
   | "failed"
   | "stopped";
@@ -252,6 +253,22 @@ export interface AIRunQuestion {
   answer: string | null;
 }
 
+export interface AICredentialChallenge {
+  id: string;
+  runId: string;
+  conversationId: string;
+  userId: string;
+  provider: "gitlab";
+  connectorId: string;
+  toolCallId: string;
+  toolName: string;
+  status: "pending" | "authorized" | "rejected" | "stopped";
+  decisionClientCommandId: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AIRuntimeSnapshot {
   activeRun: AIRun | null;
   assistantDraftContent?: string | null;
@@ -259,6 +276,7 @@ export interface AIRuntimeSnapshot {
   pendingApprovals: AIRunToolCall[];
   pendingQuestion: AIRunQuestion | null;
   pendingQuestions: AIRunQuestion[];
+  pendingCredentialChallenge?: AICredentialChallenge | null;
   toolCalls: AIRunToolCall[];
 }
 
@@ -318,6 +336,14 @@ export type WSClientMessage =
       answer: string;
       clientCommandId: string;
     }
+  | {
+      type: "credential.resolve";
+      conversationId: string;
+      runId: string;
+      challengeId: string;
+      decision: "authorized" | "rejected";
+      clientCommandId: string;
+    }
   | { type: "ping" };
 
 export type WSServerMessage =
@@ -365,6 +391,12 @@ export type WSServerMessage =
       conversationId: string;
       runId: string;
     }
+  | {
+      type: "credential.required";
+      conversationId: string;
+      runId: string;
+      challenge: AICredentialChallenge;
+    }
   | { type: "run.status_changed"; conversationId: string; run: AIRun | null }
   | { type: "stores.invalidated"; conversationId: string; stores: string[] }
   | {
@@ -379,6 +411,13 @@ export type WSServerMessage =
       conversationId: string;
       runId: string;
       question: AIRunQuestion;
+      duplicate: boolean;
+    }
+  | {
+      type: "credential.updated";
+      conversationId: string;
+      runId: string;
+      challenge: AICredentialChallenge;
       duplicate: boolean;
     }
   | { type: "pong" };

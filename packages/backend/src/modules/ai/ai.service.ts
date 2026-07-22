@@ -6,6 +6,7 @@ import { nodes as nodesTable } from '@/db/schema/nodes.js';
 import { createChildLogger } from '@/lib/logger.js';
 import { canManageUser, hasScope, hasScopeBase, hasScopeForResource, isScopeSubset } from '@/lib/permissions.js';
 import { canonicalizeScopes } from '@/lib/scopes.js';
+import { AppError } from '@/middleware/error-handler.js';
 import type { AccessListService } from '@/modules/access-lists/access-list.service.js';
 import { UpdateAuthProvisioningSettingsSchema } from '@/modules/admin/admin.schemas.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
@@ -600,6 +601,15 @@ export class AIService {
 
       return { result, invalidateStores };
     } catch (err) {
+      if (source === 'ai' && err instanceof AppError && err.code === 'GITLAB_CREDENTIAL_REQUIRED') {
+        const details = isRecord(err.details) ? err.details : {};
+        if (typeof details.connectorId === 'string') {
+          return {
+            credentialChallenge: { provider: 'gitlab', connectorId: details.connectorId },
+            invalidateStores: [],
+          };
+        }
+      }
       const message = err instanceof Error ? err.message : 'Tool execution failed';
       logger.error(`Tool execution failed: ${toolName}`, { error: err, args: redactArgsForTool(toolName, args) });
       if (source === 'mcp' && !auditEmittedDuringTool()) {
@@ -911,7 +921,7 @@ export class AIService {
             currentConversationId: runtimeContext.conversationId,
           }
         );
-      case 'list_projects':
+      case 'list_chat_projects':
         return (this.conversationSearchService ?? container.resolve(AIConversationSearchService)).listProjects(
           user.id,
           {
@@ -1956,6 +1966,26 @@ export class AIService {
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
 
         const result = await this.executeTool(user, tc.name, tc.parsedArgs, { pageContext, conversationId });
+        if (result.credentialChallenge) {
+          yield {
+            type: 'credential_authorization_required',
+            requestId,
+            id: tc.id,
+            name: tc.name,
+            provider: result.credentialChallenge.provider,
+            connectorId: result.credentialChallenge.connectorId,
+            arguments: tc.parsedArgs,
+            _rawArguments: tc.parsedArgs,
+            _pendingMessages: messages,
+            _queuedApprovals: approvalTools.map((approval) => ({
+              id: approval.id,
+              name: approval.name,
+              arguments: approvalDisplayArgs(approval.name, approval.parsedArgs),
+              rawArguments: approval.parsedArgs,
+            })),
+          } as any;
+          return;
+        }
         if (tc.name === 'discover_tools') {
           discoveredToolsets = mergeToolsets(discoveredToolsets ?? [], discoveredToolsetsFromResult(result.result));
           tools = this.buildModelTools(config, user, discoveredToolsets);
@@ -2060,7 +2090,8 @@ export class AIService {
     answers?: Record<string, string>,
     queuedApprovals: QueuedApproval[] = [],
     conversationId?: string,
-    autoCompactContext?: AutoCompactContextHook
+    autoCompactContext?: AutoCompactContextHook,
+    rejectionError?: string
   ): AsyncGenerator<WSServerMessage> {
     if (toolName === 'ask_question') {
       // Batch answers: { toolCallId: answer, ... }
@@ -2077,10 +2108,11 @@ export class AIService {
         yield { type: 'tool_result', requestId, id: tcId, name: 'ask_question', result: { answer: answerText } };
       }
     } else if (!approved) {
+      const rejectedMessage = rejectionError ?? 'User rejected this action.';
       pendingMessages.push({
         role: 'tool',
         tool_call_id: toolCallId,
-        content: JSON.stringify({ error: 'User rejected this action.' }),
+        content: JSON.stringify({ error: rejectedMessage }),
       });
       yield {
         type: 'tool_result',
@@ -2088,10 +2120,25 @@ export class AIService {
         id: toolCallId,
         name: toolName,
         result: undefined,
-        error: 'Rejected by user',
+        error: rejectedMessage,
       };
     } else {
       const result = await this.executeTool(user, toolName, toolArgs, { pageContext, conversationId });
+      if (result.credentialChallenge) {
+        yield {
+          type: 'credential_authorization_required',
+          requestId,
+          id: toolCallId,
+          name: toolName,
+          provider: result.credentialChallenge.provider,
+          connectorId: result.credentialChallenge.connectorId,
+          arguments: approvalDisplayArgs(toolName, toolArgs),
+          _rawArguments: toolArgs,
+          _pendingMessages: pendingMessages,
+          _queuedApprovals: queuedApprovalDisplayArgs(queuedApprovals),
+        } as any;
+        return;
+      }
       pendingMessages.push({
         role: 'tool',
         tool_call_id: toolCallId,
@@ -2300,6 +2347,26 @@ export class AIService {
 
         yield { type: 'tool_call_start', requestId, id: tc.id, name: tc.name, arguments: tc.parsedArgs };
         const result = await this.executeTool(user, tc.name, tc.parsedArgs, { pageContext, conversationId });
+        if (result.credentialChallenge) {
+          yield {
+            type: 'credential_authorization_required',
+            requestId,
+            id: tc.id,
+            name: tc.name,
+            provider: result.credentialChallenge.provider,
+            connectorId: result.credentialChallenge.connectorId,
+            arguments: tc.parsedArgs,
+            _rawArguments: tc.parsedArgs,
+            _pendingMessages: messages,
+            _queuedApprovals: approvalTools2.map((approval) => ({
+              id: approval.id,
+              name: approval.name,
+              arguments: approvalDisplayArgs(approval.name, approval.parsedArgs),
+              rawArguments: approval.parsedArgs,
+            })),
+          } as any;
+          return;
+        }
         if (tc.name === 'discover_tools') {
           discoveredToolsets = mergeToolsets(discoveredToolsets ?? [], discoveredToolsetsFromResult(result.result));
           tools = this.buildModelTools(config, user, discoveredToolsets);

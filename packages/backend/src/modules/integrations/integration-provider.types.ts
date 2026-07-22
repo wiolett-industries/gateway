@@ -16,6 +16,23 @@ export interface VcsConnectorIdentity {
   baseUrl: string;
 }
 
+export interface VcsUserTokenIdentity {
+  userId: string;
+  username: string;
+  scopes: string[];
+  expiresAt: Date | null;
+}
+
+export interface VcsProjectAccess {
+  project: VcsProjectRef;
+  accessLevel: number | null;
+}
+
+export interface VcsBranchAccess {
+  exists: boolean;
+  canPush: boolean;
+}
+
 export interface VcsProjectRef {
   remoteId: string;
   fullPath: string;
@@ -239,6 +256,10 @@ export interface ConnectorProvider {
 }
 
 export interface VcsConnectorProvider extends ConnectorProvider {
+  validateUserToken(auth: VcsConnectorAuth): Promise<VcsUserTokenIdentity>;
+  getProjectAccess(auth: VcsConnectorAuth, project: VcsProjectRef): Promise<VcsProjectAccess>;
+  getBranchAccess(auth: VcsConnectorAuth, project: VcsProjectRef, branch: string): Promise<VcsBranchAccess>;
+  createBranch(auth: VcsConnectorAuth, project: VcsProjectRef, branch: string, ref: string): Promise<void>;
   listTree(auth: VcsConnectorAuth, project: VcsProjectRef, path: string, ref?: string): Promise<VcsTreeEntry[]>;
   readFile(auth: VcsConnectorAuth, request: VcsFileReadRequest): Promise<VcsFileReadResult>;
   commitFiles(auth: VcsConnectorAuth, request: VcsCommitRequest): Promise<VcsCommitResult>;

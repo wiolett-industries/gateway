@@ -2,11 +2,13 @@ import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { container } from '@/container.js';
 import type { DrizzleClient } from '@/db/client.js';
 import {
+  type AICredentialChallenge,
   type AIRun,
   type AIRunQuestion,
   type AIRunToolCall,
   aiConversationMessages,
   aiConversations,
+  aiRunCredentialChallenges,
   aiRunQuestions,
   aiRuns,
   aiRunToolCalls,
@@ -50,6 +52,12 @@ type PublishAssistantDelta = (
 ) => void;
 type PublishAssistantCommentDelta = PublishAssistantDelta;
 type PublishAssistantCommentDone = (userId: string, conversationId: string, runId: string) => void;
+type PublishCredentialChallenge = (
+  userId: string,
+  conversationId: string,
+  runId: string,
+  challenge: AICredentialChallenge
+) => void;
 
 interface ApprovalContinuationInput {
   conversationId: string;
@@ -64,6 +72,13 @@ interface QuestionContinuationInput {
   question: AIRunQuestion;
 }
 
+interface CredentialContinuationInput {
+  conversationId: string;
+  runId: string;
+  challenge: AICredentialChallenge;
+  authorized: boolean;
+}
+
 interface ResumeInput {
   conversationId: string;
   runId: string;
@@ -74,6 +89,7 @@ interface ResumeInput {
   pendingMessages: Record<string, unknown>[];
   answers?: Record<string, string>;
   queuedApprovals: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+  rejectionError?: string;
 }
 
 export class AIRunExecutor {
@@ -88,7 +104,8 @@ export class AIRunExecutor {
     private readonly publishAssistantDelta: PublishAssistantDelta,
     private readonly publishAssistantCommentDelta: PublishAssistantCommentDelta,
     private readonly publishAssistantCommentDone: PublishAssistantCommentDone,
-    private readonly conversationSearchService?: AIConversationSearchService
+    private readonly conversationSearchService?: AIConversationSearchService,
+    private readonly publishCredentialChallenge?: PublishCredentialChallenge
   ) {}
 
   startRunExecution(user: User, runId: string): void {
@@ -111,6 +128,15 @@ export class AIRunExecutor {
     if (this.executingRuns.has(input.runId)) return;
     this.executingRuns.add(input.runId);
     void this.executeQuestionContinuation(user, input).catch((error) => {
+      this.logExecutionError(input.runId, error);
+    });
+  }
+
+  startCredentialContinuation(user: User, input: CredentialContinuationInput): void {
+    if (this.executingRuns.has(input.runId)) return;
+    this.executingRuns.add(input.runId);
+    void this.executeCredentialContinuation(user, input).catch((error) => {
+      this.executingRuns.delete(input.runId);
       this.logExecutionError(input.runId, error);
     });
   }
@@ -285,10 +311,42 @@ export class AIRunExecutor {
     });
   }
 
+  private async executeCredentialContinuation(user: User, input: CredentialContinuationInput): Promise<void> {
+    const checkpoint = await this.loadCheckpoint(user.id, input.conversationId);
+    const pending = checkpoint.pendingCredential;
+    if (
+      !pending ||
+      pending.id !== input.challenge.toolCallId ||
+      pending.name !== input.challenge.toolName ||
+      pending.connectorId !== input.challenge.connectorId
+    ) {
+      throw new AppError(409, 'AI_CREDENTIAL_CHECKPOINT_MISMATCH', 'Credential challenge is no longer active');
+    }
+    await this.executeResume(user, {
+      conversationId: input.conversationId,
+      runId: input.runId,
+      toolCallId: pending.id,
+      toolName: pending.name,
+      toolArgs: pending.arguments,
+      approved: input.authorized,
+      pendingMessages: checkpoint.pendingMessages,
+      queuedApprovals: checkpoint.queuedApprovals,
+      rejectionError: input.authorized
+        ? undefined
+        : 'GITLAB_AUTHORIZATION_REJECTED: User rejected GitLab authorization.',
+    });
+  }
+
   private async executeResume(user: User, input: ResumeInput): Promise<void> {
     const run = await this.getOwnedRun(user.id, input.runId);
     if (!run) throw new AppError(404, 'AI_RUN_NOT_FOUND', 'AI run not found');
-    if (run.status !== 'waiting_for_approval' && run.status !== 'waiting_for_answer') return;
+    if (
+      run.status !== 'waiting_for_approval' &&
+      run.status !== 'waiting_for_answer' &&
+      run.status !== 'waiting_for_credential'
+    ) {
+      return;
+    }
 
     const conversation = await getOwnedConversation(this.db, user.id, input.conversationId);
     if (!conversation) throw new AppError(404, 'AI_CONVERSATION_NOT_FOUND', 'AI conversation not found');
@@ -318,7 +376,8 @@ export class AIRunExecutor {
         input.answers,
         input.queuedApprovals,
         input.conversationId,
-        (currentMessages) => this.maybeAutoCompactContext(user, run, currentMessages, pageContext, abortController)
+        (currentMessages) => this.maybeAutoCompactContext(user, run, currentMessages, pageContext, abortController),
+        input.rejectionError
       )) {
         if (abortController.signal.aborted) return;
 
@@ -561,6 +620,23 @@ export class AIRunExecutor {
       this.conversationSearchService?.rebuildConversationIndexBestEffort(user.id, run.conversationId);
       await this.setConversationCheckpoint(run.conversationId, event);
       await this.updateRunStatus(run.id, event.name === 'ask_question' ? 'waiting_for_answer' : 'waiting_for_approval');
+      this.publishConversationChanged(user.id, run.conversationId);
+      return { assistantContent, assistantMessageWritten, done: true };
+    }
+
+    if (event.type === 'credential_authorization_required') {
+      const assistantMessageId = await this.persistAssistantBoundary(
+        user.id,
+        run.conversationId,
+        run.id,
+        assistantContent
+      );
+      assistantMessageWritten = true;
+      const challenge = await this.persistCredentialChallenge(run, user.id, event);
+      if (assistantMessageId) await this.linkRunToolCallsToAssistantMessage(run.id, assistantMessageId);
+      await this.setConversationCheckpoint(run.conversationId, event);
+      await this.updateRunStatus(run.id, 'waiting_for_credential');
+      this.publishCredentialChallenge?.(user.id, run.conversationId, run.id, challenge);
       this.publishConversationChanged(user.id, run.conversationId);
       return { assistantContent, assistantMessageWritten, done: true };
     }
@@ -976,6 +1052,38 @@ export class AIRunExecutor {
       toolArgs: event.arguments,
       status: 'pending_approval',
     });
+  }
+
+  private async persistCredentialChallenge(
+    run: AIRun,
+    userId: string,
+    event: Extract<WSServerMessage, { type: 'credential_authorization_required' }>
+  ): Promise<AICredentialChallenge> {
+    const [challenge] = await this.db
+      .insert(aiRunCredentialChallenges)
+      .values({
+        runId: run.id,
+        conversationId: run.conversationId,
+        userId,
+        provider: event.provider,
+        connectorId: event.connectorId,
+        toolCallId: event.id,
+        toolName: event.name,
+      })
+      .onConflictDoUpdate({
+        target: [aiRunCredentialChallenges.runId, aiRunCredentialChallenges.toolCallId],
+        set: {
+          connectorId: event.connectorId,
+          toolName: event.name,
+          status: 'pending',
+          decisionClientCommandId: null,
+          resolvedAt: null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    if (!challenge) throw new Error('Failed to persist AI credential challenge');
+    return challenge;
   }
 
   private async setConversationCheckpoint(conversationId: string, event: WSServerMessage | null): Promise<void> {

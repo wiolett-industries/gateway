@@ -3,6 +3,12 @@ import type { ChatMessage, PageContext, WSServerMessage } from './ai.types.js';
 export interface AIModelCheckpoint {
   pendingMessages: Record<string, unknown>[];
   pendingApproval: { id: string; name: string; arguments: Record<string, unknown> } | null;
+  pendingCredential: {
+    id: string;
+    name: string;
+    connectorId: string;
+    arguments: Record<string, unknown>;
+  } | null;
   allQuestions: Array<{ id: string; args: Record<string, unknown> }>;
   queuedApprovals: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
 }
@@ -57,6 +63,19 @@ export function toCheckpoint(event: WSServerMessage): Record<string, unknown> {
       isRecord(payload._rawArguments)
         ? { id: event.id, name: event.name, rawArguments: payload._rawArguments }
         : null,
+    pendingCredential:
+      event.type === 'credential_authorization_required' &&
+      typeof event.id === 'string' &&
+      typeof event.name === 'string' &&
+      typeof event.connectorId === 'string' &&
+      isRecord(payload._rawArguments)
+        ? {
+            id: event.id,
+            name: event.name,
+            connectorId: event.connectorId,
+            rawArguments: payload._rawArguments,
+          }
+        : null,
     allQuestions: Array.isArray(payload._allQuestions) ? payload._allQuestions : [],
     queuedApprovals: Array.isArray(payload._queuedApprovals) ? payload._queuedApprovals : [],
   };
@@ -64,12 +83,19 @@ export function toCheckpoint(event: WSServerMessage): Record<string, unknown> {
 
 export function normalizeCheckpoint(value: Record<string, unknown> | null): AIModelCheckpoint {
   if (!value) {
-    return { pendingMessages: [], pendingApproval: null, allQuestions: [], queuedApprovals: [] };
+    return {
+      pendingMessages: [],
+      pendingApproval: null,
+      pendingCredential: null,
+      allQuestions: [],
+      queuedApprovals: [],
+    };
   }
 
   return {
     pendingMessages: Array.isArray(value.pendingMessages) ? value.pendingMessages.filter(isRecord) : [],
     pendingApproval: normalizeQueuedApproval(value.pendingApproval, true),
+    pendingCredential: normalizeCredentialCheckpoint(value.pendingCredential),
     allQuestions: Array.isArray(value.allQuestions)
       ? value.allQuestions
           .map(normalizeCheckpointQuestion)
@@ -83,6 +109,25 @@ export function normalizeCheckpoint(value: Record<string, unknown> | null): AIMo
               approval !== null
           )
       : [],
+  };
+}
+
+function normalizeCredentialCheckpoint(value: unknown): AIModelCheckpoint['pendingCredential'] {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.name !== 'string' ||
+    typeof value.connectorId !== 'string'
+  ) {
+    return null;
+  }
+  const rawArguments = isRecord(value.rawArguments) ? value.rawArguments : null;
+  const displayArguments = isRecord(value.arguments) ? value.arguments : {};
+  return {
+    id: value.id,
+    name: value.name,
+    connectorId: value.connectorId,
+    arguments: rawArguments ?? displayArguments,
   };
 }
 

@@ -1,5 +1,6 @@
 import { boolean, index, integer, jsonb, pgTable, text, timestamp, unique, uuid, varchar } from 'drizzle-orm/pg-core';
 import { dockerRegistries } from './docker-registries.js';
+import { users } from './users.js';
 
 export type IntegrationProvider = 'gitlab' | 'cloudflare';
 export type IntegrationAllowlistMode = 'selected' | 'all_visible';
@@ -7,6 +8,7 @@ export type IntegrationSyncStatus = 'never' | 'idle' | 'running' | 'success' | '
 export type IntegrationAllowlistEntryType = 'group' | 'project';
 export type IntegrationRegistryStatus = 'available' | 'inaccessible';
 export type IntegrationConnectorCredentialType = 'gitlab_deploy_token';
+export type GitLabUserCredentialStatus = 'valid' | 'invalid';
 
 export interface IntegrationConnectorSettings {
   autoSyncEnabled: boolean;
@@ -223,4 +225,33 @@ export const integrationConnectorCredentials = pgTable(
     index('integration_credential_connector_idx').on(table.connectorId),
     index('integration_credential_project_idx').on(table.connectorId, table.projectRemoteId),
   ]
+);
+
+export const gitLabUserCredentials = pgTable(
+  'gitlab_user_credentials',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    connectorId: uuid('connector_id')
+      .notNull()
+      .references(() => integrationConnectors.id, { onDelete: 'cascade' }),
+    encryptedToken: text('encrypted_token').notNull(),
+    tokenLast4: varchar('token_last4', { length: 16 }).notNull(),
+    gitlabUserId: varchar('gitlab_user_id', { length: 64 }).notNull(),
+    gitlabUsername: varchar('gitlab_username', { length: 255 }).notNull(),
+    tokenScopes: jsonb('token_scopes').$type<string[]>().notNull().default([]),
+    tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+    status: varchar('status', { length: 16 }).$type<GitLabUserCredentialStatus>().notNull().default('valid'),
+    lastValidatedAt: timestamp('last_validated_at', { withTimezone: true }).notNull().defaultNow(),
+    invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userConnectorUnique: unique('gitlab_user_credentials_user_connector_unique').on(table.userId, table.connectorId),
+    userIdx: index('gitlab_user_credentials_user_idx').on(table.userId),
+    connectorIdx: index('gitlab_user_credentials_connector_idx').on(table.connectorId),
+  })
 );

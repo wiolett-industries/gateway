@@ -71,6 +71,17 @@ describe('MCP tool scope filtering', () => {
     );
   });
 
+  it('never exposes GitLab tools through Gateway MCP', () => {
+    const names = toolNames([
+      'integrations:gitlab:view',
+      'integrations:gitlab:projects:view',
+      'integrations:gitlab:repo:read',
+      'integrations:gitlab:repo:write',
+      'integrations:gitlab:system',
+    ]);
+    expect(names.some((name) => name.startsWith('gitlab_'))).toBe(false);
+  });
+
   it('never exposes node config or filesystem tools through MCP', () => {
     expect(toolNames(['nodes:config:view', 'nodes:config:edit'])).not.toContain('manage_node_config');
     expect(toolNames(['nodes:files:read', 'nodes:files:write'])).not.toContain('manage_node_file');
@@ -96,7 +107,7 @@ describe('MCP tool scope filtering', () => {
         'search_chats',
         'find_in_chat',
         'read_chat_slice',
-        'list_projects',
+        'list_chat_projects',
         'manage_ai_conversation',
         'manage_oauth_authorization',
         'manage_api_token',

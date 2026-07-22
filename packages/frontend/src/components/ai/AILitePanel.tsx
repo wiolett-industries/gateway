@@ -33,6 +33,7 @@ import { AIComposer } from "./AIComposer";
 import { AIConversationBlockedBlock } from "./AIConversationBlockedBlock";
 import { AIMessageList } from "./AIMessageList";
 import { ApprovalBlock, QuestionBlock } from "./AIToolCallBlock";
+import { GitLabAuthorizationModal } from "./GitLabAuthorizationModal";
 import { QuickActionChips } from "./QuickActionChips";
 import {
   composerAttachmentToFile,
@@ -695,6 +696,7 @@ export function AILitePanel() {
           />
         </div>
       )}
+      <GitLabAuthorizationModal />
     </div>
   );
 }

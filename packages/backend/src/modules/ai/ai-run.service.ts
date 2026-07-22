@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, or } from 'drizzle-orm';
 import type { DrizzleClient } from '@/db/client.js';
 import {
+  type AICredentialChallenge,
   type AIRun,
   type AIRunQuestion,
   type AIRunStatus,
@@ -10,6 +11,7 @@ import {
   type AIToolCallStatus,
   aiConversationMessages,
   aiConversations,
+  aiRunCredentialChallenges,
   aiRunQuestions,
   aiRuns,
   aiRunToolCalls,
@@ -22,7 +24,13 @@ import type { AIConversationSearchService } from './ai-conversation-search.servi
 import { AIRunExecutor } from './ai-run-executor.js';
 import { toClientCheckpoint } from './ai-run-runtime.helpers.js';
 
-const ACTIVE_RUN_STATUSES: AIRunStatus[] = ['queued', 'running', 'waiting_for_approval', 'waiting_for_answer'];
+const ACTIVE_RUN_STATUSES: AIRunStatus[] = [
+  'queued',
+  'running',
+  'waiting_for_approval',
+  'waiting_for_answer',
+  'waiting_for_credential',
+];
 
 export function aiUserConversationsChangedChannel(userId: string): string {
   return `ai.conversations.changed.${userId}`;
@@ -57,6 +65,14 @@ export interface AIAssistantCommentDoneEvent {
   userId: string;
   conversationId: string;
   runId: string;
+}
+
+export interface AICredentialRequiredEvent {
+  type: 'credential.required';
+  userId: string;
+  conversationId: string;
+  runId: string;
+  challenge: AICredentialChallenge;
 }
 
 export interface CreateAIRunInput {
@@ -109,6 +125,7 @@ export interface RuntimeSnapshot {
   pendingApprovals: AIRunToolCall[];
   pendingQuestion: AIRunQuestion | null;
   pendingQuestions: AIRunQuestion[];
+  pendingCredentialChallenge: AICredentialChallenge | null;
   toolCalls: AIRunToolCall[];
 }
 
@@ -148,7 +165,9 @@ export class AIRunService {
       (userId, conversationId, runId, content, version) =>
         this.publishAssistantCommentDelta(userId, conversationId, runId, content, version),
       (userId, conversationId, runId) => this.publishAssistantCommentDone(userId, conversationId, runId),
-      conversationSearchService
+      conversationSearchService,
+      (userId, conversationId, runId, challenge) =>
+        this.publishCredentialChallenge(userId, conversationId, runId, challenge)
     );
   }
 
@@ -520,6 +539,139 @@ export class AIRunService {
     this.executor.startQuestionContinuation(user, input);
   }
 
+  async resolveCredentialChallenge(input: {
+    conversationId: string;
+    runId: string;
+    challengeId: string;
+    userId: string;
+    clientCommandId: string;
+    decision: 'authorized' | 'rejected';
+  }): Promise<{
+    challenge: AICredentialChallenge;
+    additionalChallenges: AICredentialChallenge[];
+    duplicate: boolean;
+  }> {
+    await assertOwnedConversation(this.db, input.userId, input.conversationId);
+    const now = new Date();
+    const [updated] = await this.db
+      .update(aiRunCredentialChallenges)
+      .set({
+        status: input.decision,
+        decisionClientCommandId: input.clientCommandId,
+        resolvedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(aiRunCredentialChallenges.id, input.challengeId),
+          eq(aiRunCredentialChallenges.runId, input.runId),
+          eq(aiRunCredentialChallenges.conversationId, input.conversationId),
+          eq(aiRunCredentialChallenges.userId, input.userId),
+          eq(aiRunCredentialChallenges.status, 'pending')
+        )
+      )
+      .returning();
+    if (updated) {
+      const additionalChallenges =
+        input.decision === 'authorized'
+          ? await this.db
+              .update(aiRunCredentialChallenges)
+              .set({
+                status: 'authorized',
+                decisionClientCommandId: input.clientCommandId,
+                resolvedAt: now,
+                updatedAt: now,
+              })
+              .where(
+                and(
+                  eq(aiRunCredentialChallenges.userId, input.userId),
+                  eq(aiRunCredentialChallenges.connectorId, updated.connectorId),
+                  eq(aiRunCredentialChallenges.status, 'pending')
+                )
+              )
+              .returning()
+          : [];
+      for (const conversationId of new Set(
+        [updated, ...additionalChallenges].map((challenge) => challenge.conversationId)
+      )) {
+        this.publishConversationChanged(input.userId, conversationId);
+      }
+      return { challenge: updated, additionalChallenges, duplicate: false };
+    }
+
+    const [existing] = await this.db
+      .select()
+      .from(aiRunCredentialChallenges)
+      .where(
+        and(
+          eq(aiRunCredentialChallenges.id, input.challengeId),
+          eq(aiRunCredentialChallenges.runId, input.runId),
+          eq(aiRunCredentialChallenges.conversationId, input.conversationId),
+          eq(aiRunCredentialChallenges.userId, input.userId)
+        )
+      )
+      .limit(1);
+    if (!existing) throw new AppError(404, 'AI_CREDENTIAL_CHALLENGE_NOT_FOUND', 'Credential challenge not found');
+    if (existing.status === input.decision) {
+      return { challenge: existing, additionalChallenges: [], duplicate: true };
+    }
+    throw new AppError(409, 'AI_CREDENTIAL_CHALLENGE_CONFLICT', 'Credential challenge is no longer pending');
+  }
+
+  startCredentialContinuation(
+    user: User,
+    input: {
+      conversationId: string;
+      runId: string;
+      challenge: AICredentialChallenge;
+      authorized: boolean;
+    }
+  ): void {
+    this.executor.startCredentialContinuation(user, input);
+  }
+
+  async resumeResolvedCredentialContinuation(
+    user: User,
+    input: { conversationId: string; runId: string }
+  ): Promise<boolean> {
+    const [run] = await this.db
+      .select()
+      .from(aiRuns)
+      .where(
+        and(
+          eq(aiRuns.id, input.runId),
+          eq(aiRuns.conversationId, input.conversationId),
+          eq(aiRuns.userId, user.id),
+          eq(aiRuns.status, 'waiting_for_credential')
+        )
+      )
+      .limit(1);
+    if (!run) return false;
+
+    const [challenge] = await this.db
+      .select()
+      .from(aiRunCredentialChallenges)
+      .where(
+        and(
+          eq(aiRunCredentialChallenges.runId, input.runId),
+          eq(aiRunCredentialChallenges.conversationId, input.conversationId),
+          eq(aiRunCredentialChallenges.userId, user.id),
+          inArray(aiRunCredentialChallenges.status, ['authorized', 'rejected'])
+        )
+      )
+      .orderBy(desc(aiRunCredentialChallenges.resolvedAt))
+      .limit(1);
+    if (!challenge) return false;
+
+    this.executor.startCredentialContinuation(user, {
+      conversationId: input.conversationId,
+      runId: input.runId,
+      challenge,
+      authorized: challenge.status === 'authorized',
+    });
+    return true;
+  }
+
   async stopRun(input: {
     conversationId: string;
     runId: string;
@@ -592,6 +744,16 @@ export class AIRunService {
               eq(aiRunQuestions.status, 'pending')
             )
           ),
+        this.db
+          .update(aiRunCredentialChallenges)
+          .set({ status: 'stopped', resolvedAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(aiRunCredentialChallenges.runId, input.runId),
+              eq(aiRunCredentialChallenges.conversationId, input.conversationId),
+              eq(aiRunCredentialChallenges.status, 'pending')
+            )
+          ),
       ]);
       this.publishConversationChanged(input.userId, input.conversationId);
       return { run: stopped, duplicate: false };
@@ -641,17 +803,23 @@ export class AIRunService {
         pendingApprovals: [],
         pendingQuestion: null,
         pendingQuestions: [],
+        pendingCredentialChallenge: null,
         toolCalls: await this.listConversationToolCalls(conversationId),
       };
     }
 
-    const [activeToolCalls, questions, toolCalls] = await Promise.all([
+    const [activeToolCalls, questions, challenges, toolCalls] = await Promise.all([
       this.db.select().from(aiRunToolCalls).where(eq(aiRunToolCalls.runId, activeRun.id)),
       this.db
         .select()
         .from(aiRunQuestions)
         .where(eq(aiRunQuestions.runId, activeRun.id))
         .orderBy(asc(aiRunQuestions.createdAt)),
+      this.db
+        .select()
+        .from(aiRunCredentialChallenges)
+        .where(and(eq(aiRunCredentialChallenges.runId, activeRun.id), eq(aiRunCredentialChallenges.status, 'pending')))
+        .orderBy(asc(aiRunCredentialChallenges.createdAt)),
       this.listConversationToolCalls(conversationId),
     ]);
     const pendingQuestions = questions.filter((question) => question.status === 'pending');
@@ -665,6 +833,7 @@ export class AIRunService {
       pendingApprovals: activeToolCalls.filter((toolCall) => toolCall.status === 'pending_approval'),
       pendingQuestion: pendingQuestions[0] ?? null,
       pendingQuestions,
+      pendingCredentialChallenge: challenges[0] ?? null,
       toolCalls,
     };
   }
@@ -816,6 +985,22 @@ export class AIRunService {
       conversationId,
       runId,
     } satisfies AIAssistantCommentDoneEvent;
+    this.eventBus?.publish(aiUserConversationsChangedChannel(userId), event);
+  }
+
+  private publishCredentialChallenge(
+    userId: string,
+    conversationId: string,
+    runId: string,
+    challenge: AICredentialChallenge
+  ): void {
+    const event = {
+      type: 'credential.required',
+      userId,
+      conversationId,
+      runId,
+      challenge,
+    } satisfies AICredentialRequiredEvent;
     this.eventBus?.publish(aiUserConversationsChangedChannel(userId), event);
   }
 }

@@ -386,6 +386,89 @@ describe('AI websocket backend runtime commands', () => {
     );
   });
 
+  it('forwards credential challenges immediately without fetching a fresh conversation snapshot', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    const getConversationSnapshot = vi.fn().mockResolvedValue(createSnapshot(createRun()));
+    container.registerInstance(AIRunService, {
+      getConversationSnapshot,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'conversation.subscribe',
+          conversationId: 'conversation-1',
+          clientCommandId: 'cmd-subscribe',
+        }),
+      }),
+      ws as any
+    );
+    vi.mocked(ws.send).mockClear();
+
+    const challenge = {
+      id: 'challenge-1',
+      runId: 'run-1',
+      conversationId: 'conversation-1',
+      userId: USER.id,
+      provider: 'gitlab' as const,
+      connectorId: 'connector-1',
+      toolCallId: 'tool-1',
+      toolName: 'gitlab_list_projects',
+      status: 'pending' as const,
+      decisionClientCommandId: null,
+      resolvedAt: null,
+      createdAt: new Date('2026-06-26T10:00:00.000Z'),
+      updatedAt: new Date('2026-06-26T10:00:00.000Z'),
+    };
+    container.resolve(EventBusService).publish(aiUserConversationsChangedChannel(USER.id), {
+      type: 'credential.required',
+      userId: USER.id,
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      challenge,
+    });
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(getConversationSnapshot).toHaveBeenCalledTimes(1);
+    expect(ws.send).toHaveBeenCalledTimes(1);
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'credential.required',
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+        challenge,
+      })
+    );
+  });
+
+  it('restarts a resolved credential continuation when subscribing after a process gap', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    const run = { ...createRun(), status: 'waiting_for_credential' };
+    const snapshot = createSnapshot(run);
+    const resumeResolvedCredentialContinuation = vi.fn().mockResolvedValue(true);
+    container.registerInstance(AIRunService, {
+      getConversationSnapshot: vi.fn().mockResolvedValue(snapshot),
+      resumeResolvedCredentialContinuation,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'conversation.subscribe',
+          conversationId: 'conversation-1',
+          clientCommandId: 'cmd-recover',
+        }),
+      }),
+      ws as any
+    );
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(resumeResolvedCredentialContinuation).toHaveBeenCalledWith(USER, {
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+    });
+  });
+
   it('returns command.error when a conversation already has an active run', async () => {
     const { ws, handlers } = await openAuthenticatedWs();
     container.registerInstance(TOKENS.RedisClient, allowingRedis() as any);
@@ -476,6 +559,97 @@ describe('AI websocket backend runtime commands', () => {
       runId: 'run-1',
       toolCall,
       approved: true,
+    });
+  });
+
+  it('retries credential continuation for an idempotent duplicate decision', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    const challenge = {
+      id: 'challenge-1',
+      runId: 'run-1',
+      conversationId: 'conversation-1',
+      status: 'authorized',
+    };
+    const resolveCredentialChallenge = vi
+      .fn()
+      .mockResolvedValue({ challenge, additionalChallenges: [], duplicate: true });
+    const startCredentialContinuation = vi.fn();
+    container.registerInstance(AIRunService, {
+      resolveCredentialChallenge,
+      getConversationSnapshot: vi.fn().mockResolvedValue(createSnapshot(null)),
+      startCredentialContinuation,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'credential.resolve',
+          conversationId: 'conversation-1',
+          runId: 'run-1',
+          challengeId: 'challenge-1',
+          decision: 'authorized',
+          clientCommandId: 'cmd-credential-retry',
+        }),
+      }),
+      ws as any
+    );
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(startCredentialContinuation).toHaveBeenCalledWith(USER, {
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      challenge,
+      authorized: true,
+    });
+  });
+
+  it('resumes all waiting runs after one GitLab authorization', async () => {
+    const { ws, handlers } = await openAuthenticatedWs();
+    const challenge = {
+      id: 'challenge-1',
+      runId: 'run-1',
+      conversationId: 'conversation-1',
+      status: 'authorized',
+    };
+    const additionalChallenge = {
+      id: 'challenge-2',
+      runId: 'run-2',
+      conversationId: 'conversation-2',
+      status: 'authorized',
+    };
+    const resolveCredentialChallenge = vi.fn().mockResolvedValue({
+      challenge,
+      additionalChallenges: [additionalChallenge],
+      duplicate: false,
+    });
+    const startCredentialContinuation = vi.fn();
+    container.registerInstance(AIRunService, {
+      resolveCredentialChallenge,
+      getConversationSnapshot: vi.fn().mockResolvedValue(createSnapshot(null)),
+      startCredentialContinuation,
+    } as unknown as AIRunService);
+
+    await handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'credential.resolve',
+          conversationId: 'conversation-1',
+          runId: 'run-1',
+          challengeId: 'challenge-1',
+          decision: 'authorized',
+          clientCommandId: 'cmd-credential-all',
+        }),
+      }),
+      ws as any
+    );
+    handlers.onClose(new Event('close'), ws as any);
+
+    expect(startCredentialContinuation).toHaveBeenCalledTimes(2);
+    expect(startCredentialContinuation).toHaveBeenNthCalledWith(2, USER, {
+      conversationId: 'conversation-2',
+      runId: 'run-2',
+      challenge: additionalChallenge,
+      authorized: true,
     });
   });
 

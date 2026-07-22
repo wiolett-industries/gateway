@@ -119,6 +119,14 @@ export type WSClientMessage =
       answer: string;
       clientCommandId: string;
     }
+  | {
+      type: 'credential.resolve';
+      conversationId: string;
+      runId: string;
+      challengeId: string;
+      decision: 'authorized' | 'rejected';
+      clientCommandId: string;
+    }
   | { type: 'ping' };
 
 export type WSServerMessage =
@@ -130,6 +138,15 @@ export type WSServerMessage =
   | { type: 'tool_call_start'; requestId: string; id: string; name: string; arguments: Record<string, unknown> }
   | { type: 'tool_approval_required'; requestId: string; id: string; name: string; arguments: Record<string, unknown> }
   | { type: 'tool_result'; requestId: string; id: string; name: string; result: unknown; error?: string }
+  | {
+      type: 'credential_authorization_required';
+      requestId: string;
+      id: string;
+      name: string;
+      provider: 'gitlab';
+      connectorId: string;
+      arguments: Record<string, unknown>;
+    }
   | { type: 'invalidate_stores'; requestId: string; stores: string[] }
   | { type: 'conversation_ended'; requestId: string; reason: string }
   | { type: 'context_blocked'; requestId: string; reason: string }
@@ -158,6 +175,12 @@ export type WSServerMessage =
   | { type: 'assistant.delta'; conversationId: string; runId: string; content: string; version: number }
   | { type: 'assistant.comment_delta'; conversationId: string; runId: string; content: string; version: number }
   | { type: 'assistant.comment_done'; conversationId: string; runId: string }
+  | {
+      type: 'credential.required';
+      conversationId: string;
+      runId: string;
+      challenge: NonNullable<AIConversationRuntimeSnapshot['runtime']['pendingCredentialChallenge']>;
+    }
   | { type: 'run.status_changed'; conversationId: string; run: AIConversationRuntimeSnapshot['runtime']['activeRun'] }
   | { type: 'stores.invalidated'; conversationId: string; stores: string[] }
   | {
@@ -172,6 +195,13 @@ export type WSServerMessage =
       conversationId: string;
       runId: string;
       question: NonNullable<AIConversationRuntimeSnapshot['runtime']['pendingQuestion']>;
+      duplicate: boolean;
+    }
+  | {
+      type: 'credential.updated';
+      conversationId: string;
+      runId: string;
+      challenge: AIConversationRuntimeSnapshot['runtime']['pendingCredentialChallenge'];
       duplicate: boolean;
     }
   | { type: 'pong' };
@@ -195,6 +225,10 @@ export interface AIQuestion {
 export interface ToolExecutionResult {
   result?: unknown;
   error?: string;
+  credentialChallenge?: {
+    provider: 'gitlab';
+    connectorId: string;
+  };
   invalidateStores: string[];
 }
 

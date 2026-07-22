@@ -254,14 +254,14 @@ export const AI_TOOLS: AIToolDefinition[] = [
     historyRetention: { mode: 'persistent_context' },
   },
   {
-    name: 'list_projects',
+    name: 'list_chat_projects',
     description:
-      'List AI chat projects as retrieval boundaries. Use when the user names or implies another project and you need the projectId before searching that project.',
+      'List AI chat projects as retrieval boundaries. These are saved chat groupings, not GitLab projects. Never use this for GitLab; use gitlab_list_projects instead.',
     parameters: {
       type: 'object',
       properties: {
         limit: { type: 'number', description: 'Maximum projects to return. Default 20, max 50.' },
-        cursor: { type: 'string', description: 'Pagination cursor from a previous list_projects response.' },
+        cursor: { type: 'string', description: 'Pagination cursor from a previous list_chat_projects response.' },
       },
     },
     destructive: false,
@@ -1610,7 +1610,7 @@ const BASE_AI_TOOL_NAMES = new Set([
   'search_chats',
   'find_in_chat',
   'read_chat_slice',
-  'list_projects',
+  'list_chat_projects',
   'fetch',
   'web_search',
 ]);

@@ -421,6 +421,27 @@
       "when": 1784722271847,
       "tag": "0059_fine_hawkeye",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1784744649223,
+      "tag": "0060_chunky_brother_voodoo",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1784745178294,
+      "tag": "0061_old_masked_marvel",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1784760511686,
+      "tag": "0062_fix_ai_run_credential_status",
+      "breakpoints": true
     }
   ]
 }

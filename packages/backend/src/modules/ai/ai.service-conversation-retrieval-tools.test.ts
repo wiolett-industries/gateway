@@ -94,7 +94,7 @@ describe('AIService conversation retrieval tools', () => {
       currentConversationId: 'conversation-1',
     });
 
-    await service.executeTool(BASE_USER, 'list_projects', { limit: 5 }, { conversationId: 'conversation-1' });
+    await service.executeTool(BASE_USER, 'list_chat_projects', { limit: 5 }, { conversationId: 'conversation-1' });
     expect(conversationSearchService.listProjects).toHaveBeenCalledWith('user-1', {
       limit: 5,
       cursor: undefined,

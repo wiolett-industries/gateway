@@ -18,7 +18,7 @@ const SYSTEM_NEVER_ASK_TOOLS = new Set([
   'search_chats',
   'find_in_chat',
   'read_chat_slice',
-  'list_projects',
+  'list_chat_projects',
   'compact_context',
 ]);
 

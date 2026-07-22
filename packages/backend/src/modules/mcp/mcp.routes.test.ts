@@ -265,6 +265,29 @@ describe('MCP route authentication', () => {
 });
 
 describe('MCP tools', () => {
+  it('rejects direct GitLab tool calls even when the token has every GitLab scope', async () => {
+    registerToken([
+      'integrations:gitlab:view',
+      'integrations:gitlab:projects:view',
+      'integrations:gitlab:repo:read',
+      'integrations:gitlab:repo:write',
+      'integrations:gitlab:system',
+    ]);
+    const executeTool = vi.fn();
+    container.registerInstance(AIService, { executeTool } as unknown as AIService);
+    container.registerInstance(AuditService, { log: vi.fn().mockResolvedValue(undefined) } as unknown as AuditService);
+
+    const list = await mcpRequest('tools/list');
+    expect(list.body.result.tools.map((tool: { name: string }) => tool.name)).not.toContain('gitlab_list_projects');
+
+    const call = await mcpRequest('tools/call', {
+      name: 'gitlab_list_projects',
+      arguments: { connectorId: '11111111-1111-4111-8111-111111111111' },
+    });
+    expect(JSON.stringify(call.body)).toContain('unavailable');
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
   it('lists only scoped Gateway tools and excludes AI-only tools', async () => {
     registerToken(['nodes:details']);
 
@@ -281,6 +304,7 @@ describe('MCP tools', () => {
     expect(names).not.toContain('find_in_chat');
     expect(names).not.toContain('read_chat_slice');
     expect(names).not.toContain('list_projects');
+    expect(names).not.toContain('list_chat_projects');
     expect(names).not.toContain('internal_documentation');
     expect(names).not.toContain('web_search');
     expect(names).not.toContain('wait');

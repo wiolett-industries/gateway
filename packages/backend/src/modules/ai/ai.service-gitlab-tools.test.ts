@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { container } from '@/container.js';
+import { AppError } from '@/middleware/error-handler.js';
 import { IntegrationsService } from '@/modules/integrations/integrations.service.js';
 import { AIService } from './ai.service.js';
 
@@ -97,6 +98,64 @@ describe('AIService GitLab tool routing', () => {
     });
   });
 
+  it('turns missing personal GitLab authorization into an embedded AI credential challenge', async () => {
+    const integrationsService = {
+      gitLabReadFile: vi.fn().mockRejectedValue(
+        new AppError(428, 'GITLAB_CREDENTIAL_REQUIRED', 'Personal GitLab authorization is required', {
+          connectorId: 'connector-1',
+          connectorName: 'Main GitLab',
+          patCreationUrl: 'https://gitlab.example.com/-/user_settings/personal_access_tokens',
+          reason: 'missing',
+        })
+      ),
+    };
+    vi.spyOn(container, 'resolve').mockImplementation((token) => {
+      if (token === IntegrationsService) return integrationsService as never;
+      throw new Error('unexpected resolver call');
+    });
+
+    await expect(
+      createService().executeTool({ ...BASE_USER, scopes: ['integrations:gitlab:repo:read'] }, 'gitlab_read_file', {
+        connectorId: 'connector-1',
+        project: 'group/app',
+        path: 'README.md',
+      })
+    ).resolves.toEqual({
+      credentialChallenge: { provider: 'gitlab', connectorId: 'connector-1' },
+      invalidateStores: [],
+    });
+  });
+
+  it('returns the stable GitLab authorization rejection error when the user cancels', async () => {
+    const stream = createService().resumeAfterApproval(
+      BASE_USER,
+      'call-1',
+      'gitlab_read_file',
+      { connectorId: 'connector-1', project: 'group/app', path: 'README.md' },
+      false,
+      [],
+      undefined,
+      new AbortController().signal,
+      'request-1',
+      undefined,
+      undefined,
+      [],
+      'conversation-1',
+      undefined,
+      'GITLAB_AUTHORIZATION_REJECTED: User rejected GitLab authorization.'
+    );
+
+    await expect(stream.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'tool_result',
+        id: 'call-1',
+        error: 'GITLAB_AUTHORIZATION_REJECTED: User rejected GitLab authorization.',
+      },
+    });
+    await stream.return(undefined);
+  });
+
   it('routes GitLab connector sync and allowlist update through IntegrationsService', async () => {
     const integrationsService = {
       gitLabSyncConnectorForTool: vi.fn().mockResolvedValue({ status: 'success' }),
@@ -108,7 +167,7 @@ describe('AIService GitLab tool routing', () => {
     });
 
     await expect(
-      createService().executeTool({ ...BASE_USER, scopes: ['integrations:gitlab:manage'] }, 'gitlab_sync_connector', {
+      createService().executeTool({ ...BASE_USER, scopes: ['integrations:gitlab:sync'] }, 'gitlab_sync_connector', {
         connectorId: 'connector-1',
       })
     ).resolves.toMatchObject({ result: { status: 'success' } });

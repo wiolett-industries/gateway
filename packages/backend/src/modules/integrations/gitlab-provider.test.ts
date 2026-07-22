@@ -107,6 +107,49 @@ describe('GitLabProvider', () => {
     ]);
   });
 
+  it('reports branch-specific push access for the authenticated user', async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/api/v4/projects/42/repository/branches/feature%2Fsecure') {
+        return jsonResponse({ name: 'feature/secure', protected: true, can_push: false });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    const provider = new GitLabProvider(fetchImpl as typeof fetch);
+    const auth = { baseUrl: 'https://gitlab.test', token: 'personal-token' };
+    const project = { remoteId: '42', fullPath: 'org/app', name: 'app' };
+
+    await expect(provider.getBranchAccess(auth, project, 'feature/secure')).resolves.toEqual({
+      exists: true,
+      canPush: false,
+    });
+    await expect(provider.getBranchAccess(auth, project, 'missing')).resolves.toEqual({
+      exists: false,
+      canPush: false,
+    });
+  });
+
+  it('creates branches through the authenticated user credential', async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      expect(new URL(String(input)).pathname).toBe('/api/v4/projects/42/repository/branches');
+      expect(init).toMatchObject({
+        method: 'POST',
+        body: JSON.stringify({ branch: 'feature/new', ref: 'main' }),
+      });
+      return jsonResponse({ name: 'feature/new' }, {}, 201);
+    });
+    const provider = new GitLabProvider(fetchImpl as typeof fetch);
+
+    await expect(
+      provider.createBranch(
+        { baseUrl: 'https://gitlab.test', token: 'personal-token' },
+        { remoteId: '42', fullPath: 'org/app', name: 'app' },
+        'feature/new',
+        'main'
+      )
+    ).resolves.toBeUndefined();
+  });
+
   it('lists registries only for the provided project scope', async () => {
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));

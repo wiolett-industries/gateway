@@ -13,7 +13,7 @@ describe('AI backend approval policy', () => {
       'search_chats',
       'find_in_chat',
       'read_chat_slice',
-      'list_projects',
+      'list_chat_projects',
     ]) {
       expect(getAIToolApprovalDecision(toolName, 'always-ask')).toEqual({
         classification: 'system-never-ask',

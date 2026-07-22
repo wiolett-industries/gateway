@@ -10,10 +10,7 @@ export type WithDockerUpstreamDisplay<T> = T & {
 
 export async function attachDockerUpstreamDisplay<
   T extends { dockerDeploymentId: string | null; dockerNodeId: string | null },
->(
-  db: DrizzleClient,
-  hosts: T[]
-): Promise<Array<WithDockerUpstreamDisplay<T>>> {
+>(db: DrizzleClient, hosts: T[]): Promise<Array<WithDockerUpstreamDisplay<T>>> {
   const deploymentIds = [
     ...new Set(hosts.flatMap((host) => (host.dockerDeploymentId ? [host.dockerDeploymentId] : []))),
   ];

@@ -22,6 +22,7 @@ import type {
   AIConfig,
   AIConversationRuntimeSnapshot,
   AIConversationStatus,
+  AICredentialChallenge,
   AIMessage,
   AIRunToolCall,
   AIToolCall,
@@ -276,6 +277,7 @@ interface AIState {
   isCompactingContext: boolean;
   lastContext: PageContext | null;
   pendingApprovalToolCallId: string | null;
+  pendingCredentialChallenge: AICredentialChallenge | null;
 
   // Actions
   connect: () => Promise<boolean>;
@@ -289,6 +291,7 @@ interface AIState {
   approveTool: (toolCallId: string) => void;
   rejectTool: (toolCallId: string) => void;
   answerQuestion: (toolCallId: string, answer: string) => void;
+  resolveCredentialChallenge: (decision: "authorized" | "rejected") => void;
   stopStreaming: () => void;
   clearMessages: () => void;
   fetchRecentConversations: () => Promise<void>;
@@ -636,6 +639,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
   isCompactingContext: false,
   lastContext: null,
   pendingApprovalToolCallId: null,
+  pendingCredentialChallenge: null,
 
   connect: async () => {
     const auth = useAuthStore.getState();
@@ -728,6 +732,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       isCompactingContext: false,
       lastContext: context ?? null,
       pendingApprovalToolCallId: null,
+      pendingCredentialChallenge: null,
       ...(options.startNewConversation
         ? {
             messages: [],
@@ -896,6 +901,19 @@ export const useAIStore = create<AIState>()((set, get) => ({
         pendingApprovalToolCallId: toolCallId,
       }));
     }
+  },
+
+  resolveCredentialChallenge: (decision: "authorized" | "rejected") => {
+    const challenge = get().pendingCredentialChallenge;
+    if (!challenge) return;
+    sendWSMessage({
+      type: "credential.resolve",
+      conversationId: challenge.conversationId,
+      runId: challenge.runId,
+      challengeId: challenge.id,
+      decision,
+      clientCommandId: generateId(),
+    });
   },
 
   stopStreaming: () => {
@@ -1070,6 +1088,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         isCompactingContext: false,
         lastContext: null,
         pendingApprovalToolCallId: null,
+        pendingCredentialChallenge: null,
       });
       const conversation = await getConversation(conversationId);
       if (loadGeneration !== conversationLoadGeneration) return;
@@ -1106,6 +1125,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         isCompactingContext: false,
         lastContext: null,
         pendingApprovalToolCallId: null,
+        pendingCredentialChallenge: null,
       });
     }
   },
@@ -1190,6 +1210,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
       isCompactingContext: false,
       lastContext: result.conversation.lastContext,
       pendingApprovalToolCallId: null,
+      pendingCredentialChallenge: null,
       isStreaming: false,
       recentConversations: sortConversationSummaries(
         state.recentConversations.map((item) =>
@@ -1264,6 +1285,7 @@ export const useAIStore = create<AIState>()((set, get) => ({
         activeRunId: null,
         isCompactingContext: true,
         pendingApprovalToolCallId: null,
+        pendingCredentialChallenge: null,
       });
       try {
         sendWSMessage({
@@ -1353,6 +1375,7 @@ export function resetAIStateForAuthChange() {
     isCompactingContext: false,
     lastContext: null,
     pendingApprovalToolCallId: null,
+    pendingCredentialChallenge: null,
   });
 }
 
@@ -1418,7 +1441,9 @@ function handleWSMessage(
         ),
       }));
       if (get().activeConversationId !== msg.conversationId) return;
-      set((state) => projectConversationSnapshot(msg.snapshot, state.messages));
+      set((state) =>
+        projectConversationSnapshot(msg.snapshot, state.messages, state.pendingCredentialChallenge)
+      );
       break;
 
     case "assistant.delta":
@@ -1457,6 +1482,21 @@ function handleWSMessage(
         activeRunId: msg.runId,
         isStreaming: true,
         messages: applyAssistantCommentDoneToMessages(state.messages, msg),
+      }));
+      break;
+
+    case "credential.required":
+      if (get().activeConversationId !== msg.conversationId) return;
+      set((state) => ({
+        activeRunId: msg.runId,
+        isStreaming: true,
+        isCompactingContext: false,
+        pendingCredentialChallenge: msg.challenge,
+        recentConversations: patchRecentConversationRunStatus(
+          state.recentConversations,
+          msg.conversationId,
+          "waiting_for_credential"
+        ),
       }));
       break;
 
@@ -1501,6 +1541,18 @@ function handleWSMessage(
       }));
       break;
 
+    case "credential.updated":
+      if (get().activeConversationId !== msg.conversationId) return;
+      set((state) => ({
+        activeRunId: msg.runId,
+        isStreaming: true,
+        pendingCredentialChallenge:
+          state.pendingCredentialChallenge?.id === msg.challenge.id
+            ? null
+            : state.pendingCredentialChallenge,
+      }));
+      break;
+
     case "approval.updated":
       break;
   }
@@ -1508,9 +1560,17 @@ function handleWSMessage(
 
 function projectConversationSnapshot(
   snapshot: AIConversationRuntimeSnapshot,
-  currentMessages: AIMessage[] = []
+  currentMessages: AIMessage[] = [],
+  currentCredentialChallenge: AICredentialChallenge | null = null
 ): Partial<AIState> {
   const activeRunId = snapshot.runtime.activeRun?.id ?? null;
+  const pendingCredentialChallenge =
+    snapshot.runtime.pendingCredentialChallenge ??
+    (currentCredentialChallenge &&
+    activeRunId === currentCredentialChallenge.runId &&
+    isActiveRunStatus(snapshot.runtime.activeRun?.status)
+      ? currentCredentialChallenge
+      : null);
   const snapshotDraftVersion = snapshot.runtime.assistantDraftVersion;
   const currentDraftVersion = activeRunId ? (assistantDraftVersions.get(activeRunId) ?? -1) : -1;
   const snapshotDraftIsStale = Boolean(
@@ -1561,7 +1621,9 @@ function projectConversationSnapshot(
     lastContext: snapshot.conversation.lastContext,
     pendingApprovalToolCallId:
       snapshot.runtime.pendingApprovals[0]?.toolCallId ?? pendingQuestions[0]?.toolCallId ?? null,
-    isStreaming: isActiveRunStatus(snapshot.runtime.activeRun?.status),
+    pendingCredentialChallenge,
+    isStreaming:
+      Boolean(pendingCredentialChallenge) || isActiveRunStatus(snapshot.runtime.activeRun?.status),
   };
 }
 
@@ -2215,7 +2277,8 @@ function isActiveRunStatus(status: string | null | undefined): boolean {
     status === "queued" ||
     status === "running" ||
     status === "waiting_for_approval" ||
-    status === "waiting_for_answer"
+    status === "waiting_for_answer" ||
+    status === "waiting_for_credential"
   );
 }
 

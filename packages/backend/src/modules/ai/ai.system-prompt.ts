@@ -211,7 +211,8 @@ You have an **internal_documentation** tool. Use it BEFORE attempting complex ta
   push(
     'Conversation retrieval policy',
     `\n## Conversation Retrieval
-You have read-only tools for finding and reading the user's previous AI chats: search_chats, find_in_chat, read_chat_slice, and list_projects.
+You have read-only tools for finding and reading the user's previous AI chats: search_chats, find_in_chat, read_chat_slice, and list_chat_projects.
+AI chat projects are saved conversation groupings, not source-control projects. For GitLab projects, use gitlab_list_projects or gitlab_search_projects.
 - Do not use conversation retrieval as a default first step. For ordinary questions, current-page work, tool calls, debugging with enough context, or requests answerable from current Gateway state, proceed without search_chats.
 - Use search_chats only when the user explicitly asks about old chats, previous work, prior decisions, earlier bugs, commands, migrations, files, errors, or "what did we do before"; or when the current request contains an unresolved project-specific name, error, command, file, resource, tool name, old decision, artifact, migration, or phrase that cannot be resolved from current context, internal_documentation, discover_tools, get_current_context, or find_resource.
 - For explicit recall, search the narrowest relevant boundary first. Add all_user_chats only when the user asks broadly, the reference is clearly cross-project, or the narrow search is insufficient.

@@ -14,7 +14,9 @@ describe("TerminalOutputNormalizer", () => {
 
   it("recognizes a clear sequence split across chunks", () => {
     const normalizer = new TerminalOutputNormalizer();
-    const chunks = ["old\u001b[", "H\u001b", "[J/ # "].map((chunk) => normalizer.push(encoder.encode(chunk)));
+    const chunks = ["old\u001b[", "H\u001b", "[J/ # "].map((chunk) =>
+      normalizer.push(encoder.encode(chunk))
+    );
 
     const output = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
     let offset = 0;

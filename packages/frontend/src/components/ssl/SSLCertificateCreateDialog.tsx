@@ -375,7 +375,6 @@ export function SSLCertificateCreateDialog({
                       be shown the records to add.
                     </p>
                   )}
-
                 </div>
               )}
             </div>

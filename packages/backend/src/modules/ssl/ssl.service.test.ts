@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/middleware/error-handler.js';
 import { RequestACMECertSchema } from './ssl.schemas.js';
 import { SSLService } from './ssl.service.js';
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('SSLService DNS-01 renewal', () => {
   it('allows Cloudflare DNS-01 requests to keep auto-renew enabled', () => {
@@ -29,6 +33,7 @@ describe('SSLService DNS-01 renewal', () => {
   });
 
   it('provisions Cloudflare DNS-01 records for initial issuance and completes verification', async () => {
+    vi.useFakeTimers();
     const cert = {
       id: 'cert-1',
       name: '*.example.com',
@@ -82,16 +87,17 @@ describe('SSLService DNS-01 renewal', () => {
       .spyOn(service, 'completeDNS01Verification')
       .mockResolvedValue({ id: 'cert-1', status: 'active' } as any);
 
-    await expect(
-      service.requestACMECert(
-        RequestACMECertSchema.parse({
-          domains: ['*.example.com'],
-          challengeType: 'dns-01',
-          dnsProvider: 'cloudflare',
-        }),
-        'user-1'
-      )
-    ).resolves.toEqual({
+    const request = service.requestACMECert(
+      RequestACMECertSchema.parse({
+        domains: ['*.example.com'],
+        challengeType: 'dns-01',
+        dnsProvider: 'cloudflare',
+      }),
+      'user-1'
+    );
+    await vi.runAllTimersAsync();
+
+    await expect(request).resolves.toEqual({
       certificate: { id: 'cert-1', status: 'active' },
       status: 'issued',
     });

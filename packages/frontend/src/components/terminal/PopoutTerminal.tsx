@@ -255,5 +255,7 @@ export function PopoutTerminal({ wsFactory, channelKey, title }: PopoutTerminalP
     }
   }, [getTerminalTheme]);
 
-  return <div ref={termRef} className="terminal-console fixed inset-0 bg-card" style={{ padding: 4 }} />;
+  return (
+    <div ref={termRef} className="terminal-console fixed inset-0 bg-card" style={{ padding: 4 }} />
+  );
 }

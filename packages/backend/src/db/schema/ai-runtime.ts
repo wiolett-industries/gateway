@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 import { aiConversationMessages, aiConversations } from './ai-conversations.js';
+import { integrationConnectors } from './integration-connectors.js';
 import { users } from './users.js';
 
 export type AIRunStatus =
@@ -8,6 +9,7 @@ export type AIRunStatus =
   | 'running'
   | 'waiting_for_approval'
   | 'waiting_for_answer'
+  | 'waiting_for_credential'
   | 'completed'
   | 'failed'
   | 'stopped';
@@ -34,6 +36,7 @@ export type AIToolCallStatus =
   | 'stopped';
 
 export type AIQuestionStatus = 'pending' | 'answered' | 'stopped';
+export type AICredentialChallengeStatus = 'pending' | 'authorized' | 'rejected' | 'stopped';
 
 export const aiRuns = pgTable(
   'ai_runs',
@@ -59,7 +62,9 @@ export const aiRuns = pgTable(
   (table) => ({
     oneActivePerConversationIdx: uniqueIndex('ai_runs_one_active_per_conversation_idx')
       .on(table.conversationId)
-      .where(sql`${table.status} IN ('queued', 'running', 'waiting_for_approval', 'waiting_for_answer')`),
+      .where(
+        sql`${table.status} IN ('queued', 'running', 'waiting_for_approval', 'waiting_for_answer', 'waiting_for_credential')`
+      ),
     userConversationCommandIdx: uniqueIndex('ai_runs_user_conversation_command_idx').on(
       table.userId,
       table.conversationId,
@@ -141,9 +146,50 @@ export const aiRunQuestions = pgTable(
   })
 );
 
+export const aiRunCredentialChallenges = pgTable(
+  'ai_run_credential_challenges',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => aiRuns.id, { onDelete: 'cascade' }),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => aiConversations.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    provider: varchar('provider', { length: 32 }).$type<'gitlab'>().notNull(),
+    connectorId: uuid('connector_id')
+      .notNull()
+      .references(() => integrationConnectors.id, { onDelete: 'cascade' }),
+    toolCallId: varchar('tool_call_id', { length: 255 }).notNull(),
+    toolName: varchar('tool_name', { length: 255 }).notNull(),
+    status: varchar('status', { length: 32 }).$type<AICredentialChallengeStatus>().notNull().default('pending'),
+    decisionClientCommandId: varchar('decision_client_command_id', { length: 128 }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    runToolCallIdx: uniqueIndex('ai_run_credential_challenges_run_tool_call_idx').on(table.runId, table.toolCallId),
+    userConnectorStatusIdx: index('ai_run_credential_challenges_user_connector_status_idx').on(
+      table.userId,
+      table.connectorId,
+      table.status
+    ),
+    conversationStatusIdx: index('ai_run_credential_challenges_conversation_status_idx').on(
+      table.conversationId,
+      table.status
+    ),
+  })
+);
+
 export type AIRun = typeof aiRuns.$inferSelect;
 export type NewAIRun = typeof aiRuns.$inferInsert;
 export type AIRunToolCall = typeof aiRunToolCalls.$inferSelect;
 export type NewAIRunToolCall = typeof aiRunToolCalls.$inferInsert;
 export type AIRunQuestion = typeof aiRunQuestions.$inferSelect;
 export type NewAIRunQuestion = typeof aiRunQuestions.$inferInsert;
+export type AICredentialChallenge = typeof aiRunCredentialChallenges.$inferSelect;
+export type NewAICredentialChallenge = typeof aiRunCredentialChallenges.$inferInsert;

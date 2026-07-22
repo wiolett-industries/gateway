@@ -859,7 +859,8 @@ function ConversationDragOverlayItem({
     conversation.activeRunStatus === "queued" || conversation.activeRunStatus === "running"
       ? "animate-spin text-primary"
       : conversation.activeRunStatus === "waiting_for_approval" ||
-          conversation.activeRunStatus === "waiting_for_answer"
+          conversation.activeRunStatus === "waiting_for_answer" ||
+          conversation.activeRunStatus === "waiting_for_credential"
         ? "text-yellow-600 dark:text-yellow-400"
         : ""
   );
@@ -899,7 +900,8 @@ function ConversationMenuItem({
     conversation.activeRunStatus === "queued" || conversation.activeRunStatus === "running"
       ? "animate-spin text-primary"
       : conversation.activeRunStatus === "waiting_for_approval" ||
-          conversation.activeRunStatus === "waiting_for_answer"
+          conversation.activeRunStatus === "waiting_for_answer" ||
+          conversation.activeRunStatus === "waiting_for_credential"
         ? "text-yellow-600 dark:text-yellow-400"
         : ""
   );
@@ -988,6 +990,7 @@ function getConversationStatusIcon(conversation: AIConversationSummary) {
       return Loader2;
     case "waiting_for_approval":
     case "waiting_for_answer":
+    case "waiting_for_credential":
       return CircleAlert;
     default:
       return conversation.status === "active" ? MessageSquare : Lock;
@@ -999,7 +1002,8 @@ function getFolderStatusIcon(conversations: AIConversationSummary[], expanded: b
     conversations.some(
       (conversation) =>
         conversation.activeRunStatus === "waiting_for_approval" ||
-        conversation.activeRunStatus === "waiting_for_answer"
+        conversation.activeRunStatus === "waiting_for_answer" ||
+        conversation.activeRunStatus === "waiting_for_credential"
     )
   ) {
     return CircleAlert;

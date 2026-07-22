@@ -47,6 +47,10 @@ export const GitLabConnectorRotateTokenSchema = z.object({
   token: z.string().min(1).max(4096),
 });
 
+export const GitLabUserCredentialAuthorizeSchema = z.object({
+  token: z.string().trim().min(1).max(4096),
+});
+
 export const GitLabConnectorListQuerySchema = z.object({
   enabled: z.coerce.boolean().optional(),
 });
@@ -101,6 +105,7 @@ export const CloudflareConnectorPreviewTestSchema = z.object({
 export type GitLabConnectorCreateInput = z.infer<typeof GitLabConnectorCreateSchema>;
 export type GitLabConnectorUpdateInput = z.infer<typeof GitLabConnectorUpdateSchema>;
 export type GitLabConnectorRotateTokenInput = z.infer<typeof GitLabConnectorRotateTokenSchema>;
+export type GitLabUserCredentialAuthorizeInput = z.infer<typeof GitLabUserCredentialAuthorizeSchema>;
 export type GitLabConnectorListQuery = z.infer<typeof GitLabConnectorListQuerySchema>;
 export type GitLabAllowlistEntryInput = z.infer<typeof GitLabAllowlistEntrySchema>;
 export type GitLabAllowlistPreviewSearchInput = z.infer<typeof GitLabAllowlistPreviewSearchSchema>;

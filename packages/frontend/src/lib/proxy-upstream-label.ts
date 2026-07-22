@@ -1,9 +1,4 @@
-import type {
-  ForwardScheme,
-  NodeAppearanceColor,
-  ProxyHostType,
-  ProxyUpstreamKind,
-} from "@/types";
+import type { ForwardScheme, NodeAppearanceColor, ProxyHostType, ProxyUpstreamKind } from "@/types";
 
 export interface ProxyUpstreamLabelInput {
   type: ProxyHostType;

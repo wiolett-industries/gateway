@@ -473,7 +473,19 @@ const RAW_TOKEN_SCOPES = [
   {
     value: "integrations:gitlab:manage",
     label: "Manage GitLab Integrations",
-    desc: "Create, edit, rotate, sync, and delete GitLab connectors",
+    desc: "Create, edit, rotate, and delete GitLab connectors",
+    group: "Integrations: GitLab",
+  },
+  {
+    value: "integrations:gitlab:sync",
+    label: "Sync GitLab Integrations",
+    desc: "Refresh projects and registries using the connector credential",
+    group: "Integrations: GitLab",
+  },
+  {
+    value: "integrations:gitlab:system",
+    label: "Use System GitLab Credential",
+    desc: "Use the connector credential for otherwise permitted GitLab operations",
     group: "Integrations: GitLab",
   },
   {
@@ -1088,6 +1100,7 @@ const PROGRAMMATIC_DENIED_SCOPE_VALUES = new Set<string>([
   "settings:gateway:view",
   "settings:gateway:edit",
   "integrations:gitlab:manage",
+  "integrations:gitlab:system",
   "proxy:raw:read",
   "proxy:raw:write",
   "proxy:raw:toggle",

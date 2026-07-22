@@ -14,6 +14,7 @@ import {
   integrationConnectorRegistries,
   integrationConnectors,
 } from '@/db/schema/index.js';
+import { hasScope } from '@/lib/permissions.js';
 import { buildWhere } from '@/lib/utils.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AISandboxService } from '@/modules/ai/ai.sandbox.service.js';
@@ -24,6 +25,7 @@ import type { CryptoService } from '@/services/crypto.service.js';
 import type { EventBusService } from '@/services/event-bus.service.js';
 import type { User } from '@/types.js';
 import { CloudflareClient, type CloudflareDnsRecord, type CloudflareZoneRef } from './cloudflare-client.js';
+import { GitLabUserCredentialsService, type ResolvedGitLabUserCredential } from './gitlab-user-credentials.service.js';
 import {
   buildGitLabFileCommitAuditDetails,
   CLOUDFLARE_AUDIT_ACTIONS,
@@ -37,7 +39,9 @@ import type {
   VcsCommitFileChange,
   VcsConnectorAuth,
   VcsConnectorProvider,
+  VcsProjectAccess,
   VcsProjectRef,
+  VcsUserTokenIdentity,
 } from './integration-provider.types.js';
 import type {
   CloudflareConnectorCreateInput,
@@ -47,12 +51,20 @@ import type {
   GitLabConnectorCreateInput,
   GitLabConnectorListQuery,
   GitLabConnectorUpdateInput,
+  GitLabUserCredentialAuthorizeInput,
 } from './integrations.schemas.js';
 
 type ConnectorRow = typeof integrationConnectors.$inferSelect;
 type AllowlistRow = typeof integrationConnectorAllowlistEntries.$inferSelect;
 type ProjectRow = typeof integrationConnectorProjects.$inferSelect;
 type CloudflareZoneRow = typeof integrationConnectorCloudflareZones.$inferSelect;
+type GitLabCredentialSource = 'system' | 'personal';
+
+interface ResolvedGitLabCredential {
+  source: GitLabCredentialSource;
+  auth: VcsConnectorAuth;
+  scopes: string[];
+}
 
 export const DEFAULT_GITLAB_CONNECTOR_SETTINGS: IntegrationConnectorSettings = {
   autoSyncEnabled: true,
@@ -87,6 +99,7 @@ export class IntegrationsService {
   private sslService?: SSLService;
   private readonly providers = new Map<IntegrationProvider, ConnectorProvider>();
   private readonly syncLocks = new Set<string>();
+  private readonly gitLabUserCredentials: GitLabUserCredentialsService;
 
   constructor(
     private db: DrizzleClient,
@@ -94,9 +107,99 @@ export class IntegrationsService {
     private cryptoService: CryptoService,
     providers: ConnectorProvider[] = []
   ) {
+    this.gitLabUserCredentials = new GitLabUserCredentialsService(db, cryptoService);
     for (const provider of providers) {
       this.providers.set(provider.provider, provider);
     }
+  }
+
+  async getGitLabUserCredentialStatus(connectorId: string, userId: string) {
+    const connector = await this.getConnectorRow(connectorId, 'gitlab');
+    const credential = await this.gitLabUserCredentials.getStatus(userId, connectorId);
+    return {
+      connectorId: connector.id,
+      connectorName: connector.name,
+      baseUrl: connector.baseUrl,
+      patCreationUrl: this.gitLabPatCreationUrl(connector.baseUrl),
+      ...credential,
+    };
+  }
+
+  async authorizeGitLabUserCredential(connectorId: string, input: GitLabUserCredentialAuthorizeInput, userId: string) {
+    const connector = await this.getConnectorRow(connectorId, 'gitlab');
+    if (!connector.enabled) {
+      throw new AppError(409, 'CONNECTOR_DISABLED', 'GitLab connector is disabled');
+    }
+
+    let identity: VcsUserTokenIdentity;
+    try {
+      identity = await this.getVcsProvider('gitlab').validateUserToken({
+        baseUrl: connector.baseUrl,
+        token: input.token,
+      });
+    } catch (error) {
+      if (error instanceof AppError && (error.statusCode === 401 || error.statusCode === 403)) {
+        throw new AppError(400, 'GITLAB_AUTHORIZATION_INVALID', 'GitLab rejected this personal access token');
+      }
+      throw error;
+    }
+
+    const credential = await this.gitLabUserCredentials.replace(userId, connectorId, input.token, {
+      gitlabUserId: identity.userId,
+      gitlabUsername: identity.username,
+      tokenScopes: identity.scopes,
+      tokenExpiresAt: identity.expiresAt,
+    });
+    await this.auditService.log({
+      action: GITLAB_AUDIT_ACTIONS.userCredentialAuthorize,
+      userId,
+      resourceType: 'integration-connector',
+      resourceId: connectorId,
+      details: {
+        connectorName: connector.name,
+        gitlabUserId: identity.userId,
+        gitlabUsername: identity.username,
+      },
+    });
+    return {
+      connectorId: connector.id,
+      connectorName: connector.name,
+      baseUrl: connector.baseUrl,
+      patCreationUrl: this.gitLabPatCreationUrl(connector.baseUrl),
+      ...credential,
+    };
+  }
+
+  async disconnectGitLabUserCredential(connectorId: string, userId: string) {
+    const connector = await this.getConnectorRow(connectorId, 'gitlab');
+    const disconnected = await this.gitLabUserCredentials.disconnect(userId, connectorId);
+    if (disconnected) {
+      await this.auditService.log({
+        action: GITLAB_AUDIT_ACTIONS.userCredentialDisconnect,
+        userId,
+        resourceType: 'integration-connector',
+        resourceId: connectorId,
+        details: { connectorName: connector.name },
+      });
+    }
+    return { disconnected };
+  }
+
+  async resolvePersonalGitLabAuth(userId: string, connectorId: string): Promise<ResolvedGitLabUserCredential | null> {
+    const connector = await this.getConnectorRow(connectorId, 'gitlab');
+    return this.gitLabUserCredentials.resolveAuth(userId, connectorId, connector.baseUrl);
+  }
+
+  async invalidateGitLabUserCredential(userId: string, connectorId: string): Promise<void> {
+    const connector = await this.getConnectorRow(connectorId, 'gitlab');
+    await this.gitLabUserCredentials.markInvalid(userId, connectorId);
+    await this.auditService.log({
+      action: GITLAB_AUDIT_ACTIONS.userCredentialInvalidate,
+      userId,
+      resourceType: 'integration-connector',
+      resourceId: connectorId,
+      details: { connectorName: connector.name },
+    });
   }
 
   setEventBus(bus: EventBusService) {
@@ -185,7 +288,7 @@ export class IntegrationsService {
     const nextSettings =
       input.settings !== undefined ? this.mergeSettings(input.settings, this.gitLabSettings(existing)) : undefined;
     const nextToken = input.token?.trim();
-    const existingAuth = this.authFor(existing);
+    const existingAuth = this.systemAuthFor(existing);
     const auth =
       nextToken && nextToken.length > 0
         ? { baseUrl: nextBaseUrl, token: nextToken }
@@ -297,7 +400,7 @@ export class IntegrationsService {
   async testGitLabConnector(id: string, userId: string) {
     const row = await this.getConnectorRow(id, 'gitlab');
     const provider = this.getProvider(row.provider);
-    const capabilities = await provider.testConnection(this.authFor(row));
+    const capabilities = await provider.testConnection(this.systemAuthFor(row));
     const [updated] = await this.db
       .update(integrationConnectors)
       .set({
@@ -339,7 +442,7 @@ export class IntegrationsService {
     this.emitConnector(id, 'sync-started');
 
     try {
-      const auth = this.authFor(row);
+      const auth = this.systemAuthFor(row);
       const capabilities = await provider.testConnection(auth);
       const allProjects = await provider.listProjects(auth);
       const allowlistEntries = await this.listAllowlistRows(id);
@@ -776,7 +879,7 @@ export class IntegrationsService {
   async searchGitLabAllowlist(id: string, query: string) {
     const row = await this.getConnectorRow(id, 'gitlab');
     const provider = this.getProvider(row.provider);
-    return provider.searchAllowlist(this.authFor(row), query);
+    return provider.searchAllowlist(this.systemAuthFor(row), query);
   }
 
   async listGitLabAllowlistOptions(id: string) {
@@ -794,7 +897,7 @@ export class IntegrationsService {
   async refreshGitLabAllowlistOptions(id: string, userId: string) {
     const row = await this.getConnectorRow(id, 'gitlab');
     const provider = this.getProvider(row.provider);
-    const projects = await provider.listProjects(this.authFor(row));
+    const projects = await provider.listProjects(this.systemAuthFor(row));
     await this.persistProjects(id, projects);
 
     await this.auditService.log({
@@ -867,7 +970,14 @@ export class IntegrationsService {
       .orderBy(integrationConnectorProjects.fullPath)
       .limit(500);
     const allowlistRows = await this.listAllowlistRows(row.id);
-    const allowedProjects = this.filterAllowedProjects(row, allowlistRows, projects);
+    let allowedProjects = this.filterAllowedProjects(row, allowlistRows, projects);
+    const credential = await this.resolveGitLabCredential(user, row);
+    if (credential.source === 'personal') {
+      const provider = this.gitLabProviderForCredential(user, row, credential);
+      const visibleProjects = await provider.listProjects(credential.auth);
+      const visibleIds = new Set(visibleProjects.map((project) => project.remoteId));
+      allowedProjects = allowedProjects.filter((project) => visibleIds.has(project.remoteId));
+    }
     const search = input.search?.trim().toLowerCase();
     const filtered = search
       ? allowedProjects.filter(
@@ -900,7 +1010,7 @@ export class IntegrationsService {
   }
 
   async gitLabSyncConnectorForTool(user: User, input: { connectorId: string }) {
-    await this.assertGitLabConnectorAccess(user, 'integrations:gitlab:manage', 'connector.sync');
+    await this.assertGitLabConnectorAccess(user, 'integrations:gitlab:sync', 'connector.sync');
     return this.syncGitLabConnector(input.connectorId, user.id);
   }
 
@@ -928,7 +1038,7 @@ export class IntegrationsService {
       throw new AppError(400, 'GITLAB_PROJECTS_REQUIRED', 'At least one GitLab project path or remote ID is required');
     }
     const provider = this.getProvider(connector.provider);
-    const visibleProjects = await provider.listProjects(this.authFor(connector));
+    const visibleProjects = await provider.listProjects(this.systemAuthFor(connector));
     await this.persistProjects(connector.id, visibleProjects);
     const visibleByKey = new Map<string, VcsProjectRef>();
     for (const project of visibleProjects) {
@@ -1104,12 +1214,16 @@ export class IntegrationsService {
       requiredScope: 'integrations:gitlab:repo:write',
       requiredCapability: 'repoWrite',
     });
-    const result = await context.provider.commitFiles(context.auth, {
+    const createdBranch = await this.assertPersonalGitLabWriteAccess(context, input.branch, input.startBranch);
+    const executionAuth =
+      context.credentialSource === 'personal' ? this.systemAuthFor(context.connector) : context.auth;
+    const executionProvider = this.getVcsProvider(context.connector.provider);
+    const result = await executionProvider.commitFiles(executionAuth, {
       project: this.toProviderProject(context.project),
       branch: input.branch,
       commitMessage: input.commitMessage,
       changes: input.changes,
-      startBranch: input.startBranch,
+      startBranch: createdBranch ? undefined : input.startBranch,
     });
     await this.auditGitLabTool(
       user,
@@ -1168,8 +1282,11 @@ export class IntegrationsService {
       requiredScope: 'integrations:gitlab:ci:edit',
       requiredCapability: 'ciEdit',
     });
-    const lint = await context.provider.lintCiConfig(
-      context.auth,
+    const executionAuth =
+      context.credentialSource === 'personal' ? this.systemAuthFor(context.connector) : context.auth;
+    const executionProvider = this.getVcsProvider(context.connector.provider);
+    const lint = await executionProvider.lintCiConfig(
+      executionAuth,
       this.toProviderProject(context.project),
       input.content
     );
@@ -1191,10 +1308,11 @@ export class IntegrationsService {
         }
       );
     }
-    const result = await context.provider.commitFiles(context.auth, {
+    const createdBranch = await this.assertPersonalGitLabWriteAccess(context, input.branch, input.startBranch);
+    const result = await executionProvider.commitFiles(executionAuth, {
       project: this.toProviderProject(context.project),
       branch: input.branch,
-      startBranch: input.startBranch,
+      startBranch: createdBranch ? undefined : input.startBranch,
       commitMessage: input.commitMessage,
       changes: [{ action: 'update', path: '.gitlab-ci.yml', content: input.content }],
     });
@@ -1646,8 +1764,23 @@ export class IntegrationsService {
     const allowlistRows = await this.listAllowlistRows(connector.id);
     const isProjectAllowed =
       connector.allowlistMode === 'all_visible' || this.isGitLabProjectAllowed(project, allowlistRows);
+    assertConnectorOperationAccess({
+      actor: { userId: user.id, scopes: user.scopes },
+      provider: 'gitlab',
+      operation: input.requiredScope,
+      requiredScope: input.requiredScope,
+      connectorId: connector.id,
+      connectorName: connector.name,
+      project: { remoteId: project.remoteId, fullPath: project.fullPath, name: project.name },
+      projectAllowed: isProjectAllowed,
+    });
+    const credential = await this.resolveGitLabCredential(user, connector);
+    const provider = this.gitLabProviderForCredential(user, connector, credential);
     if (input.requiredCapability && connector.capabilities?.[input.requiredCapability] !== true) {
-      const capabilities = await this.refreshGitLabConnectorCapabilities(connector);
+      const capabilities =
+        credential.source === 'system'
+          ? await this.refreshGitLabConnectorCapabilities(connector)
+          : await provider.testConnection(credential.auth);
       connector = { ...connector, capabilities };
     }
     assertConnectorOperationAccess({
@@ -1662,17 +1795,136 @@ export class IntegrationsService {
       project: { remoteId: project.remoteId, fullPath: project.fullPath, name: project.name },
       projectAllowed: isProjectAllowed,
     });
+    let projectAccess: VcsProjectAccess;
+    try {
+      projectAccess = await provider.getProjectAccess(credential.auth, this.toProviderProject(project));
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode === 404) {
+        throw new AppError(
+          404,
+          'GITLAB_PROJECT_NOT_VISIBLE',
+          'GitLab project is not visible to the selected credential'
+        );
+      }
+      throw error;
+    }
     return {
       connector,
       project,
-      auth: this.authFor(connector),
-      provider: this.getVcsProvider(connector.provider),
+      auth: credential.auth,
+      credentialSource: credential.source,
+      credentialScopes: credential.scopes,
+      projectAccessLevel: projectAccess.accessLevel,
+      provider,
     };
+  }
+
+  private async assertPersonalGitLabWriteAccess(
+    context: {
+      credentialSource: GitLabCredentialSource;
+      credentialScopes: string[];
+      projectAccessLevel: number | null;
+      auth: VcsConnectorAuth;
+      provider: VcsConnectorProvider;
+      project: ProjectRow;
+    },
+    branch: string,
+    startBranch?: string
+  ): Promise<boolean> {
+    if (context.credentialSource === 'system') return false;
+    const scopeAllowsWrite =
+      context.credentialScopes.length === 0 ||
+      context.credentialScopes.includes('api') ||
+      context.credentialScopes.includes('write_repository');
+    if (!scopeAllowsWrite || context.projectAccessLevel === null || context.projectAccessLevel < 30) {
+      throw new AppError(
+        403,
+        'GITLAB_PERSONAL_WRITE_ACCESS_REQUIRED',
+        'Your personal GitLab authorization does not have write access to this project'
+      );
+    }
+    const branchAccess = await context.provider.getBranchAccess(
+      context.auth,
+      this.toProviderProject(context.project),
+      branch
+    );
+    if (!branchAccess.exists) {
+      if (!startBranch) {
+        throw new AppError(
+          400,
+          'GITLAB_START_BRANCH_REQUIRED',
+          'A start branch is required when creating a new GitLab branch'
+        );
+      }
+      await context.provider.createBranch(context.auth, this.toProviderProject(context.project), branch, startBranch);
+      return true;
+    }
+    if (!branchAccess.canPush) {
+      throw new AppError(
+        403,
+        'GITLAB_PERSONAL_BRANCH_WRITE_ACCESS_REQUIRED',
+        'Your personal GitLab authorization cannot push to this branch'
+      );
+    }
+    return false;
+  }
+
+  private async resolveGitLabCredential(user: User, connector: ConnectorRow): Promise<ResolvedGitLabCredential> {
+    if (hasScope(user.scopes, 'integrations:gitlab:system')) {
+      return { source: 'system', auth: this.systemAuthFor(connector), scopes: [] };
+    }
+    const personal = await this.gitLabUserCredentials.resolveAuth(user.id, connector.id, connector.baseUrl);
+    if (!personal) throw this.gitLabCredentialRequired(connector);
+    return { source: 'personal', auth: personal.auth, scopes: personal.scopes };
+  }
+
+  private gitLabProviderForCredential(
+    user: User,
+    connector: ConnectorRow,
+    credential: ResolvedGitLabCredential
+  ): VcsConnectorProvider {
+    const provider = this.getVcsProvider(connector.provider);
+    if (credential.source === 'system') return provider;
+
+    return new Proxy(provider, {
+      get: (target, property, receiver) => {
+        const value = Reflect.get(target, property, receiver);
+        if (typeof value !== 'function') return value;
+        return async (...args: unknown[]) => {
+          try {
+            return await Reflect.apply(value, target, args);
+          } catch (error) {
+            if (error instanceof AppError && error.statusCode === 401) {
+              await this.gitLabUserCredentials.markInvalid(user.id, connector.id);
+              await this.auditService.log({
+                action: GITLAB_AUDIT_ACTIONS.userCredentialInvalidate,
+                userId: user.id,
+                resourceType: 'integration-connector',
+                resourceId: connector.id,
+                details: { connectorName: connector.name },
+              });
+              throw this.gitLabCredentialRequired(connector, 'invalid');
+            }
+            throw error;
+          }
+        };
+      },
+    });
+  }
+
+  private gitLabCredentialRequired(connector: ConnectorRow, reason: 'missing' | 'invalid' = 'missing'): AppError {
+    return new AppError(428, 'GITLAB_CREDENTIAL_REQUIRED', 'Personal GitLab authorization is required', {
+      connectorId: connector.id,
+      connectorName: connector.name,
+      baseUrl: connector.baseUrl,
+      patCreationUrl: this.gitLabPatCreationUrl(connector.baseUrl),
+      reason,
+    });
   }
 
   private async refreshGitLabConnectorCapabilities(connector: ConnectorRow): Promise<IntegrationConnectorCapabilities> {
     const provider = this.getProvider(connector.provider);
-    const capabilities = await provider.testConnection(this.authFor(connector));
+    const capabilities = await provider.testConnection(this.systemAuthFor(connector));
     await this.db
       .update(integrationConnectors)
       .set({ capabilities, testedAt: new Date(), updatedAt: new Date() })
@@ -2164,7 +2416,15 @@ export class IntegrationsService {
     return token.slice(-4);
   }
 
-  private authFor(row: ConnectorRow): VcsConnectorAuth {
+  private gitLabPatCreationUrl(baseUrl: string): string {
+    const url = new URL('/-/user_settings/personal_access_tokens', `${baseUrl}/`);
+    url.searchParams.set('name', 'Gateway AI');
+    url.searchParams.set('description', 'Personal token for Gateway AI tools');
+    url.searchParams.set('scopes', 'api');
+    return url.toString();
+  }
+
+  private systemAuthFor(row: ConnectorRow): VcsConnectorAuth {
     if (!row.encryptedToken) {
       throw new AppError(400, 'CONNECTOR_TOKEN_MISSING', 'GitLab connector token is not configured');
     }

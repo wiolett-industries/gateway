@@ -4,6 +4,7 @@ import { GitLabClient } from './gitlab-client.js';
 import type {
   VcsAllowlistSearchResult,
   VcsArchiveResult,
+  VcsBranchAccess,
   VcsCiLintResult,
   VcsCommitRequest,
   VcsCommitResult,
@@ -16,6 +17,7 @@ import type {
   VcsJobLogResult,
   VcsPipelineJobRef,
   VcsPipelineRef,
+  VcsProjectAccess,
   VcsProjectRef,
   VcsProjectSettingsInput,
   VcsProjectSettingsResult,
@@ -27,6 +29,7 @@ import type {
   VcsRegistryRef,
   VcsRegistryRepositoryRef,
   VcsTreeEntry,
+  VcsUserTokenIdentity,
 } from './integration-provider.types.js';
 
 interface GitLabUser {
@@ -36,6 +39,7 @@ interface GitLabUser {
 
 interface GitLabTokenSelf {
   scopes?: string[];
+  expires_at?: string | null;
 }
 
 interface GitLabProject {
@@ -47,6 +51,10 @@ interface GitLabProject {
   default_branch?: string | null;
   archived?: boolean;
   container_registry_access_level?: string | null;
+  permissions?: {
+    project_access?: { access_level?: number | null } | null;
+    group_access?: { access_level?: number | null } | null;
+  } | null;
 }
 
 interface GitLabGroup {
@@ -84,6 +92,10 @@ interface GitLabRepositoryFile {
 interface GitLabCommit {
   id: string;
   web_url?: string;
+}
+
+interface GitLabBranch {
+  can_push?: boolean;
 }
 
 interface GitLabCiLintResponse {
@@ -172,6 +184,30 @@ export class GitLabProvider implements VcsConnectorProvider {
   readonly provider = 'gitlab' as const;
 
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
+
+  async validateUserToken(auth: VcsConnectorAuth): Promise<VcsUserTokenIdentity> {
+    const client = this.client(auth);
+    const user = await client.request<GitLabUser>('/user');
+    const token = await this.getTokenMetadata(client);
+    return {
+      userId: String(user.id),
+      username: user.username,
+      scopes: token?.scopes ?? [],
+      expiresAt: token?.expires_at ? new Date(`${token.expires_at}T00:00:00.000Z`) : null,
+    };
+  }
+
+  async getProjectAccess(auth: VcsConnectorAuth, project: VcsProjectRef): Promise<VcsProjectAccess> {
+    const resolved = await this.client(auth).request<GitLabProject>(this.projectPath(project, ''));
+    const levels = [
+      resolved.permissions?.project_access?.access_level,
+      resolved.permissions?.group_access?.access_level,
+    ].filter((level): level is number => typeof level === 'number');
+    return {
+      project: this.toProjectRef(resolved),
+      accessLevel: levels.length > 0 ? Math.max(...levels) : null,
+    };
+  }
 
   async testConnection(auth: VcsConnectorAuth): Promise<IntegrationConnectorCapabilities> {
     const client = this.client(auth);
@@ -306,6 +342,21 @@ export class GitLabProvider implements VcsConnectorProvider {
       blobId: file.blob_id ?? null,
       commitId: file.commit_id ?? null,
     };
+  }
+
+  async getBranchAccess(auth: VcsConnectorAuth, project: VcsProjectRef, branch: string): Promise<VcsBranchAccess> {
+    const result = await this.client(auth).request<GitLabBranch | null>(
+      this.projectPath(project, `/repository/branches/${encodeURIComponent(branch)}`),
+      { allowNotFound: true }
+    );
+    return result ? { exists: true, canPush: result.can_push === true } : { exists: false, canPush: false };
+  }
+
+  async createBranch(auth: VcsConnectorAuth, project: VcsProjectRef, branch: string, ref: string): Promise<void> {
+    await this.client(auth).request(this.projectPath(project, '/repository/branches'), {
+      method: 'POST',
+      body: { branch, ref },
+    });
   }
 
   async commitFiles(auth: VcsConnectorAuth, request: VcsCommitRequest): Promise<VcsCommitResult> {
@@ -580,9 +631,13 @@ export class GitLabProvider implements VcsConnectorProvider {
   }
 
   private async getTokenScopes(client: GitLabClient): Promise<string[] | null> {
+    const token = await this.getTokenMetadata(client);
+    return Array.isArray(token?.scopes) ? token.scopes : null;
+  }
+
+  private async getTokenMetadata(client: GitLabClient): Promise<GitLabTokenSelf | null> {
     try {
-      const self = await client.request<GitLabTokenSelf>('/personal_access_tokens/self', { allowNotFound: true });
-      return Array.isArray(self?.scopes) ? self.scopes : null;
+      return await client.request<GitLabTokenSelf>('/personal_access_tokens/self', { allowNotFound: true });
     } catch {
       return null;
     }

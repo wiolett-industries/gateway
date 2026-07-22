@@ -61,4 +61,32 @@ describe('AI run runtime checkpoint helpers', () => {
       { id: 'call-2', name: 'gitlab_set_project_variable', arguments: { key: 'TOKEN', value: '[REDACTED]' } },
     ]);
   });
+
+  it('keeps GitLab tool arguments server-side while exposing no credential challenge payload in checkpoints', () => {
+    const raw = toCheckpoint({
+      type: 'credential_authorization_required',
+      requestId: 'request-1',
+      id: 'call-1',
+      name: 'gitlab_read_file',
+      provider: 'gitlab',
+      connectorId: 'connector-1',
+      arguments: { connectorId: 'connector-1', project: 'group/app', path: 'README.md' },
+      _rawArguments: { connectorId: 'connector-1', project: 'group/app', path: 'README.md' },
+      _pendingMessages: [{ role: 'user', content: 'read the file' }],
+    } as never);
+
+    expect(normalizeCheckpoint(raw).pendingCredential).toEqual({
+      id: 'call-1',
+      name: 'gitlab_read_file',
+      connectorId: 'connector-1',
+      arguments: { connectorId: 'connector-1', project: 'group/app', path: 'README.md' },
+    });
+    expect(toClientCheckpoint(raw)).toEqual({
+      type: 'credential_authorization_required',
+      requestId: 'request-1',
+      allQuestions: [],
+      queuedApprovals: [],
+    });
+    expect(JSON.stringify(raw)).not.toContain('glpat-');
+  });
 });

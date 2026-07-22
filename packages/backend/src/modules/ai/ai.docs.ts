@@ -967,10 +967,11 @@ AI assistant settings control the provider, request limits, tool exposure, web s
 
   gitlab: `# GitLab Integrations
 
-Gateway GitLab connectors are system-level integrations configured by admins in Settings -> Integrations. They support gitlab.com and self-hosted GitLab through encrypted PATs. The PAT is never returned raw to the assistant, API clients, MCP clients, or UI after entry.
+Gateway GitLab connectors are configured by admins in Settings -> Integrations. Embedded AI users authorize each connector with their own encrypted PAT unless they have the explicit integrations:gitlab:system scope. GitLab tools are not exposed through Gateway MCP; external agents should configure their own GitLab MCP connection.
 
 ## Discovery
 - Use gitlab_list_connectors to find enabled connectors.
+- If Gateway asks for GitLab authorization, wait for the user to complete or cancel the authorization modal. Never ask the user to paste a PAT into chat.
 - Use gitlab_list_projects or gitlab_search_projects to find projects already synced through Gateway allowlist rules.
 - Project arguments accept the synced project remote ID or full path.
 - Every GitLab tool except gitlab_list_connectors requires the exact connectorId UUID from gitlab_list_connectors or from a prior GitLab project result. Do not use connector names, project paths, or blank values as connectorId.

@@ -79,7 +79,14 @@ function getToolCall(toolCallId: string) {
     .find((toolCall) => toolCall.id === toolCallId);
 }
 
-function runtimeRun(status: "queued" | "running" | "waiting_for_approval" | "waiting_for_answer") {
+function runtimeRun(
+  status:
+    | "queued"
+    | "running"
+    | "waiting_for_approval"
+    | "waiting_for_answer"
+    | "waiting_for_credential"
+) {
   return {
     id: "run-1",
     conversationId: "conversation-1",
@@ -1778,6 +1785,78 @@ describe("AI backend runtime store", () => {
     expect(useAIStore.getState().messages).toEqual([
       { id: "new-user", role: "user", content: "New chat" },
     ]);
+  });
+
+  it("opens a credential challenge immediately and preserves it across a stale active snapshot", async () => {
+    const socket = await connectAI();
+    useAIStore.setState({ activeConversationId: "conversation-1" });
+    const challenge = {
+      id: "challenge-1",
+      runId: "run-1",
+      conversationId: "conversation-1",
+      userId: "user-1",
+      provider: "gitlab" as const,
+      connectorId: "connector-1",
+      toolCallId: "tool-1",
+      toolName: "gitlab_list_projects",
+      status: "pending" as const,
+      decisionClientCommandId: null,
+      resolvedAt: null,
+      createdAt: "2026-06-26T10:00:00.000Z",
+      updatedAt: "2026-06-26T10:00:00.000Z",
+    };
+
+    socket.emit({
+      type: "credential.required",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      challenge,
+    });
+
+    expect(useAIStore.getState()).toMatchObject({
+      activeRunId: "run-1",
+      isStreaming: true,
+      pendingCredentialChallenge: challenge,
+    });
+
+    socket.emit({
+      type: "conversation.snapshot",
+      conversationId: "conversation-1",
+      snapshot: {
+        conversation: {
+          id: "conversation-1",
+          title: "GitLab access",
+          createdAt: "2026-06-26T10:00:00.000Z",
+          updatedAt: "2026-06-26T10:00:01.000Z",
+          lastContext: null,
+          discoveredToolsets: [],
+          checkpoint: null,
+        },
+        messages: [],
+        runtime: {
+          activeRun: runtimeRun("running"),
+          pendingApprovals: [],
+          pendingQuestion: null,
+          pendingQuestions: [],
+          pendingCredentialChallenge: null,
+          toolCalls: [],
+        },
+      },
+    });
+
+    expect(useAIStore.getState()).toMatchObject({
+      isStreaming: true,
+      pendingCredentialChallenge: challenge,
+    });
+
+    socket.emit({
+      type: "credential.updated",
+      conversationId: "conversation-1",
+      runId: "run-1",
+      challenge: { ...challenge, status: "authorized" },
+      duplicate: false,
+    });
+    expect(useAIStore.getState().pendingCredentialChallenge).toBeNull();
   });
 
   it("sends approval decisions idempotently to the backend runtime", async () => {

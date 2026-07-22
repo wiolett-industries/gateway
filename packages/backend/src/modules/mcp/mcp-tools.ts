@@ -23,6 +23,7 @@ const MCP_EXCLUDED_TOOLS = new Set([
   'find_in_chat',
   'read_chat_slice',
   'list_projects',
+  'list_chat_projects',
   'internal_documentation',
   'web_search',
   'wait',
@@ -34,7 +35,6 @@ const MCP_EXCLUDED_TOOLS = new Set([
   'run_process',
   'fetch',
   'download_artifact',
-  'gitlab_clone_repository_to_sandbox',
   'list_artifact_files',
   'read_artifact',
   'send_artifact',
@@ -231,12 +231,6 @@ const MCP_TOOLSET_DEFINITIONS: McpToolsetDefinition[] = [
     toolNames: toolNamesForCategories(['Docker']),
   },
   {
-    id: 'gitlab',
-    title: 'GitLab',
-    description: 'GitLab connectors, projects, repositories, CI, variables, webhooks, registries, and sandbox clone.',
-    toolNames: toolNamesForCategories(['GitLab']),
-  },
-  {
     id: 'databases',
     title: 'Databases',
     description: 'Database connections, PostgreSQL data tools, and Redis data tools.',
@@ -308,7 +302,7 @@ const MCP_DISCOVER_TOOLS_DEFINITION = {
 };
 
 function isEligibleMcpTool(tool: AIToolDefinition): boolean {
-  return !!tool.requiredScope && !MCP_EXCLUDED_TOOLS.has(tool.name);
+  return tool.category !== 'GitLab' && !!tool.requiredScope && !MCP_EXCLUDED_TOOLS.has(tool.name);
 }
 
 function hasDirectScopeBase(scopes: string[], baseScope: string): boolean {

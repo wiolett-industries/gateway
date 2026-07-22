@@ -107,9 +107,7 @@ export function Combobox({
             setActiveIndex((index) => (index + 1) % filteredOptions.length);
           } else if (event.key === "ArrowUp") {
             event.preventDefault();
-            setActiveIndex((index) =>
-              index <= 0 ? filteredOptions.length - 1 : index - 1
-            );
+            setActiveIndex((index) => (index <= 0 ? filteredOptions.length - 1 : index - 1));
           } else if (event.key === "Enter" && activeIndex >= 0) {
             event.preventDefault();
             selectOption(filteredOptions[activeIndex]!);

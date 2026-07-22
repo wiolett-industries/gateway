@@ -91,7 +91,7 @@ function createRuntimeSnapshotDb() {
   const orderByQuestions = vi.fn(async () => []);
   const where = vi.fn(() => {
     whereCall += 1;
-    return whereCall === 2 ? { orderBy: orderByQuestions } : Promise.resolve([]);
+    return whereCall === 2 || whereCall === 3 ? { orderBy: orderByQuestions } : Promise.resolve([]);
   });
   const from = vi.fn(() => ({ where }));
   const select = vi.fn(() => ({ from }));
@@ -868,5 +868,98 @@ describe('AIRunService runtime snapshots', () => {
       assistantDraftContent: 'Persisted draft',
       assistantDraftVersion: 0,
     });
+  });
+
+  it('resumes a durably resolved credential challenge for a waiting run', async () => {
+    const run = {
+      id: 'run-1',
+      conversationId: 'conversation-1',
+      userId: 'user-1',
+      status: 'waiting_for_credential',
+    };
+    const challenge = {
+      id: 'challenge-1',
+      runId: 'run-1',
+      conversationId: 'conversation-1',
+      userId: 'user-1',
+      status: 'authorized',
+    };
+    let selectCall = 0;
+    const select = vi.fn(() => {
+      selectCall += 1;
+      return {
+        from: vi.fn(() => ({
+          where: vi.fn(() =>
+            selectCall === 1
+              ? { limit: vi.fn().mockResolvedValue([run]) }
+              : { orderBy: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([challenge]) })) }
+          ),
+        })),
+      };
+    });
+    const service = new AIRunService({ select } as never);
+    const startCredentialContinuation = vi.fn();
+    (service as unknown as { executor: { startCredentialContinuation: typeof startCredentialContinuation } }).executor =
+      {
+        startCredentialContinuation,
+      };
+    const user = {
+      id: 'user-1',
+      oidcSubject: 'oidc-user',
+      email: 'user@example.com',
+      name: 'User',
+      avatarUrl: null,
+      groupId: 'group-1',
+      groupName: 'users',
+      scopes: ['feat:ai:use'],
+      isBlocked: false,
+    };
+
+    await expect(
+      service.resumeResolvedCredentialContinuation(user, {
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+      })
+    ).resolves.toBe(true);
+    expect(startCredentialContinuation).toHaveBeenCalledWith(user, {
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      challenge,
+      authorized: true,
+    });
+  });
+
+  it('authorizes every pending challenge for the same user and connector', async () => {
+    const current = {
+      id: 'challenge-1',
+      runId: 'run-1',
+      conversationId: 'conversation-1',
+      userId: 'user-1',
+      connectorId: 'connector-1',
+      status: 'authorized',
+    };
+    const additional = {
+      id: 'challenge-2',
+      runId: 'run-2',
+      conversationId: 'conversation-2',
+      userId: 'user-1',
+      connectorId: 'connector-1',
+      status: 'authorized',
+    };
+    const harness = createTransitionDb([current]);
+    harness.returning.mockResolvedValueOnce([current]).mockResolvedValueOnce([additional]);
+    const service = new AIRunService(harness.db as never);
+
+    await expect(
+      service.resolveCredentialChallenge({
+        conversationId: 'conversation-1',
+        runId: 'run-1',
+        challengeId: 'challenge-1',
+        userId: 'user-1',
+        clientCommandId: 'command-1',
+        decision: 'authorized',
+      })
+    ).resolves.toEqual({ challenge: current, additionalChallenges: [additional], duplicate: false });
+    expect(harness.update).toHaveBeenCalledTimes(2);
   });
 });

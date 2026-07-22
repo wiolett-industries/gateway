@@ -57,11 +57,27 @@ function createExecutorHarness(
   const select = vi.fn(() => ({ from: selectFrom }));
 
   let insertId = 0;
-  const insertReturning = vi.fn(async () => [{ id: `assistant-message-${++insertId}` }]);
-  const insertValues = vi.fn(() => ({
-    returning: insertReturning,
-    onConflictDoUpdate: vi.fn(async () => undefined),
-  }));
+  const insertValues = vi.fn((values: Record<string, unknown>) => {
+    const returning = vi.fn(async () =>
+      values.provider === 'gitlab'
+        ? [
+            {
+              id: 'challenge-1',
+              ...values,
+              status: 'pending',
+              decisionClientCommandId: null,
+              resolvedAt: null,
+              createdAt: new Date('2026-06-26T10:00:00.000Z'),
+              updatedAt: new Date('2026-06-26T10:00:00.000Z'),
+            },
+          ]
+        : [{ id: `assistant-message-${++insertId}` }]
+    );
+    return {
+      returning,
+      onConflictDoUpdate: vi.fn(() => ({ returning })),
+    };
+  });
   const insert = vi.fn(() => ({ values: insertValues }));
 
   const updateWhere = vi.fn(async () => undefined);
@@ -72,12 +88,15 @@ function createExecutorHarness(
   const publishAssistantDelta = vi.fn();
   const publishAssistantCommentDelta = vi.fn();
   const publishAssistantCommentDone = vi.fn();
+  const publishCredentialChallenge = vi.fn();
   const executor = new AIRunExecutor(
     { select, insert, update } as never,
     publishConversationChanged,
     publishAssistantDelta,
     publishAssistantCommentDelta,
-    publishAssistantCommentDone
+    publishAssistantCommentDone,
+    undefined,
+    publishCredentialChallenge
   );
 
   container.registerInstance(AIService, {
@@ -93,6 +112,7 @@ function createExecutorHarness(
     publishConversationChanged,
     publishAssistantDelta,
     publishAssistantCommentDelta,
+    publishCredentialChallenge,
   };
 }
 
@@ -105,6 +125,71 @@ afterEach(() => {
 });
 
 describe('AIRunExecutor live assistant draft streaming', () => {
+  it('publishes a persisted credential challenge after moving the run into the waiting state', async () => {
+    const { executor, publishCredentialChallenge, publishConversationChanged } = createExecutorHarness([
+      {
+        type: 'credential_authorization_required',
+        requestId: 'request-1',
+        id: 'tool-1',
+        name: 'gitlab_list_projects',
+        provider: 'gitlab',
+        connectorId: '22222222-2222-4222-8222-222222222222',
+        arguments: { connectorId: '22222222-2222-4222-8222-222222222222' },
+      },
+    ]);
+
+    await executeRun(executor);
+
+    expect(publishCredentialChallenge).toHaveBeenCalledWith(
+      USER.id,
+      'conversation-1',
+      'run-1',
+      expect.objectContaining({
+        id: 'challenge-1',
+        runId: 'run-1',
+        connectorId: '22222222-2222-4222-8222-222222222222',
+        toolName: 'gitlab_list_projects',
+        status: 'pending',
+      })
+    );
+    expect(publishConversationChanged).toHaveBeenCalledWith(USER.id, 'conversation-1');
+  });
+
+  it('releases the credential continuation lock when startup fails before resume execution', async () => {
+    const executor = new AIRunExecutor({} as never, vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    const executeCredentialContinuation = vi.fn().mockRejectedValue(new Error('checkpoint unavailable'));
+    (
+      executor as unknown as {
+        executeCredentialContinuation: typeof executeCredentialContinuation;
+      }
+    ).executeCredentialContinuation = executeCredentialContinuation;
+    const input = {
+      conversationId: 'conversation-1',
+      runId: 'run-1',
+      challenge: {
+        id: 'challenge-1',
+        runId: 'run-1',
+        conversationId: 'conversation-1',
+        userId: USER.id,
+        provider: 'gitlab' as const,
+        connectorId: 'connector-1',
+        toolCallId: 'tool-call-1',
+        toolName: 'gitlab_read_file',
+        status: 'authorized' as const,
+        decisionClientCommandId: 'command-1',
+        resolvedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      authorized: true,
+    };
+
+    executor.startCredentialContinuation(USER, input);
+    await vi.waitFor(() => expect(executeCredentialContinuation).toHaveBeenCalledTimes(1));
+    executor.startCredentialContinuation(USER, input);
+    await vi.waitFor(() => expect(executeCredentialContinuation).toHaveBeenCalledTimes(2));
+  });
+
   it('emits lightweight deltas without per-delta DB draft writes or full snapshot publishes', async () => {
     const harness = createExecutorHarness([
       { type: 'text_delta', requestId: 'request-1', content: 'Hel' },

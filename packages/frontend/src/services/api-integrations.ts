@@ -14,6 +14,7 @@ import type {
   GitLabConnectorPreviewTestResult,
   GitLabConnectorSyncResult,
   GitLabConnectorUpdateRequest,
+  GitLabUserCredentialStatus,
 } from "@/types/integrations";
 import type { ApiClientBaseConstructor } from "./api-mixins";
 
@@ -133,6 +134,35 @@ export function withIntegrationsApi<TBase extends ApiClientBaseConstructor>(Base
     async getGitLabConnector(id: string): Promise<GitLabConnector> {
       return this.unwrapData(
         this.request<{ data: GitLabConnector }>(`/integrations/gitlab/connectors/${id}`)
+      );
+    }
+
+    async getGitLabUserCredentialStatus(id: string): Promise<GitLabUserCredentialStatus> {
+      return this.unwrapData(
+        this.request<{ data: GitLabUserCredentialStatus }>(
+          `/integrations/gitlab/connectors/${id}/user-credential`
+        )
+      );
+    }
+
+    async authorizeGitLabUserCredential(
+      id: string,
+      token: string
+    ): Promise<GitLabUserCredentialStatus> {
+      return this.unwrapData(
+        this.request<{ data: GitLabUserCredentialStatus }>(
+          `/integrations/gitlab/connectors/${id}/user-credential`,
+          { method: "PUT", body: JSON.stringify({ token }) }
+        )
+      );
+    }
+
+    async disconnectGitLabUserCredential(id: string): Promise<{ disconnected: boolean }> {
+      return this.unwrapData(
+        this.request<{ data: { disconnected: boolean } }>(
+          `/integrations/gitlab/connectors/${id}/user-credential`,
+          { method: "DELETE" }
+        )
       );
     }
 

@@ -7,12 +7,15 @@ function decodeTerminalInput(encoded: string): string {
 }
 
 describe("encodeTerminalInput", () => {
-  it.each(["hello", "привет", "你好", "emoji: 🐳", "line one\rline two"])(
-    "encodes terminal input as UTF-8: %s",
-    (input) => {
-      expect(decodeTerminalInput(encodeTerminalInput(input))).toBe(input);
-    }
-  );
+  it.each([
+    "hello",
+    "привет",
+    "你好",
+    "emoji: 🐳",
+    "line one\rline two",
+  ])("encodes terminal input as UTF-8: %s", (input) => {
+    expect(decodeTerminalInput(encodeTerminalInput(input))).toBe(input);
+  });
 
   it("handles large pasted input without exceeding function argument limits", () => {
     const input = "ю".repeat(100_000);

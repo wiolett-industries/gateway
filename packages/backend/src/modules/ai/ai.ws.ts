@@ -95,6 +95,19 @@ async function sendConversationSnapshot(ws: WSContext, userId: string, conversat
   return snapshot;
 }
 
+async function resumeResolvedCredentialContinuation(
+  user: User,
+  snapshot: Awaited<ReturnType<AIRunService['getConversationSnapshot']>>
+) {
+  if (!snapshot) return;
+  const activeRun = snapshot.runtime.activeRun;
+  if (activeRun?.status !== 'waiting_for_credential' || snapshot.runtime.pendingCredentialChallenge) return;
+  await container.resolve(AIRunService).resumeResolvedCredentialContinuation(user, {
+    conversationId: activeRun.conversationId,
+    runId: activeRun.id,
+  });
+}
+
 function subscribeToUserRuntime(ws: WSContext, state: WSConnectionState, userId: string): void {
   if (state.runtimeUnsubscribe) return;
   const eventBus = container.resolve(EventBusService);
@@ -107,8 +120,24 @@ function subscribeToUserRuntime(ws: WSContext, state: WSConnectionState, userId:
       content?: string;
       version?: number;
       invalidatedStores?: string[];
+      challenge?: Extract<WSServerMessage, { type: 'credential.required' }>['challenge'];
     };
     if (event.userId !== userId || typeof event.conversationId !== 'string') return;
+    if (event.type === 'credential.required') {
+      if (
+        state.subscribedConversationIds.has(event.conversationId) &&
+        typeof event.runId === 'string' &&
+        event.challenge
+      ) {
+        send(ws, {
+          type: 'credential.required',
+          conversationId: event.conversationId,
+          runId: event.runId,
+          challenge: event.challenge,
+        });
+      }
+      return;
+    }
     if (event.type === 'assistant.comment_done') {
       if (state.subscribedConversationIds.has(event.conversationId) && typeof event.runId === 'string') {
         send(ws, {
@@ -307,7 +336,8 @@ export function createWSHandlers() {
             clientCommandId: msg.clientCommandId,
             conversationId: msg.conversationId,
           });
-          await sendConversationSnapshot(ws, user.id, msg.conversationId);
+          const snapshot = await sendConversationSnapshot(ws, user.id, msg.conversationId);
+          await resumeResolvedCredentialContinuation(user, snapshot);
         } catch (error) {
           sendCommandError(ws, msg, error, 'Failed to subscribe to conversation');
         }
@@ -322,7 +352,8 @@ export function createWSHandlers() {
 
       if (msg.type === 'conversation.sync') {
         try {
-          await sendConversationSnapshot(ws, user.id, msg.conversationId);
+          const snapshot = await sendConversationSnapshot(ws, user.id, msg.conversationId);
+          await resumeResolvedCredentialContinuation(user, snapshot);
           send(ws, {
             type: 'command.ack',
             commandType: msg.type,
@@ -495,6 +526,47 @@ export function createWSHandlers() {
           }
         } catch (error) {
           sendCommandError(ws, msg, error, 'Failed to decide AI tool approval');
+        }
+        return;
+      }
+
+      if (msg.type === 'credential.resolve') {
+        try {
+          const runService = container.resolve(AIRunService);
+          const result = await runService.resolveCredentialChallenge({
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            challengeId: msg.challengeId,
+            userId: user.id,
+            clientCommandId: msg.clientCommandId,
+            decision: msg.decision,
+          });
+          send(ws, {
+            type: 'command.ack',
+            commandType: msg.type,
+            clientCommandId: msg.clientCommandId,
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            duplicate: result.duplicate,
+          });
+          send(ws, {
+            type: 'credential.updated',
+            conversationId: msg.conversationId,
+            runId: msg.runId,
+            challenge: result.challenge,
+            duplicate: result.duplicate,
+          });
+          await sendConversationSnapshot(ws, user.id, msg.conversationId);
+          for (const challenge of [result.challenge, ...result.additionalChallenges]) {
+            runService.startCredentialContinuation(user, {
+              conversationId: challenge.conversationId,
+              runId: challenge.runId,
+              challenge,
+              authorized: msg.decision === 'authorized',
+            });
+          }
+        } catch (error) {
+          sendCommandError(ws, msg, error, 'Failed to resolve GitLab authorization');
         }
         return;
       }
