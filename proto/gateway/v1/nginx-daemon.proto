@@ -208,6 +208,7 @@ message NodeExecCommand {
   bool tty = 3;
   int32 rows = 4;
   int32 cols = 5;
+  string session_key = 6;     // authenticated Gateway user ID
 }
 
 message NodeFileCommand {
@@ -368,6 +369,7 @@ message DockerExecCommand {
   int32 rows = 6;
   int32 cols = 7;
   string user = 8;
+  string session_key = 9;     // authenticated Gateway user ID
 }
 
 message DockerFileCommand {

@@ -61,3 +61,31 @@ func TestExecSessionWaitForFirstOutputReturnsAfterBufferedData(t *testing.T) {
 		t.Fatalf("waitForFirstOutput took %s after output was already buffered", elapsed)
 	}
 }
+
+func TestExecManagerBuffersAreScopedByGatewayUser(t *testing.T) {
+	containerID := "container-1"
+	userOne := &ExecSession{}
+	userOne.bufferOutput([]byte("user-one"))
+	userTwo := &ExecSession{}
+	userTwo.bufferOutput([]byte("user-two"))
+
+	manager := &ExecManager{sessions: map[string]*ExecSession{
+		dockerExecSessionKey(containerID, "user-1"): userOne,
+		dockerExecSessionKey(containerID, "user-2"): userTwo,
+	}}
+
+	first := manager.GetBuffer(containerID, "user-1")
+	second := manager.GetBuffer(containerID, "user-2")
+	if len(first) != 1 || len(second) != 1 {
+		t.Fatalf("unexpected buffer lengths: first=%d second=%d", len(first), len(second))
+	}
+	if first[0] == second[0] {
+		t.Fatal("different Gateway users resolved to the same Docker exec buffer")
+	}
+}
+
+func TestDockerExecSessionKeyKeepsLegacyFallback(t *testing.T) {
+	if got := dockerExecSessionKey("container-1", ""); got != "container-1" {
+		t.Fatalf("legacy session key = %q, want container-1", got)
+	}
+}

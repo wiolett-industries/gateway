@@ -1853,6 +1853,7 @@ type NodeExecCommand struct {
 	Tty           bool                   `protobuf:"varint,3,opt,name=tty,proto3" json:"tty,omitempty"`
 	Rows          int32                  `protobuf:"varint,4,opt,name=rows,proto3" json:"rows,omitempty"`
 	Cols          int32                  `protobuf:"varint,5,opt,name=cols,proto3" json:"cols,omitempty"`
+	SessionKey    string                 `protobuf:"bytes,6,opt,name=session_key,json=sessionKey,proto3" json:"session_key,omitempty"` // authenticated Gateway user ID
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1920,6 +1921,13 @@ func (x *NodeExecCommand) GetCols() int32 {
 		return x.Cols
 	}
 	return 0
+}
+
+func (x *NodeExecCommand) GetSessionKey() string {
+	if x != nil {
+		return x.SessionKey
+	}
+	return ""
 }
 
 type NodeFileCommand struct {
@@ -3407,6 +3415,7 @@ type DockerExecCommand struct {
 	Rows          int32                  `protobuf:"varint,6,opt,name=rows,proto3" json:"rows,omitempty"`
 	Cols          int32                  `protobuf:"varint,7,opt,name=cols,proto3" json:"cols,omitempty"`
 	User          string                 `protobuf:"bytes,8,opt,name=user,proto3" json:"user,omitempty"`
+	SessionKey    string                 `protobuf:"bytes,9,opt,name=session_key,json=sessionKey,proto3" json:"session_key,omitempty"` // authenticated Gateway user ID
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3493,6 +3502,13 @@ func (x *DockerExecCommand) GetCols() int32 {
 func (x *DockerExecCommand) GetUser() string {
 	if x != nil {
 		return x.User
+	}
+	return ""
+}
+
+func (x *DockerExecCommand) GetSessionKey() string {
+	if x != nil {
+		return x.SessionKey
 	}
 	return ""
 }
@@ -4722,13 +4738,15 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\rupdate_daemon\x18\x1c \x01(\v2\x1f.gateway.v1.UpdateDaemonCommandH\x00R\fupdateDaemon\x12R\n" +
 	"\x11docker_deployment\x18\x1d \x01(\v2#.gateway.v1.DockerDeploymentCommandH\x00R\x10dockerDeployment\x12:\n" +
 	"\tnode_file\x18\x1e \x01(\v2\x1b.gateway.v1.NodeFileCommandH\x00R\bnodeFileB\t\n" +
-	"\apayload\"}\n" +
+	"\apayload\"\x9e\x01\n" +
 	"\x0fNodeExecCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x10\n" +
 	"\x03tty\x18\x03 \x01(\bR\x03tty\x12\x12\n" +
 	"\x04rows\x18\x04 \x01(\x05R\x04rows\x12\x12\n" +
-	"\x04cols\x18\x05 \x01(\x05R\x04cols\"\x95\x01\n" +
+	"\x04cols\x18\x05 \x01(\x05R\x04cols\x12\x1f\n" +
+	"\vsession_key\x18\x06 \x01(\tR\n" +
+	"sessionKey\"\x95\x01\n" +
 	"\x0fNodeFileCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1b\n" +
@@ -4837,7 +4855,7 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x04slot\x18\x03 \x01(\tR\x04slot\x12\x1f\n" +
 	"\vconfig_json\x18\x04 \x01(\tR\n" +
 	"configJson\x12\x14\n" +
-	"\x05force\x18\x05 \x01(\bR\x05force\"\xcc\x01\n" +
+	"\x05force\x18\x05 \x01(\bR\x05force\"\xed\x01\n" +
 	"\x11DockerExecCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12!\n" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x18\n" +
@@ -4846,7 +4864,9 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\x05stdin\x18\x05 \x01(\bR\x05stdin\x12\x12\n" +
 	"\x04rows\x18\x06 \x01(\x05R\x04rows\x12\x12\n" +
 	"\x04cols\x18\a \x01(\x05R\x04cols\x12\x12\n" +
-	"\x04user\x18\b \x01(\tR\x04user\"\xba\x01\n" +
+	"\x04user\x18\b \x01(\tR\x04user\x12\x1f\n" +
+	"\vsession_key\x18\t \x01(\tR\n" +
+	"sessionKey\"\xba\x01\n" +
 	"\x11DockerFileCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12!\n" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x12\n" +

@@ -1128,6 +1128,7 @@ func (p *DockerPlugin) handleExecCommand(cmd *pb.DockerExecCommand, result *pb.C
 		execID, isNew, err := p.execMgr.CreateOrReuse(
 			ctx,
 			cmd.ContainerId,
+			cmd.SessionKey,
 			cmd.Command,
 			cmd.Tty,
 			int(cmd.Rows),
@@ -1143,7 +1144,7 @@ func (p *DockerPlugin) handleExecCommand(cmd *pb.DockerExecCommand, result *pb.C
 		resp := map[string]interface{}{
 			"exec_id": execID,
 			"is_new":  isNew,
-			"buffer":  p.execMgr.GetBuffer(cmd.ContainerId),
+			"buffer":  p.execMgr.GetBuffer(cmd.ContainerId, cmd.SessionKey),
 		}
 		data, _ := json.Marshal(resp)
 		result.Detail = string(data)

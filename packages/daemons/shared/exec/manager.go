@@ -172,7 +172,9 @@ func (m *Manager) readOutput(ctx context.Context, session *Session, reader readC
 			}
 
 			m.mu.Lock()
-			delete(m.sessions, session.Key)
+			if m.sessions[session.Key] == session {
+				delete(m.sessions, session.Key)
+			}
 			m.mu.Unlock()
 
 			reader.Close()

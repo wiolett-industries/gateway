@@ -97,6 +97,7 @@ export function createNodeExecWSHandlers(nodeId: string, shell: string, credenti
           await dispatch.sendNodeExecCommand(nodeId, 'resize', {
             rows: msg.rows as number,
             cols: msg.cols as number,
+            sessionKey: state.user?.id,
           });
         } catch (err) {
           logger.error('Error sending resize', { error: err instanceof Error ? err.message : String(err) });
@@ -173,6 +174,7 @@ async function authenticateAndCreateExec(
     result = await dispatch.sendNodeExecCommand(nodeId, 'create', {
       command,
       tty: true,
+      sessionKey: user.id,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create exec session';

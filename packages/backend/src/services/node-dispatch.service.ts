@@ -311,6 +311,7 @@ export class NodeDispatchService {
       rows?: number;
       cols?: number;
       user?: string;
+      sessionKey?: string;
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {
@@ -332,6 +333,7 @@ export class NodeDispatchService {
       tty?: boolean;
       rows?: number;
       cols?: number;
+      sessionKey?: string;
     } = {},
     timeoutMs?: number
   ): Promise<CommandResult> {

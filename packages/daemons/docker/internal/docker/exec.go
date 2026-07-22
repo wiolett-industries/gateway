@@ -22,11 +22,11 @@ const (
 
 // ExecSession represents a persistent exec session attached to a container.
 type ExecSession struct {
-	id          string
-	containerID string
-	conn        client.HijackedResponse
-	cancel      context.CancelFunc
-	lastActive  time.Time
+	id         string
+	sessionKey string
+	conn       client.HijackedResponse
+	cancel     context.CancelFunc
+	lastActive time.Time
 
 	// Ring buffer of recent output (always populated)
 	outputBuffer      [][]byte
@@ -80,7 +80,7 @@ type ExecManager struct {
 	logger   *slog.Logger
 	writer   *stream.Writer
 	mu       sync.Mutex
-	sessions map[string]*ExecSession // keyed by containerID
+	sessions map[string]*ExecSession // keyed by container ID and Gateway user session key
 }
 
 func NewExecManager(c *Client, writer *stream.Writer, logger *slog.Logger) *ExecManager {
@@ -92,10 +92,18 @@ func NewExecManager(c *Client, writer *stream.Writer, logger *slog.Logger) *Exec
 	}
 }
 
+func dockerExecSessionKey(containerID, ownerKey string) string {
+	if ownerKey == "" {
+		return containerID
+	}
+	return containerID + "\x00" + ownerKey
+}
+
 // CreateOrReuse returns an existing session or creates a new one.
-func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cmd []string, tty bool, rows, cols int, user string) (string, bool, error) {
+func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID, ownerKey string, cmd []string, tty bool, rows, cols int, user string) (string, bool, error) {
+	sessionKey := dockerExecSessionKey(containerID, ownerKey)
 	em.mu.Lock()
-	existing, ok := em.sessions[containerID]
+	existing, ok := em.sessions[sessionKey]
 	em.mu.Unlock()
 
 	if ok {
@@ -106,7 +114,9 @@ func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cm
 			return existing.id, false, nil
 		}
 		em.mu.Lock()
-		delete(em.sessions, containerID)
+		if em.sessions[sessionKey] == existing {
+			delete(em.sessions, sessionKey)
+		}
 		em.mu.Unlock()
 		existing.cancel()
 		existing.conn.Close()
@@ -146,7 +156,7 @@ func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cm
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
 	session := &ExecSession{
 		id:          createResult.ID,
-		containerID: containerID,
+		sessionKey:  sessionKey,
 		conn:        attachResult.HijackedResponse,
 		cancel:      sessionCancel,
 		lastActive:  time.Now(),
@@ -154,7 +164,7 @@ func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cm
 	}
 
 	em.mu.Lock()
-	em.sessions[containerID] = session
+	em.sessions[sessionKey] = session
 	em.mu.Unlock()
 
 	go em.readOutput(sessionCtx, session)
@@ -167,9 +177,9 @@ func (em *ExecManager) CreateOrReuse(ctx context.Context, containerID string, cm
 }
 
 // GetBuffer returns the buffered output as base64-encoded chunks (for sending to a new client).
-func (em *ExecManager) GetBuffer(containerID string) []string {
+func (em *ExecManager) GetBuffer(containerID, ownerKey string) []string {
 	em.mu.Lock()
-	session, ok := em.sessions[containerID]
+	session, ok := em.sessions[dockerExecSessionKey(containerID, ownerKey)]
 	em.mu.Unlock()
 	if !ok {
 		return nil
@@ -286,7 +296,9 @@ func (em *ExecManager) readOutput(ctx context.Context, session *ExecSession) {
 			}
 
 			em.mu.Lock()
-			delete(em.sessions, session.containerID)
+			if em.sessions[session.sessionKey] == session {
+				delete(em.sessions, session.sessionKey)
+			}
 			em.mu.Unlock()
 
 			em.logger.Info("exec session ended", "exec_id", session.id, "exit_code", exitCode)
@@ -296,8 +308,8 @@ func (em *ExecManager) readOutput(ctx context.Context, session *ExecSession) {
 }
 
 // GetBufferJSON returns the buffer as a JSON detail string for command results.
-func (em *ExecManager) GetBufferJSON(containerID string) string {
-	buf := em.GetBuffer(containerID)
+func (em *ExecManager) GetBufferJSON(containerID, ownerKey string) string {
+	buf := em.GetBuffer(containerID, ownerKey)
 	if len(buf) == 0 {
 		return ""
 	}

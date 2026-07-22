@@ -297,6 +297,7 @@ async function authenticateAndCreateExec(
       tty: true,
       stdin: true,
       user: execUser,
+      sessionKey: user.id,
       rows: initialSize?.rows,
       cols: initialSize?.cols,
     });

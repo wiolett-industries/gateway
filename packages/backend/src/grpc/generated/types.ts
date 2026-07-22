@@ -318,6 +318,7 @@ export interface DockerExecCommand {
   rows: number;
   cols: number;
   user?: string;
+  sessionKey?: string;
 }
 
 export interface DockerFileCommand {
@@ -355,6 +356,7 @@ export interface NodeExecCommand {
   tty: boolean;
   rows: number;
   cols: number;
+  sessionKey?: string;
 }
 
 export interface NodeFileCommand {

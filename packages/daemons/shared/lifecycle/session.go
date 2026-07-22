@@ -298,6 +298,7 @@ func runCertRenewal(ctx context.Context, d *DaemonBase) {
 func handleNodeExec(ctx context.Context, mgr *exec.Manager, cmd *pb.GatewayCommand, consoleUser string) *pb.CommandResult {
 	nodeExec := cmd.GetNodeExec()
 	result := &pb.CommandResult{CommandId: cmd.CommandId, Success: true}
+	sessionKey := nodeConsoleSessionKey(nodeExec.GetSessionKey())
 
 	switch nodeExec.GetAction() {
 	case "run":
@@ -317,7 +318,7 @@ func handleNodeExec(ctx context.Context, mgr *exec.Manager, cmd *pb.GatewayComma
 		if cmds := nodeExec.GetCommand(); len(cmds) > 0 {
 			shell = cmds[0]
 		}
-		execID, isNew, err := mgr.CreatePTYSession(ctx, "node-console", shell, int(nodeExec.GetRows()), int(nodeExec.GetCols()), consoleUser)
+		execID, isNew, err := mgr.CreatePTYSession(ctx, sessionKey, shell, int(nodeExec.GetRows()), int(nodeExec.GetCols()), consoleUser)
 		if err != nil {
 			result.Success = false
 			result.Error = err.Error()
@@ -330,14 +331,14 @@ func handleNodeExec(ctx context.Context, mgr *exec.Manager, cmd *pb.GatewayComma
 			"is_new":  isNew,
 		}
 		if !isNew {
-			detail["buffer"] = mgr.GetBufferBase64("node-console")
+			detail["buffer"] = mgr.GetBufferBase64(sessionKey)
 		}
 		detailJSON, _ := json.Marshal(detail)
 		result.Detail = string(detailJSON)
 
 	case "resize":
 		// Find the session and resize
-		session := mgr.GetSessionByKey("node-console")
+		session := mgr.GetSessionByKey(sessionKey)
 		if session != nil {
 			if err := mgr.Resize(session.ID, int(nodeExec.GetRows()), int(nodeExec.GetCols())); err != nil {
 				result.Success = false
@@ -351,6 +352,13 @@ func handleNodeExec(ctx context.Context, mgr *exec.Manager, cmd *pb.GatewayComma
 	}
 
 	return result
+}
+
+func nodeConsoleSessionKey(ownerKey string) string {
+	if ownerKey == "" {
+		return "node-console"
+	}
+	return "node-console:" + ownerKey
 }
 
 // newSystemReporter creates a new system metrics reporter.
