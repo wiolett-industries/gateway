@@ -3,6 +3,7 @@ import {
   buildContainerMutationSnapshot,
   shouldSettleMutationTransition,
 } from "./DockerContainerDetail";
+import { containerLifecycleActions } from "./docker-detail/helpers";
 
 function makeContainer(overrides: Record<string, unknown> = {}) {
   return {
@@ -68,5 +69,25 @@ describe("DockerContainerDetail mutation snapshot helpers", () => {
         _transition: "updating",
       })
     ).toBe(true);
+  });
+});
+
+describe("DockerContainerDetail lifecycle actions", () => {
+  it("allows stop and kill while a container is crash-loop restarting", () => {
+    expect(containerLifecycleActions("restarting")).toEqual({
+      canStart: false,
+      canStop: true,
+      canRestart: false,
+      canKill: true,
+    });
+  });
+
+  it("allows starting, but not stopping or killing, an exited container", () => {
+    expect(containerLifecycleActions("exited")).toEqual({
+      canStart: true,
+      canStop: false,
+      canRestart: false,
+      canKill: false,
+    });
   });
 });

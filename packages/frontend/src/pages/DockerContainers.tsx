@@ -40,7 +40,11 @@ import { useDockerStore } from "@/stores/docker";
 import { useDockerFolderStore } from "@/stores/docker-folders";
 import type { DockerContainer, DockerFolderTreeNode, Node, NodeAppearanceColor } from "@/types";
 import { DockerDeployDialog } from "./DockerDeployDialog";
-import { containerDisplayName, STATUS_BADGE } from "./docker-detail/helpers";
+import {
+  containerDisplayName,
+  containerLifecycleActions,
+  STATUS_BADGE,
+} from "./docker-detail/helpers";
 
 interface DockerContainerListItem extends DockerContainer {
   _nodeId: string;
@@ -731,6 +735,7 @@ export function DockerContainers({
               const unavailable = container.availability === "unavailable";
               const manage = canManageContainer(container);
               const reorganize = canReorganizeContainer(container);
+              const lifecycleActions = containerLifecycleActions(container.state);
               if (!manage && !reorganize) return null;
 
               return (
@@ -738,7 +743,7 @@ export function DockerContainers({
                   className="flex items-center justify-end gap-1"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {container.state === "running" ? (
+                  {lifecycleActions.canStop ? (
                     <>
                       <Button
                         variant="ghost"
@@ -750,18 +755,20 @@ export function DockerContainers({
                       >
                         <Square className="h-3.5 w-3.5" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        disabled={!!loadingAction || transitioning || unavailable}
-                        onClick={() => handleRestart(container)}
-                        title="Restart"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                      </Button>
+                      {lifecycleActions.canRestart && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          disabled={!!loadingAction || transitioning || unavailable}
+                          onClick={() => handleRestart(container)}
+                          title="Restart"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </>
-                  ) : (
+                  ) : lifecycleActions.canStart ? (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -772,7 +779,7 @@ export function DockerContainers({
                     >
                       <Play className="h-3.5 w-3.5" />
                     </Button>
-                  )}
+                  ) : null}
 
                   {!container.folderIsSystem && reorganize && (
                     <DropdownMenu>

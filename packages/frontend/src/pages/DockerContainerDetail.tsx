@@ -51,7 +51,12 @@ import { ConfigTab } from "./docker-detail/ConfigTab";
 import { ConsoleTab } from "./docker-detail/ConsoleTab";
 import { EnvironmentTab } from "./docker-detail/EnvironmentTab";
 import { FilesTab } from "./docker-detail/FilesTab";
-import { containerDisplayName, type InspectData, STATUS_BADGE } from "./docker-detail/helpers";
+import {
+  containerDisplayName,
+  containerLifecycleActions,
+  type InspectData,
+  STATUS_BADGE,
+} from "./docker-detail/helpers";
 import { LogsTab } from "./docker-detail/LogsTab";
 import {
   buildContainerMutationSnapshot,
@@ -397,6 +402,7 @@ export function DockerContainerDetail({
   const name = containerDisplayName(container?.Name ?? "");
   const baseState = container?.State?.Status ?? (container?.State?.Running ? "running" : "stopped");
   const state = effectiveTransition ?? baseState;
+  const lifecycleActions = containerLifecycleActions(baseState);
   const image = container?.Config?.Image ?? "";
   const unavailable = container?.availability === "unavailable";
   const actionDisabled = actionLoading || !!effectiveTransition || unavailable;
@@ -452,7 +458,7 @@ export function DockerContainerDetail({
       onClick: () => setPinOpen(true),
       disabled: actionDisabled,
     },
-    ...(baseState !== "running" && canManage
+    ...(lifecycleActions.canStart && canManage
       ? [
           {
             label: "Start",
@@ -463,7 +469,7 @@ export function DockerContainerDetail({
           },
         ]
       : []),
-    ...(baseState === "running" && canManage
+    ...(lifecycleActions.canStop && canManage
       ? [
           {
             label: "Stop",
@@ -472,13 +478,20 @@ export function DockerContainerDetail({
               doAction(() => api.stopContainer(nodeId!, containerId!), "Container stopping"),
             disabled: actionDisabled,
           },
-          {
-            label: "Restart",
-            icon: <RotateCcw className="h-4 w-4" />,
-            onClick: () =>
-              doAction(() => api.restartContainer(nodeId!, containerId!), "Container restarting"),
-            disabled: actionDisabled,
-          },
+          ...(lifecycleActions.canRestart
+            ? [
+                {
+                  label: "Restart",
+                  icon: <RotateCcw className="h-4 w-4" />,
+                  onClick: () =>
+                    doAction(
+                      () => api.restartContainer(nodeId!, containerId!),
+                      "Container restarting"
+                    ),
+                  disabled: actionDisabled,
+                },
+              ]
+            : []),
         ]
       : []),
     ...(canEdit
@@ -502,7 +515,7 @@ export function DockerContainerDetail({
           },
         ]
       : []),
-    ...(baseState === "running" && canManage
+    ...(lifecycleActions.canKill && canManage
       ? [
           {
             label: "Kill",
@@ -523,7 +536,7 @@ export function DockerContainerDetail({
             onClick: handleRemove,
             disabled: actionDisabled,
             destructive: true,
-            separatorBefore: baseState !== "running" || !canManage,
+            separatorBefore: !lifecycleActions.canKill || !canManage,
           },
         ]
       : []),
@@ -583,7 +596,7 @@ export function DockerContainerDetail({
             >
               <Pin className="h-4 w-4" />
             </Button>
-            {baseState !== "running" && canManage && (
+            {lifecycleActions.canStart && canManage && (
               <Button
                 variant="outline"
                 size="default"
@@ -596,7 +609,7 @@ export function DockerContainerDetail({
                 Start
               </Button>
             )}
-            {baseState === "running" && canManage && (
+            {lifecycleActions.canStop && canManage && (
               <>
                 <Button
                   variant="outline"
@@ -609,20 +622,22 @@ export function DockerContainerDetail({
                   <Square className="h-3.5 w-3.5" />
                   Stop
                 </Button>
-                <Button
-                  variant="outline"
-                  size="default"
-                  disabled={actionDisabled}
-                  onClick={() =>
-                    doAction(
-                      () => api.restartContainer(nodeId!, containerId!),
-                      "Container restarting"
-                    )
-                  }
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Restart
-                </Button>
+                {lifecycleActions.canRestart && (
+                  <Button
+                    variant="outline"
+                    size="default"
+                    disabled={actionDisabled}
+                    onClick={() =>
+                      doAction(
+                        () => api.restartContainer(nodeId!, containerId!),
+                        "Container restarting"
+                      )
+                    }
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Restart
+                  </Button>
+                )}
               </>
             )}
             <DropdownMenu>
@@ -644,7 +659,7 @@ export function DockerContainerDetail({
                     Duplicate
                   </DropdownMenuItem>
                 )}
-                {baseState === "running" && canManage && (
+                {lifecycleActions.canKill && canManage && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem

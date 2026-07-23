@@ -565,17 +565,13 @@ export async function liveUpdateContainer(
   await ctx.assertNotManagedDeploymentInternal(nodeId, containerId);
   const name = await ctx.resolveContainerName(nodeId, containerId);
   ctx.requireNoTransition(nodeId, name);
+  await validateDockerRuntimeResourceConfig(ctx.runtimeOperationContext(), nodeId, containerId, config);
+  const result = await ctx.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
+    containerId,
+    configJson: JSON.stringify(config),
+  });
+  ctx.parseResult(result);
   await persistDockerRuntimeSettings(ctx.runtimeOperationContext(), nodeId, name, config);
-  const inspect = await ctx.inspectContainer(nodeId, containerId);
-  const state = (inspect?.State?.Status ?? '') as string;
-  if (state === 'running') {
-    await validateDockerRuntimeResourceConfig(ctx.runtimeOperationContext(), nodeId, containerId, config);
-    const result = await ctx.nodeDispatch.sendDockerContainerCommand(nodeId, 'live_update', {
-      containerId,
-      configJson: JSON.stringify(config),
-    });
-    ctx.parseResult(result);
-  }
   await ctx.auditService.log({
     action: 'docker.container.live_update',
     userId,

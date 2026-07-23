@@ -685,8 +685,9 @@ func (c *Client) UpdateContainer(ctx context.Context, id string, newTag string, 
 	return c.recreateContainer(ctx, &insp, imageRef, envOverrides, envRemovals, rollbackSnapshot)
 }
 
-// LiveUpdateContainer applies resource limits and restart policy to a running container
-// without recreating it. This uses Docker's ContainerUpdate API.
+// LiveUpdateContainer applies resource limits and restart policy to an existing container
+// without recreating it. This uses Docker's ContainerUpdate API for running, restarting,
+// and stopped containers.
 func (c *Client) LiveUpdateContainer(ctx context.Context, id string, configJSON string) error {
 	var params struct {
 		RestartPolicy *string `json:"restartPolicy"`

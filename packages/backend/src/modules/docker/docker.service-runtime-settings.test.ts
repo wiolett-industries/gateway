@@ -24,7 +24,10 @@ function createService(dispatch: { sendDockerContainerCommand: ReturnType<typeof
 }
 
 describe('DockerManagementService runtime settings', () => {
-  it('clears persisted runtime settings when live update receives default runtime values', async () => {
+  it.each([
+    'exited',
+    'restarting',
+  ])('applies default runtime values to a %s container before clearing persisted overrides', async (state) => {
     const inspect = {
       Id: 'container-1',
       Name: '/api',
@@ -33,7 +36,7 @@ describe('DockerManagementService runtime settings', () => {
         Env: [],
       },
       HostConfig: {},
-      State: { Status: 'exited' },
+      State: { Status: state },
     };
     const dispatch = {
       sendDockerContainerCommand: vi.fn().mockResolvedValue({
@@ -44,17 +47,14 @@ describe('DockerManagementService runtime settings', () => {
     const service = createService(dispatch);
     const replace = vi.fn().mockResolvedValue(undefined);
     service.setRuntimeSettingsService({
-      get: vi
-        .fn()
-        .mockResolvedValueOnce({
-          restartPolicy: 'always',
-          memoryLimit: 268_435_456,
-          memorySwap: -1,
-          nanoCPUs: 500_000_000,
-          cpuShares: 512,
-          pidsLimit: 128,
-        })
-        .mockResolvedValueOnce(null),
+      get: vi.fn().mockResolvedValue({
+        restartPolicy: 'always',
+        memoryLimit: 268_435_456,
+        memorySwap: -1,
+        nanoCPUs: 500_000_000,
+        cpuShares: 512,
+        pidsLimit: 128,
+      }),
       replace,
     } as never);
 
@@ -74,7 +74,52 @@ describe('DockerManagementService runtime settings', () => {
     );
 
     expect(replace).toHaveBeenCalledWith('node-1', 'api', {});
-    expect(dispatch.sendDockerContainerCommand).not.toHaveBeenCalledWith('node-1', 'live_update', expect.anything());
+    expect(dispatch.sendDockerContainerCommand).toHaveBeenCalledWith('node-1', 'live_update', {
+      containerId: 'container-1',
+      configJson: JSON.stringify({
+        restartPolicy: 'no',
+        maxRetries: 0,
+        memoryLimit: 0,
+        memorySwap: 0,
+        nanoCPUs: 0,
+        cpuShares: 0,
+        pidsLimit: 0,
+      }),
+    });
+  });
+
+  it('does not persist runtime settings when Docker rejects the update', async () => {
+    const inspect = {
+      Id: 'container-1',
+      Name: '/api',
+      Config: {
+        Labels: {},
+        Env: [],
+      },
+      HostConfig: {
+        RestartPolicy: { Name: 'always', MaximumRetryCount: 0 },
+      },
+      State: { Status: 'restarting' },
+    };
+    const dispatch = {
+      sendDockerContainerCommand: vi
+        .fn()
+        .mockResolvedValueOnce({ success: true, detail: JSON.stringify(inspect) })
+        .mockResolvedValueOnce({ success: true, detail: JSON.stringify(inspect) })
+        .mockResolvedValueOnce({ success: false, error: 'update rejected' }),
+    };
+    const service = createService(dispatch);
+    const replace = vi.fn().mockResolvedValue(undefined);
+    service.setRuntimeSettingsService({
+      get: vi.fn().mockResolvedValue({ restartPolicy: 'always' }),
+      replace,
+    } as never);
+
+    await expect(
+      service.liveUpdateContainer('node-1', 'container-1', { restartPolicy: 'no' }, 'user-1')
+    ).rejects.toThrow('update rejected');
+
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it('merges partial runtime setting updates with persisted values', async () => {
@@ -97,14 +142,11 @@ describe('DockerManagementService runtime settings', () => {
     const service = createService(dispatch);
     const replace = vi.fn().mockResolvedValue(undefined);
     service.setRuntimeSettingsService({
-      get: vi
-        .fn()
-        .mockResolvedValueOnce({
-          restartPolicy: 'on-failure',
-          maxRetries: 3,
-          memoryLimit: 268_435_456,
-        })
-        .mockResolvedValueOnce(null),
+      get: vi.fn().mockResolvedValue({
+        restartPolicy: 'on-failure',
+        maxRetries: 3,
+        memoryLimit: 268_435_456,
+      }),
       replace,
     } as never);
 

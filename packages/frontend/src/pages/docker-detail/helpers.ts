@@ -31,6 +31,19 @@ export function containerDisplayName(name: string): string {
   return name.startsWith("/") ? name.slice(1) : name;
 }
 
+export function containerLifecycleActions(state: string) {
+  const normalizedState = state.toLowerCase();
+  const isRunning = normalizedState === "running";
+  const isRestarting = normalizedState === "restarting";
+
+  return {
+    canStart: ["created", "exited", "stopped"].includes(normalizedState),
+    canStop: isRunning || isRestarting,
+    canRestart: isRunning,
+    canKill: isRunning || isRestarting,
+  };
+}
+
 export function formatDate(ts: number | string): string {
   const d = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
   return d.toLocaleString();
