@@ -27,9 +27,12 @@ function dockerNode(id: string) {
 describe("docker store", () => {
   beforeEach(() => {
     useDockerStore.setState({
+      containers: [],
+      containersByScope: {},
       selectedNodeId: null,
       dockerNodes: [],
       dockerNodesLoaded: false,
+      filters: { search: "", status: "all" },
     });
   });
 
@@ -119,6 +122,77 @@ describe("docker store", () => {
     expect(useDockerStore.getState().containers).toMatchObject([
       { id: "container-a", availability: "unavailable" },
     ]);
+  });
+
+  it("shows a selected node immediately from the aggregate snapshot while refreshing", async () => {
+    const aggregate = [
+      {
+        id: "container-a",
+        name: "api",
+        image: "busybox",
+        state: "running",
+        _nodeId: "node-a",
+      },
+      {
+        id: "container-b",
+        name: "worker",
+        image: "busybox",
+        state: "running",
+        _nodeId: "node-b",
+      },
+    ] as never;
+    useDockerStore.setState({
+      containers: aggregate,
+      containersByScope: { __global__: aggregate },
+    });
+
+    let resolveRequest!: (items: typeof aggregate) => void;
+    vi.spyOn(api, "listDockerContainerSnapshots").mockImplementation(
+      () => new Promise((resolve) => (resolveRequest = resolve as typeof resolveRequest))
+    );
+
+    useDockerStore.getState().setSelectedNode("node-a");
+    const refresh = useDockerStore.getState().fetchContainers("node-a");
+
+    expect(useDockerStore.getState().containers).toMatchObject([
+      { id: "container-a", _nodeId: "node-a" },
+    ]);
+    expect(useDockerStore.getState().loading.containers).toBe(false);
+
+    resolveRequest([
+      {
+        id: "container-a-fresh",
+        name: "api",
+        image: "busybox:latest",
+        state: "running",
+        _nodeId: "node-a",
+      },
+    ] as never);
+    await refresh;
+
+    expect(useDockerStore.getState().containers).toMatchObject([
+      { id: "container-a-fresh", _nodeId: "node-a" },
+    ]);
+  });
+
+  it("does not show rows from a different node when no aggregate snapshot exists", () => {
+    useDockerStore.setState({
+      selectedNodeId: "node-a",
+      containers: [
+        {
+          id: "container-a",
+          name: "api",
+          image: "busybox",
+          state: "running",
+          _nodeId: "node-a",
+        },
+      ] as never,
+      containersByScope: {},
+    });
+
+    useDockerStore.getState().setSelectedNode("node-b");
+
+    expect(useDockerStore.getState().containers).toEqual([]);
   });
 
   it("sends refresh hints without a follow-up list request", async () => {

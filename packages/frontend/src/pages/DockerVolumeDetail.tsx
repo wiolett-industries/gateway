@@ -10,7 +10,7 @@ import {
   Type,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageBackButton } from "@/components/common/PageBackButton";
@@ -39,6 +39,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { dockerContainerRoute, dockerVolumeRoute } from "@/lib/resource-routes";
+import { createReturnNavigationState, getReturnNavigationTarget } from "@/lib/return-navigation";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -94,6 +95,8 @@ export function DockerVolumeDetail({
   const nodeSlug = resolvedNodeSlug ?? params.nodeSlug ?? params.nodeId ?? "";
   const volumeName = resolvedVolumeName ?? params.volumeName;
   const navigate = useStableNavigate();
+  const location = useLocation();
+  const backTarget = getReturnNavigationTarget(location.state, "/docker/volumes");
   const { hasScope } = useAuthStore();
   const decodedVolumeName = volumeName ?? "";
   const [activeTab, setActiveTab] = useUrlTab(["files", "settings"], "files", (tab) =>
@@ -250,7 +253,10 @@ export function DockerVolumeDetail({
       useUIStore
         .getState()
         .removeRecentPagesByPrefix(dockerVolumeRoute(nodeSlug, decodedVolumeName));
-      navigate(dockerVolumeRoute(nodeSlug, event.name, activeTab), { replace: true });
+      navigate(dockerVolumeRoute(nodeSlug, event.name, activeTab), {
+        replace: true,
+        state: location.state,
+      });
       return;
     }
     if (event.name && event.name !== decodedVolumeName) return;
@@ -271,7 +277,10 @@ export function DockerVolumeDetail({
   useRealtime("node.slug.changed", (payload) => {
     const event = payload as { id?: string; oldSlug?: string; slug?: string };
     if (event.id !== nodeId || event.oldSlug !== nodeSlug || !event.slug) return;
-    navigate(dockerVolumeRoute(event.slug, decodedVolumeName, activeTab), { replace: true });
+    navigate(dockerVolumeRoute(event.slug, decodedVolumeName, activeTab), {
+      replace: true,
+      state: location.state,
+    });
   });
 
   const fetchDirectory = useCallback(
@@ -367,13 +376,16 @@ export function DockerVolumeDetail({
       useUIStore
         .getState()
         .removeRecentPagesByPrefix(dockerVolumeRoute(currentNodeSlug, decodedVolumeName));
-      navigate(dockerVolumeRoute(currentNodeSlug, nextName, activeTab), { replace: true });
+      navigate(dockerVolumeRoute(currentNodeSlug, nextName, activeTab), {
+        replace: true,
+        state: location.state,
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to rename volume");
     } finally {
       setActionLoading(false);
     }
-  }, [activeTab, decodedVolumeName, navigate, nodeId, nodeSlug, renameValue]);
+  }, [activeTab, decodedVolumeName, location.state, navigate, nodeId, nodeSlug, renameValue]);
 
   const handleRemove = useCallback(async () => {
     if (!nodeId || !decodedVolumeName) return;
@@ -387,13 +399,13 @@ export function DockerVolumeDetail({
     try {
       await api.removeVolume(nodeId, decodedVolumeName);
       toast.success("Volume removed");
-      navigate("/docker/volumes");
+      navigate(backTarget);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove volume");
     } finally {
       setActionLoading(false);
     }
-  }, [decodedVolumeName, navigate, nodeId]);
+  }, [backTarget, decodedVolumeName, navigate, nodeId]);
 
   const handleSaveLabels = useCallback(async () => {
     if (!nodeId || !decodedVolumeName || !labelsChanged || isUsed) return;
@@ -490,7 +502,7 @@ export function DockerVolumeDetail({
         <div className="space-y-6">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
-              <PageBackButton onClick={() => navigate("/docker/volumes")} />
+              <PageBackButton onClick={() => navigate(backTarget)} />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h1 className="text-2xl font-bold truncate">{decodedVolumeName}</h1>
@@ -596,7 +608,9 @@ export function DockerVolumeDetail({
                     emptyMessage="No containers"
                     isRowClickable={(container) => container.canOpen}
                     onRowClick={(container) => {
-                      navigate(dockerContainerRoute(nodeSlug, container.name));
+                      navigate(dockerContainerRoute(nodeSlug, container.name), {
+                        state: createReturnNavigationState(location),
+                      });
                     }}
                   />
                 </PanelShell>

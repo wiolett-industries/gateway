@@ -1,6 +1,6 @@
 import { Database, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -31,6 +31,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { nodeBadgeClassName } from "@/lib/node-appearance";
 import { dockerVolumeRoute } from "@/lib/resource-routes";
+import { createReturnNavigationState } from "@/lib/return-navigation";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -57,6 +58,7 @@ export function DockerVolumes({
   fixedNodeId?: string;
 } = {}) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { hasScope, hasScopedAccess, user } = useAuthStore();
   const { volumes, selectedNodeId, setSelectedNode, fetchVolumes } = useDockerStore();
   const requestSnapshotRefresh = useDockerStore((s) => s.requestSnapshotRefresh);
@@ -401,7 +403,11 @@ export function DockerVolumes({
         canManageFolders={canManageFolders}
         getResourceKey={(volume) => volume.name}
         getResourceLabel={(volume) => volume.name}
-        onItemClick={(volume) => navigate(dockerVolumeRoute(volume._nodeSlug, volume.name))}
+        onItemClick={(volume) =>
+          navigate(dockerVolumeRoute(volume._nodeSlug, volume.name), {
+            state: createReturnNavigationState(location),
+          })
+        }
         onRefresh={() => fetchVolumes(undefined, search)}
         onCreateFolderRef={(fn) => {
           createFolderRef.current = fn;

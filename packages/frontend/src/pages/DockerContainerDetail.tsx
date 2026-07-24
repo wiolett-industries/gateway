@@ -47,6 +47,7 @@ import {
   resolveMigrationTarget,
 } from "@/lib/docker-migration-navigation";
 import { dockerContainerRoute } from "@/lib/resource-routes";
+import { getReturnNavigationTarget, preserveReturnNavigationState } from "@/lib/return-navigation";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
@@ -110,6 +111,7 @@ export function DockerContainerDetail({
   const [containerId, setContainerId] = useState(resolvedContainerId ?? params.containerId);
   const navigate = useStableNavigate();
   const location = useLocation();
+  const backTarget = getReturnNavigationTarget(location.state, "/docker");
   const { hasScope, isLoading: authLoading } = useAuthStore();
   const canManage =
     hasScope("docker:containers:manage") ||
@@ -143,14 +145,11 @@ export function DockerContainerDetail({
     !!(nodeId && hasScope(`docker:containers:secrets:${nodeId}`));
   const invalidate = useDockerStore((s) => s.invalidate);
   const setSelectedNode = useDockerStore((s) => s.setSelectedNode);
-  const storeNodeId = useDockerStore((s) => s.selectedNodeId);
-  const previousNodeIdRef = useRef<string | null>(null);
+  const previousNodeIdRef = useRef(useDockerStore.getState().selectedNodeId);
 
   // Temporarily scope store-backed invalidation to this node while the detail page is mounted,
   // then restore the previous list filter on unmount.
   useEffect(() => {
-    previousNodeIdRef.current = storeNodeId;
-
     if (nodeId) {
       setSelectedNode(nodeId);
     }
@@ -158,7 +157,7 @@ export function DockerContainerDetail({
     return () => {
       setSelectedNode(previousNodeIdRef.current);
     };
-  }, [nodeId, setSelectedNode, storeNodeId]);
+  }, [nodeId, setSelectedNode]);
   const [container, setContainer] = useState<InspectData | null>(resolvedContainer ?? null);
   const containerRef = useRef<InspectData | null>(resolvedContainer ?? null);
   const [healthCheck, setHealthCheck] = useState<DockerHealthCheck | null>(null);
@@ -211,10 +210,13 @@ export function DockerContainerDetail({
       }
       navigate(dockerContainerRoute(migration.targetNodeSlug, migration.resourceName, activeTab), {
         replace: true,
-        state: isDockerMigrationOwnedByTab(migration.id) ? { dockerMigration: migration } : null,
+        state: {
+          ...preserveReturnNavigationState(location.state),
+          ...(isDockerMigrationOwnedByTab(migration.id) ? { dockerMigration: migration } : {}),
+        },
       });
     },
-    [activeTab, containerId, navigate]
+    [activeTab, containerId, location.state, navigate]
   );
 
   useEffect(() => {
@@ -232,7 +234,7 @@ export function DockerContainerDetail({
     setMigrationOpen(true);
     navigate(`${location.pathname}${location.search}${location.hash}`, {
       replace: true,
-      state: null,
+      state: preserveReturnNavigationState(location.state),
     });
   }, [location, navigate, navigationMigration, nodeId, restoredMigration?.id, routeContainerName]);
 
@@ -240,6 +242,11 @@ export function DockerContainerDetail({
     setMigrationOpen(nextOpen);
     if (!nextOpen) setRestoredMigration(null);
   }, []);
+  const navigatePreservingContext = useCallback(
+    (to: string, options?: { replace?: boolean }) =>
+      navigate(to, { ...options, state: location.state }),
+    [location.state, navigate]
+  );
   const visibleTabs = useMemo(
     () => [
       "overview",
@@ -282,13 +289,22 @@ export function DockerContainerDetail({
         }
         if (!silent) {
           toast.error("Failed to load container");
-          if (!migrationHandoff) navigate("/docker");
+          if (!migrationHandoff) navigate(backTarget);
         }
       } finally {
         if (!silent) setIsLoading(false);
       }
     },
-    [clearMutationTransition, nodeId, nodeSlug, containerId, migrationHandoff, navigate, updateMeta]
+    [
+      backTarget,
+      clearMutationTransition,
+      nodeId,
+      nodeSlug,
+      containerId,
+      migrationHandoff,
+      navigate,
+      updateMeta,
+    ]
   );
 
   useEffect(() => {
@@ -362,7 +378,7 @@ export function DockerContainerDetail({
     containerId,
     routeContainerName,
     activeTab,
-    navigate,
+    navigate: navigatePreservingContext,
     refreshContainer,
     transition: backendTransition,
     clearMutationTransition,
@@ -436,7 +452,7 @@ export function DockerContainerDetail({
       usePinnedContainersStore.getState().removePin(containerId!);
       toast.success("Container removed");
       invalidate("containers", "tasks");
-      navigate("/docker");
+      navigate(backTarget);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove");
       setActionLoading(false);
@@ -454,7 +470,10 @@ export function DockerContainerDetail({
         const currentNodeSlug =
           useDockerStore.getState().dockerNodes.find((node) => node.id === nodeId)?.slug ||
           nodeSlug;
-        navigate(dockerContainerRoute(currentNodeSlug, dName), { replace: true });
+        navigate(dockerContainerRoute(currentNodeSlug, dName), {
+          replace: true,
+          state: location.state,
+        });
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to duplicate");
@@ -479,7 +498,10 @@ export function DockerContainerDetail({
       invalidate("containers");
       const currentNodeSlug =
         useDockerStore.getState().dockerNodes.find((node) => node.id === nodeId)?.slug || nodeSlug;
-      navigate(dockerContainerRoute(currentNodeSlug, nextName, activeTab), { replace: true });
+      navigate(dockerContainerRoute(currentNodeSlug, nextName, activeTab), {
+        replace: true,
+        state: location.state,
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to rename");
     } finally {
@@ -677,7 +699,7 @@ export function DockerContainerDetail({
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <PageBackButton onClick={() => navigate("/docker")} />
+            <PageBackButton onClick={() => navigate(backTarget)} />
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{name}</h1>

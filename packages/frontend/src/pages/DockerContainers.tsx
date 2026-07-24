@@ -1,7 +1,7 @@
 import { type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { Box, GitBranch, MoreVertical, Play, Plus, RefreshCw, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -30,10 +30,12 @@ import {
 import { TruncateStart } from "@/components/ui/truncate-start";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useRealtime } from "@/hooks/use-realtime";
+import { matchesDockerContainerStatus } from "@/lib/docker-container-filters";
 import { formatDisplayImageRef } from "@/lib/docker-image-ref";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { nodeBadgeClassName } from "@/lib/node-appearance";
 import { dockerContainerRoute, dockerDeploymentRoute } from "@/lib/resource-routes";
+import { createReturnNavigationState } from "@/lib/return-navigation";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -122,6 +124,7 @@ export function DockerContainers({
   fixedNodeId?: string;
 } = {}) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { hasScope, hasScopedAccess, user } = useAuthStore();
   const containers = useDockerStore((s) => s.containers) as DockerContainerListItem[];
   const previousContainersRef = useRef(containers);
@@ -234,8 +237,8 @@ export function DockerContainers({
       await Promise.all([
         canViewContainers
           ? force
-            ? forceFetchContainers(fixedNodeId, filters.search)
-            : fetchContainers(fixedNodeId, filters.search)
+            ? forceFetchContainers(visibleNodeId, filters.search)
+            : fetchContainers(visibleNodeId, filters.search)
           : Promise.resolve(),
         fetchFolders(),
       ]);
@@ -245,8 +248,8 @@ export function DockerContainers({
       fetchContainers,
       fetchFolders,
       filters.search,
-      fixedNodeId,
       forceFetchContainers,
+      visibleNodeId,
     ]
   );
 
@@ -295,8 +298,8 @@ export function DockerContainers({
   const filteredContainers = useMemo(() => {
     let result = [...visibleContainers];
     if (filters.status !== "all") {
-      result = result.filter((c) =>
-        filters.status === "running" ? c.state === "running" : c.state !== "running"
+      result = result.filter((container) =>
+        matchesDockerContainerStatus(container, filters.status)
       );
     }
     if (filters.search) {
@@ -794,7 +797,8 @@ export function DockerContainers({
                             navigate(
                               container.kind === "deployment"
                                 ? dockerDeploymentRoute(container._nodeSlug, container.name)
-                                : dockerContainerRoute(container._nodeSlug, container.name)
+                                : dockerContainerRoute(container._nodeSlug, container.name),
+                              { state: createReturnNavigationState(location) }
                             )
                           }
                         >
@@ -911,6 +915,7 @@ export function DockerContainers({
                   <SelectItem value="all">All statuses</SelectItem>
                   <SelectItem value="running">Running</SelectItem>
                   <SelectItem value="stopped">Stopped</SelectItem>
+                  <SelectItem value="unavailable">Unavailable</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1009,10 +1014,14 @@ export function DockerContainers({
             !canDragFolders || !canReorganizeContainer(container) || !!container.folderIsSystem,
           onItemClick: (container) => {
             if (container.kind === "deployment") {
-              navigate(dockerDeploymentRoute(container._nodeSlug, container.name));
+              navigate(dockerDeploymentRoute(container._nodeSlug, container.name), {
+                state: createReturnNavigationState(location),
+              });
               return;
             }
-            navigate(dockerContainerRoute(container._nodeSlug, container.name));
+            navigate(dockerContainerRoute(container._nodeSlug, container.name), {
+              state: createReturnNavigationState(location),
+            });
           },
         }}
       />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 
 /**
@@ -12,6 +12,7 @@ export function useUrlTab(
   buildUrl: (tab: string) => string
 ): [string, (tab: string) => void] {
   const navigate = useStableNavigate();
+  const location = useLocation();
   const { tab: tabParam } = useParams<{ tab?: string }>();
   const validTabsKey = validTabs.join("\0");
   const validTabSet = useMemo(
@@ -36,9 +37,9 @@ export function useUrlTab(
     (tab: string) => {
       if (!validTabSet.has(tab)) return;
       setActiveTabState(tab);
-      navigate(buildUrl(tab), { replace: true });
+      navigate(buildUrl(tab), { replace: true, state: location.state });
     },
-    [buildUrl, navigate, validTabSet]
+    [buildUrl, location.state, navigate, validTabSet]
   );
 
   return [activeTab, setActiveTab];

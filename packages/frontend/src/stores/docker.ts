@@ -124,6 +124,38 @@ function dockerContainerScope(nodeId: string | null | undefined, search?: string
   return q ? `${base}:search:${q}` : base;
 }
 
+function filterCachedContainers(items: DockerContainer[], nodeId?: string | null, search?: string) {
+  const query = search?.trim().toLowerCase();
+  return items.filter((container) => {
+    const tagged = container as DockerContainer & { _nodeId?: string };
+    if (nodeId && tagged._nodeId !== nodeId) return false;
+    if (!query) return true;
+    return (
+      container.name.toLowerCase().includes(query) ||
+      container.image.toLowerCase().includes(query) ||
+      container.id.toLowerCase().includes(query)
+    );
+  });
+}
+
+function cachedContainersForScope(
+  state: Pick<DockerState, "containers" | "containersByScope" | "selectedNodeId">,
+  nodeId?: string | null,
+  search?: string
+) {
+  const direct = state.containersByScope[dockerContainerScope(nodeId, search)];
+  if (direct) return direct;
+
+  const searchedGlobal = state.containersByScope[dockerContainerScope(null, search)];
+  const global =
+    searchedGlobal ??
+    state.containersByScope[GLOBAL_DOCKER_SCOPE] ??
+    (state.selectedNodeId === null ? state.containers : undefined);
+  if (!global) return undefined;
+
+  return filterCachedContainers(global, nodeId, searchedGlobal ? undefined : search);
+}
+
 const dockerRequestIds = {
   containers: 0,
   images: 0,
@@ -170,11 +202,13 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
   isLoading: false,
 
   setSelectedNode: (nodeId) => {
-    const scope = dockerContainerScope(nodeId);
-    set((state) => ({
-      selectedNodeId: nodeId,
-      containers: state.containersByScope[scope] ?? [],
-    }));
+    set((state) => {
+      const cached = cachedContainersForScope(state, nodeId, state.filters.search);
+      return {
+        selectedNodeId: nodeId,
+        containers: cached ?? (nodeId === state.selectedNodeId ? state.containers : []),
+      };
+    });
   },
 
   setDockerNodes: (nodes) =>
@@ -245,7 +279,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     const search = searchOverride ?? filters.search;
     const scope = dockerContainerScope(effectiveNodeId, search);
-    const cached = get().containersByScope[scope];
+    const cached = cachedContainersForScope(get(), effectiveNodeId, search);
     set((state) => ({
       containers: cached ?? [],
       ...loadingState(state.loading, "containers", !cached),
@@ -273,7 +307,7 @@ export const useDockerStore = create<DockerState>()((set, get) => ({
     const effectiveNodeId = nodeIdOverride ?? selectedNodeId;
     const search = searchOverride ?? filters.search;
     const scope = dockerContainerScope(effectiveNodeId, search);
-    const cached = get().containersByScope[scope];
+    const cached = cachedContainersForScope(get(), effectiveNodeId, search);
     set((state) => ({
       containers: cached ?? [],
       ...loadingState(state.loading, "containers", !cached),

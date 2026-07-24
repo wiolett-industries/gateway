@@ -46,6 +46,7 @@ import {
   resolveMigrationTarget,
 } from "@/lib/docker-migration-navigation";
 import { dockerDeploymentRoute } from "@/lib/resource-routes";
+import { getReturnNavigationTarget, preserveReturnNavigationState } from "@/lib/return-navigation";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
@@ -130,6 +131,7 @@ export function DockerDeploymentDetail({
     resolvedDeploymentName ?? params.deploymentName ?? params.deploymentId ?? "";
   const navigate = useStableNavigate();
   const location = useLocation();
+  const backTarget = getReturnNavigationTarget(location.state, "/docker");
   const { hasScope } = useAuthStore();
   const canManage =
     hasScope("docker:containers:manage") ||
@@ -205,10 +207,10 @@ export function DockerDeploymentDetail({
         if (cutoverSeen.current) return;
         if (reason === "removed") toast.info("Deployment was removed");
         else toast.error("Failed to load deployment");
-        navigate("/docker");
+        navigate(backTarget);
       }, MIGRATION_RELOCATION_GRACE_MS);
     },
-    [navigate]
+    [backTarget, navigate]
   );
 
   useEffect(() => () => clearRemovalFallback(), [clearRemovalFallback]);
@@ -230,10 +232,13 @@ export function DockerDeploymentDetail({
       }
       navigate(dockerDeploymentRoute(migration.targetNodeSlug, migration.resourceName, activeTab), {
         replace: true,
-        state: isDockerMigrationOwnedByTab(migration.id) ? { dockerMigration: migration } : null,
+        state: {
+          ...preserveReturnNavigationState(location.state),
+          ...(isDockerMigrationOwnedByTab(migration.id) ? { dockerMigration: migration } : {}),
+        },
       });
     },
-    [activeTab, clearRemovalFallback, deployment?.status, deploymentId, navigate]
+    [activeTab, clearRemovalFallback, deployment?.status, deploymentId, location.state, navigate]
   );
 
   useEffect(() => {
@@ -251,7 +256,7 @@ export function DockerDeploymentDetail({
     setMigrationOpen(true);
     navigate(`${location.pathname}${location.search}${location.hash}`, {
       replace: true,
-      state: null,
+      state: preserveReturnNavigationState(location.state),
     });
   }, [deploymentId, location, navigate, navigationMigration, nodeId, restoredMigration?.id]);
 
@@ -294,7 +299,7 @@ export function DockerDeploymentDetail({
       else if (deploymentRef.current) scheduleRemovalFallback("failed");
       else {
         toast.error(err instanceof Error ? err.message : "Failed to load deployment");
-        navigate("/docker");
+        navigate(backTarget);
       }
     } finally {
       setLoading(false);
@@ -302,6 +307,7 @@ export function DockerDeploymentDetail({
   }, [
     deploymentId,
     migrationHandoff,
+    backTarget,
     navigate,
     nodeId,
     nodeSlug,
@@ -338,7 +344,10 @@ export function DockerDeploymentDetail({
     if (event.nodeId !== nodeId || event.deploymentId !== deploymentId) return;
 
     if (event.oldName === routeDeploymentName && event.name) {
-      navigate(dockerDeploymentRoute(nodeSlug, event.name, activeTab), { replace: true });
+      navigate(dockerDeploymentRoute(nodeSlug, event.name, activeTab), {
+        replace: true,
+        state: location.state,
+      });
       return;
     }
 
@@ -360,7 +369,10 @@ export function DockerDeploymentDetail({
   useRealtime("node.slug.changed", (payload) => {
     const event = payload as { id?: string; oldSlug?: string; slug?: string };
     if (event.id !== nodeId || event.oldSlug !== nodeSlug || !event.slug) return;
-    navigate(dockerDeploymentRoute(event.slug, routeDeploymentName, activeTab), { replace: true });
+    navigate(dockerDeploymentRoute(event.slug, routeDeploymentName, activeTab), {
+      replace: true,
+      state: location.state,
+    });
   });
 
   useRealtime("docker.container.changed", (payload) => {
@@ -520,7 +532,7 @@ export function DockerDeploymentDetail({
       await api.deleteDockerDeployment(nodeId, deployment.id);
       usePinnedContainersStore.getState().removePin(deployment.id);
       toast.success("Deployment removed");
-      navigate("/docker");
+      navigate(backTarget);
     });
   };
 
@@ -659,7 +671,7 @@ export function DockerDeploymentDetail({
       >
         <div className="flex shrink-0 items-center justify-between gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <PageBackButton onClick={() => navigate("/docker")} />
+            <PageBackButton onClick={() => navigate(backTarget)} />
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <h1 className="truncate text-2xl font-bold">{deployment.name}</h1>

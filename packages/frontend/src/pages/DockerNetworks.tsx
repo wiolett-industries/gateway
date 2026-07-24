@@ -1,6 +1,6 @@
 import { Network, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -34,6 +34,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { loadVisibleDockerNodes } from "@/lib/docker-node-access";
 import { nodeBadgeClassName } from "@/lib/node-appearance";
 import { dockerContainerRoute } from "@/lib/resource-routes";
+import { createReturnNavigationState } from "@/lib/return-navigation";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
@@ -68,6 +69,7 @@ export function DockerNetworks({
   fixedNodeId?: string;
 } = {}) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { hasScope, hasScopedAccess, user } = useAuthStore();
   const { networks, selectedNodeId, setSelectedNode, fetchNetworks } = useDockerStore();
   const requestSnapshotRefresh = useDockerStore((s) => s.requestSnapshotRefresh);
@@ -686,7 +688,9 @@ export function DockerNetworks({
                     const nodeSlug =
                       storeDockerNodes.find((node) => node.id === container.nodeId)?.slug ||
                       container.nodeSlug;
-                    navigate(dockerContainerRoute(nodeSlug, container.name));
+                    navigate(dockerContainerRoute(nodeSlug, container.name), {
+                      state: createReturnNavigationState(location),
+                    });
                   }}
                 />
               </PanelShell>
