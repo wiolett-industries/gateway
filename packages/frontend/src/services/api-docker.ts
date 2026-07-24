@@ -16,6 +16,7 @@ import type {
   Node,
 } from "@/types";
 import { API_BASE } from "./api-base";
+import { withDockerMigrationApi } from "./api-docker-migrations";
 import { withDockerWebhookApi } from "./api-docker-webhooks";
 import type { ApiClientBaseConstructor } from "./api-mixins";
 
@@ -85,7 +86,7 @@ function withSnapshotNodeMeta<T extends object>(response: DockerListEnvelope<T>)
 }
 
 export function withDockerApi<TBase extends ApiClientBaseConstructor>(Base: TBase) {
-  return class DockerApiClient extends withDockerWebhookApi(Base) {
+  return class DockerApiClient extends withDockerMigrationApi(withDockerWebhookApi(Base)) {
     async getDockerNodeBySlug(
       slug: string
     ): Promise<

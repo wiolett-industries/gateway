@@ -227,7 +227,6 @@ export class DockerSnapshotService {
   async getContainerDetailSnapshot(nodeId: string, key: string): Promise<DockerSnapshotEnvelope<any>> {
     await this.assertDockerNode(nodeId);
     const direct = await this.getDetail<any>(nodeId, 'container-detail', key);
-    if (direct) return direct;
     const list = await this.getList<Record<string, unknown>[]>(nodeId, 'containers');
     const match = Array.isArray(list.data)
       ? list.data.find(
@@ -235,10 +234,19 @@ export class DockerSnapshotService {
             String(item.id ?? item.Id ?? '') === key || String(item.name ?? item.Name ?? '').replace(/^\/+/, '') === key
         )
       : undefined;
+    const liveId = String(match?.id ?? match?.Id ?? '');
+    const directId = String(direct?.data?.id ?? direct?.data?.Id ?? '');
+    if (direct && (!liveId || !directId || liveId === directId)) return direct;
+
     const name = String(match?.name ?? match?.Name ?? '').replace(/^\/+/, '');
+    if (liveId && liveId !== key) {
+      const byId = await this.getDetail<any>(nodeId, 'container-detail', liveId);
+      if (byId) return byId;
+    }
     if (name && name !== key) {
       const byName = await this.getDetail<any>(nodeId, 'container-detail', name);
-      if (byName) return byName;
+      const byNameId = String(byName?.data?.id ?? byName?.data?.Id ?? '');
+      if (byName && (!liveId || !byNameId || liveId === byNameId)) return byName;
     }
     throw new AppError(404, 'CONTAINER_NOT_FOUND', 'Container snapshot not found');
   }

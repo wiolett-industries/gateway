@@ -15,6 +15,7 @@ import type { SystemCAService } from '@/services/system-ca.service.js';
 import { createControlHandlers } from './services/control.js';
 import { createEnrollmentHandlers } from './services/enrollment.js';
 import { createLogStreamHandlers } from './services/log-stream.js';
+import { createMigrationTransferHandlers } from './services/migration-transfer.js';
 
 const logger = createChildLogger('GrpcServer');
 const GRPC_MAX_MESSAGE_BYTES = 512 * 1024 * 1024;
@@ -180,6 +181,7 @@ export async function startGrpcServer(
   server.addService(gatewayV1.NodeEnrollment.service, createEnrollmentHandlers(deps));
   server.addService(gatewayV1.NodeControl.service, createControlHandlers(deps));
   server.addService(gatewayV1.LogStream.service, createLogStreamHandlers(deps));
+  server.addService(gatewayV1.MigrationTransfer.service, createMigrationTransferHandlers(deps));
 
   const credentials = await createGrpcServerCredentials(tlsCertPath, tlsKeyPath, deps.systemCA);
   logger.info('gRPC server using TLS with Gateway system CA client certificate validation');

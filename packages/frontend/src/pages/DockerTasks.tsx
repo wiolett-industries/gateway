@@ -7,6 +7,7 @@ import {
   RotateCcw,
   Square,
   Trash2,
+  Truck,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,7 +38,7 @@ import { nodeBadgeClassName } from "@/lib/node-appearance";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
-import type { DockerTask, Node } from "@/types";
+import type { DockerMigration, DockerTask, Node } from "@/types";
 import { isNodeIncompatible } from "@/types";
 
 const STATUS_BADGE: Record<
@@ -59,9 +60,37 @@ const TASK_TYPE_ICONS: Record<string, LucideIcon> = {
   stop: Square,
   update: RefreshCw,
   webhook_update: RefreshCw,
+  migration: Truck,
 };
 
 const ACTIVE_TASK_STATUSES = new Set(["pending", "running"]);
+
+type DockerTaskRow = DockerTask & { migration?: DockerMigration };
+
+function migrationTaskStatus(status: DockerMigration["status"]): DockerTask["status"] {
+  if (status === "pending") return "pending";
+  if (["running", "waiting", "cancelling", "cleanup_pending"].includes(status)) return "running";
+  if (status === "completed") return "succeeded";
+  return "failed";
+}
+
+function migrationToTask(migration: DockerMigration): DockerTaskRow {
+  return {
+    id: `migration:${migration.id}`,
+    nodeId: migration.sourceNodeId,
+    containerName: migration.resourceName,
+    type: "migration",
+    status: migrationTaskStatus(migration.status),
+    progress:
+      typeof migration.progress.message === "string"
+        ? migration.progress.message
+        : migration.phase.replaceAll("_", " "),
+    error: migration.errorMessage ?? undefined,
+    createdAt: migration.createdAt,
+    completedAt: migration.completedAt ?? undefined,
+    migration,
+  };
+}
 
 function TaskTypeLabel({ type }: { type: string }) {
   const Icon = TASK_TYPE_ICONS[type] ?? ListTodo;
@@ -100,6 +129,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
   const canManageTasks = useAuthStore((s) => s.hasScope("docker:tasks:manage"));
 
   const [dockerNodes, setDockerNodes] = useState<Node[]>([]);
+  const [migrations, setMigrations] = useState<DockerMigration[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterNode, setFilterNode] = useState("all");
@@ -111,12 +141,19 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
     value: selectedTask,
     setValue: setSelectedTask,
     onOpenChange: onTaskDetailsOpenChange,
-  } = useDeferredDialogState<DockerTask>();
+  } = useDeferredDialogState<DockerTaskRow>();
 
   const loadTasks = useCallback(async () => {
-    await fetchTasks();
-    setIsLoading(false);
-  }, [fetchTasks]);
+    try {
+      const [, nextMigrations] = await Promise.all([
+        fetchTasks(),
+        api.listDockerMigrations(selectedNodeId ? { nodeId: selectedNodeId } : undefined),
+      ]);
+      setMigrations(nextMigrations);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [fetchTasks, selectedNodeId]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
   useEffect(() => {
@@ -131,15 +168,24 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
 
   // Auto-refresh every 5s
   useEffect(() => {
-    const interval = setInterval(() => fetchTasks(), 5_000);
+    const interval = setInterval(() => loadTasks(), 5_000);
     return () => clearInterval(interval);
-  }, [fetchTasks]);
+  }, [loadTasks]);
 
   useRealtime("docker.task.changed", (payload) => {
     const ev = payload as { nodeId?: string };
     if (selectedNodeId && ev?.nodeId && ev.nodeId !== selectedNodeId) return;
     loadTasks();
   });
+
+  useRealtime("docker.migration.changed", () => {
+    loadTasks();
+  });
+
+  const taskRows = useMemo<DockerTaskRow[]>(
+    () => [...tasks, ...migrations.map(migrationToTask)],
+    [migrations, tasks]
+  );
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, Pick<Node, "appearanceColor"> & { name: string }>();
@@ -150,14 +196,16 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
   }, [dockerNodes]);
 
   const taskTypes = useMemo(() => {
-    const types = new Set(tasks.map((t) => t.type));
+    const types = new Set(taskRows.map((t) => t.type));
     return Array.from(types).sort();
-  }, [tasks]);
+  }, [taskRows]);
 
   const filteredTasks = useMemo(() => {
-    let result = tasks;
+    let result = taskRows;
     if (filterNode !== "all") {
-      result = result.filter((t) => t.nodeId === filterNode);
+      result = result.filter(
+        (t) => t.nodeId === filterNode || t.migration?.targetNodeId === filterNode
+      );
     }
     if (filterType !== "all") {
       result = result.filter((t) => t.type === filterType);
@@ -178,7 +226,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
     return [...result].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [tasks, filterNode, filterType, filterStatus, search]);
+  }, [taskRows, filterNode, filterType, filterStatus, search]);
 
   const PAGE_SIZE = 20;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -210,7 +258,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
     return () => observer.disconnect();
   }, [hasMore, filteredTasks.length]);
 
-  const taskColumns: DataTableColumn<DockerTask>[] = useMemo(
+  const taskColumns: DataTableColumn<DockerTaskRow>[] = useMemo(
     () => [
       {
         key: "type",
@@ -240,6 +288,12 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
           return (
             <Badge variant="secondary" className={nodeBadgeClassName(nodeInfo?.appearanceColor)}>
               {nodeInfo?.name ?? t.nodeId.slice(0, 8)}
+              {t.migration
+                ? ` → ${
+                    nodeMap.get(t.migration.targetNodeId)?.name ??
+                    t.migration.targetNodeId.slice(0, 8)
+                  }`
+                : ""}
             </Badge>
           );
         },
@@ -250,10 +304,14 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
         width: "130px",
         render: (t) => (
           <Badge
-            variant={STATUS_BADGE[t.status] ?? "secondary"}
+            variant={
+              t.migration?.status === "cleanup_pending"
+                ? "warning"
+                : (STATUS_BADGE[t.status] ?? "secondary")
+            }
             className={t.status === "running" ? "animate-pulse" : ""}
           >
-            {t.status}
+            {t.migration?.status.replaceAll("_", " ") ?? t.status}
           </Badge>
         ),
       },
@@ -284,7 +342,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
   const hasActiveFilters =
     search !== "" || filterNode !== "all" || filterType !== "all" || filterStatus !== "all";
 
-  const handleForceCancelTask = async (task: DockerTask) => {
+  const handleForceCancelTask = async (task: DockerTaskRow) => {
     setForceCancellingTaskId(task.id);
     try {
       const updatedTask = await api.forceCancelDockerTask(task.id);
@@ -293,6 +351,34 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
       toast.success("Task force-cancelled");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to force-cancel task");
+    } finally {
+      setForceCancellingTaskId(null);
+    }
+  };
+
+  const handleCancelMigration = async (task: DockerTaskRow) => {
+    if (!task.migration) return;
+    setForceCancellingTaskId(task.id);
+    try {
+      setSelectedTask(migrationToTask(await api.cancelDockerMigration(task.migration.id)));
+      await loadTasks();
+      toast.success("Migration cancellation requested");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to cancel migration");
+    } finally {
+      setForceCancellingTaskId(null);
+    }
+  };
+
+  const handleRetryCleanup = async (task: DockerTaskRow) => {
+    if (!task.migration) return;
+    setForceCancellingTaskId(task.id);
+    try {
+      setSelectedTask(migrationToTask(await api.retryDockerMigrationCleanup(task.migration.id)));
+      await loadTasks();
+      toast.success("Migration cleanup resumed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to retry cleanup");
     } finally {
       setForceCancellingTaskId(null);
     }
@@ -313,7 +399,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold">Docker Tasks</h1>
               <Badge variant="secondary" size="inline">
-                {tasks.length}
+                {taskRows.length}
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
@@ -324,7 +410,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
             <Button variant="outline" size="icon" onClick={loadTasks} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
             </Button>
-            {tasks.some((t) => t.status === "succeeded" || t.status === "failed") && (
+            {taskRows.some((t) => t.status === "succeeded" || t.status === "failed") && (
               <Button variant="outline" onClick={handleClearCompleted}>
                 <Trash2 className="h-4 w-4 mr-1" />
                 Hide Completed
@@ -392,7 +478,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
       />
 
       {filteredTasks.length > 0 ? (
-        <DataTable<DockerTask>
+        <DataTable<DockerTaskRow>
           columns={taskColumns}
           data={visibleTasks}
           keyFn={(t) => t.id}
@@ -443,6 +529,21 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
                     {selectedTask.type}
                   </span>
                 </div>
+                {selectedTask.migration && (
+                  <div className="flex items-center justify-between px-4 py-3 min-w-0">
+                    <span className="text-sm text-muted-foreground shrink-0">Target</span>
+                    <Badge
+                      variant="secondary"
+                      className={nodeBadgeClassName(
+                        nodeMap.get(selectedTask.migration.targetNodeId)?.appearanceColor,
+                        "ml-4"
+                      )}
+                    >
+                      {nodeMap.get(selectedTask.migration.targetNodeId)?.name ??
+                        selectedTask.migration.targetNodeId.slice(0, 8)}
+                    </Badge>
+                  </div>
+                )}
                 <div className="flex items-center justify-between px-4 py-3 min-w-0">
                   <span className="text-sm text-muted-foreground shrink-0">Container</span>
                   <Badge variant="secondary" className="ml-4 max-w-full font-mono">
@@ -467,7 +568,7 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
                     variant={STATUS_BADGE[selectedTask.status] ?? "secondary"}
                     className={selectedTask.status === "running" ? "animate-pulse" : ""}
                   >
-                    {selectedTask.status}
+                    {selectedTask.migration?.status.replaceAll("_", " ") ?? selectedTask.status}
                   </Badge>
                 </div>
                 {selectedTask.progress && (
@@ -506,18 +607,51 @@ export function DockerTasks({ embedded }: { embedded?: boolean } = {}) {
               )}
             </div>
           )}
-          {selectedTask && canManageTasks && ACTIVE_TASK_STATUSES.has(selectedTask.status) && (
+          {selectedTask?.migration?.status === "cleanup_pending" && (
             <DialogFooter>
               <Button
-                variant="destructive"
-                onClick={() => handleForceCancelTask(selectedTask)}
+                variant="outline"
+                onClick={() => handleRetryCleanup(selectedTask)}
                 disabled={forceCancellingTaskId === selectedTask.id}
               >
-                <XCircle className="h-4 w-4" />
-                {forceCancellingTaskId === selectedTask.id ? "Cancelling..." : "Force Cancel"}
+                <RotateCcw className="h-4 w-4" />
+                Retry cleanup
               </Button>
             </DialogFooter>
           )}
+          {selectedTask?.migration &&
+            ["pending", "running", "waiting", "cancelling"].includes(
+              selectedTask.migration.status
+            ) &&
+            !selectedTask.migration.cutoverAt && (
+              <DialogFooter>
+                <Button
+                  variant="destructive"
+                  onClick={() => handleCancelMigration(selectedTask)}
+                  disabled={forceCancellingTaskId === selectedTask.id}
+                >
+                  <XCircle className="h-4 w-4" />
+                  {forceCancellingTaskId === selectedTask.id
+                    ? "Cancelling..."
+                    : "Cancel and roll back"}
+                </Button>
+              </DialogFooter>
+            )}
+          {selectedTask &&
+            !selectedTask.migration &&
+            canManageTasks &&
+            ACTIVE_TASK_STATUSES.has(selectedTask.status) && (
+              <DialogFooter>
+                <Button
+                  variant="destructive"
+                  onClick={() => handleForceCancelTask(selectedTask)}
+                  disabled={forceCancellingTaskId === selectedTask.id}
+                >
+                  <XCircle className="h-4 w-4" />
+                  {forceCancellingTaskId === selectedTask.id ? "Cancelling..." : "Force Cancel"}
+                </Button>
+              </DialogFooter>
+            )}
         </DialogContent>
       </Dialog>
     </>

@@ -129,3 +129,9 @@ func OpenLogStream(ctx context.Context, conn *grpc.ClientConn) (pb.LogStream_Str
 	client := pb.NewLogStreamClient(conn)
 	return client.StreamLogs(ctx)
 }
+
+// OpenMigrationTransferStream opens the dedicated bidirectional artifact RPC.
+func OpenMigrationTransferStream(ctx context.Context, conn *grpc.ClientConn) (pb.MigrationTransfer_TransferClient, error) {
+	client := pb.NewMigrationTransferClient(conn)
+	return client.Transfer(ctx)
+}

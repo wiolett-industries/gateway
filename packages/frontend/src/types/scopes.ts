@@ -50,6 +50,7 @@ export const RESOURCE_SCOPABLE_SCOPES = [
   "docker:containers:secrets",
   "docker:containers:webhooks",
   "docker:containers:mounts",
+  "docker:containers:migrate",
   "docker:images:view",
   "docker:images:pull",
   "docker:images:delete",
@@ -774,6 +775,12 @@ const RAW_TOKEN_SCOPES = [
     value: "docker:containers:manage",
     label: "Manage Containers",
     desc: "Start, stop, restart, kill, and recreate containers",
+    group: "Docker: Containers",
+  },
+  {
+    value: "docker:containers:migrate",
+    label: "Migrate Containers",
+    desc: "Migrate containers and deployments between Docker nodes",
     group: "Docker: Containers",
   },
   {

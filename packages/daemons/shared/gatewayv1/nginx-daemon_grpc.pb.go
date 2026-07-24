@@ -261,6 +261,110 @@ var NodeControl_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	MigrationTransfer_Transfer_FullMethodName = "/gateway.v1.MigrationTransfer/Transfer"
+)
+
+// MigrationTransferClient is the client API for MigrationTransfer service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Dedicated large-artifact transport. Docker daemons connect over the same
+// mutually authenticated channel as NodeControl, but artifacts never share the
+// bounded command result envelope.
+type MigrationTransferClient interface {
+	Transfer(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[MigrationTransferMessage, MigrationTransferControl], error)
+}
+
+type migrationTransferClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewMigrationTransferClient(cc grpc.ClientConnInterface) MigrationTransferClient {
+	return &migrationTransferClient{cc}
+}
+
+func (c *migrationTransferClient) Transfer(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[MigrationTransferMessage, MigrationTransferControl], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &MigrationTransfer_ServiceDesc.Streams[0], MigrationTransfer_Transfer_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[MigrationTransferMessage, MigrationTransferControl]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type MigrationTransfer_TransferClient = grpc.BidiStreamingClient[MigrationTransferMessage, MigrationTransferControl]
+
+// MigrationTransferServer is the server API for MigrationTransfer service.
+// All implementations must embed UnimplementedMigrationTransferServer
+// for forward compatibility.
+//
+// Dedicated large-artifact transport. Docker daemons connect over the same
+// mutually authenticated channel as NodeControl, but artifacts never share the
+// bounded command result envelope.
+type MigrationTransferServer interface {
+	Transfer(grpc.BidiStreamingServer[MigrationTransferMessage, MigrationTransferControl]) error
+	mustEmbedUnimplementedMigrationTransferServer()
+}
+
+// UnimplementedMigrationTransferServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedMigrationTransferServer struct{}
+
+func (UnimplementedMigrationTransferServer) Transfer(grpc.BidiStreamingServer[MigrationTransferMessage, MigrationTransferControl]) error {
+	return status.Error(codes.Unimplemented, "method Transfer not implemented")
+}
+func (UnimplementedMigrationTransferServer) mustEmbedUnimplementedMigrationTransferServer() {}
+func (UnimplementedMigrationTransferServer) testEmbeddedByValue()                           {}
+
+// UnsafeMigrationTransferServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to MigrationTransferServer will
+// result in compilation errors.
+type UnsafeMigrationTransferServer interface {
+	mustEmbedUnimplementedMigrationTransferServer()
+}
+
+func RegisterMigrationTransferServer(s grpc.ServiceRegistrar, srv MigrationTransferServer) {
+	// If the following call panics, it indicates UnimplementedMigrationTransferServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&MigrationTransfer_ServiceDesc, srv)
+}
+
+func _MigrationTransfer_Transfer_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(MigrationTransferServer).Transfer(&grpc.GenericServerStream[MigrationTransferMessage, MigrationTransferControl]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type MigrationTransfer_TransferServer = grpc.BidiStreamingServer[MigrationTransferMessage, MigrationTransferControl]
+
+// MigrationTransfer_ServiceDesc is the grpc.ServiceDesc for MigrationTransfer service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var MigrationTransfer_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "gateway.v1.MigrationTransfer",
+	HandlerType: (*MigrationTransferServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Transfer",
+			Handler:       _MigrationTransfer_Transfer_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
+	Metadata: "gateway/v1/nginx-daemon.proto",
+}
+
+const (
 	LogStream_StreamLogs_FullMethodName = "/gateway.v1.LogStream/StreamLogs"
 )
 

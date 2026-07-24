@@ -36,6 +36,12 @@ import { DockerEnvironmentService } from '@/modules/docker/docker-environment.se
 import { DockerFolderService } from '@/modules/docker/docker-folder.service.js';
 import { DockerHealthCheckService } from '@/modules/docker/docker-health-check.service.js';
 import { DockerImageCleanupService } from '@/modules/docker/docker-image-cleanup.service.js';
+import { DockerMigrationService } from '@/modules/docker/docker-migration.service.js';
+import { DockerMigrationCoordinator } from '@/modules/docker/docker-migration-coordinator.js';
+import { DockerMigrationDispatchAdapter } from '@/modules/docker/docker-migration-dispatch.js';
+import { DockerMigrationExecutor } from '@/modules/docker/docker-migration-executor.js';
+import { DockerMigrationGuard } from '@/modules/docker/docker-migration-guard.js';
+import { DockerMigrationPreflightService } from '@/modules/docker/docker-migration-preflight.js';
 import { DockerRegistryService } from '@/modules/docker/docker-registry.service.js';
 import { DockerRuntimeSettingsService } from '@/modules/docker/docker-runtime-settings.service.js';
 import { DockerSecretService } from '@/modules/docker/docker-secret.service.js';
@@ -302,6 +308,8 @@ export async function initializeContainer(): Promise<void> {
   container.registerInstance(NodeMonitoringService, nodeMonitoringService);
 
   const dockerManagementService = new DockerManagementService(db, auditService, nodeDispatch, nodeRegistry);
+  const dockerMigrationGuard = new DockerMigrationGuard(db);
+  dockerManagementService.setMigrationGuard(dockerMigrationGuard);
   container.registerInstance(DockerManagementService, dockerManagementService);
 
   const dockerSnapshotService = new DockerSnapshotService(db, cacheService, nodeRegistry, eventBus);
@@ -324,9 +332,11 @@ export async function initializeContainer(): Promise<void> {
   integrationsService.setDockerRegistryService(dockerRegistryService);
 
   const dockerSecretService = new DockerSecretService(db, auditService, cryptoService);
+  dockerSecretService.setMigrationGuard(dockerMigrationGuard);
   container.registerInstance(DockerSecretService, dockerSecretService);
 
   const dockerEnvironmentService = new DockerEnvironmentService(db, cryptoService);
+  dockerEnvironmentService.setMigrationGuard(dockerMigrationGuard);
   container.registerInstance(DockerEnvironmentService, dockerEnvironmentService);
 
   const dockerRuntimeSettingsService = new DockerRuntimeSettingsService(db);
@@ -344,6 +354,7 @@ export async function initializeContainer(): Promise<void> {
     dockerSecretService
   );
   container.registerInstance(DockerDeploymentService, dockerDeploymentService);
+  dockerDeploymentService.setMigrationGuard(dockerMigrationGuard);
   const dockerHealthCheckService = new DockerHealthCheckService(db, nodeDispatch);
   container.registerInstance(DockerHealthCheckService, dockerHealthCheckService);
   const dockerImageCleanupService = new DockerImageCleanupService(db, dockerManagementService);
@@ -415,6 +426,39 @@ export async function initializeContainer(): Promise<void> {
   );
   proxyService.setEventBus(eventBus);
   container.registerInstance(ProxyService, proxyService);
+
+  const dockerMigrationDispatch = new DockerMigrationDispatchAdapter(nodeDispatch);
+  container.registerInstance(DockerMigrationDispatchAdapter, dockerMigrationDispatch);
+  const dockerMigrationPreflight = new DockerMigrationPreflightService(
+    db,
+    dockerManagementService,
+    dockerDeploymentService,
+    dockerMigrationDispatch
+  );
+  container.registerInstance(DockerMigrationPreflightService, dockerMigrationPreflight);
+  const dockerMigrationCoordinator = new DockerMigrationCoordinator(db, proxyService, dockerSnapshotReconciler);
+  container.registerInstance(DockerMigrationCoordinator, dockerMigrationCoordinator);
+  const dockerMigrationExecutor = new DockerMigrationExecutor(
+    db,
+    dockerMigrationDispatch,
+    dockerManagementService,
+    dockerDeploymentService,
+    dockerEnvironmentService,
+    dockerSecretService,
+    cryptoService
+  );
+  container.registerInstance(DockerMigrationExecutor, dockerMigrationExecutor);
+  const dockerMigrationService = new DockerMigrationService(
+    db,
+    dockerMigrationPreflight,
+    dockerMigrationExecutor,
+    dockerMigrationCoordinator,
+    auditService,
+    eventBus,
+    dockerManagementService
+  );
+  container.registerInstance(DockerMigrationService, dockerMigrationService);
+  dockerMigrationService.start();
 
   const statusPageService = new StatusPageService(db, proxyService, auditService);
   statusPageService.setEventBus(eventBus);

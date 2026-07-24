@@ -14,6 +14,7 @@ export const STATUS_BADGE: Record<
   stopping: "warning",
   recreating: "warning",
   updating: "warning",
+  migrating: "warning",
   killing: "warning",
   deploying: "warning",
   switching: "warning",

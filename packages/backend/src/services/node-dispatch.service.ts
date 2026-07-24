@@ -174,6 +174,28 @@ export class NodeDispatchService {
 
   // ─── Docker Commands ──────────────────────────────────────────────
 
+  async sendDockerMigrationCommand(
+    nodeId: string,
+    action: string,
+    options: {
+      migrationId?: string;
+      artifactId?: string;
+      artifactType?: string;
+      resourceId?: string;
+      configJson?: string;
+    } = {},
+    timeoutMs?: number
+  ): Promise<CommandResult> {
+    await this.assertNodeMutable(nodeId);
+    return this.registry.sendCommand(
+      nodeId,
+      {
+        dockerMigration: { action, ...options } as any,
+      },
+      timeoutMs
+    );
+  }
+
   async sendDockerContainerCommand(
     nodeId: string,
     action: string,

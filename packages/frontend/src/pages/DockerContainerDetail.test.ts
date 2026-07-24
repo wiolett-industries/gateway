@@ -3,7 +3,7 @@ import {
   buildContainerMutationSnapshot,
   shouldSettleMutationTransition,
 } from "./DockerContainerDetail";
-import { containerLifecycleActions } from "./docker-detail/helpers";
+import { containerLifecycleActions, STATUS_BADGE } from "./docker-detail/helpers";
 
 function makeContainer(overrides: Record<string, unknown> = {}) {
   return {
@@ -73,6 +73,10 @@ describe("DockerContainerDetail mutation snapshot helpers", () => {
 });
 
 describe("DockerContainerDetail lifecycle actions", () => {
+  it("renders migrating as a pending warning status", () => {
+    expect(STATUS_BADGE.migrating).toBe("warning");
+  });
+
   it("allows stop and kill while a container is crash-loop restarting", () => {
     expect(containerLifecycleActions("restarting")).toEqual({
       canStart: false,

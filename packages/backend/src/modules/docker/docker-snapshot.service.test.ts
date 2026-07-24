@@ -55,7 +55,16 @@ class MemoryCache {
 function createService(connected = true) {
   const cache = new MemoryCache();
   const registry = { getNode: vi.fn(() => (connected ? { nodeId: 'node-1' } : undefined)) };
-  const service = new DockerSnapshotService({} as never, cache as never, registry as never, new EventBusService());
+  const db = {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn().mockResolvedValue([{ id: 'node-1', type: 'docker' }]),
+        })),
+      })),
+    })),
+  };
+  const service = new DockerSnapshotService(db as never, cache as never, registry as never, new EventBusService());
   return { service, cache, registry };
 }
 
@@ -165,6 +174,23 @@ describe('DockerSnapshotService', () => {
       labels: { app: 'gateway' },
       scope: 'local',
       usedBy: ['web'],
+    });
+  });
+
+  it('does not resolve a replaced container name to a stale detail snapshot', async () => {
+    const { service } = createService();
+    await service.replaceList('node-1', 'containers', [{ id: 'new-id', name: 'api' }]);
+    await service.replaceDetail('node-1', 'container-detail', 'api', {
+      Id: 'old-id',
+      Name: '/api',
+    });
+    await service.replaceDetail('node-1', 'container-detail', 'new-id', {
+      Id: 'new-id',
+      Name: '/api',
+    });
+
+    await expect(service.getContainerDetailSnapshot('node-1', 'api')).resolves.toMatchObject({
+      data: { Id: 'new-id', Name: '/api' },
     });
   });
 

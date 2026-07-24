@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
@@ -77,23 +78,24 @@ type deploymentSnapshot struct {
 }
 
 type deploymentCommandPayload struct {
-	DeploymentID     string                  `json:"deploymentId"`
-	Name             string                  `json:"name"`
-	ActiveSlot       string                  `json:"activeSlot"`
-	RouterName       string                  `json:"routerName"`
-	RouterImage      string                  `json:"routerImage"`
-	NetworkName      string                  `json:"networkName"`
-	Slots            map[string]string       `json:"slots"`
-	Routes           []deploymentRouteConfig `json:"routes"`
-	Health           deploymentHealthConfig  `json:"health"`
-	DesiredConfig    deploymentDesiredConfig `json:"desiredConfig"`
-	Labels           map[string]string       `json:"labels"`
-	Deployment       deploymentSnapshot      `json:"deployment"`
-	ToSlot           string                  `json:"toSlot"`
-	Slot             string                  `json:"slot"`
-	Image            string                  `json:"image"`
-	RegistryAuthJSON string                  `json:"registryAuthJson"`
-	Force            bool                    `json:"force"`
+	DeploymentID     string                             `json:"deploymentId"`
+	Name             string                             `json:"name"`
+	ActiveSlot       string                             `json:"activeSlot"`
+	RouterName       string                             `json:"routerName"`
+	RouterImage      string                             `json:"routerImage"`
+	NetworkName      string                             `json:"networkName"`
+	Slots            map[string]string                  `json:"slots"`
+	Routes           []deploymentRouteConfig            `json:"routes"`
+	Health           deploymentHealthConfig             `json:"health"`
+	DesiredConfig    deploymentDesiredConfig            `json:"desiredConfig"`
+	SlotConfigs      map[string]deploymentDesiredConfig `json:"slotConfigs"`
+	Labels           map[string]string                  `json:"labels"`
+	Deployment       deploymentSnapshot                 `json:"deployment"`
+	ToSlot           string                             `json:"toSlot"`
+	Slot             string                             `json:"slot"`
+	Image            string                             `json:"image"`
+	RegistryAuthJSON string                             `json:"registryAuthJson"`
+	Force            bool                               `json:"force"`
 }
 
 func (p *DockerPlugin) handleDeploymentCommand(cmd *pb.DockerDeploymentCommand, result *pb.CommandResult) {
@@ -968,6 +970,12 @@ func isNotFoundErr(err error) bool {
 	if err == nil {
 		return false
 	}
+	if cerrdefs.IsNotFound(err) {
+		return true
+	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "no such container") || strings.Contains(msg, "no such network") || strings.Contains(msg, "not found")
+	return strings.Contains(msg, "no such container") ||
+		strings.Contains(msg, "no such network") ||
+		strings.Contains(msg, "no such image") ||
+		strings.Contains(msg, "not found")
 }

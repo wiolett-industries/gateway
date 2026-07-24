@@ -47,6 +47,13 @@ service NodeControl {
   rpc CommandStream(stream DaemonMessage) returns (stream GatewayCommand);
 }
 
+// Dedicated large-artifact transport. Docker daemons connect over the same
+// mutually authenticated channel as NodeControl, but artifacts never share the
+// bounded command result envelope.
+service MigrationTransfer {
+  rpc Transfer(stream MigrationTransferMessage) returns (stream MigrationTransferControl);
+}
+
 // Messages FROM daemon TO Gateway
 message DaemonMessage {
   oneof payload {
@@ -199,6 +206,7 @@ message GatewayCommand {
     UpdateDaemonCommand update_daemon = 28;
     DockerDeploymentCommand docker_deployment = 29;
     NodeFileCommand node_file = 30;
+    DockerMigrationCommand docker_migration = 31;
   }
 }
 
@@ -483,4 +491,78 @@ message UpdateDaemonCommand {
   string target_version = 2;
   string checksum = 3;        // sha256 of the binary
   string signed_manifest = 4; // signed update manifest envelope
+}
+
+// Small migration control operations. Artifact bytes are carried exclusively
+// by MigrationTransfer.Transfer.
+message DockerMigrationCommand {
+  string action = 1;
+  string migration_id = 2;
+  string artifact_id = 3;
+  string artifact_type = 4;
+  string resource_id = 5;
+  string config_json = 6;
+}
+
+message MigrationTransferMessage {
+  oneof payload {
+    MigrationTransferHello hello = 1;
+    MigrationArtifactChunk chunk = 2;
+    MigrationArtifactAck ack = 3;
+    MigrationArtifactError error = 4;
+  }
+}
+
+message MigrationTransferControl {
+  oneof payload {
+    MigrationArtifactRead read = 1;
+    MigrationArtifactWrite write = 2;
+    MigrationArtifactChunk chunk = 3;
+    MigrationArtifactAck ack = 4;
+    MigrationArtifactError error = 5;
+    MigrationHeartbeat heartbeat = 6;
+  }
+}
+
+message MigrationTransferHello {
+  string node_id = 1;
+  string capability = 2;
+  int32 max_chunk_bytes = 3;
+}
+
+message MigrationArtifactRead {
+  string migration_id = 1;
+  string artifact_id = 2;
+  int64 offset = 3;
+}
+
+message MigrationArtifactWrite {
+  string migration_id = 1;
+  string artifact_id = 2;
+  int64 offset = 3;
+}
+
+message MigrationArtifactChunk {
+  string migration_id = 1;
+  string artifact_id = 2;
+  int64 offset = 3;
+  bytes data = 4;
+  bool eof = 5;
+}
+
+message MigrationArtifactAck {
+  string migration_id = 1;
+  string artifact_id = 2;
+  int64 acknowledged_offset = 3;
+  bool complete = 4;
+}
+
+message MigrationArtifactError {
+  string migration_id = 1;
+  string artifact_id = 2;
+  string message = 3;
+}
+
+message MigrationHeartbeat {
+  string migration_id = 1;
 }

@@ -65,6 +65,19 @@ describe('canonical scope definitions', () => {
     expect(ALL_SCOPES).toContain('docker:containers:mounts');
   });
 
+  it('grants Docker migrations only to admin tiers and requires manual approval', () => {
+    expect(SYSTEM_ADMIN_SCOPES).toContain('docker:containers:migrate');
+    expect(ADMIN_SCOPES).toContain('docker:containers:migrate');
+    expect(OPERATOR_SCOPES).not.toContain('docker:containers:migrate');
+    expect(RESOURCE_SCOPABLE).toContain('docker:containers:migrate');
+    expect(MANUAL_APPROVAL_SCOPES).toContain('docker:containers:migrate');
+    expect(hasScopeForResource([...ADMIN_SCOPES], 'docker:containers:migrate', 'node-1')).toBe(true);
+    expect(hasScopeForResource(['docker:containers:migrate:node-1'], 'docker:containers:migrate', 'node-1')).toBe(true);
+    expect(hasScopeForResource(['docker:containers:migrate:node-1'], 'docker:containers:migrate', 'node-2')).toBe(
+      false
+    );
+  });
+
   it('requires explicit grants for high-risk host node consoles', () => {
     expect(ALL_SCOPES).toContain('nodes:console');
     expect(SYSTEM_ADMIN_SCOPES).toContain('nodes:console');
@@ -125,6 +138,7 @@ describe('canonical scope definitions', () => {
       'docker:containers:files',
       'docker:containers:secrets',
       'docker:containers:mounts',
+      'docker:containers:migrate',
       'docker:volumes:files:read',
       'docker:volumes:files:write',
       'databases:query:read',

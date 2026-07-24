@@ -52,6 +52,15 @@ afterEach(() => {
 });
 
 describe('DockerSnapshotReconciler', () => {
+  it('forces and awaits an immediate snapshot refresh', async () => {
+    const { reconciler, snapshots, dispatch } = createReconciler();
+
+    await reconciler.refreshNow('node-1', 'containers');
+
+    expect(dispatch.sendDockerContainerCommand).toHaveBeenCalledWith('node-1', 'list', {}, 10_000);
+    expect(snapshots.replaceList).toHaveBeenCalledWith('node-1', 'containers', []);
+  });
+
   it('coalesces an in-flight duplicate into exactly one follow-up refresh', async () => {
     const first = deferred<{ success: boolean; detail: string }>();
     const send = vi

@@ -1,0 +1,205 @@
+package docker
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"time"
+
+	"github.com/wiolett-industries/gateway/daemon-shared/connector"
+	pb "github.com/wiolett-industries/gateway/daemon-shared/gatewayv1"
+	"google.golang.org/grpc"
+)
+
+const migrationChunkBytes = 1024 * 1024
+
+type migrationIncomingArtifact struct {
+	migrationID string
+	artifactID  string
+	offset      int64
+	file        *os.File
+}
+
+func (p *DockerPlugin) RunMigrationStream(ctx context.Context, conn *grpc.ClientConn, nodeID string) {
+	for ctx.Err() == nil {
+		if err := p.runMigrationStream(ctx, conn, nodeID); err != nil && ctx.Err() == nil {
+			p.logger.Warn("migration transfer stream disconnected", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+func (p *DockerPlugin) runMigrationStream(ctx context.Context, conn *grpc.ClientConn, nodeID string) error {
+	stream, err := connector.OpenMigrationTransferStream(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("open migration transfer stream: %w", err)
+	}
+	if err := stream.Send(&pb.MigrationTransferMessage{Payload: &pb.MigrationTransferMessage_Hello{
+		Hello: &pb.MigrationTransferHello{NodeId: nodeID, Capability: "docker_migration_v1", MaxChunkBytes: migrationChunkBytes},
+	}}); err != nil {
+		return fmt.Errorf("send migration stream hello: %w", err)
+	}
+
+	var incoming *migrationIncomingArtifact
+	defer func() {
+		if incoming != nil {
+			_ = incoming.file.Close()
+		}
+	}()
+	for {
+		control, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		switch payload := control.Payload.(type) {
+		case *pb.MigrationTransferControl_Read:
+			if incoming != nil {
+				return fmt.Errorf("cannot read while artifact write is active")
+			}
+			if err := p.sendMigrationArtifact(stream, payload.Read); err != nil {
+				_ = sendMigrationStreamError(stream, payload.Read.MigrationId, payload.Read.ArtifactId, err)
+			}
+		case *pb.MigrationTransferControl_Write:
+			if incoming != nil {
+				_ = incoming.file.Close()
+				incoming = nil
+			}
+			f, err := p.migrationStore.openWrite(payload.Write.MigrationId, payload.Write.ArtifactId, payload.Write.Offset)
+			if err != nil {
+				_ = sendMigrationStreamError(stream, payload.Write.MigrationId, payload.Write.ArtifactId, err)
+				continue
+			}
+			incoming = &migrationIncomingArtifact{
+				migrationID: payload.Write.MigrationId,
+				artifactID:  payload.Write.ArtifactId,
+				offset:      payload.Write.Offset,
+				file:        f,
+			}
+			if err := sendMigrationAck(stream, incoming, false); err != nil {
+				return err
+			}
+		case *pb.MigrationTransferControl_Chunk:
+			if incoming == nil {
+				_ = sendMigrationStreamError(stream, payload.Chunk.MigrationId, payload.Chunk.ArtifactId, fmt.Errorf("artifact write was not initialized"))
+				continue
+			}
+			complete, err := receiveMigrationChunk(incoming, payload.Chunk)
+			if err != nil {
+				_ = sendMigrationStreamError(stream, incoming.migrationID, incoming.artifactID, err)
+				_ = incoming.file.Close()
+				incoming = nil
+				continue
+			}
+			if complete {
+				if err := incoming.file.Sync(); err != nil {
+					_ = sendMigrationStreamError(stream, incoming.migrationID, incoming.artifactID, fmt.Errorf("fsync migration artifact: %w", err))
+					_ = incoming.file.Close()
+					incoming = nil
+					continue
+				}
+			}
+			if err := sendMigrationAck(stream, incoming, complete); err != nil {
+				return err
+			}
+			if complete {
+				_ = incoming.file.Close()
+				incoming = nil
+			}
+		case *pb.MigrationTransferControl_Heartbeat:
+			if err := p.migrationStore.heartbeat(payload.Heartbeat.MigrationId); err != nil {
+				_ = sendMigrationStreamError(stream, payload.Heartbeat.MigrationId, "", err)
+			}
+		case *pb.MigrationTransferControl_Error:
+			p.logger.Warn("gateway aborted migration artifact transfer",
+				"migration_id", payload.Error.MigrationId,
+				"artifact_id", payload.Error.ArtifactId,
+				"error", payload.Error.Message)
+			if incoming != nil {
+				_ = incoming.file.Close()
+				incoming = nil
+			}
+		case *pb.MigrationTransferControl_Ack:
+			// Read acknowledgements are advisory. Resumption always starts from the
+			// persisted offset supplied by the gateway on the next read request.
+		default:
+			return fmt.Errorf("unsupported migration transfer control")
+		}
+	}
+}
+
+func (p *DockerPlugin) sendMigrationArtifact(stream pb.MigrationTransfer_TransferClient, req *pb.MigrationArtifactRead) error {
+	f, size, err := p.migrationStore.openRead(req.MigrationId, req.ArtifactId, req.Offset)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	offset := req.Offset
+	buf := make([]byte, migrationChunkBytes)
+	for {
+		n, readErr := f.Read(buf)
+		if n > 0 {
+			chunk := append([]byte(nil), buf[:n]...)
+			if err := stream.Send(&pb.MigrationTransferMessage{Payload: &pb.MigrationTransferMessage_Chunk{Chunk: &pb.MigrationArtifactChunk{
+				MigrationId: req.MigrationId, ArtifactId: req.ArtifactId, Offset: offset, Data: chunk,
+			}}}); err != nil {
+				return fmt.Errorf("send migration artifact chunk: %w", err)
+			}
+			offset += int64(n)
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return fmt.Errorf("read migration artifact: %w", readErr)
+		}
+	}
+	if offset != size {
+		return fmt.Errorf("migration artifact changed during transfer")
+	}
+	return stream.Send(&pb.MigrationTransferMessage{Payload: &pb.MigrationTransferMessage_Chunk{Chunk: &pb.MigrationArtifactChunk{
+		MigrationId: req.MigrationId, ArtifactId: req.ArtifactId, Offset: offset, Eof: true,
+	}}})
+}
+
+func receiveMigrationChunk(incoming *migrationIncomingArtifact, chunk *pb.MigrationArtifactChunk) (bool, error) {
+	if chunk.MigrationId != incoming.migrationID || chunk.ArtifactId != incoming.artifactID {
+		return false, fmt.Errorf("artifact chunk identity mismatch")
+	}
+	if chunk.Offset != incoming.offset {
+		return false, fmt.Errorf("artifact chunk offset mismatch: got %d, expected %d", chunk.Offset, incoming.offset)
+	}
+	if len(chunk.Data) > migrationChunkBytes {
+		return false, fmt.Errorf("artifact chunk exceeds 1 MiB")
+	}
+	if chunk.Eof && len(chunk.Data) != 0 {
+		return false, fmt.Errorf("EOF artifact chunk must not contain data")
+	}
+	if len(chunk.Data) > 0 {
+		n, err := incoming.file.Write(chunk.Data)
+		if err != nil {
+			return false, fmt.Errorf("write migration artifact: %w", err)
+		}
+		if n != len(chunk.Data) {
+			return false, io.ErrShortWrite
+		}
+		incoming.offset += int64(n)
+	}
+	return chunk.Eof, nil
+}
+
+func sendMigrationAck(stream pb.MigrationTransfer_TransferClient, incoming *migrationIncomingArtifact, complete bool) error {
+	return stream.Send(&pb.MigrationTransferMessage{Payload: &pb.MigrationTransferMessage_Ack{Ack: &pb.MigrationArtifactAck{
+		MigrationId: incoming.migrationID, ArtifactId: incoming.artifactID, AcknowledgedOffset: incoming.offset, Complete: complete,
+	}}})
+}
+
+func sendMigrationStreamError(stream pb.MigrationTransfer_TransferClient, migrationID, artifactID string, err error) error {
+	return stream.Send(&pb.MigrationTransferMessage{Payload: &pb.MigrationTransferMessage_Error{Error: &pb.MigrationArtifactError{
+		MigrationId: migrationID, ArtifactId: artifactID, Message: err.Error(),
+	}}})
+}

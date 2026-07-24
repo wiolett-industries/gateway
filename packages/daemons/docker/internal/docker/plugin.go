@@ -36,6 +36,7 @@ type DockerPlugin struct {
 	registryCreds  map[string]string // registry URL -> base64-encoded auth
 	statsCollector *StatsCollector
 	execMgr        *ExecManager
+	migrationStore *migrationArtifactStore
 
 	// Log stream follow support
 	writer          *stream.Writer
@@ -106,6 +107,13 @@ func (p *DockerPlugin) Init(cfg *lifecycle.BaseConfig, logger *slog.Logger) erro
 
 	// Initialize task manager
 	p.taskMgr = NewTaskManager()
+	p.migrationStore, err = newMigrationArtifactStore(p.cfg.StateDir)
+	if err != nil {
+		return err
+	}
+	if err := p.migrationStore.cleanupStale(time.Now()); err != nil {
+		p.logger.Warn("stale migration artifact cleanup failed", "error", err)
+	}
 
 	// Initialize registry credentials map
 	p.registryCreds = make(map[string]string)
@@ -132,7 +140,7 @@ func (p *DockerPlugin) BuildRegisterMessage(nodeID string) *pb.RegisterMessage {
 		// Store docker version in the NginxVersion field as a capability hint.
 		// The gateway uses DaemonType to interpret this field correctly.
 		NginxVersion: p.version,
-		Capabilities: []string{"docker_deployments_v1"},
+		Capabilities: []string{"docker_deployments_v1", "docker_migration_v1"},
 	}
 }
 
@@ -170,6 +178,9 @@ func (p *DockerPlugin) HandleCommand(cmd *pb.GatewayCommand) *pb.CommandResult {
 
 	case *pb.GatewayCommand_DockerConfigPush:
 		p.handleConfigPush(payload.DockerConfigPush, result)
+
+	case *pb.GatewayCommand_DockerMigration:
+		p.handleMigrationCommand(payload.DockerMigration, result)
 
 	case *pb.GatewayCommand_SetDaemonLogStream:
 		stream.SetDaemonLogStreaming(payload.SetDaemonLogStream.Enabled, payload.SetDaemonLogStream.MinLevel)
@@ -1376,6 +1387,7 @@ func (p *DockerPlugin) OnSessionStart(ctx context.Context, writer *stream.Writer
 	// Start stats collector goroutine
 	p.statsCollector = NewStatsCollector(p.client, p.allowlist, p.logger)
 	go p.statsCollector.Run(ctx)
+	go p.runMigrationArtifactCleanup(ctx)
 
 	// Create exec manager with stream writer for async output
 	p.execMgr = NewExecManager(p.client, writer, p.logger)

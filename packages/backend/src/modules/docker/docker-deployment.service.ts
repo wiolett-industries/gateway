@@ -51,6 +51,7 @@ import { desiredConfigForRegistryAttempt, isRegistryRetryableError } from './doc
 import { toSyntheticRow } from './docker-deployment-synthetic.js';
 import type { DockerHealthCheckDto, DockerHealthCheckService } from './docker-health-check.service.js';
 import type { DockerImageCleanupService } from './docker-image-cleanup.service.js';
+import type { DockerMigrationGuard } from './docker-migration-guard.js';
 import type { DockerRegistryService } from './docker-registry.service.js';
 import type { DockerSecretService } from './docker-secret.service.js';
 import { assertDockerMountChangeAllowed, normalizeMountDefinitionsFromConfig } from './docker-socket-mount.guard.js';
@@ -92,6 +93,7 @@ export class DockerDeploymentService {
   private healthCheckService?: DockerHealthCheckService;
   private imageCleanupService?: DockerImageCleanupService;
   private deploymentTransitions = new Map<string, DeploymentTransition>();
+  private migrationGuard?: DockerMigrationGuard;
 
   constructor(
     private db: DrizzleClient,
@@ -113,6 +115,10 @@ export class DockerDeploymentService {
 
   setImageCleanupService(service: DockerImageCleanupService) {
     this.imageCleanupService = service;
+  }
+
+  setMigrationGuard(guard: DockerMigrationGuard) {
+    this.migrationGuard = guard;
   }
 
   private emit(action: string, deploymentId: string, nodeId: string, extra?: Record<string, unknown>) {
@@ -507,6 +513,7 @@ export class DockerDeploymentService {
     userId: string,
     actorScopes: string[] = []
   ) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     await this.validateDockerNode(nodeId);
     const current = await this.loadDeployment(nodeId, deploymentId);
     if (input.name && input.name !== current.name) await this.assertNameAvailable(nodeId, input.name, deploymentId);
@@ -590,6 +597,7 @@ export class DockerDeploymentService {
     source = 'manual',
     actorScopes: string[] = []
   ) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     await this.validateDockerNode(nodeId);
     const deployment = await this.loadDeployment(nodeId, deploymentId);
     this.requireDeploymentIdle(deployment);
@@ -880,26 +888,32 @@ export class DockerDeploymentService {
   }
 
   async stopSlot(nodeId: string, deploymentId: string, slot: DockerDeploymentSlot, userId: string | null) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     await stopSlot(this.deploymentOperationContext(), nodeId, deploymentId, slot, userId);
   }
 
   async start(nodeId: string, deploymentId: string, userId: string | null) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     return startDeployment(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async stop(nodeId: string, deploymentId: string, userId: string | null) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     return stopDeployment(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async restart(nodeId: string, deploymentId: string, userId: string | null) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     return restartDeployment(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async kill(nodeId: string, deploymentId: string, userId: string | null) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     return killDeployment(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async remove(nodeId: string, deploymentId: string, userId: string) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     await removeDeployment(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
@@ -908,14 +922,17 @@ export class DockerDeploymentService {
   }
 
   async upsertWebhook(nodeId: string, deploymentId: string, input: { enabled?: boolean }, userId: string) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     return upsertWebhook(this.deploymentOperationContext(), nodeId, deploymentId, input, userId);
   }
 
   async deleteWebhook(nodeId: string, deploymentId: string, userId: string) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     await deleteWebhook(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 
   async regenerateWebhook(nodeId: string, deploymentId: string, userId: string) {
+    await this.migrationGuard?.assertDeploymentAllowed(nodeId, deploymentId);
     return regenerateWebhook(this.deploymentOperationContext(), nodeId, deploymentId, userId);
   }
 

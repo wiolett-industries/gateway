@@ -4,14 +4,18 @@ export function Switch({
   checked,
   onChange,
   disabled,
+  ariaLabel,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <button
       type="button"
+      aria-label={ariaLabel}
+      aria-pressed={checked}
       disabled={disabled}
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center transition-colors border border-border",

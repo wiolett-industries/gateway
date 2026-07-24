@@ -15,14 +15,16 @@ import {
   Square,
   Terminal as TerminalIcon,
   Trash2,
+  Truck,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
+import { DockerMigrationDialog } from "@/components/docker/DockerMigrationDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -39,11 +41,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
+import {
+  isDockerMigrationOwnedByTab,
+  resolveMigrationTarget,
+} from "@/lib/docker-migration-navigation";
 import { dockerDeploymentRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores/auth";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
-import type { DockerDeployment, DockerDeploymentSlot, DockerWebhook } from "@/types";
+import type {
+  DockerDeployment,
+  DockerDeploymentSlot,
+  DockerMigration,
+  DockerWebhook,
+} from "@/types";
 import {
   DeploymentConfig,
   DeploymentOverview,
@@ -57,6 +68,8 @@ import { FilesTab } from "./docker-detail/FilesTab";
 import type { InspectData } from "./docker-detail/helpers";
 import { LogsTab } from "./docker-detail/LogsTab";
 import { StatsTab } from "./docker-detail/StatsTab";
+
+const MIGRATION_RELOCATION_GRACE_MS = 2_000;
 
 function getActiveSlot(deployment: DockerDeployment | null): DockerDeploymentSlot | null {
   if (!deployment) return null;
@@ -116,6 +129,7 @@ export function DockerDeploymentDetail({
   const routeDeploymentName =
     resolvedDeploymentName ?? params.deploymentName ?? params.deploymentId ?? "";
   const navigate = useStableNavigate();
+  const location = useLocation();
   const { hasScope } = useAuthStore();
   const canManage =
     hasScope("docker:containers:manage") ||
@@ -123,6 +137,9 @@ export function DockerDeploymentDetail({
   const canDelete =
     hasScope("docker:containers:delete") ||
     !!(nodeId && hasScope(`docker:containers:delete:${nodeId}`));
+  const canMigrate =
+    hasScope("docker:containers:migrate") ||
+    !!(nodeId && hasScope(`docker:containers:migrate:${nodeId}`));
   const canEdit =
     hasScope("docker:containers:edit") ||
     !!(nodeId && hasScope(`docker:containers:edit:${nodeId}`));
@@ -151,6 +168,8 @@ export function DockerDeploymentDetail({
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<string | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
+  const [migrationOpen, setMigrationOpen] = useState(false);
+  const [restoredMigration, setRestoredMigration] = useState<DockerMigration | null>(null);
   const { isPinnedSidebar, toggleSidebar, updateMeta } = usePinnedContainersStore();
 
   const [activeTab, setActiveTab] = useUrlTab(
@@ -159,11 +178,96 @@ export function DockerDeploymentDetail({
     (tab) => dockerDeploymentRoute(nodeSlug, routeDeploymentName, tab)
   );
 
+  const navigationMigration = (location.state as { dockerMigration?: DockerMigration } | null)
+    ?.dockerMigration;
+  const migrationHandoff =
+    restoredMigration ??
+    (navigationMigration?.resourceType === "deployment" &&
+    navigationMigration.targetNodeId === nodeId &&
+    navigationMigration.deploymentId === deploymentId
+      ? navigationMigration
+      : null);
+
+  const deploymentRef = useRef<DockerDeployment | null>(null);
+  const cutoverSeen = useRef(false);
+  const removalFallback = useRef<number | null>(null);
+  if (migrationHandoff?.cutoverAt) cutoverSeen.current = true;
+  const clearRemovalFallback = useCallback(() => {
+    if (removalFallback.current === null) return;
+    window.clearTimeout(removalFallback.current);
+    removalFallback.current = null;
+  }, []);
+  const scheduleRemovalFallback = useCallback(
+    (reason: "removed" | "failed") => {
+      if (cutoverSeen.current || removalFallback.current !== null) return;
+      removalFallback.current = window.setTimeout(() => {
+        removalFallback.current = null;
+        if (cutoverSeen.current) return;
+        if (reason === "removed") toast.info("Deployment was removed");
+        else toast.error("Failed to load deployment");
+        navigate("/docker");
+      }, MIGRATION_RELOCATION_GRACE_MS);
+    },
+    [navigate]
+  );
+
+  useEffect(() => () => clearRemovalFallback(), [clearRemovalFallback]);
+
+  const handleMigrationCutover = useCallback(
+    (migration: DockerMigration) => {
+      if (!migration.targetNodeSlug) return;
+      cutoverSeen.current = true;
+      clearRemovalFallback();
+      const pins = usePinnedContainersStore.getState();
+      if (pins.isPinnedSidebar(deploymentId)) {
+        pins.updateMeta(deploymentId, {
+          nodeId: migration.targetNodeId,
+          nodeSlug: migration.targetNodeSlug,
+          name: migration.resourceName,
+          state: deployment?.status,
+          kind: "deployment",
+        });
+      }
+      navigate(dockerDeploymentRoute(migration.targetNodeSlug, migration.resourceName, activeTab), {
+        replace: true,
+        state: isDockerMigrationOwnedByTab(migration.id) ? { dockerMigration: migration } : null,
+      });
+    },
+    [activeTab, clearRemovalFallback, deployment?.status, deploymentId, navigate]
+  );
+
+  useEffect(() => {
+    const incoming = navigationMigration;
+    if (
+      !incoming ||
+      incoming.id === restoredMigration?.id ||
+      incoming.resourceType !== "deployment" ||
+      incoming.targetNodeId !== nodeId ||
+      incoming.deploymentId !== deploymentId
+    ) {
+      return;
+    }
+    setRestoredMigration(incoming);
+    setMigrationOpen(true);
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: null,
+    });
+  }, [deploymentId, location, navigate, navigationMigration, nodeId, restoredMigration?.id]);
+
+  const handleMigrationOpenChange = useCallback((nextOpen: boolean) => {
+    setMigrationOpen(nextOpen);
+    if (!nextOpen) setRestoredMigration(null);
+  }, []);
+
   const load = useCallback(async () => {
     if (!nodeId || !deploymentId) return;
     setLoading(true);
     try {
-      const next = await api.getDockerDeployment(nodeId, deploymentId);
+      const next = await resolveMigrationTarget(!!migrationHandoff?.cutoverAt, () =>
+        api.getDockerDeployment(nodeId, deploymentId)
+      );
+      deploymentRef.current = next;
       setDeployment(next);
       setWebhook(next.webhook ?? null);
       if (usePinnedContainersStore.getState().isPinnedSidebar(deploymentId)) {
@@ -186,16 +290,41 @@ export function DockerDeploymentDetail({
         setActiveInspect(null);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load deployment");
-      navigate("/docker");
+      if (migrationHandoff) toast.error("Failed to load deployment");
+      else if (deploymentRef.current) scheduleRemovalFallback("failed");
+      else {
+        toast.error(err instanceof Error ? err.message : "Failed to load deployment");
+        navigate("/docker");
+      }
     } finally {
       setLoading(false);
     }
-  }, [deploymentId, navigate, nodeId, nodeSlug, updateMeta]);
+  }, [
+    deploymentId,
+    migrationHandoff,
+    navigate,
+    nodeId,
+    nodeSlug,
+    scheduleRemovalFallback,
+    updateMeta,
+  ]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useRealtime("docker.migration.changed", (payload) => {
+    const event = payload as DockerMigration;
+    if (
+      !event.cutoverAt ||
+      event.resourceType !== "deployment" ||
+      event.sourceNodeId !== nodeId ||
+      event.deploymentId !== deploymentId
+    ) {
+      return;
+    }
+    handleMigrationCutover(event);
+  });
 
   useRealtime("docker.deployment.changed", (payload) => {
     const event = payload as {
@@ -221,7 +350,7 @@ export function DockerDeploymentDetail({
     }
 
     if (event.action === "deleted" || event.action === "removed") {
-      navigate("/docker");
+      scheduleRemovalFallback("removed");
       return;
     }
 
@@ -404,12 +533,26 @@ export function DockerDeploymentDetail({
   if (!deployment) return null;
 
   const actionDisabled = !!action || serviceBusy || unavailable;
+  const migrationDisabledReason = actionDisabled
+    ? "Deployment is unavailable or changing state"
+    : undefined;
   const headerActions = [
     {
       label: "Pin",
       icon: <Pin className="h-4 w-4" />,
       onClick: () => setPinOpen(true),
     },
+    ...(canMigrate
+      ? [
+          {
+            label: "Migrate",
+            icon: <Truck className="h-4 w-4" />,
+            onClick: () => setMigrationOpen(true),
+            disabled: Boolean(migrationDisabledReason),
+            disabledReason: migrationDisabledReason,
+          },
+        ]
+      : []),
     ...(isStopped && canManage
       ? [
           {
@@ -598,6 +741,16 @@ export function DockerDeploymentDetail({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {canMigrate && (
+                  <DropdownMenuItem
+                    disabled={Boolean(migrationDisabledReason)}
+                    title={migrationDisabledReason}
+                    onClick={() => setMigrationOpen(true)}
+                  >
+                    <Truck className="mr-2 h-3.5 w-3.5" />
+                    Migrate
+                  </DropdownMenuItem>
+                )}
                 {canManage && (
                   <DropdownMenuItem
                     onClick={() =>
@@ -827,6 +980,19 @@ export function DockerDeploymentDetail({
           </div>
         </DialogContent>
       </Dialog>
+      <DockerMigrationDialog
+        open={migrationOpen}
+        onOpenChange={handleMigrationOpenChange}
+        onCutover={handleMigrationCutover}
+        initialMigration={restoredMigration}
+        resource={{
+          type: "deployment",
+          nodeId,
+          deploymentId: deployment.id,
+          displayName: deployment.name,
+          sourceState: isStopped ? "stopped" : "running",
+        }}
+      />
     </PageTransition>
   );
 }

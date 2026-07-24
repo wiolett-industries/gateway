@@ -279,9 +279,11 @@ export function createControlHandlers(deps: GrpcServerDeps) {
                     ...(reportedNginxVersion ? { nginxVersion: reportedNginxVersion } : {}),
                     ...(msg.register.daemonType ? { daemonType: msg.register.daemonType } : {}),
                     ...(reportedDockerVersion ? { dockerVersion: reportedDockerVersion } : {}),
+                    ...(msg.register.capabilities?.length ? { capabilities: msg.register.capabilities } : {}),
                     ...(msg.register.capabilities?.includes('docker_deployments_v1')
-                      ? { dockerDeploymentsV1: true, capabilities: msg.register.capabilities }
+                      ? { dockerDeploymentsV1: true }
                       : {}),
+                    ...(msg.register.capabilities?.includes('docker_migration_v1') ? { dockerMigrationV1: true } : {}),
                     cpuModel: msg.register.cpuModel || undefined,
                     cpuCores: msg.register.cpuCores || undefined,
                     architecture: msg.register.architecture || undefined,

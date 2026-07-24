@@ -3,6 +3,10 @@
  * These are used with @grpc/proto-loader for runtime loading.
  */
 
+import type { DockerMigrationCommand } from './migration-types.js';
+
+export type * from './migration-types.js';
+
 // ─── Enrollment ─────────────────────────────────────────────────────
 
 export interface EnrollRequest {
@@ -174,6 +178,7 @@ export interface GatewayCommand {
   nodeExec?: NodeExecCommand;
   updateDaemon?: UpdateDaemonCommand;
   nodeFile?: NodeFileCommand;
+  dockerMigration?: DockerMigrationCommand;
 }
 
 export interface ApplyConfigCommand {

@@ -1,12 +1,21 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import { AppStatusGate } from "@/components/common/AppStatusGate";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { RequireScope } from "@/components/common/RequireScope";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { Button } from "@/components/ui/button";
+import { resolveMigrationTarget } from "@/lib/docker-migration-navigation";
 import {
   databaseRoute,
   dockerContainerRoute,
@@ -62,6 +71,7 @@ import { useDockerStore } from "@/stores/docker";
 import { useResolvedPageRoute } from "@/stores/resolved-page-context";
 import { useSystemConfigStore } from "@/stores/system-config";
 import { syncAILiteModeFromStorageValue, UI_STORAGE_KEY, useUIStore } from "@/stores/ui";
+import type { DockerMigration } from "@/types";
 
 /** Helper to wrap a page element with a scope guard */
 function scoped(scope: string, element: React.ReactElement) {
@@ -137,8 +147,19 @@ function DetailRouteLoading() {
   );
 }
 
-function DetailRouteFailure({ error, fallbackPath }: { error: unknown; fallbackPath: string }) {
-  if (error instanceof ApiRequestError && (error.status === 403 || error.status === 404)) {
+function DetailRouteFailure({
+  error,
+  fallbackPath,
+  preserveNotFound = false,
+}: {
+  error: unknown;
+  fallbackPath: string;
+  preserveNotFound?: boolean;
+}) {
+  if (
+    error instanceof ApiRequestError &&
+    (error.status === 403 || (error.status === 404 && !preserveNotFound))
+  ) {
     return <Navigate to={fallbackPath} replace />;
   }
 
@@ -154,21 +175,33 @@ function DetailRouteFailure({ error, fallbackPath }: { error: unknown; fallbackP
 
 function DockerContainerDetailGuard() {
   const { nodeSlug, containerName } = useParams<{ nodeSlug: string; containerName: string }>();
+  const location = useLocation();
+  const navigationMigration = (location.state as { dockerMigration?: DockerMigration } | null)
+    ?.dockerMigration;
+  const migrationHandoff =
+    navigationMigration?.resourceType === "container" &&
+    navigationMigration.targetNodeSlug === nodeSlug &&
+    navigationMigration.resourceName === containerName
+      ? navigationMigration
+      : null;
   const canAccess = useAuthStore((s) => s.hasScopedAccess("docker:containers:view"));
   const resolved = useResolvedPageRoute(
     canAccess && nodeSlug && containerName
       ? dockerContainerRoute(nodeSlug, containerName)
       : undefined,
-    async () => {
-      const node = await api.getDockerNodeBySlug(nodeSlug!);
-      const container = await api.inspectContainerByName(node.id, containerName!);
-      const containerId = String((container as any).Id ?? (container as any).id ?? "");
-      const canonicalName = String(
-        (container as any).Name ?? (container as any).name ?? ""
-      ).replace(/^\/+/, "");
-      if (!containerId || !canonicalName) throw new Error("Container identity is missing");
-      return { node, containerId, canonicalName };
-    },
+    () =>
+      resolveMigrationTarget(!!migrationHandoff?.cutoverAt, async () => {
+        const node = await api.getDockerNodeBySlug(nodeSlug!);
+        const container = migrationHandoff?.targetResourceId
+          ? await api.inspectContainer(node.id, migrationHandoff.targetResourceId, true)
+          : await api.inspectContainerByName(node.id, containerName!);
+        const containerId = String((container as any).Id ?? (container as any).id ?? "");
+        const canonicalName = String(
+          (container as any).Name ?? (container as any).name ?? ""
+        ).replace(/^\/+/, "");
+        if (!containerId || !canonicalName) throw new Error("Container identity is missing");
+        return { node, containerId, canonicalName, container };
+      }),
     ({ node, containerId, canonicalName }) => ({
       resourceType: "docker-container",
       resourceId: containerId,
@@ -180,7 +213,13 @@ function DockerContainerDetailGuard() {
   if (!canAccess) return <Navigate to="/" replace />;
   if (resolved.loading) return <DetailRouteLoading />;
   if (resolved.error) {
-    return <DetailRouteFailure error={resolved.error} fallbackPath="/docker/containers" />;
+    return (
+      <DetailRouteFailure
+        error={resolved.error}
+        fallbackPath="/docker/containers"
+        preserveNotFound={!!migrationHandoff}
+      />
+    );
   }
   if (!resolved.data) return <Navigate to="/docker/containers" replace />;
   return (
@@ -189,6 +228,7 @@ function DockerContainerDetailGuard() {
       resolvedNodeSlug={resolved.data.node.slug}
       resolvedContainerId={resolved.data.containerId}
       resolvedContainerName={resolved.data.canonicalName}
+      resolvedContainer={resolved.data.container}
       pageContextToken={resolved.ownerToken}
     />
   );
@@ -196,16 +236,26 @@ function DockerContainerDetailGuard() {
 
 function DockerDeploymentDetailGuard() {
   const { nodeSlug, deploymentName } = useParams<{ nodeSlug: string; deploymentName: string }>();
+  const location = useLocation();
+  const navigationMigration = (location.state as { dockerMigration?: DockerMigration } | null)
+    ?.dockerMigration;
+  const migrationHandoff =
+    navigationMigration?.resourceType === "deployment" &&
+    navigationMigration.targetNodeSlug === nodeSlug &&
+    navigationMigration.resourceName === deploymentName
+      ? navigationMigration
+      : null;
   const canAccess = useAuthStore((s) => s.hasScopedAccess("docker:containers:view"));
   const resolved = useResolvedPageRoute(
     canAccess && nodeSlug && deploymentName
       ? dockerDeploymentRoute(nodeSlug, deploymentName)
       : undefined,
-    async () => {
-      const node = await api.getDockerNodeBySlug(nodeSlug!);
-      const deployment = await api.getDockerDeploymentByName(node.id, deploymentName!);
-      return { node, deployment };
-    },
+    () =>
+      resolveMigrationTarget(!!migrationHandoff?.cutoverAt, async () => {
+        const node = await api.getDockerNodeBySlug(nodeSlug!);
+        const deployment = await api.getDockerDeploymentByName(node.id, deploymentName!);
+        return { node, deployment };
+      }),
     ({ node, deployment }) => ({
       resourceType: "docker-deployment",
       resourceId: deployment.id,
@@ -217,7 +267,13 @@ function DockerDeploymentDetailGuard() {
   if (!canAccess) return <Navigate to="/" replace />;
   if (resolved.loading) return <DetailRouteLoading />;
   if (resolved.error) {
-    return <DetailRouteFailure error={resolved.error} fallbackPath="/docker/deployments" />;
+    return (
+      <DetailRouteFailure
+        error={resolved.error}
+        fallbackPath="/docker/deployments"
+        preserveNotFound={!!migrationHandoff}
+      />
+    );
   }
   if (!resolved.data) return <Navigate to="/docker/deployments" replace />;
   return (

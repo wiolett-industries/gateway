@@ -72,6 +72,7 @@ function requiredScopeFor(channel: string): string | null {
   if (channel === 'docker.file.changed') return 'docker:containers:files';
   if (channel === 'docker.volume.file.changed') return 'docker:volumes:files:read';
   if (channel === 'docker.snapshot.changed') return 'docker:containers:view';
+  if (channel === 'docker.migration.changed') return 'docker:containers:view';
   if (channel === 'node.file.changed') return 'nodes:files:read';
   if (channel.startsWith('docker.container')) return 'docker:containers:view';
   if (channel.startsWith('docker.image')) return 'docker:images:view';
@@ -136,6 +137,9 @@ function hasChannelAccess(scopes: string[], channel: string): boolean {
   }
   if (channel.startsWith('docker.task')) {
     return hasScope(scopes, 'docker:tasks');
+  }
+  if (channel === 'docker.migration.changed') {
+    return hasScopeBase(scopes, 'docker:containers:view');
   }
   if (channel.startsWith('docker.container')) {
     return hasScopeBase(scopes, 'docker:containers:view');
@@ -264,6 +268,13 @@ function canReceiveChannelPayload(scopes: string[], channel: string, payload: un
   }
   if (channel.startsWith('docker.task')) {
     return hasScope(scopes, 'docker:tasks');
+  }
+  if (channel === 'docker.migration.changed') {
+    const event = payload as { sourceNodeId?: string; targetNodeId?: string } | undefined;
+    if (!event?.sourceNodeId || !event.targetNodeId) return false;
+    return [event.sourceNodeId, event.targetNodeId].every(
+      (nodeId) => hasScope(scopes, 'docker:containers:view') || hasScope(scopes, `docker:containers:view:${nodeId}`)
+    );
   }
   if (channel.startsWith('docker.container')) {
     const nodeId = (payload as { nodeId?: string } | undefined)?.nodeId;

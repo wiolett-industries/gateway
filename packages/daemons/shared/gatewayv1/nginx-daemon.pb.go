@@ -1358,6 +1358,7 @@ type GatewayCommand struct {
 	//	*GatewayCommand_UpdateDaemon
 	//	*GatewayCommand_DockerDeployment
 	//	*GatewayCommand_NodeFile
+	//	*GatewayCommand_DockerMigration
 	Payload       isGatewayCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1668,6 +1669,15 @@ func (x *GatewayCommand) GetNodeFile() *NodeFileCommand {
 	return nil
 }
 
+func (x *GatewayCommand) GetDockerMigration() *DockerMigrationCommand {
+	if x != nil {
+		if x, ok := x.Payload.(*GatewayCommand_DockerMigration); ok {
+			return x.DockerMigration
+		}
+	}
+	return nil
+}
+
 type isGatewayCommand_Payload interface {
 	isGatewayCommand_Payload()
 }
@@ -1788,6 +1798,10 @@ type GatewayCommand_NodeFile struct {
 	NodeFile *NodeFileCommand `protobuf:"bytes,30,opt,name=node_file,json=nodeFile,proto3,oneof"`
 }
 
+type GatewayCommand_DockerMigration struct {
+	DockerMigration *DockerMigrationCommand `protobuf:"bytes,31,opt,name=docker_migration,json=dockerMigration,proto3,oneof"`
+}
+
 func (*GatewayCommand_ApplyConfig) isGatewayCommand_Payload() {}
 
 func (*GatewayCommand_RemoveConfig) isGatewayCommand_Payload() {}
@@ -1845,6 +1859,8 @@ func (*GatewayCommand_UpdateDaemon) isGatewayCommand_Payload() {}
 func (*GatewayCommand_DockerDeployment) isGatewayCommand_Payload() {}
 
 func (*GatewayCommand_NodeFile) isGatewayCommand_Payload() {}
+
+func (*GatewayCommand_DockerMigration) isGatewayCommand_Payload() {}
 
 type NodeExecCommand struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -4557,6 +4573,780 @@ func (x *UpdateDaemonCommand) GetSignedManifest() string {
 	return ""
 }
 
+// Small migration control operations. Artifact bytes are carried exclusively
+// by MigrationTransfer.Transfer.
+type DockerMigrationCommand struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	MigrationId   string                 `protobuf:"bytes,2,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	ArtifactId    string                 `protobuf:"bytes,3,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
+	ArtifactType  string                 `protobuf:"bytes,4,opt,name=artifact_type,json=artifactType,proto3" json:"artifact_type,omitempty"`
+	ResourceId    string                 `protobuf:"bytes,5,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	ConfigJson    string                 `protobuf:"bytes,6,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DockerMigrationCommand) Reset() {
+	*x = DockerMigrationCommand{}
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DockerMigrationCommand) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DockerMigrationCommand) ProtoMessage() {}
+
+func (x *DockerMigrationCommand) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DockerMigrationCommand.ProtoReflect.Descriptor instead.
+func (*DockerMigrationCommand) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_nginx_daemon_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *DockerMigrationCommand) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *DockerMigrationCommand) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *DockerMigrationCommand) GetArtifactId() string {
+	if x != nil {
+		return x.ArtifactId
+	}
+	return ""
+}
+
+func (x *DockerMigrationCommand) GetArtifactType() string {
+	if x != nil {
+		return x.ArtifactType
+	}
+	return ""
+}
+
+func (x *DockerMigrationCommand) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+func (x *DockerMigrationCommand) GetConfigJson() string {
+	if x != nil {
+		return x.ConfigJson
+	}
+	return ""
+}
+
+type MigrationTransferMessage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*MigrationTransferMessage_Hello
+	//	*MigrationTransferMessage_Chunk
+	//	*MigrationTransferMessage_Ack
+	//	*MigrationTransferMessage_Error
+	Payload       isMigrationTransferMessage_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationTransferMessage) Reset() {
+	*x = MigrationTransferMessage{}
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationTransferMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationTransferMessage) ProtoMessage() {}
+
+func (x *MigrationTransferMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationTransferMessage.ProtoReflect.Descriptor instead.
+func (*MigrationTransferMessage) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_nginx_daemon_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *MigrationTransferMessage) GetPayload() isMigrationTransferMessage_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *MigrationTransferMessage) GetHello() *MigrationTransferHello {
+	if x != nil {
+		if x, ok := x.Payload.(*MigrationTransferMessage_Hello); ok {
+			return x.Hello
+		}
+	}
+	return nil
+}
+
+func (x *MigrationTransferMessage) GetChunk() *MigrationArtifactChunk {
+	if x != nil {
+		if x, ok := x.Payload.(*MigrationTransferMessage_Chunk); ok {
+			return x.Chunk
+		}
+	}
+	return nil
+}
+
+func (x *MigrationTransferMessage) GetAck() *MigrationArtifactAck {
+	if x != nil {
+		if x, ok := x.Payload.(*MigrationTransferMessage_Ack); ok {
+			return x.Ack
+		}
+	}
+	return nil
+}
+
+func (x *MigrationTransferMessage) GetError() *MigrationArtifactError {
+	if x != nil {
+		if x, ok := x.Payload.(*MigrationTransferMessage_Error); ok {
+			return x.Error
+		}
+	}
+	return nil
+}
+
+type isMigrationTransferMessage_Payload interface {
+	isMigrationTransferMessage_Payload()
+}
+
+type MigrationTransferMessage_Hello struct {
+	Hello *MigrationTransferHello `protobuf:"bytes,1,opt,name=hello,proto3,oneof"`
+}
+
+type MigrationTransferMessage_Chunk struct {
+	Chunk *MigrationArtifactChunk `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"`
+}
+
+type MigrationTransferMessage_Ack struct {
+	Ack *MigrationArtifactAck `protobuf:"bytes,3,opt,name=ack,proto3,oneof"`
+}
+
+type MigrationTransferMessage_Error struct {
+	Error *MigrationArtifactError `protobuf:"bytes,4,opt,name=error,proto3,oneof"`
+}
+
+func (*MigrationTransferMessage_Hello) isMigrationTransferMessage_Payload() {}
+
+func (*MigrationTransferMessage_Chunk) isMigrationTransferMessage_Payload() {}
+
+func (*MigrationTransferMessage_Ack) isMigrationTransferMessage_Payload() {}
+
+func (*MigrationTransferMessage_Error) isMigrationTransferMessage_Payload() {}
+
+type MigrationTransferControl struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*MigrationTransferControl_Read
+	//	*MigrationTransferControl_Write
+	//	*MigrationTransferControl_Chunk
+	//	*MigrationTransferControl_Ack
+	//	*MigrationTransferControl_Error
+	//	*MigrationTransferControl_Heartbeat
+	Payload       isMigrationTransferControl_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationTransferControl) Reset() {
+	*x = MigrationTransferControl{}
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationTransferControl) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationTransferControl) ProtoMessage() {}
+
+func (x *MigrationTransferControl) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationTransferControl.ProtoReflect.Descriptor instead.
+func (*MigrationTransferControl) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_nginx_daemon_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *MigrationTransferControl) GetPayload() isMigrationTransferControl_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *MigrationTransferControl) GetRead() *MigrationArtifactRead {
+	if x != nil {
+		if x, ok := x.Payload.(*MigrationTransferControl_Read); ok {
+			return x.Read
+		}
+	}
+	return nil
+}
+
+func (x *MigrationTransferControl) GetWrite() *MigrationArtifactWrite {
+	if x != nil {
+		if x, ok := x.Payload.(*MigrationTransferControl_Write); ok {
+			return x.Write
+		}
+	}
+	return nil
+}
+
+func (x *MigrationTransferControl) GetChunk() *MigrationArtifactChunk {
+	if x != nil {
+		if x, ok := x.Payload.(*MigrationTransferControl_Chunk); ok {
+			return x.Chunk
+		}
+	}
+	return nil
+}
+
+func (x *MigrationTransferControl) GetAck() *MigrationArtifactAck {
+	if x != nil {
+		if x, ok := x.Payload.(*MigrationTransferControl_Ack); ok {
+			return x.Ack
+		}
+	}
+	return nil
+}
+
+func (x *MigrationTransferControl) GetError() *MigrationArtifactError {
+	if x != nil {
+		if x, ok := x.Payload.(*MigrationTransferControl_Error); ok {
+			return x.Error
+		}
+	}
+	return nil
+}
+
+func (x *MigrationTransferControl) GetHeartbeat() *MigrationHeartbeat {
+	if x != nil {
+		if x, ok := x.Payload.(*MigrationTransferControl_Heartbeat); ok {
+			return x.Heartbeat
+		}
+	}
+	return nil
+}
+
+type isMigrationTransferControl_Payload interface {
+	isMigrationTransferControl_Payload()
+}
+
+type MigrationTransferControl_Read struct {
+	Read *MigrationArtifactRead `protobuf:"bytes,1,opt,name=read,proto3,oneof"`
+}
+
+type MigrationTransferControl_Write struct {
+	Write *MigrationArtifactWrite `protobuf:"bytes,2,opt,name=write,proto3,oneof"`
+}
+
+type MigrationTransferControl_Chunk struct {
+	Chunk *MigrationArtifactChunk `protobuf:"bytes,3,opt,name=chunk,proto3,oneof"`
+}
+
+type MigrationTransferControl_Ack struct {
+	Ack *MigrationArtifactAck `protobuf:"bytes,4,opt,name=ack,proto3,oneof"`
+}
+
+type MigrationTransferControl_Error struct {
+	Error *MigrationArtifactError `protobuf:"bytes,5,opt,name=error,proto3,oneof"`
+}
+
+type MigrationTransferControl_Heartbeat struct {
+	Heartbeat *MigrationHeartbeat `protobuf:"bytes,6,opt,name=heartbeat,proto3,oneof"`
+}
+
+func (*MigrationTransferControl_Read) isMigrationTransferControl_Payload() {}
+
+func (*MigrationTransferControl_Write) isMigrationTransferControl_Payload() {}
+
+func (*MigrationTransferControl_Chunk) isMigrationTransferControl_Payload() {}
+
+func (*MigrationTransferControl_Ack) isMigrationTransferControl_Payload() {}
+
+func (*MigrationTransferControl_Error) isMigrationTransferControl_Payload() {}
+
+func (*MigrationTransferControl_Heartbeat) isMigrationTransferControl_Payload() {}
+
+type MigrationTransferHello struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Capability    string                 `protobuf:"bytes,2,opt,name=capability,proto3" json:"capability,omitempty"`
+	MaxChunkBytes int32                  `protobuf:"varint,3,opt,name=max_chunk_bytes,json=maxChunkBytes,proto3" json:"max_chunk_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationTransferHello) Reset() {
+	*x = MigrationTransferHello{}
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationTransferHello) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationTransferHello) ProtoMessage() {}
+
+func (x *MigrationTransferHello) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationTransferHello.ProtoReflect.Descriptor instead.
+func (*MigrationTransferHello) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_nginx_daemon_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *MigrationTransferHello) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *MigrationTransferHello) GetCapability() string {
+	if x != nil {
+		return x.Capability
+	}
+	return ""
+}
+
+func (x *MigrationTransferHello) GetMaxChunkBytes() int32 {
+	if x != nil {
+		return x.MaxChunkBytes
+	}
+	return 0
+}
+
+type MigrationArtifactRead struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	ArtifactId    string                 `protobuf:"bytes,2,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
+	Offset        int64                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationArtifactRead) Reset() {
+	*x = MigrationArtifactRead{}
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationArtifactRead) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationArtifactRead) ProtoMessage() {}
+
+func (x *MigrationArtifactRead) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationArtifactRead.ProtoReflect.Descriptor instead.
+func (*MigrationArtifactRead) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_nginx_daemon_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *MigrationArtifactRead) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrationArtifactRead) GetArtifactId() string {
+	if x != nil {
+		return x.ArtifactId
+	}
+	return ""
+}
+
+func (x *MigrationArtifactRead) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+type MigrationArtifactWrite struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	ArtifactId    string                 `protobuf:"bytes,2,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
+	Offset        int64                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationArtifactWrite) Reset() {
+	*x = MigrationArtifactWrite{}
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationArtifactWrite) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationArtifactWrite) ProtoMessage() {}
+
+func (x *MigrationArtifactWrite) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationArtifactWrite.ProtoReflect.Descriptor instead.
+func (*MigrationArtifactWrite) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_nginx_daemon_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *MigrationArtifactWrite) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrationArtifactWrite) GetArtifactId() string {
+	if x != nil {
+		return x.ArtifactId
+	}
+	return ""
+}
+
+func (x *MigrationArtifactWrite) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+type MigrationArtifactChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	ArtifactId    string                 `protobuf:"bytes,2,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
+	Offset        int64                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
+	Eof           bool                   `protobuf:"varint,5,opt,name=eof,proto3" json:"eof,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationArtifactChunk) Reset() {
+	*x = MigrationArtifactChunk{}
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationArtifactChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationArtifactChunk) ProtoMessage() {}
+
+func (x *MigrationArtifactChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationArtifactChunk.ProtoReflect.Descriptor instead.
+func (*MigrationArtifactChunk) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_nginx_daemon_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *MigrationArtifactChunk) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrationArtifactChunk) GetArtifactId() string {
+	if x != nil {
+		return x.ArtifactId
+	}
+	return ""
+}
+
+func (x *MigrationArtifactChunk) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *MigrationArtifactChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *MigrationArtifactChunk) GetEof() bool {
+	if x != nil {
+		return x.Eof
+	}
+	return false
+}
+
+type MigrationArtifactAck struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId        string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	ArtifactId         string                 `protobuf:"bytes,2,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
+	AcknowledgedOffset int64                  `protobuf:"varint,3,opt,name=acknowledged_offset,json=acknowledgedOffset,proto3" json:"acknowledged_offset,omitempty"`
+	Complete           bool                   `protobuf:"varint,4,opt,name=complete,proto3" json:"complete,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *MigrationArtifactAck) Reset() {
+	*x = MigrationArtifactAck{}
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationArtifactAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationArtifactAck) ProtoMessage() {}
+
+func (x *MigrationArtifactAck) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationArtifactAck.ProtoReflect.Descriptor instead.
+func (*MigrationArtifactAck) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_nginx_daemon_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *MigrationArtifactAck) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrationArtifactAck) GetArtifactId() string {
+	if x != nil {
+		return x.ArtifactId
+	}
+	return ""
+}
+
+func (x *MigrationArtifactAck) GetAcknowledgedOffset() int64 {
+	if x != nil {
+		return x.AcknowledgedOffset
+	}
+	return 0
+}
+
+func (x *MigrationArtifactAck) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
+}
+
+type MigrationArtifactError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	ArtifactId    string                 `protobuf:"bytes,2,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationArtifactError) Reset() {
+	*x = MigrationArtifactError{}
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationArtifactError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationArtifactError) ProtoMessage() {}
+
+func (x *MigrationArtifactError) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationArtifactError.ProtoReflect.Descriptor instead.
+func (*MigrationArtifactError) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_nginx_daemon_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *MigrationArtifactError) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrationArtifactError) GetArtifactId() string {
+	if x != nil {
+		return x.ArtifactId
+	}
+	return ""
+}
+
+func (x *MigrationArtifactError) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type MigrationHeartbeat struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationHeartbeat) Reset() {
+	*x = MigrationHeartbeat{}
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationHeartbeat) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationHeartbeat) ProtoMessage() {}
+
+func (x *MigrationHeartbeat) ProtoReflect() protoreflect.Message {
+	mi := &file_gateway_v1_nginx_daemon_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationHeartbeat.ProtoReflect.Descriptor instead.
+func (*MigrationHeartbeat) Descriptor() ([]byte, []int) {
+	return file_gateway_v1_nginx_daemon_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *MigrationHeartbeat) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
 var File_gateway_v1_nginx_daemon_proto protoreflect.FileDescriptor
 
 const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
@@ -4697,7 +5487,7 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\n" +
 	"tx_packets\x18\x05 \x01(\x03R\ttxPackets\x12\x1b\n" +
 	"\trx_errors\x18\x06 \x01(\x03R\brxErrors\x12\x1b\n" +
-	"\ttx_errors\x18\a \x01(\x03R\btxErrors\"\xae\x11\n" +
+	"\ttx_errors\x18\a \x01(\x03R\btxErrors\"\xff\x11\n" +
 	"\x0eGatewayCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12C\n" +
@@ -4737,7 +5527,8 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\tnode_exec\x18\x1b \x01(\v2\x1b.gateway.v1.NodeExecCommandH\x00R\bnodeExec\x12F\n" +
 	"\rupdate_daemon\x18\x1c \x01(\v2\x1f.gateway.v1.UpdateDaemonCommandH\x00R\fupdateDaemon\x12R\n" +
 	"\x11docker_deployment\x18\x1d \x01(\v2#.gateway.v1.DockerDeploymentCommandH\x00R\x10dockerDeployment\x12:\n" +
-	"\tnode_file\x18\x1e \x01(\v2\x1b.gateway.v1.NodeFileCommandH\x00R\bnodeFileB\t\n" +
+	"\tnode_file\x18\x1e \x01(\v2\x1b.gateway.v1.NodeFileCommandH\x00R\bnodeFile\x12O\n" +
+	"\x10docker_migration\x18\x1f \x01(\v2\".gateway.v1.DockerMigrationCommandH\x00R\x0fdockerMigrationB\t\n" +
 	"\apayload\"\x9e\x01\n" +
 	"\x0fNodeExecCommand\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x18\n" +
@@ -4955,12 +5746,74 @@ const file_gateway_v1_nginx_daemon_proto_rawDesc = "" +
 	"\fdownload_url\x18\x01 \x01(\tR\vdownloadUrl\x12%\n" +
 	"\x0etarget_version\x18\x02 \x01(\tR\rtargetVersion\x12\x1a\n" +
 	"\bchecksum\x18\x03 \x01(\tR\bchecksum\x12'\n" +
-	"\x0fsigned_manifest\x18\x04 \x01(\tR\x0esignedManifest2\xa2\x01\n" +
+	"\x0fsigned_manifest\x18\x04 \x01(\tR\x0esignedManifest\"\xdb\x01\n" +
+	"\x16DockerMigrationCommand\x12\x16\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\x12!\n" +
+	"\fmigration_id\x18\x02 \x01(\tR\vmigrationId\x12\x1f\n" +
+	"\vartifact_id\x18\x03 \x01(\tR\n" +
+	"artifactId\x12#\n" +
+	"\rartifact_type\x18\x04 \x01(\tR\fartifactType\x12\x1f\n" +
+	"\vresource_id\x18\x05 \x01(\tR\n" +
+	"resourceId\x12\x1f\n" +
+	"\vconfig_json\x18\x06 \x01(\tR\n" +
+	"configJson\"\x8f\x02\n" +
+	"\x18MigrationTransferMessage\x12:\n" +
+	"\x05hello\x18\x01 \x01(\v2\".gateway.v1.MigrationTransferHelloH\x00R\x05hello\x12:\n" +
+	"\x05chunk\x18\x02 \x01(\v2\".gateway.v1.MigrationArtifactChunkH\x00R\x05chunk\x124\n" +
+	"\x03ack\x18\x03 \x01(\v2 .gateway.v1.MigrationArtifactAckH\x00R\x03ack\x12:\n" +
+	"\x05error\x18\x04 \x01(\v2\".gateway.v1.MigrationArtifactErrorH\x00R\x05errorB\t\n" +
+	"\apayload\"\x88\x03\n" +
+	"\x18MigrationTransferControl\x127\n" +
+	"\x04read\x18\x01 \x01(\v2!.gateway.v1.MigrationArtifactReadH\x00R\x04read\x12:\n" +
+	"\x05write\x18\x02 \x01(\v2\".gateway.v1.MigrationArtifactWriteH\x00R\x05write\x12:\n" +
+	"\x05chunk\x18\x03 \x01(\v2\".gateway.v1.MigrationArtifactChunkH\x00R\x05chunk\x124\n" +
+	"\x03ack\x18\x04 \x01(\v2 .gateway.v1.MigrationArtifactAckH\x00R\x03ack\x12:\n" +
+	"\x05error\x18\x05 \x01(\v2\".gateway.v1.MigrationArtifactErrorH\x00R\x05error\x12>\n" +
+	"\theartbeat\x18\x06 \x01(\v2\x1e.gateway.v1.MigrationHeartbeatH\x00R\theartbeatB\t\n" +
+	"\apayload\"y\n" +
+	"\x16MigrationTransferHello\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1e\n" +
+	"\n" +
+	"capability\x18\x02 \x01(\tR\n" +
+	"capability\x12&\n" +
+	"\x0fmax_chunk_bytes\x18\x03 \x01(\x05R\rmaxChunkBytes\"s\n" +
+	"\x15MigrationArtifactRead\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x1f\n" +
+	"\vartifact_id\x18\x02 \x01(\tR\n" +
+	"artifactId\x12\x16\n" +
+	"\x06offset\x18\x03 \x01(\x03R\x06offset\"t\n" +
+	"\x16MigrationArtifactWrite\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x1f\n" +
+	"\vartifact_id\x18\x02 \x01(\tR\n" +
+	"artifactId\x12\x16\n" +
+	"\x06offset\x18\x03 \x01(\x03R\x06offset\"\x9a\x01\n" +
+	"\x16MigrationArtifactChunk\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x1f\n" +
+	"\vartifact_id\x18\x02 \x01(\tR\n" +
+	"artifactId\x12\x16\n" +
+	"\x06offset\x18\x03 \x01(\x03R\x06offset\x12\x12\n" +
+	"\x04data\x18\x04 \x01(\fR\x04data\x12\x10\n" +
+	"\x03eof\x18\x05 \x01(\bR\x03eof\"\xa7\x01\n" +
+	"\x14MigrationArtifactAck\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x1f\n" +
+	"\vartifact_id\x18\x02 \x01(\tR\n" +
+	"artifactId\x12/\n" +
+	"\x13acknowledged_offset\x18\x03 \x01(\x03R\x12acknowledgedOffset\x12\x1a\n" +
+	"\bcomplete\x18\x04 \x01(\bR\bcomplete\"v\n" +
+	"\x16MigrationArtifactError\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x1f\n" +
+	"\vartifact_id\x18\x02 \x01(\tR\n" +
+	"artifactId\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"7\n" +
+	"\x12MigrationHeartbeat\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId2\xa2\x01\n" +
 	"\x0eNodeEnrollment\x12?\n" +
 	"\x06Enroll\x12\x19.gateway.v1.EnrollRequest\x1a\x1a.gateway.v1.EnrollResponse\x12O\n" +
 	"\x10RenewCertificate\x12\x1c.gateway.v1.RenewCertRequest\x1a\x1d.gateway.v1.RenewCertResponse2Y\n" +
 	"\vNodeControl\x12J\n" +
-	"\rCommandStream\x12\x19.gateway.v1.DaemonMessage\x1a\x1a.gateway.v1.GatewayCommand(\x010\x012Y\n" +
+	"\rCommandStream\x12\x19.gateway.v1.DaemonMessage\x1a\x1a.gateway.v1.GatewayCommand(\x010\x012o\n" +
+	"\x11MigrationTransfer\x12Z\n" +
+	"\bTransfer\x12$.gateway.v1.MigrationTransferMessage\x1a$.gateway.v1.MigrationTransferControl(\x010\x012Y\n" +
 	"\tLogStream\x12L\n" +
 	"\n" +
 	"StreamLogs\x12\x1c.gateway.v1.LogStreamMessage\x1a\x1c.gateway.v1.LogStreamControl(\x010\x01B?Z=github.com/wiolett-industries/gateway/daemon-shared/gatewayv1b\x06proto3"
@@ -4977,7 +5830,7 @@ func file_gateway_v1_nginx_daemon_proto_rawDescGZIP() []byte {
 	return file_gateway_v1_nginx_daemon_proto_rawDescData
 }
 
-var file_gateway_v1_nginx_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 56)
+var file_gateway_v1_nginx_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 66)
 var file_gateway_v1_nginx_daemon_proto_goTypes = []any{
 	(*EnrollRequest)(nil),              // 0: gateway.v1.EnrollRequest
 	(*EnrollResponse)(nil),             // 1: gateway.v1.EnrollResponse
@@ -5033,8 +5886,18 @@ var file_gateway_v1_nginx_daemon_proto_goTypes = []any{
 	(*LogSubscribe)(nil),               // 51: gateway.v1.LogSubscribe
 	(*LogUnsubscribe)(nil),             // 52: gateway.v1.LogUnsubscribe
 	(*UpdateDaemonCommand)(nil),        // 53: gateway.v1.UpdateDaemonCommand
-	nil,                                // 54: gateway.v1.DaemonLogEntry.FieldsEntry
-	nil,                                // 55: gateway.v1.DockerVolumeCommand.LabelsEntry
+	(*DockerMigrationCommand)(nil),     // 54: gateway.v1.DockerMigrationCommand
+	(*MigrationTransferMessage)(nil),   // 55: gateway.v1.MigrationTransferMessage
+	(*MigrationTransferControl)(nil),   // 56: gateway.v1.MigrationTransferControl
+	(*MigrationTransferHello)(nil),     // 57: gateway.v1.MigrationTransferHello
+	(*MigrationArtifactRead)(nil),      // 58: gateway.v1.MigrationArtifactRead
+	(*MigrationArtifactWrite)(nil),     // 59: gateway.v1.MigrationArtifactWrite
+	(*MigrationArtifactChunk)(nil),     // 60: gateway.v1.MigrationArtifactChunk
+	(*MigrationArtifactAck)(nil),       // 61: gateway.v1.MigrationArtifactAck
+	(*MigrationArtifactError)(nil),     // 62: gateway.v1.MigrationArtifactError
+	(*MigrationHeartbeat)(nil),         // 63: gateway.v1.MigrationHeartbeat
+	nil,                                // 64: gateway.v1.DaemonLogEntry.FieldsEntry
+	nil,                                // 65: gateway.v1.DockerVolumeCommand.LabelsEntry
 }
 var file_gateway_v1_nginx_daemon_proto_depIdxs = []int32{
 	6,  // 0: gateway.v1.DaemonMessage.register:type_name -> gateway.v1.RegisterMessage
@@ -5043,7 +5906,7 @@ var file_gateway_v1_nginx_daemon_proto_depIdxs = []int32{
 	9,  // 3: gateway.v1.DaemonMessage.stats_report:type_name -> gateway.v1.StatsReport
 	5,  // 4: gateway.v1.DaemonMessage.daemon_log:type_name -> gateway.v1.DaemonLogEntry
 	45, // 5: gateway.v1.DaemonMessage.exec_output:type_name -> gateway.v1.ExecOutput
-	54, // 6: gateway.v1.DaemonLogEntry.fields:type_name -> gateway.v1.DaemonLogEntry.FieldsEntry
+	64, // 6: gateway.v1.DaemonLogEntry.fields:type_name -> gateway.v1.DaemonLogEntry.FieldsEntry
 	10, // 7: gateway.v1.HealthReport.disk_mounts:type_name -> gateway.v1.DiskMount
 	11, // 8: gateway.v1.HealthReport.network_interfaces:type_name -> gateway.v1.NetworkInterface
 	46, // 9: gateway.v1.HealthReport.container_stats:type_name -> gateway.v1.ContainerStats
@@ -5076,28 +5939,41 @@ var file_gateway_v1_nginx_daemon_proto_depIdxs = []int32{
 	53, // 36: gateway.v1.GatewayCommand.update_daemon:type_name -> gateway.v1.UpdateDaemonCommand
 	38, // 37: gateway.v1.GatewayCommand.docker_deployment:type_name -> gateway.v1.DockerDeploymentCommand
 	14, // 38: gateway.v1.GatewayCommand.node_file:type_name -> gateway.v1.NodeFileCommand
-	20, // 39: gateway.v1.FullSyncCommand.hosts:type_name -> gateway.v1.HostConfig
-	21, // 40: gateway.v1.FullSyncCommand.certs:type_name -> gateway.v1.CertBundle
-	22, // 41: gateway.v1.FullSyncCommand.htpasswd_files:type_name -> gateway.v1.HtpasswdFile
-	55, // 42: gateway.v1.DockerVolumeCommand.labels:type_name -> gateway.v1.DockerVolumeCommand.LabelsEntry
-	42, // 43: gateway.v1.DockerConfigPushCommand.registries:type_name -> gateway.v1.RegistryConfig
-	48, // 44: gateway.v1.LogStreamMessage.subscribe_ack:type_name -> gateway.v1.LogSubscribeAck
-	49, // 45: gateway.v1.LogStreamMessage.entry:type_name -> gateway.v1.LogEntry
-	51, // 46: gateway.v1.LogStreamControl.subscribe:type_name -> gateway.v1.LogSubscribe
-	52, // 47: gateway.v1.LogStreamControl.unsubscribe:type_name -> gateway.v1.LogUnsubscribe
-	0,  // 48: gateway.v1.NodeEnrollment.Enroll:input_type -> gateway.v1.EnrollRequest
-	2,  // 49: gateway.v1.NodeEnrollment.RenewCertificate:input_type -> gateway.v1.RenewCertRequest
-	4,  // 50: gateway.v1.NodeControl.CommandStream:input_type -> gateway.v1.DaemonMessage
-	47, // 51: gateway.v1.LogStream.StreamLogs:input_type -> gateway.v1.LogStreamMessage
-	1,  // 52: gateway.v1.NodeEnrollment.Enroll:output_type -> gateway.v1.EnrollResponse
-	3,  // 53: gateway.v1.NodeEnrollment.RenewCertificate:output_type -> gateway.v1.RenewCertResponse
-	12, // 54: gateway.v1.NodeControl.CommandStream:output_type -> gateway.v1.GatewayCommand
-	50, // 55: gateway.v1.LogStream.StreamLogs:output_type -> gateway.v1.LogStreamControl
-	52, // [52:56] is the sub-list for method output_type
-	48, // [48:52] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	54, // 39: gateway.v1.GatewayCommand.docker_migration:type_name -> gateway.v1.DockerMigrationCommand
+	20, // 40: gateway.v1.FullSyncCommand.hosts:type_name -> gateway.v1.HostConfig
+	21, // 41: gateway.v1.FullSyncCommand.certs:type_name -> gateway.v1.CertBundle
+	22, // 42: gateway.v1.FullSyncCommand.htpasswd_files:type_name -> gateway.v1.HtpasswdFile
+	65, // 43: gateway.v1.DockerVolumeCommand.labels:type_name -> gateway.v1.DockerVolumeCommand.LabelsEntry
+	42, // 44: gateway.v1.DockerConfigPushCommand.registries:type_name -> gateway.v1.RegistryConfig
+	48, // 45: gateway.v1.LogStreamMessage.subscribe_ack:type_name -> gateway.v1.LogSubscribeAck
+	49, // 46: gateway.v1.LogStreamMessage.entry:type_name -> gateway.v1.LogEntry
+	51, // 47: gateway.v1.LogStreamControl.subscribe:type_name -> gateway.v1.LogSubscribe
+	52, // 48: gateway.v1.LogStreamControl.unsubscribe:type_name -> gateway.v1.LogUnsubscribe
+	57, // 49: gateway.v1.MigrationTransferMessage.hello:type_name -> gateway.v1.MigrationTransferHello
+	60, // 50: gateway.v1.MigrationTransferMessage.chunk:type_name -> gateway.v1.MigrationArtifactChunk
+	61, // 51: gateway.v1.MigrationTransferMessage.ack:type_name -> gateway.v1.MigrationArtifactAck
+	62, // 52: gateway.v1.MigrationTransferMessage.error:type_name -> gateway.v1.MigrationArtifactError
+	58, // 53: gateway.v1.MigrationTransferControl.read:type_name -> gateway.v1.MigrationArtifactRead
+	59, // 54: gateway.v1.MigrationTransferControl.write:type_name -> gateway.v1.MigrationArtifactWrite
+	60, // 55: gateway.v1.MigrationTransferControl.chunk:type_name -> gateway.v1.MigrationArtifactChunk
+	61, // 56: gateway.v1.MigrationTransferControl.ack:type_name -> gateway.v1.MigrationArtifactAck
+	62, // 57: gateway.v1.MigrationTransferControl.error:type_name -> gateway.v1.MigrationArtifactError
+	63, // 58: gateway.v1.MigrationTransferControl.heartbeat:type_name -> gateway.v1.MigrationHeartbeat
+	0,  // 59: gateway.v1.NodeEnrollment.Enroll:input_type -> gateway.v1.EnrollRequest
+	2,  // 60: gateway.v1.NodeEnrollment.RenewCertificate:input_type -> gateway.v1.RenewCertRequest
+	4,  // 61: gateway.v1.NodeControl.CommandStream:input_type -> gateway.v1.DaemonMessage
+	55, // 62: gateway.v1.MigrationTransfer.Transfer:input_type -> gateway.v1.MigrationTransferMessage
+	47, // 63: gateway.v1.LogStream.StreamLogs:input_type -> gateway.v1.LogStreamMessage
+	1,  // 64: gateway.v1.NodeEnrollment.Enroll:output_type -> gateway.v1.EnrollResponse
+	3,  // 65: gateway.v1.NodeEnrollment.RenewCertificate:output_type -> gateway.v1.RenewCertResponse
+	12, // 66: gateway.v1.NodeControl.CommandStream:output_type -> gateway.v1.GatewayCommand
+	56, // 67: gateway.v1.MigrationTransfer.Transfer:output_type -> gateway.v1.MigrationTransferControl
+	50, // 68: gateway.v1.LogStream.StreamLogs:output_type -> gateway.v1.LogStreamControl
+	64, // [64:69] is the sub-list for method output_type
+	59, // [59:64] is the sub-list for method input_type
+	59, // [59:59] is the sub-list for extension type_name
+	59, // [59:59] is the sub-list for extension extendee
+	0,  // [0:59] is the sub-list for field type_name
 }
 
 func init() { file_gateway_v1_nginx_daemon_proto_init() }
@@ -5143,6 +6019,7 @@ func file_gateway_v1_nginx_daemon_proto_init() {
 		(*GatewayCommand_UpdateDaemon)(nil),
 		(*GatewayCommand_DockerDeployment)(nil),
 		(*GatewayCommand_NodeFile)(nil),
+		(*GatewayCommand_DockerMigration)(nil),
 	}
 	file_gateway_v1_nginx_daemon_proto_msgTypes[47].OneofWrappers = []any{
 		(*LogStreamMessage_SubscribeAck)(nil),
@@ -5152,15 +6029,29 @@ func file_gateway_v1_nginx_daemon_proto_init() {
 		(*LogStreamControl_Subscribe)(nil),
 		(*LogStreamControl_Unsubscribe)(nil),
 	}
+	file_gateway_v1_nginx_daemon_proto_msgTypes[55].OneofWrappers = []any{
+		(*MigrationTransferMessage_Hello)(nil),
+		(*MigrationTransferMessage_Chunk)(nil),
+		(*MigrationTransferMessage_Ack)(nil),
+		(*MigrationTransferMessage_Error)(nil),
+	}
+	file_gateway_v1_nginx_daemon_proto_msgTypes[56].OneofWrappers = []any{
+		(*MigrationTransferControl_Read)(nil),
+		(*MigrationTransferControl_Write)(nil),
+		(*MigrationTransferControl_Chunk)(nil),
+		(*MigrationTransferControl_Ack)(nil),
+		(*MigrationTransferControl_Error)(nil),
+		(*MigrationTransferControl_Heartbeat)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gateway_v1_nginx_daemon_proto_rawDesc), len(file_gateway_v1_nginx_daemon_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   56,
+			NumMessages:   66,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   4,
 		},
 		GoTypes:           file_gateway_v1_nginx_daemon_proto_goTypes,
 		DependencyIndexes: file_gateway_v1_nginx_daemon_proto_depIdxs,

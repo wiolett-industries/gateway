@@ -40,6 +40,46 @@ afterEach(() => {
 });
 
 describe('events websocket authentication', () => {
+  it('delivers migration events only with view access to both nodes', async () => {
+    const eventBus = new EventBusService();
+    container.registerInstance(EventBusService, eventBus);
+    mocks.resolveLiveSessionUser.mockResolvedValue({
+      user: {
+        ...USER,
+        scopes: ['docker:containers:view:node-1', 'docker:containers:view:node-2'],
+      },
+      effectiveScopes: ['docker:containers:view:node-1', 'docker:containers:view:node-2'],
+    });
+    const ws = createWs();
+    const handlers = createEventsWSHandlers();
+
+    handlers.onOpen(new Event('open'), ws as any);
+    await authenticateEventsConnection(ws as any, 'session-1');
+    handlers.onMessage(
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'subscribe', channels: ['docker.migration.changed'] }),
+      }),
+      ws as any
+    );
+
+    eventBus.publish('docker.migration.changed', {
+      id: 'migration-hidden',
+      sourceNodeId: 'node-1',
+      targetNodeId: 'node-3',
+      status: 'running',
+    });
+    eventBus.publish('docker.migration.changed', {
+      id: 'migration-visible',
+      sourceNodeId: 'node-1',
+      targetNodeId: 'node-2',
+      status: 'running',
+    });
+
+    expect(ws.send).not.toHaveBeenCalledWith(expect.stringContaining('migration-hidden'));
+    expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('migration-visible'));
+    handlers.onClose(new Event('close'), ws as any);
+  });
+
   it('filters Docker snapshot events by resource kind and node scope', async () => {
     const eventBus = new EventBusService();
     container.registerInstance(EventBusService, eventBus);

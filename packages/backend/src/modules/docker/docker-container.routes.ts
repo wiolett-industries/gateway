@@ -65,6 +65,7 @@ import { DOCKER_DEPLOYMENT_MANAGED_LABEL } from './docker-deployment-labels.js';
 import { resolveDockerContainerByName } from './docker-route-resolvers.js';
 import { DockerSecretService } from './docker-secret.service.js';
 import { DockerSnapshotService } from './docker-snapshot.service.js';
+import { DockerSnapshotReconciler } from './docker-snapshot-reconciler.service.js';
 
 const DOCKER_RESOURCE_LIST_MAX = 1000;
 const DOCKER_CONTAINER_PORT_PREVIEW_MAX = 64;
@@ -220,6 +221,9 @@ export function registerContainerRoutes(router: OpenAPIHono<AppEnv>) {
       const service = container.resolve(DockerManagementService);
       const nodeId = c.req.param('nodeId')!;
       const containerId = c.req.param('containerId')!;
+      if (c.req.query('_t')) {
+        await container.resolve(DockerSnapshotReconciler).refreshNow(nodeId, 'container-detail', containerId);
+      }
       const detail = await snapshots.getContainerDetailSnapshot(nodeId, containerId);
       const data = await service.decorateContainerDetailSnapshot(nodeId, detail.data);
       return c.json({

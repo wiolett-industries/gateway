@@ -14,6 +14,7 @@ export interface ResponsiveHeaderAction {
   icon?: ReactNode;
   onClick: () => void;
   disabled?: boolean;
+  disabledReason?: string;
   destructive?: boolean;
   separatorBefore?: boolean;
 }
@@ -56,6 +57,7 @@ function ResponsiveHeaderActionItem({ action }: { action: ResponsiveHeaderAction
       {action.separatorBefore ? <DropdownMenuSeparator /> : null}
       <DropdownMenuItem
         disabled={action.disabled}
+        title={action.disabled ? action.disabledReason : undefined}
         onClick={action.onClick}
         className={action.destructive ? "text-destructive" : undefined}
       >

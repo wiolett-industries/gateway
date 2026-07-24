@@ -43,6 +43,7 @@ import {
   watchDockerRecreateByName,
   watchDockerTransition,
 } from './docker-lifecycle-watch.js';
+import type { DockerMigrationGuard } from './docker-migration-guard.js';
 import {
   abortFileUpload as abortDockerFileUpload,
   appendFileUploadChunk as appendDockerFileUploadChunk,
@@ -119,6 +120,7 @@ export class DockerManagementService {
   private imageCleanupService?: DockerImageCleanupService;
   private eventBus?: EventBusService;
   private evaluator?: NotificationEvaluatorService;
+  private migrationGuard?: DockerMigrationGuard;
 
   constructor(
     private db: DrizzleClient,
@@ -171,6 +173,10 @@ export class DockerManagementService {
     this.evaluator = evaluator;
   }
 
+  setMigrationGuard(guard: DockerMigrationGuard) {
+    this.migrationGuard = guard;
+  }
+
   private emitContainer(
     nodeId: string,
     name: string,
@@ -182,7 +188,7 @@ export class DockerManagementService {
     this.observeContainerLifecycle(nodeId, name, id, action, extra);
   }
 
-  emitTransition(nodeId: string, name: string, id: string, transition: ContainerTransition) {
+  emitTransition(nodeId: string, name: string, id: string, transition: ContainerTransition | null) {
     this.eventBus?.publish('docker.container.changed', { nodeId, name, id, action: 'transitioning', transition });
   }
 
@@ -349,8 +355,8 @@ export class DockerManagementService {
     this.containerTransitions.requireIdle(nodeId, name);
   }
 
-  setTransition(nodeId: string, name: string, state: ContainerTransition) {
-    this.containerTransitions.set(nodeId, name, state);
+  setTransition(nodeId: string, name: string, state: ContainerTransition): boolean {
+    return this.containerTransitions.set(nodeId, name, state);
   }
 
   clearTransition(nodeId: string, name: string) {
@@ -645,6 +651,7 @@ export class DockerManagementService {
     const cName = ((data.Name ?? data.name ?? '') as string).replace(/^\/+/, '');
     const transition = cName ? this.getTransition(nodeId, cName) : undefined;
     if (transition) data._transition = transition;
+    else delete data._transition;
     if (this.runtimeSettingsService && cName) {
       const persistedRuntime = await this.runtimeSettingsService.get(nodeId, cName);
       if (persistedRuntime) return applyRuntimeSettingsToInspect(data, persistedRuntime);
@@ -716,30 +723,39 @@ export class DockerManagementService {
   }
 
   async createContainer(nodeId: string, config: Record<string, unknown>, userId: string, actorScopes: string[] = []) {
+    const name = String(config.name ?? config.Name ?? '');
+    if (name) await this.migrationGuard?.assertContainerNameAvailable(nodeId, name);
     return createDockerContainer(this.containerMutationContext(), nodeId, config, userId, actorScopes);
   }
 
   async startContainer(nodeId: string, containerId: string, userId: string) {
+    await this.assertContainerMigrationAllowed(nodeId, containerId);
     await startDockerContainer(this.containerMutationContext(), nodeId, containerId, userId);
   }
 
   async stopContainer(nodeId: string, containerId: string, timeout: number | undefined, userId: string) {
+    await this.assertContainerMigrationAllowed(nodeId, containerId);
     await stopDockerContainer(this.containerMutationContext(), nodeId, containerId, timeout, userId);
   }
 
   async restartContainer(nodeId: string, containerId: string, timeout: number | undefined, userId: string) {
+    await this.assertContainerMigrationAllowed(nodeId, containerId);
     await restartDockerContainer(this.containerMutationContext(), nodeId, containerId, timeout, userId);
   }
 
   async killContainer(nodeId: string, containerId: string, signal: string, userId: string) {
+    await this.assertContainerMigrationAllowed(nodeId, containerId);
     await killDockerContainer(this.containerMutationContext(), nodeId, containerId, signal, userId);
   }
 
   async removeContainer(nodeId: string, containerId: string, force: boolean, userId: string) {
+    await this.assertContainerMigrationAllowed(nodeId, containerId);
     await removeDockerContainerMutation(this.containerMutationContext(), nodeId, containerId, force, userId);
   }
 
   async renameContainer(nodeId: string, containerId: string, newName: string, userId: string) {
+    await this.assertContainerMigrationAllowed(nodeId, containerId);
+    await this.migrationGuard?.assertContainerNameAvailable(nodeId, newName);
     await renameDockerContainer(this.containerMutationContext(), nodeId, containerId, newName, userId);
   }
 
@@ -760,6 +776,7 @@ export class DockerManagementService {
     userId: string,
     actorScopes: string[] = []
   ) {
+    await this.assertContainerMigrationAllowed(nodeId, containerId);
     return updateDockerContainer(this.containerMutationContext(), nodeId, containerId, config, userId, actorScopes);
   }
 
@@ -775,6 +792,7 @@ export class DockerManagementService {
   }
 
   async liveUpdateContainer(nodeId: string, containerId: string, config: Record<string, unknown>, userId: string) {
+    await this.assertContainerMigrationAllowed(nodeId, containerId);
     await liveUpdateDockerContainer(this.containerMutationContext(), nodeId, containerId, config, userId);
   }
 
@@ -785,6 +803,7 @@ export class DockerManagementService {
     userId: string,
     options?: { skipImagePull?: boolean; skipWebhookCleanup?: boolean; actorScopes?: string[] }
   ) {
+    await this.assertContainerMigrationAllowed(nodeId, containerId);
     return recreateDockerContainerWithConfig(
       this.containerMutationContext(),
       nodeId,
@@ -802,6 +821,7 @@ export class DockerManagementService {
     removeEnv: string[] | undefined,
     userId: string
   ) {
+    await this.assertContainerMigrationAllowed(nodeId, containerId);
     return updateDockerContainerEnv(this.containerMutationContext(), nodeId, containerId, env, removeEnv, userId);
   }
 
@@ -850,16 +870,19 @@ export class DockerManagementService {
   }
 
   async writeVolumeFile(nodeId: string, name: string, path: string, content: string | Buffer, userId: string) {
+    await this.migrationGuard?.assertVolumeAllowed(nodeId, name);
     await this.validateDockerNode(nodeId);
     await writeDockerVolumeFile(this.volumeNetworkOperationContext(), nodeId, name, path, content, userId);
   }
 
   async createVolumeFile(nodeId: string, name: string, path: string, content: string | Buffer, userId: string) {
+    await this.migrationGuard?.assertVolumeAllowed(nodeId, name);
     await this.validateDockerNode(nodeId);
     await createDockerVolumeFile(this.volumeNetworkOperationContext(), nodeId, name, path, content, userId);
   }
 
   async initVolumeFileUpload(nodeId: string, name: string, path: string, totalBytes: number, userId: string) {
+    await this.migrationGuard?.assertVolumeAllowed(nodeId, name);
     await this.validateDockerNode(nodeId);
     return initDockerVolumeFileUpload(this.volumeNetworkOperationContext(), nodeId, name, path, totalBytes, userId);
   }
@@ -894,16 +917,19 @@ export class DockerManagementService {
   }
 
   async createVolumeDirectory(nodeId: string, name: string, path: string, userId: string) {
+    await this.migrationGuard?.assertVolumeAllowed(nodeId, name);
     await this.validateDockerNode(nodeId);
     await createDockerVolumeDirectory(this.volumeNetworkOperationContext(), nodeId, name, path, userId);
   }
 
   async deleteVolumeFile(nodeId: string, name: string, path: string, userId: string) {
+    await this.migrationGuard?.assertVolumeAllowed(nodeId, name);
     await this.validateDockerNode(nodeId);
     await deleteDockerVolumeFile(this.volumeNetworkOperationContext(), nodeId, name, path, userId);
   }
 
   async moveVolumeFile(nodeId: string, name: string, fromPath: string, toPath: string, userId: string) {
+    await this.migrationGuard?.assertVolumeAllowed(nodeId, name);
     await this.validateDockerNode(nodeId);
     await moveDockerVolumeFile(this.volumeNetworkOperationContext(), nodeId, name, fromPath, toPath, userId);
   }
@@ -915,12 +941,14 @@ export class DockerManagementService {
   }
 
   async renameVolume(nodeId: string, name: string, newName: string, userId: string) {
+    await this.migrationGuard?.assertVolumeAllowed(nodeId, name);
     await this.validateDockerNode(nodeId);
     await renameDockerVolume(this.volumeNetworkOperationContext(), nodeId, name, newName, userId);
     await this.folderService?.renameResourceAssignment(nodeId, 'volume', name, newName);
   }
 
   async updateVolumeLabels(nodeId: string, name: string, labels: Record<string, string>, userId: string) {
+    await this.migrationGuard?.assertVolumeAllowed(nodeId, name);
     await this.validateDockerNode(nodeId);
     await updateDockerVolumeLabels(this.volumeNetworkOperationContext(), nodeId, name, labels, userId);
   }
@@ -935,8 +963,17 @@ export class DockerManagementService {
   }
 
   async removeVolume(nodeId: string, name: string, force: boolean, userId: string | null) {
+    await this.migrationGuard?.assertVolumeAllowed(nodeId, name);
     await this.validateDockerNode(nodeId);
     await removeDockerVolume(this.volumeNetworkOperationContext(), nodeId, name, force, userId);
+  }
+
+  private async assertContainerMigrationAllowed(nodeId: string, containerId: string): Promise<void> {
+    if (!this.migrationGuard) return;
+    const inspect = await this.inspectContainer(nodeId, containerId);
+    const name = String(inspect?.Name ?? inspect?.name ?? containerId).replace(/^\//, '');
+    await this.migrationGuard.assertContainerAllowed(nodeId, name);
+    if (name !== containerId) await this.migrationGuard.assertContainerAllowed(nodeId, containerId);
   }
 
   // ─── Network operations ────────────────────────────────────────────

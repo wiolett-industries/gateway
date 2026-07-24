@@ -954,7 +954,8 @@ export function SidebarContent({
                                             meta.state === "restarting" ||
                                             meta.state === "recreating" ||
                                             meta.state === "killing" ||
-                                            meta.state === "updating"
+                                            meta.state === "updating" ||
+                                            meta.state === "migrating"
                                           ? "bg-amber-400 animate-pulse"
                                           : "bg-muted-foreground/40"
                                   )}

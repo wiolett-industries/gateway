@@ -1,8 +1,14 @@
+import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useRealtime } from "@/hooks/use-realtime";
 import { dockerContainerRoute } from "@/lib/resource-routes";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
 import { useResolvedPageContext } from "@/stores/resolved-page-context";
+import type { DockerMigration } from "@/types";
+
+const MIGRATION_RELOCATION_GRACE_MS = 2_000;
+const MIGRATION_TRANSITION_SETTLE_INTERVAL_MS = 1_000;
+const MIGRATION_TRANSITION_SETTLE_ATTEMPTS = 30;
 
 interface UseContainerDetailRealtimeParams {
   nodeId?: string;
@@ -11,9 +17,11 @@ interface UseContainerDetailRealtimeParams {
   routeContainerName: string;
   activeTab: string;
   navigate: (to: string, options?: { replace?: boolean }) => void;
-  fetchContainer: (noCache?: boolean) => Promise<void>;
+  refreshContainer: () => Promise<void>;
+  transition?: string;
   clearMutationTransition: () => void;
   onContainerIdChange: (containerId: string) => void;
+  onMigrationCutover: (migration: DockerMigration) => void;
   pageContextToken?: number | null;
 }
 
@@ -24,15 +32,67 @@ export function useContainerDetailRealtime({
   routeContainerName,
   activeTab,
   navigate,
-  fetchContainer,
+  refreshContainer,
+  transition,
   clearMutationTransition,
   onContainerIdChange,
+  onMigrationCutover,
   pageContextToken,
 }: UseContainerDetailRealtimeParams) {
+  const cutoverSeen = useRef(false);
+  const removalFallback = useRef<number | null>(null);
+
+  const clearRemovalFallback = useCallback(() => {
+    if (removalFallback.current === null) return;
+    window.clearTimeout(removalFallback.current);
+    removalFallback.current = null;
+  }, []);
+
+  useEffect(() => () => clearRemovalFallback(), [clearRemovalFallback]);
+
+  // The transition-clear event can be published before the target detail page
+  // subscribes during a migration redirect. Re-read the authoritative state
+  // while migrating so a missed one-shot event cannot leave the page locked.
+  useEffect(() => {
+    if (transition !== "migrating") return;
+    let cancelled = false;
+    let timer: number | null = null;
+    let attempts = 0;
+
+    const settle = async () => {
+      attempts += 1;
+      await refreshContainer();
+      if (!cancelled && attempts < MIGRATION_TRANSITION_SETTLE_ATTEMPTS) {
+        timer = window.setTimeout(settle, MIGRATION_TRANSITION_SETTLE_INTERVAL_MS);
+      }
+    };
+
+    timer = window.setTimeout(settle, 250);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [refreshContainer, transition]);
+
   useRealtime("node.slug.changed", (payload) => {
     const event = payload as { id?: string; oldSlug?: string; slug?: string };
     if (event.id !== nodeId || event.oldSlug !== nodeSlug || !event.slug) return;
     navigate(dockerContainerRoute(event.slug, routeContainerName, activeTab), { replace: true });
+  });
+
+  useRealtime("docker.migration.changed", (payload) => {
+    const event = payload as DockerMigration;
+    if (
+      !event.cutoverAt ||
+      event.resourceType !== "container" ||
+      event.sourceNodeId !== nodeId ||
+      event.resourceName !== routeContainerName
+    ) {
+      return;
+    }
+    cutoverSeen.current = true;
+    clearRemovalFallback();
+    onMigrationCutover(event);
   });
 
   useRealtime("docker.container.changed", (payload) => {
@@ -92,13 +152,18 @@ export function useContainerDetailRealtime({
 
     if (ev.action === "removed") {
       clearMutationTransition();
-      toast.info("Container was removed");
-      navigate("/docker");
+      if (cutoverSeen.current || removalFallback.current !== null) return;
+      removalFallback.current = window.setTimeout(() => {
+        removalFallback.current = null;
+        if (cutoverSeen.current) return;
+        toast.info("Container was removed");
+        navigate("/docker");
+      }, MIGRATION_RELOCATION_GRACE_MS);
       return;
     }
     if (ev.action === "transitioning" && !ev.transition) {
       clearMutationTransition();
     }
-    void fetchContainer(true);
+    void refreshContainer();
   });
 }

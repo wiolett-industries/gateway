@@ -568,6 +568,7 @@ export const tags = [
   { name: 'Docker Registries', description: 'Private Docker registry credentials' },
   { name: 'Docker Folders', description: 'Docker container folder organization' },
   { name: 'Docker Health Checks', description: 'Gateway-managed Docker health checks' },
+  { name: 'Docker Migrations', description: 'Durable Docker node-to-node migrations' },
   { name: 'Docker Secrets', description: 'Container and deployment environment secrets' },
   { name: 'Docker Files', description: 'Container file browser operations' },
   { name: 'Docker Tasks', description: 'Docker background tasks' },

@@ -148,6 +148,16 @@ export class DockerSnapshotReconciler {
     for (const node of this.registry.getNodesByType('docker')) this.enqueue({ nodeId: node.nodeId, kind });
   }
 
+  async refreshNow(nodeId: string, kind: DockerRefreshKind, key?: string): Promise<void> {
+    if (this.snapshots.isNodeDeleted(nodeId)) return;
+    if (DOCKER_SNAPSHOT_KINDS.includes(kind as DockerSnapshotKind)) {
+      await this.refreshList(nodeId, kind as DockerSnapshotKind);
+      return;
+    }
+    if (!key) throw new Error(`${kind} refresh requires a resource key`);
+    await this.refreshDetail(nodeId, kind as DockerDetailKind, key);
+  }
+
   async enqueueDueDetails(): Promise<void> {
     for (const node of this.registry.getNodesByType('docker')) {
       await this.enqueueStaleDetails(node.nodeId, 'container-detail', 'containers');

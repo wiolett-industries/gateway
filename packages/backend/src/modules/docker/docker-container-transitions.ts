@@ -1,6 +1,13 @@
 import { AppError } from '@/middleware/error-handler.js';
 
-export type ContainerTransition = 'creating' | 'stopping' | 'restarting' | 'killing' | 'recreating' | 'updating';
+export type ContainerTransition =
+  | 'creating'
+  | 'stopping'
+  | 'restarting'
+  | 'killing'
+  | 'recreating'
+  | 'updating'
+  | 'migrating';
 
 export class DockerContainerTransitions {
   private readonly transitions = new Map<string, ContainerTransition>();
@@ -12,8 +19,10 @@ export class DockerContainerTransitions {
     }
   }
 
-  set(nodeId: string, name: string, state: ContainerTransition) {
+  set(nodeId: string, name: string, state: ContainerTransition): boolean {
+    if (this.get(nodeId, name) === state) return false;
     this.transitions.set(this.key(nodeId, name), state);
+    return true;
   }
 
   clear(nodeId: string, name: string) {

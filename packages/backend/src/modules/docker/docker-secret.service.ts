@@ -5,17 +5,24 @@ import { createChildLogger } from '@/lib/logger.js';
 import { AppError } from '@/middleware/error-handler.js';
 import type { AuditService } from '@/modules/audit/audit.service.js';
 import type { CryptoService } from '@/services/crypto.service.js';
+import type { DockerMigrationGuard } from './docker-migration-guard.js';
 
 const logger = createChildLogger('DockerSecretService');
 
 const MASKED_VALUE = '••••••••';
 
 export class DockerSecretService {
+  private migrationGuard?: DockerMigrationGuard;
+
   constructor(
     private db: DrizzleClient,
     private auditService: AuditService,
     private cryptoService: CryptoService
   ) {}
+
+  setMigrationGuard(guard: DockerMigrationGuard) {
+    this.migrationGuard = guard;
+  }
 
   /**
    * List secrets for a container. Values are masked unless `reveal` is true.
@@ -39,6 +46,7 @@ export class DockerSecretService {
    * Create a new secret for a container.
    */
   async create(nodeId: string, containerName: string, key: string, value: string, userId: string) {
+    await this.migrationGuard?.assertContainerAllowed(nodeId, containerName);
     const encrypted = this.cryptoService.encryptString(value);
     const encryptedValue = JSON.stringify(encrypted);
 
@@ -72,6 +80,7 @@ export class DockerSecretService {
     if (existing.nodeId !== nodeId || (expectedContainerName && existing.containerName !== expectedContainerName)) {
       throw new AppError(404, 'NOT_FOUND', 'Secret not found');
     }
+    await this.migrationGuard?.assertContainerAllowed(existing.nodeId, existing.containerName);
 
     const encrypted = this.cryptoService.encryptString(value);
     const encryptedValue = JSON.stringify(encrypted);
@@ -102,6 +111,7 @@ export class DockerSecretService {
     if (existing.nodeId !== nodeId || (expectedContainerName && existing.containerName !== expectedContainerName)) {
       throw new AppError(404, 'NOT_FOUND', 'Secret not found');
     }
+    await this.migrationGuard?.assertContainerAllowed(existing.nodeId, existing.containerName);
 
     await this.db.delete(dockerSecrets).where(eq(dockerSecrets.id, id));
 
@@ -146,6 +156,8 @@ export class DockerSecretService {
    * Copy secrets from one container name to another (used for duplicate).
    */
   async copySecrets(nodeId: string, fromName: string, toName: string, userId: string) {
+    await this.migrationGuard?.assertContainerAllowed(nodeId, fromName);
+    await this.migrationGuard?.assertContainerNameAvailable(nodeId, toName);
     const secrets = await this.getDecryptedMap(nodeId, fromName);
     for (const [key, value] of Object.entries(secrets)) {
       await this.create(nodeId, toName, key, value, userId).catch(() => {});

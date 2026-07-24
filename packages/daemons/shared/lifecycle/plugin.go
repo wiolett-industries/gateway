@@ -70,3 +70,9 @@ type DaemonPlugin interface {
 type LogStreamPlugin interface {
 	RunLogStream(ctx context.Context, conn *grpc.ClientConn)
 }
+
+// MigrationStreamPlugin is implemented by Docker plugins that maintain the
+// separately authenticated migration artifact stream.
+type MigrationStreamPlugin interface {
+	RunMigrationStream(ctx context.Context, conn *grpc.ClientConn, nodeID string)
+}

@@ -19,6 +19,7 @@ export * from './docker-env-vars.js';
 export * from './docker-health-checks.js';
 export * from './docker-image-cleanup-settings.js';
 export * from './docker-image-registry-mappings.js';
+export * from './docker-migrations.js';
 export * from './docker-registries.js';
 export * from './docker-runtime-settings.js';
 export * from './docker-secrets.js';

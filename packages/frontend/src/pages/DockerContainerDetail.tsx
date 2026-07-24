@@ -7,15 +7,17 @@ import {
   Skull,
   Square,
   Trash2,
+  Truck,
   Type,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { confirm } from "@/components/common/ConfirmDialog";
 import { PageBackButton } from "@/components/common/PageBackButton";
 import { PageTransition } from "@/components/common/PageTransition";
 import { ResponsiveHeaderActions } from "@/components/common/ResponsiveHeaderActions";
+import { DockerMigrationDialog } from "@/components/docker/DockerMigrationDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,13 +42,17 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { useStableNavigate } from "@/hooks/use-stable-navigate";
 import { useUrlTab } from "@/hooks/use-url-tab";
 import { formatDisplayImageRef } from "@/lib/docker-image-ref";
+import {
+  isDockerMigrationOwnedByTab,
+  resolveMigrationTarget,
+} from "@/lib/docker-migration-navigation";
 import { dockerContainerRoute } from "@/lib/resource-routes";
 import { api } from "@/services/api";
 import { ApiRequestError } from "@/services/api-base";
 import { useAuthStore } from "@/stores/auth";
 import { useDockerStore } from "@/stores/docker";
 import { usePinnedContainersStore } from "@/stores/pinned-containers";
-import type { DockerHealthCheck } from "@/types";
+import type { DockerHealthCheck, DockerMigration } from "@/types";
 import { ConfigTab } from "./docker-detail/ConfigTab";
 import { ConsoleTab } from "./docker-detail/ConsoleTab";
 import { EnvironmentTab } from "./docker-detail/EnvironmentTab";
@@ -80,12 +86,14 @@ export function DockerContainerDetail({
   resolvedNodeSlug,
   resolvedContainerId,
   resolvedContainerName,
+  resolvedContainer,
   pageContextToken,
 }: {
   resolvedNodeId?: string;
   resolvedNodeSlug?: string;
   resolvedContainerId?: string;
   resolvedContainerName?: string;
+  resolvedContainer?: InspectData;
   pageContextToken?: number | null;
 } = {}) {
   const params = useParams<{
@@ -101,6 +109,7 @@ export function DockerContainerDetail({
     resolvedContainerName ?? params.containerName ?? params.containerId ?? "";
   const [containerId, setContainerId] = useState(resolvedContainerId ?? params.containerId);
   const navigate = useStableNavigate();
+  const location = useLocation();
   const { hasScope, isLoading: authLoading } = useAuthStore();
   const canManage =
     hasScope("docker:containers:manage") ||
@@ -114,6 +123,9 @@ export function DockerContainerDetail({
   const canDelete =
     hasScope("docker:containers:delete") ||
     !!(nodeId && hasScope(`docker:containers:delete:${nodeId}`));
+  const canMigrate =
+    hasScope("docker:containers:migrate") ||
+    !!(nodeId && hasScope(`docker:containers:migrate:${nodeId}`));
   const canViewContainer =
     hasScope("docker:containers:view") ||
     !!(nodeId && hasScope(`docker:containers:view:${nodeId}`));
@@ -147,8 +159,8 @@ export function DockerContainerDetail({
       setSelectedNode(previousNodeIdRef.current);
     };
   }, [nodeId, setSelectedNode, storeNodeId]);
-  const [container, setContainer] = useState<InspectData | null>(null);
-  const containerRef = useRef<InspectData | null>(null);
+  const [container, setContainer] = useState<InspectData | null>(resolvedContainer ?? null);
+  const containerRef = useRef<InspectData | null>(resolvedContainer ?? null);
   const [healthCheck, setHealthCheck] = useState<DockerHealthCheck | null>(null);
 
   const [activeTab, setActiveTab] = useUrlTab(
@@ -156,18 +168,78 @@ export function DockerContainerDetail({
     "overview",
     (tab) => dockerContainerRoute(nodeSlug, routeContainerName, tab)
   );
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!resolvedContainer);
   const [actionLoading, setActionLoading] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [migrationOpen, setMigrationOpen] = useState(false);
+  const [restoredMigration, setRestoredMigration] = useState<DockerMigration | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
   useEffect(() => {
     setContainerId(resolvedContainerId ?? params.containerId);
-  }, [params.containerId, resolvedContainerId]);
+    if (resolvedContainer) {
+      containerRef.current = resolvedContainer;
+      setContainer(resolvedContainer);
+      setIsLoading(false);
+    }
+  }, [params.containerId, resolvedContainer, resolvedContainerId]);
 
   // Pin
   const [pinOpen, setPinOpen] = useState(false);
   const { isPinnedSidebar, toggleSidebar, updateMeta } = usePinnedContainersStore();
+  const navigationMigration = (location.state as { dockerMigration?: DockerMigration } | null)
+    ?.dockerMigration;
+  const migrationHandoff =
+    restoredMigration ??
+    (navigationMigration?.resourceType === "container" &&
+    navigationMigration.targetNodeId === nodeId &&
+    navigationMigration.resourceName === routeContainerName
+      ? navigationMigration
+      : null);
+  const handleMigrationCutover = useCallback(
+    (migration: DockerMigration) => {
+      if (!migration.targetNodeSlug) return;
+      if (containerId && migration.targetResourceId) {
+        const pins = usePinnedContainersStore.getState();
+        pins.migrateId(containerId, migration.targetResourceId);
+        pins.updateMeta(migration.targetResourceId, {
+          nodeId: migration.targetNodeId,
+          nodeSlug: migration.targetNodeSlug,
+          name: migration.resourceName,
+          state: containerRef.current?.State?.Status,
+        });
+      }
+      navigate(dockerContainerRoute(migration.targetNodeSlug, migration.resourceName, activeTab), {
+        replace: true,
+        state: isDockerMigrationOwnedByTab(migration.id) ? { dockerMigration: migration } : null,
+      });
+    },
+    [activeTab, containerId, navigate]
+  );
+
+  useEffect(() => {
+    const incoming = navigationMigration;
+    if (
+      !incoming ||
+      incoming.id === restoredMigration?.id ||
+      incoming.resourceType !== "container" ||
+      incoming.targetNodeId !== nodeId ||
+      incoming.resourceName !== routeContainerName
+    ) {
+      return;
+    }
+    setRestoredMigration(incoming);
+    setMigrationOpen(true);
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: null,
+    });
+  }, [location, navigate, navigationMigration, nodeId, restoredMigration?.id, routeContainerName]);
+
+  const handleMigrationOpenChange = useCallback((nextOpen: boolean) => {
+    setMigrationOpen(nextOpen);
+    if (!nextOpen) setRestoredMigration(null);
+  }, []);
   const visibleTabs = useMemo(
     () => [
       "overview",
@@ -190,7 +262,9 @@ export function DockerContainerDetail({
       if (!nodeId || !containerId) return;
       if (!silent) setIsLoading(true);
       try {
-        const data = await api.inspectContainer(nodeId, containerId, noCache);
+        const data = await resolveMigrationTarget(!!migrationHandoff?.cutoverAt, () =>
+          api.inspectContainer(nodeId, containerId, noCache)
+        );
         setContainer(data);
         if ((data as any)?._transition) {
           clearMutationTransition();
@@ -203,27 +277,36 @@ export function DockerContainerDetail({
           updateMeta(containerId, { nodeId, nodeSlug, name: cName, state: cState });
         }
       } catch (err) {
-        if (err instanceof ApiRequestError && err.status === 404) {
+        if (!migrationHandoff && err instanceof ApiRequestError && err.status === 404) {
           usePinnedContainersStore.getState().removePin(containerId);
         }
         if (!silent) {
           toast.error("Failed to load container");
-          navigate("/docker");
+          if (!migrationHandoff) navigate("/docker");
         }
       } finally {
         if (!silent) setIsLoading(false);
       }
     },
-    [clearMutationTransition, nodeId, nodeSlug, containerId, navigate, updateMeta]
+    [clearMutationTransition, nodeId, nodeSlug, containerId, migrationHandoff, navigate, updateMeta]
   );
 
   useEffect(() => {
-    fetchContainer();
+    const targetId = migrationHandoff?.targetResourceId;
+    if (targetId && targetId !== containerId) setContainerId(targetId);
+  }, [containerId, migrationHandoff?.targetResourceId]);
+
+  useEffect(() => {
+    if (!resolvedContainer || migrationHandoff?.targetResourceId) {
+      void fetchContainer(true, Boolean(migrationHandoff?.targetResourceId));
+    }
     // Safety-net poll — realtime channel handles fast updates, this just
     // catches anything that slipped through (e.g. between reconnects).
-    const interval = setInterval(() => fetchContainer(true), 30000);
+    const interval = setInterval(() => void fetchContainer(true, true), 30000);
     return () => clearInterval(interval);
-  }, [fetchContainer]);
+  }, [fetchContainer, migrationHandoff?.targetResourceId, resolvedContainer]);
+
+  const refreshContainer = useCallback(() => fetchContainer(true, true), [fetchContainer]);
 
   useEffect(() => {
     containerRef.current = container;
@@ -280,9 +363,11 @@ export function DockerContainerDetail({
     routeContainerName,
     activeTab,
     navigate,
-    fetchContainer,
+    refreshContainer,
+    transition: backendTransition,
     clearMutationTransition,
     onContainerIdChange: setContainerId,
+    onMigrationCutover: handleMigrationCutover,
     pageContextToken,
   });
 
@@ -297,6 +382,9 @@ export function DockerContainerDetail({
     ) {
       return;
     }
+    // The snapshot is already fresh when this event is published. Forcing
+    // another backend refresh here would publish the same event again and
+    // create an unbounded request/event feedback loop.
     void fetchContainer(true);
   });
 
@@ -406,6 +494,16 @@ export function DockerContainerDetail({
   const image = container?.Config?.Image ?? "";
   const unavailable = container?.availability === "unavailable";
   const actionDisabled = actionLoading || !!effectiveTransition || unavailable;
+  const labels = (container?.Config?.Labels ?? container?.Labels ?? {}) as Record<string, string>;
+  const composeManaged = Boolean(labels["com.docker.compose.project"]);
+  const deploymentManaged = labels["wiolett.gateway.deployment.managed"] === "true";
+  const migrationDisabledReason = composeManaged
+    ? "Docker Compose resources cannot be migrated"
+    : deploymentManaged
+      ? "Migrate this container through its Gateway deployment"
+      : actionDisabled
+        ? "Container is unavailable or changing state"
+        : undefined;
   const currentTransition = effectiveTransition;
   const currentBaseState = baseState;
 
@@ -458,6 +556,17 @@ export function DockerContainerDetail({
       onClick: () => setPinOpen(true),
       disabled: actionDisabled,
     },
+    ...(canMigrate
+      ? [
+          {
+            label: "Migrate",
+            icon: <Truck className="h-4 w-4" />,
+            onClick: () => setMigrationOpen(true),
+            disabled: Boolean(migrationDisabledReason),
+            disabledReason: migrationDisabledReason,
+          },
+        ]
+      : []),
     ...(lifecycleActions.canStart && canManage
       ? [
           {
@@ -647,6 +756,16 @@ export function DockerContainerDetail({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {canMigrate && (
+                  <DropdownMenuItem
+                    disabled={Boolean(migrationDisabledReason)}
+                    title={migrationDisabledReason}
+                    onClick={() => setMigrationOpen(true)}
+                  >
+                    <Truck className="mr-2 h-3.5 w-3.5" />
+                    Migrate
+                  </DropdownMenuItem>
+                )}
                 {canEdit && (
                   <DropdownMenuItem onClick={openRename}>
                     <Type className="h-3.5 w-3.5 mr-2" />
@@ -798,6 +917,19 @@ export function DockerContainerDetail({
         </Tabs>
       </div>
       {/* Pin Dialog */}
+      <DockerMigrationDialog
+        open={migrationOpen}
+        onOpenChange={handleMigrationOpenChange}
+        onCutover={handleMigrationCutover}
+        initialMigration={restoredMigration}
+        resource={{
+          type: "container",
+          nodeId: nodeId!,
+          containerName: name,
+          displayName: name,
+          sourceState: baseState,
+        }}
+      />
       <Dialog open={pinOpen} onOpenChange={setPinOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
